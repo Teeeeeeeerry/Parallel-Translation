@@ -8,13 +8,28 @@ let current: Settings = DEFAULT_SETTINGS;
 let ready: Promise<Settings> | null = null;
 
 /**
+ * 合并存储值与默认值。
+ * 顶层浅合并，嵌套对象（hotkeys / siteList）递归到叶子，
+ * 避免旧版本只存了部分子键就把其余子键丢成 undefined。
+ */
+function merge(stored: Partial<Settings> | undefined): Settings {
+  const s = stored ?? {};
+  return {
+    ...DEFAULT_SETTINGS,
+    ...s,
+    hotkeys: { ...DEFAULT_SETTINGS.hotkeys, ...(s.hotkeys ?? {}) },
+    siteList: { ...DEFAULT_SETTINGS.siteList, ...(s.siteList ?? {}) },
+    models: { ...DEFAULT_SETTINGS.models, ...(s.models ?? {}) },
+  };
+}
+
+/**
  * 首次调用触发加载；后续复用同一个 Promise，避免并发重复读。
- * 读取时与 DEFAULT_SETTINGS 浅合并 —— 版本升级新增字段时老用户不会拿到 undefined。
  */
 export function settingsReady(): Promise<Settings> {
   if (!ready) {
     ready = chrome.storage.sync.get(KEY).then((r) => {
-      current = { ...DEFAULT_SETTINGS, ...(r[KEY] ?? {}) };
+      current = merge(r[KEY]);
       return current;
     });
   }
@@ -44,7 +59,7 @@ export function onSettingsChanged(fn: (s: Settings) => void): () => void {
     area: string,
   ) => {
     if (area !== 'sync' || !changes[KEY]) return;
-    current = { ...DEFAULT_SETTINGS, ...changes[KEY].newValue };
+    current = merge(changes[KEY].newValue);
     fn(current);
   };
   chrome.storage.onChanged.addListener(listener);

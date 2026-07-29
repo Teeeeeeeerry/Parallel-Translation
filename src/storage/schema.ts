@@ -58,6 +58,9 @@ export interface Settings {
   showParagraphBtn: boolean;
   maxConcurrency: number;
   useCache: boolean;
+
+  /** BYOK 引擎的自定义模型名。阶段 7 使用。 */
+  models: Partial<Record<EngineId, string>>;
 }
 
 export const ENGINE_LABELS: Record<EngineId, string> = {
@@ -111,4 +114,5 @@ export const DEFAULT_SETTINGS: Settings = {
   showParagraphBtn: true,
   maxConcurrency: 6,
   useCache: true,
+  models: {},
 };

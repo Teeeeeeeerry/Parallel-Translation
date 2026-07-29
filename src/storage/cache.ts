@@ -22,49 +22,81 @@ export async function cacheKey(
   return `${PREFIX}${engine}:${from}:${to}:${hex}`;
 }
 
-/** 读取缓存条目。未命中返回 null。 */
-export async function cacheGet(key: string): Promise<string | null> {
-  const result = await chrome.storage.local.get(key);
-  const value = result[key];
-  if (typeof value === 'string') return value;
-  return null;
-}
+// ---- Index 序列化链 ----
+// chrome.storage.local 的读-改-写不是原子的，
+// 并发 cacheSet / cacheGet（刷新位置）会丢失 index 条目。
+// 所有涉及 index 变动的操作通过这条 Promise 链串行化。
 
-/**
- * 写入缓存条目。
- * 自动维护 LRU index —— 超过 MAX_ENTRIES 则淘汰最旧的一批。
- */
-export async function cacheSet(key: string, value: string): Promise<void> {
-  // 1. 写入条目
-  await chrome.storage.local.set({ [key]: value });
+let chain: Promise<void> = Promise.resolve();
 
-  // 2. 更新 index
+// ---- Index 内部操作 ----
+
+/** 将 key 移到 index 末尾（"最近使用"），必要时淘汰最旧的条目。 */
+async function refreshIndex(key: string): Promise<void> {
   const idxResult = await chrome.storage.local.get(INDEX_KEY);
   let index: string[] = idxResult[INDEX_KEY] ?? [];
 
-  // 同名 key 已存在则移除旧位置（后续追加到末尾，即"最近使用"）
   const existing = index.indexOf(key);
   if (existing !== -1) {
     index.splice(existing, 1);
   }
   index.push(key);
 
-  // 3. 超过上限则批量淘汰最旧的
   if (index.length > MAX_ENTRIES) {
     const toEvict = index.splice(0, index.length - MAX_ENTRIES);
     await chrome.storage.local.remove(toEvict);
   }
 
-  // 4. 写回 index
   await chrome.storage.local.set({ [INDEX_KEY]: index });
 }
 
-/** 清空全部缓存。 */
-export async function cacheClear(): Promise<void> {
-  const idxResult = await chrome.storage.local.get(INDEX_KEY);
-  const index: string[] = idxResult[INDEX_KEY] ?? [];
-  if (index.length > 0) {
-    await chrome.storage.local.remove(index);
-  }
-  await chrome.storage.local.remove(INDEX_KEY);
+// ---- Public API ----
+
+/** 读取缓存条目。命中时刷新 LRU 位置，未命中返回 null。 */
+export function cacheGet(key: string): Promise<string | null> {
+  let value: string | null = null;
+
+  chain = chain
+    .then(() => chrome.storage.local.get(key))
+    .then((result) => {
+      const v = result[key];
+      if (typeof v === 'string') {
+        value = v;
+        // 命中 → 刷新 index 位置
+        return refreshIndex(key);
+      }
+      return undefined;
+    })
+    .catch(() => {});
+
+  return chain.then(() => value);
+}
+
+/**
+ * 写入缓存条目。
+ * 自动维护 LRU index —— 超过 MAX_ENTRIES 则淘汰最旧的条目。
+ */
+export function cacheSet(key: string, value: string): Promise<void> {
+  chain = chain
+    .then(() => chrome.storage.local.set({ [key]: value }))
+    .then(() => refreshIndex(key))
+    .catch(() => {});
+
+  return chain;
+}
+
+/** 清空全部缓存。串在 index 链上，确保与并发写入不交叉。 */
+export function cacheClear(): Promise<void> {
+  chain = chain
+    .then(async () => {
+      const idxResult = await chrome.storage.local.get(INDEX_KEY);
+      const index: string[] = idxResult[INDEX_KEY] ?? [];
+      if (index.length > 0) {
+        await chrome.storage.local.remove(index);
+      }
+      await chrome.storage.local.remove(INDEX_KEY);
+    })
+    .catch(() => {});
+
+  return chain;
 }
