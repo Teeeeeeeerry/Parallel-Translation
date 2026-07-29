@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+</head>
+<body>
+  <div class="pt-popup">
+    <header class="pt-hdr">
+      <div class="pt-logo">P</div>
+      <div>
+        <div class="pt-hdr-name">Parallel-Translation</div>
+        <div class="pt-hdr-sub">Bilingual Reader</div>
+      </div>
+    </header>
+
+    <main class="pt-content">
+      <!-- 状态卡 -->
+      <div class="pt-card">
+        <div class="pt-card-label">状态</div>
+        <div class="pt-option-row">
+          <span class="pt-option-label">翻译开关</span>
+          <button class="pt-toggle pt-on" id="pt-toggle-master"></button>
+        </div>
+      </div>
+
+      <!-- 引擎选择（阶段 1 接真实数据） -->
+      <div class="pt-card">
+        <div class="pt-card-label">翻译引擎</div>
+        <div class="pt-option-row">
+          <span class="pt-placeholder">阶段 1 接入</span>
+        </div>
+      </div>
+
+      <!-- 语言对（阶段 1 接真实数据） -->
+      <div class="pt-card">
+        <div class="pt-card-label">语言设置</div>
+        <div class="pt-option-row">
+          <span class="pt-placeholder">阶段 1 接入</span>
+        </div>
+      </div>
+
+      <!-- 显示模式（阶段 4 生效） -->
+      <div class="pt-card">
+        <div class="pt-card-label">显示模式</div>
+        <div class="pt-option-row">
+          <span class="pt-placeholder">阶段 4 接入</span>
+        </div>
+      </div>
+    </main>
+
+    <footer class="pt-footer">
+      <span>v0.1.0</span>
+      <button class="pt-settings-btn" id="pt-settings-btn">设置</button>
+    </footer>
+  </div>
+</body>
+</html>

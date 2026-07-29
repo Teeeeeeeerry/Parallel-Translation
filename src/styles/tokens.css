@@ -1,0 +1,30 @@
+:root {
+  /* 主色板 */
+  --pt-paper:   #f5f0e6;   /* 底色，纸感米白 */
+  --pt-forest:  #1f3a2e;   /* 主色，森林绿 */
+  --pt-brass:   #b89968;   /* 强调色，黄铜金 */
+  --pt-surface: #ffffff;   /* 浅色卡片 */
+  --pt-danger:  #7a4030;   /* 错误态，锈红 */
+
+  /* forest 透明度阶 —— 用途固定，不要随意新增 */
+  --pt-forest-08: rgba(31, 58, 46, .08);   /* 分隔线 */
+  --pt-forest-09: rgba(31, 58, 46, .09);   /* 卡片描边 */
+  --pt-forest-15: rgba(31, 58, 46, .15);   /* 次级按钮描边 */
+  --pt-forest-22: rgba(31, 58, 46, .22);   /* 输入框描边 */
+  --pt-forest-40: rgba(31, 58, 46, .40);   /* 页脚文字 */
+  --pt-forest-55: rgba(31, 58, 46, .55);   /* 次级文字 */
+
+  /* 字体 */
+  --pt-font-mono: 'JetBrains Mono', monospace;   /* 标签、数字、标题 */
+  --pt-font-ui:   system-ui, sans-serif;         /* 正文、长句描述 */
+
+  /* 圆角 */
+  --pt-r-sm: 6px;
+  --pt-r-md: 9px;
+  --pt-r-lg: 13px;
+}
+
+@keyframes pt-pop {
+  from { transform: scale(.8); opacity: 0 }
+  to   { transform: scale(1);  opacity: 1 }
+}
