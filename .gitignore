@@ -1,0 +1,31 @@
+# 依赖
+node_modules/
+
+# WXT 构建产物
+.output/
+.wxt/
+dist/
+stats.html
+
+# 环境变量与密钥
+.env
+.env.*
+!.env.example
+
+# 测试产物
+playwright-report/
+test-results/
+coverage/
+
+# 编辑器与系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# 日志
+*.log
+npm-debug.log*
+pnpm-debug.log*
