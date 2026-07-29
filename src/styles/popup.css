@@ -95,6 +95,10 @@ body {
   justify-content: space-between;
 }
 
+.pt-option-row + .pt-option-row {
+  margin-top: 6px;
+}
+
 .pt-option-label {
   font-size: 11px;
   color: var(--pt-forest);

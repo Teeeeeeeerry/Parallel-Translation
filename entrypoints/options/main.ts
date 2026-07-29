@@ -1,6 +1,27 @@
 import '~/src/styles/tokens.css';
+import {
+  settingsReady,
+  getSettings,
+  onSettingsChanged,
+} from '~/src/storage/settings';
 
-// Options 入口。阶段 0 为空壳。
-// 阶段 1 起接真实设置 UI，阶段 7 完整化。
+const statusDiv = document.getElementById('pt-options-status')!;
 
-console.log('[PT] Options page loaded');
+function render(): void {
+  const s = getSettings();
+  statusDiv.innerHTML = `<h2>当前设置（实时）</h2>
+<pre>${JSON.stringify(s, null, 2)}</pre>
+<p style="color: var(--pt-forest-55); font-size: 10px;">
+  在 popup 中修改设置，此处将自动更新。
+</p>`;
+}
+
+async function init(): Promise<void> {
+  await settingsReady();
+  render();
+
+  // 跨上下文同步：popup 改设置 → options 页即时刷新
+  onSettingsChanged(() => render());
+}
+
+document.addEventListener('DOMContentLoaded', init);

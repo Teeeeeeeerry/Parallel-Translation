@@ -25,33 +25,41 @@
         </div>
       </div>
 
-      <!-- 引擎选择（阶段 1 接真实数据） -->
+      <!-- 引擎选择 -->
       <div class="pt-card">
         <div class="pt-card-label">翻译引擎</div>
         <div class="pt-option-row">
-          <span class="pt-placeholder">阶段 1 接入</span>
+          <select class="pt-select" id="pt-engine-select"></select>
         </div>
       </div>
 
-      <!-- 语言对（阶段 1 接真实数据） -->
+      <!-- 语言对 -->
       <div class="pt-card">
         <div class="pt-card-label">语言设置</div>
         <div class="pt-option-row">
-          <span class="pt-placeholder">阶段 1 接入</span>
+          <span class="pt-option-label">源语言</span>
+          <select class="pt-select" id="pt-from-select"></select>
+        </div>
+        <div class="pt-option-row">
+          <span class="pt-option-label">目标语言</span>
+          <select class="pt-select" id="pt-to-select"></select>
         </div>
       </div>
 
-      <!-- 显示模式（阶段 4 生效） -->
+      <!-- 显示模式 -->
       <div class="pt-card">
         <div class="pt-card-label">显示模式</div>
         <div class="pt-option-row">
-          <span class="pt-placeholder">阶段 4 接入</span>
+          <select class="pt-select" id="pt-mode-select">
+            <option value="bilingual">对照</option>
+            <option value="translation-only">仅译文</option>
+          </select>
         </div>
       </div>
     </main>
 
     <footer class="pt-footer">
-      <span>v0.1.0</span>
+      <span>v0.2.0</span>
       <button class="pt-settings-btn" id="pt-settings-btn">设置</button>
     </footer>
   </div>

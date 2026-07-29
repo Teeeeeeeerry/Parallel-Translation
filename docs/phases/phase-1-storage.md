@@ -178,7 +178,7 @@ export async function setKey(engine: EngineId, value: string): Promise<void> { /
 
 **内存副本 + `settingsReady()` 是为了热路径性能。** content script 每翻译一个段落都要读引擎、语言、样式配置。若每次 `await chrome.storage.sync.get()`，翻译一页几百段就是几百次异步 IO。做法是启动时 await 一次，之后同步读内存，靠 `onSettingsChanged` 保持一致。
 
-**读取时必须与 `DEFAULT_SETTINGS` 浅合并。** 版本升级新增字段时，老用户存储里没有该键，不合并就会拿到 `undefined` 并在下游炸掉。这是扩展升级最常见的崩溃来源。
+**读取时必须与 `DEFAULT_SETTINGS` 合并，且要递归到嵌套对象。** 版本升级新增字段时，老用户存储里没有该键，不合并就会拿到 `undefined` 并在下游炸掉 —— 这是扩展升级最常见的崩溃来源。上面骨架里的顶层浅合并只挡得住新增顶层字段：`hotkeys`、`siteList`、`models` 这类嵌套对象会被存储里的旧值整体替换，少一个子键就漏一个 `undefined`。写入路径同理，`patchSettings` 传部分嵌套对象时若只做浅合并，会把用户先前自定义的兄弟键静默写没。实现时把嵌套键集中在一处枚举，读写共用同一个合并函数。成因与实测见 [DoDR-1](../DoD-report/phase-1/DoDR-1.md)、[DoDR-2](../DoD-report/phase-1/DoDR-2.md)。
 
 **LRU 的 index 单独存一个 key。** `chrome.storage.local` 没有"列出所有 key 并按时间排序"的原生能力，`getBytesInUse` 也不给分项。维护一个独立的 key 列表是唯一可行的淘汰方案。
 
