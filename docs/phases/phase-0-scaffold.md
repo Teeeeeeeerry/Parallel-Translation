@@ -141,13 +141,16 @@ export default defineConfig({
 
 ## DoD 验收标准
 
-- [ ] `pnpm install` 无报错
-- [ ] `pnpm dev` 成功产出 `.output/chrome-mv3/`（WXT 0.20+ 才带 `-dev` 后缀，本项目锁 `wxt@^0.19.0`）
-- [ ] Chrome `chrome://extensions/` 能加载该目录，无错误徽章
-- [ ] 点击工具栏图标弹出 320px 宽的面板，配色与排版符合设计稿
-- [ ] 点击"设置"按钮打开 options 页（空白页即可，能打开就行）
-- [ ] `manifest.json` 中 `permissions` 仅含 `storage`，**无 `host_permissions`**
-- [ ] 在 `src` + `entrypoints` 下 grep 色值 `#1f3a2e` / `#f5f0e6` / `#b89968`，除 `tokens.css` 外零命中
+- [x] `pnpm install` 无报错
+- [x] `pnpm dev` 成功产出 `.output/chrome-mv3/`（WXT 0.20+ 才带 `-dev` 后缀，本项目锁 `wxt@^0.19.0`）
+- [x] Chrome `chrome://extensions/` 能加载该目录，无错误徽章
+- [x] 点击工具栏图标弹出 320px 宽的面板，配色与排版符合设计稿
+- [x] 点击"设置"按钮打开 options 页（空白页即可，能打开就行）
+- [x] `manifest.json` 中 `permissions` 仅含 `storage`，**无 `host_permissions`**
+- [x] 在 `src` + `entrypoints` 下 grep 色值 `#1f3a2e` / `#f5f0e6` / `#b89968`，除 `tokens.css` 外零命中
+
+> **验收记录：** 全部通过，阶段已关闭。详见 [`docs/DoD-report/phase-0/DoDR-2.md`](../DoD-report/phase-0/DoDR-2.md)（被测 `53562dd`，2026-07-30）。
+> 首轮验收 [`DoDR-1.md`](../DoD-report/phase-0/DoDR-1.md) 未通过，问题与修复过程一并记录在两份报告中。
 
 ## 验证步骤
 

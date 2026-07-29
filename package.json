@@ -4,6 +4,7 @@
   "description": "对照式网页翻译浏览器扩展",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.18.0",
   "scripts": {
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
