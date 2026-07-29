@@ -1,0 +1,6 @@
+# pnpm 10+ 默认不执行依赖包的 postinstall 脚本（供应链防护），需在此逐个显式放行。
+# esbuild —— Vite/WXT 的底层打包器，脚本负责校验并链接平台专用二进制。
+# spawn-sync —— Node 0.12 之前的 spawnSync polyfill，其脚本编译原生回退实现，当前 Node 版本无需。
+allowBuilds:
+  esbuild: true
+  spawn-sync: false
