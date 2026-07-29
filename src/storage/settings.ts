@@ -8,19 +8,31 @@ let current: Settings = DEFAULT_SETTINGS;
 let ready: Promise<Settings> | null = null;
 
 /**
- * 合并存储值与默认值。
- * 顶层浅合并，嵌套对象（hotkeys / siteList）递归到叶子，
- * 避免旧版本只存了部分子键就把其余子键丢成 undefined。
+ * 将 patch 深度合并到 base。
+ * 嵌套对象（hotkeys / siteList / models）递归到叶子，
+ * 其余字段浅覆盖。嵌套键单一定义，日后加第四个嵌套对象只改此处。
+ */
+function mergeInto(base: Settings, patch: Partial<Settings>): Settings {
+  return {
+    ...base,
+    ...patch,
+    hotkeys: patch.hotkeys
+      ? { ...base.hotkeys, ...patch.hotkeys }
+      : base.hotkeys,
+    siteList: patch.siteList
+      ? { ...base.siteList, ...patch.siteList }
+      : base.siteList,
+    models: patch.models
+      ? { ...base.models, ...patch.models }
+      : base.models,
+  };
+}
+
+/**
+ * 合并存储值与默认值 —— mergeInto 的特化，base 固定为 DEFAULT_SETTINGS。
  */
 function merge(stored: Partial<Settings> | undefined): Settings {
-  const s = stored ?? {};
-  return {
-    ...DEFAULT_SETTINGS,
-    ...s,
-    hotkeys: { ...DEFAULT_SETTINGS.hotkeys, ...(s.hotkeys ?? {}) },
-    siteList: { ...DEFAULT_SETTINGS.siteList, ...(s.siteList ?? {}) },
-    models: { ...DEFAULT_SETTINGS.models, ...(s.models ?? {}) },
-  };
+  return mergeInto(DEFAULT_SETTINGS, stored ?? {});
 }
 
 /**
@@ -41,9 +53,9 @@ export function getSettings(): Settings {
   return current;
 }
 
-/** 部分更新设置并写回 sync。自动合并到内存副本。 */
+/** 部分更新设置并写回 sync。嵌套对象递归合并，不会丢兄弟键。 */
 export async function patchSettings(patch: Partial<Settings>): Promise<void> {
-  current = { ...current, ...patch };
+  current = mergeInto(current, patch);
   await chrome.storage.sync.set({ [KEY]: current });
 }
 
