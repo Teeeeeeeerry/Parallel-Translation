@@ -380,8 +380,9 @@ test('隐私政策列出的主机与实际允许清单一致', () => {
 | `hotkeys/normalize` | mac/win 同一物理按键得到同一平台无关表示；单修饰键返回 null；无修饰键返回 null |
 | `hotkeys/platform` | `formatHotkey` 在三平台的输出；Mac 修饰键顺序 ⌃⌥⇧⌘ |
 | `styles/custom` | 各类非法输入被拒；合法输入正确包裹作用域 |
-| `storage/settings` | 默认值浅合并；缺字段补齐；变更订阅触发 |
-| `storage/cache` | LRU 淘汰；key 生成的稳定性与跨站点一致性 |
+| `storage/settings` | 读取时与默认值合并，`hotkeys` / `siteList` / `models` 递归到子键；`patchSettings` 传嵌套对象不丢兄弟键，也不把用户自定义值退回默认；变更订阅触发与退订 |
+| `storage/cache` | LRU 淘汰；并发 `cacheSet` / `cacheGet` 不丢 index 条目、不留孤儿；命中刷新 LRU 位置；key 生成的稳定性与跨站点一致性 |
+| `storage/keys` | 密钥只写 local；`removeKey` 不误伤其他引擎 |
 
 ## 八、CI 编排
 
