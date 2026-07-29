@@ -91,7 +91,7 @@ pnpm dev
 - CSS 类、DOM `data-` 属性、storage key 一律用 `pt-` / `pt` 前缀
 - 颜色与排版一律引用 [`src/styles/tokens.css`](src/styles/tokens.css) 中的设计令牌，**不得在组件内硬编码色值**
 
-完整要求见 [阶段索引的全局约定](docs/phases/README.md#全局要求)。
+完整要求见 [阶段索引的全局要求](docs/phases/README.md#全局要求)。
 
 ## 隐私
 
