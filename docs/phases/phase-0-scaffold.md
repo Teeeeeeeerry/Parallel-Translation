@@ -142,12 +142,12 @@ export default defineConfig({
 ## DoD 验收标准
 
 - [ ] `pnpm install` 无报错
-- [ ] `pnpm dev` 成功产出 `.output/chrome-mv3-dev/`
+- [ ] `pnpm dev` 成功产出 `.output/chrome-mv3/`（WXT 0.20+ 才带 `-dev` 后缀，本项目锁 `wxt@^0.19.0`）
 - [ ] Chrome `chrome://extensions/` 能加载该目录，无错误徽章
 - [ ] 点击工具栏图标弹出 320px 宽的面板，配色与排版符合设计稿
 - [ ] 点击"设置"按钮打开 options 页（空白页即可，能打开就行）
 - [ ] `manifest.json` 中 `permissions` 仅含 `storage`，**无 `host_permissions`**
-- [ ] 全项目 grep 色值 `#1f3a2e` / `#f5f0e6` / `#b89968`，除 `tokens.css` 外零命中
+- [ ] 在 `src` + `entrypoints` 下 grep 色值 `#1f3a2e` / `#f5f0e6` / `#b89968`，除 `tokens.css` 外零命中
 
 ## 验证步骤
 
@@ -157,7 +157,7 @@ pnpm dev
 ```
 
 1. 打开 `chrome://extensions/`，开启右上角「开发者模式」
-2. 点「加载已解压的扩展程序」，选择 `.output/chrome-mv3-dev/`
+2. 点「加载已解压的扩展程序」，选择 `.output/chrome-mv3/`（注意选构建产物目录，不是项目根目录；`.output` 是隐藏目录，在选择框内按 `Cmd+Shift+.` 显示）
 3. 确认扩展卡片无红色错误提示
 4. 点击工具栏中的扩展图标 → 应弹出设计稿外观的面板
 5. 点面板内「设置」→ 应在新标签页打开 options
