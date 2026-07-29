@@ -2,7 +2,24 @@
 
 对照式网页翻译浏览器扩展。原文与译文并排呈现，让阅读外语内容不必在两个界面之间来回切换。
 
-> 当前处于设计阶段，尚无实现代码。本仓库现有内容为完整的架构方案与分阶段实施手册。
+> **当前进度：阶段 0 / 9 完成。** 扩展骨架已可加载进 Chrome，popup 按设计稿渲染，尚无翻译功能。
+> 后续阶段见 [实施路线](#实施路线)。
+
+## 项目状态
+
+- [x] **阶段 0** — 骨架与设计系统
+- [ ] **阶段 1** — 设置与存储层
+- [ ] **阶段 2** — 翻译引擎与最短闭环
+- [ ] **阶段 3** — DOM 采集完备化
+- [ ] **阶段 4** — 显示模式与译文样式
+- [ ] **阶段 5** — 注入式 UI
+- [ ] **阶段 6** — 快捷键与划词交互
+- [ ] **阶段 7** — 设置页完整化与 BYOK
+- [ ] **阶段 8** — 兼容补丁、多浏览器与上架
+
+每个阶段都有可机械判定的 DoD 验收标准，验收结果归档在 [`docs/DoD-report/`](docs/DoD-report/)。
+
+**阶段 0 已交付：** MV3 manifest、WXT + TypeScript 构建链、设计令牌体系、popup 静态界面、options 空壳、background service worker 空实现。
 
 ## 计划特性
 
@@ -17,20 +34,48 @@
 
 WXT + TypeScript + Vite，Manifest V3。目标浏览器 Chrome / Edge / Firefox。
 
+包管理器为 pnpm，已通过 `packageManager` 字段锁定 —— 请勿使用 npm 或 yarn。
+
+## 本地开发
+
+```bash
+pnpm install
+pnpm dev
+```
+
+产物在 `.output/chrome-mv3/`。装进浏览器：
+
+1. 打开 `chrome://extensions/`，开启右上角「开发者模式」
+2. 点「加载已解压的扩展程序」，选择 `.output/chrome-mv3/`
+   —— 注意选构建产物目录而非项目根目录；`.output` 是隐藏目录，在选择框内按 `Cmd+Shift+.` 显示
+3. 点击工具栏图标即可看到 popup
+
+### 可用脚本
+
+| 命令 | 说明 |
+|---|---|
+| `pnpm dev` | 开发模式，带热重载 |
+| `pnpm dev:firefox` | 同上，目标 Firefox |
+| `pnpm build` | 生产构建 |
+| `pnpm build:firefox` | 生产构建，目标 Firefox |
+| `pnpm zip` | 打包上架用 zip |
+| `pnpm typecheck` | TypeScript 类型检查 |
+
 ## 文档
 
 | 文档 | 内容 |
 |---|---|
 | [docs/phases/README.md](docs/phases/README.md) | 分阶段实施索引与依赖图 |
 | [docs/phases/](docs/phases/) | 9 份阶段实施手册，含代码骨架、取舍理由、验收标准 |
+| [docs/DoD-report/](docs/DoD-report/) | 各阶段 DoD 验收报告 |
 | [docs/TESTING.md](docs/TESTING.md) | 自动化测试体系：集成、性能与内存、异常与边界、隐私与合规 |
 
 ## 实施路线
 
 ```
 0 骨架与设计系统  →  1 设置与存储层  →  2 翻译引擎与最短闭环  →  3 DOM 采集完备化
-                                                                      │
-                        ┌─────────────────────────────────────────────┤
+    [已完成]                                                          │
+                        ┌────────────────────────────────────────────┤
                         ▼              ▼              ▼
                    4 显示模式      5 注入式 UI     6 快捷键与划词
                         └──────────────┴──────────────┘
@@ -38,6 +83,20 @@ WXT + TypeScript + Vite，Manifest V3。目标浏览器 Chrome / Edge / Firefox�
                           7 设置页完整化与 BYOK  →  8 兼容补丁、多浏览器与上架
 ```
 
+`0 → 1 → 2 → 3` 硬串行；`4`、`5`、`6` 互不依赖可并行；`7`、`8` 收尾。排期理由见 [阶段索引](docs/phases/README.md#排期原则)。
+
+## 其它
+
+- `main` 分支要求线性历史，禁止 merge commit，所有改动通过 PR 合入（squash 或 rebase）
+- CSS 类、DOM `data-` 属性、storage key 一律用 `pt-` / `pt` 前缀
+- 颜色与排版一律引用 [`src/styles/tokens.css`](src/styles/tokens.css) 中的设计令牌，**不得在组件内硬编码色值**
+
+完整要求见 [阶段索引的全局要求](docs/phases/README.md#全局要求)。
+
 ## 隐私
 
 不收集任何个人信息，无分析、无埋点、无远程日志。待翻译文本会发送至用户所选的翻译服务提供方。设置存于浏览器同步存储；翻译缓存与 API 密钥存于本地存储，密钥不参与云端同步。
+
+## 许可
+
+尚未确定。在选定许可证之前，本仓库保留所有权利。
