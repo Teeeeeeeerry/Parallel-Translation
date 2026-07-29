@@ -74,12 +74,25 @@ await patchSettings({ hotkeys: { 'toggle-mode': 'Mod+J' } });
 getSettings().hotkeys['toggle-translate']   // → undefined
 ```
 
-两个后果：
+原来的四个快捷键只剩一个，且这个残缺对象会被原样写进 `chrome.storage.sync`。
 
-1. **调用方自身的内存副本被破坏**，直到下次重新加载才由 `merge()` 修好。阶段 6 在改完快捷键后立刻读 `getSettings().hotkeys`，拿到的就是 `undefined`。
-2. **用户的自定义值被静默丢弃**。若用户先把 `toggle-translate` 改成 `Mod+K`，再改 `toggle-mode`，那个 `Mod+K` 会被写没 —— 重读时 `merge()` 补回的是默认值 `Mod+Shift+Y`，不是用户设的值。这一条 `merge()` 救不回来。
+**为什么上一轮没测出来。** DoDR-1 只验了「存储里已有旧数据 → 读出来补齐」，这是 DoD 第 7 条的字面要求。P2-1 是反方向：先写坏，再读回。写的时候把数据弄残，读的时候 `merge()` 又补上 —— 从「有没有 `undefined`」这个角度看一切正常，所以它藏得住。
 
-阶段 7 的 options 页要为 `hotkeys`、`siteList`、`models` 逐项提供控件并「即时持久化」，是这条路径的主要调用方。建议让 `patchSettings` 复用同一套嵌套合并：
+**后果一：调用方自身的内存副本被破坏。** 直到下次重新加载才由 `merge()` 修好。阶段 6 改完快捷键后立刻读 `getSettings().hotkeys`，拿到的就是 `undefined`。重开一次 popup 即可恢复，不致命。
+
+**后果二：用户的自定义值被静默丢弃。** 这条才是真问题：
+
+| 步 | 操作 | 存储中的 `hotkeys` |
+|---|---|---|
+| 1 | 用户把 `toggle-translate` 改成 `Mod+K` | `{ toggle-translate: 'Mod+K', …另外三个 }` |
+| 2 | 用户接着改 `toggle-mode` | `{ toggle-mode: 'Mod+J' }` ← 其余三键被整体替换掉 |
+| 3 | 重开 popup，`merge()` 补齐 | `toggle-translate` 变成默认值 `'Mod+Shift+Y'` |
+
+补回来的是默认值，不是用户设的 `Mod+K`。信息在第 2 步就已从存储里消失，**`merge()` 救不回来**。用户看到的现象是「我改了第二个快捷键，第一个自己变回去了」。
+
+**为什么不计入阶段 1 判定。** DoD 第 7 条要求的是读取时补齐，已满足且实测通过。阶段 1 的唯一调用方是 popup，只 patch `to` / `from` / `enabled` / `displayMode` / `enginePriority` 这些顶层标量与数组，踩不到。阶段 7 会踩：options 页要为 `hotkeys`、`siteList`、`models` 三个嵌套对象逐项提供控件，且 DoD 明写「任一设置项修改后即时持久化」，每动一个子键就是一次嵌套 patch。
+
+**改法**：让写入路径复用同一套合并。
 
 ```typescript
 export async function patchSettings(patch: Partial<Settings>): Promise<void> {
@@ -88,9 +101,7 @@ export async function patchSettings(patch: Partial<Settings>): Promise<void> {
 }
 ```
 
-注意 `merge()` 的语义是「与默认值合并」，此处传入的是已完整的 `current` 叠加 patch，结果等价于嵌套合并，不会引入默认值覆盖。若担心语义混淆，可另抽一个 `mergeInto(base, patch)`。
-
-本项不计入阶段 1 DoD 判定：DoD 第 7 条要求的是「读取时补齐」，已满足；`patchSettings` 的嵌套语义是阶段 7 才暴露的接口契约问题。
+传入的是已完整的 `current` 叠加 patch，默认值不会覆盖用户值，结果等价于嵌套合并。若嫌 `merge()` 的语义（「与默认值合并」）在此处含糊，可另抽 `mergeInto(base, patch)`，与 `merge()` 共用同一份嵌套键列表 —— 关键是**嵌套键只在一处枚举**，日后往 `Settings` 加第四个嵌套对象时不会漏改。
 
 ---
 
@@ -115,4 +126,10 @@ export async function patchSettings(patch: Partial<Settings>): Promise<void> {
 - [ ] 完全退出 Chrome 再启动，目标语言仍是上次所选
 - [ ] popup 与 options 同时打开，popup 改语言 → options 页即时变化，无需刷新
 
-阶段 1 可以关闭，进入阶段 2。P2-1 建议在动阶段 7 之前顺手修掉。
+阶段 1 可以关闭，进入阶段 2。P2-1 建议在动阶段 7 之前顺手修掉，并补一条断言：
+
+```javascript
+await patchSettings({ hotkeys: { 'toggle-translate': 'Mod+K' } });
+await patchSettings({ hotkeys: { 'toggle-mode': 'Mod+J' } });
+getSettings().hotkeys['toggle-translate']   // 期望 'Mod+K'，现状 undefined
+```
