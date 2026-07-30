@@ -217,3 +217,11 @@ body {
 .pt-action-btn:active {
   opacity: 0.7;
 }
+
+.pt-hint {
+  font-size: 10px;
+  color: var(--pt-forest-55);
+  text-align: center;
+  padding: 4px 0;
+  animation: pt-pop .15s ease;
+}

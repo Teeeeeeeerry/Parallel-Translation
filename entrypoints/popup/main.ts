@@ -74,17 +74,35 @@ function onToggleClick(): void {
   patchSettings({ enabled: !s.enabled });
 }
 
-function onTranslatePageClick(): void {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tabId = tabs[0]?.id;
-    if (tabId != null) {
-      chrome.tabs
-        .sendMessage(tabId, { type: 'pt:toggle-translate' })
-        .catch(() => {
-          // 页面可能不支持内容脚本（如 chrome:// 页），静默忽略
-        });
+async function onTranslatePageClick(): Promise<void> {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabId = tabs[0]?.id;
+  if (tabId == null) return;
+
+  try {
+    const resp = await chrome.tabs.sendMessage(tabId, {
+      type: 'pt:toggle-translate',
+    });
+    if (resp?.status === 'disabled') {
+      showHint('总开关已关闭');
+    } else if (resp?.status === 'no-elements') {
+      showHint('本页没有可翻译的内容');
     }
-  });
+  } catch {
+    // 页面可能不支持内容脚本（如 chrome:// 页），静默忽略
+  }
+}
+
+function showHint(msg: string): void {
+  const hint = document.getElementById('pt-hint');
+  if (hint) {
+    hint.textContent = msg;
+    hint.style.display = '';
+    clearTimeout((hint as any)._timeout);
+    (hint as any)._timeout = setTimeout(() => {
+      hint.style.display = 'none';
+    }, 2000);
+  }
 }
 
 function onEngineChange(): void {

@@ -41,12 +41,16 @@ async function fetchOne(
 // 惰性单例闸门 —— 阶段 3 起同一域名可能有多次并行 route() 调用，
 // 每次新建闸门会导致总并发 = 6 × 调用数，限流失效。
 // 上限推迟到首次翻译时读取，避免模块 import 时设置尚未加载。
-// 设置变更时重建，maxConcurrency 改动即时生效。
+// 设置变更时调 setMax 改上限，保留当前 active 计数与等待队列，
+// 避免 gate=null 重建导致两个闸门并发翻倍。
 let gate: ReturnType<typeof createGate> | null = null;
 function getGate() {
   return (gate ??= createGate(getSettings().maxConcurrency));
 }
-onSettingsChanged(() => { gate = null; });
+onSettingsChanged(() => {
+  if (gate) gate.setMax(getSettings().maxConcurrency);
+  else gate = createGate(getSettings().maxConcurrency);
+});
 
 export const googleWeb: TranslateEngine = {
   id: 'google-web',

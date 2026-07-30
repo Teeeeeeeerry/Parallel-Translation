@@ -70,7 +70,9 @@ export default defineContentScript({
       if (msg.type !== 'pt:toggle-translate') return;
 
       const willTranslate = !translated;
-      (willTranslate ? doTranslate() : (doRestore(), Promise.resolve('restored')))
+      (willTranslate
+        ? doTranslate()
+        : Promise.resolve().then(() => doRestore()).then(() => 'restored'))
         .then((status) => sendResponse({ ok: true, status }))
         .catch((e: Error) => sendResponse({ ok: false, error: String(e) }));
 

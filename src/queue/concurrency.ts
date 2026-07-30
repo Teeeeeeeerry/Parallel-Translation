@@ -6,7 +6,7 @@ export function createGate(max: number) {
   let active = 0;
   const waiting: (() => void)[] = [];
 
-  return function run<T>(task: () => Promise<T>): Promise<T> {
+  function run<T>(task: () => Promise<T>): Promise<T> {
     if (active >= max) {
       return new Promise<void>((r) => waiting.push(r)).then(() => run(task));
     }
@@ -15,5 +15,14 @@ export function createGate(max: number) {
       active--;
       waiting.shift()?.();
     });
+  }
+
+  /** 动态调整上限，保留当前 active 计数与等待队列。 */
+  run.setMax = (n: number) => {
+    max = n;
+    // 上限放宽后，释放等待队列中可立即执行的任务
+    while (active < max) waiting.shift()?.();
   };
+
+  return run;
 }
