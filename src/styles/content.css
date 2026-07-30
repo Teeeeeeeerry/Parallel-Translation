@@ -1,0 +1,13 @@
+/* Phase 2 — 注入译文的最简结构样式。阶段 4 升级为完整样式系统。 */
+
+.pt-origin {
+  display: block;
+}
+
+.pt-trans {
+  display: block;
+  margin-top: 2px;
+  padding-left: 8px;
+  border-left: 2px solid;
+  opacity: 0.78;
+}

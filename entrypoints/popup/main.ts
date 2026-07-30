@@ -71,6 +71,18 @@ function syncUI(): void {
 function onToggleClick(): void {
   const s = getSettings();
   patchSettings({ enabled: !s.enabled });
+
+  // 通知当前标签页切换翻译状态
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tabId = tabs[0]?.id;
+    if (tabId != null) {
+      chrome.tabs
+        .sendMessage(tabId, { type: 'pt:toggle-translate' })
+        .catch(() => {
+          // 页面可能不支持内容脚本（如 chrome:// 页），静默忽略
+        });
+    }
+  });
 }
 
 function onEngineChange(): void {
