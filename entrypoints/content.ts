@@ -11,16 +11,16 @@ export default defineContentScript({
   main() {
     let translated = false;
 
-    async function doTranslate(): Promise<void> {
+    async function doTranslate(): Promise<string> {
       await settingsReady();
       const s = getSettings();
 
       // 总开关关闭时不翻译
-      if (!s.enabled) return;
+      if (!s.enabled) return 'disabled';
 
       // 收集待翻译节点
       const elements = collectSimple();
-      if (elements.length === 0) return;
+      if (elements.length === 0) return 'no-elements';
 
       const texts = elements.map((el) => el.textContent?.trim() ?? '');
 
@@ -33,7 +33,7 @@ export default defineContentScript({
       if (!resp?.ok) {
         console.error('[PT] 翻译失败:', resp?.error ?? '未知错误');
         showError(elements[0]!, resp?.error ?? '所有引擎均失败');
-        return;
+        return 'error';
       }
 
       const translations: string[] = resp.data.translations;
@@ -42,6 +42,7 @@ export default defineContentScript({
       }
 
       translated = true;
+      return 'translated';
     }
 
     function doRestore(): void {
@@ -69,8 +70,8 @@ export default defineContentScript({
       if (msg.type !== 'pt:toggle-translate') return;
 
       const willTranslate = !translated;
-      Promise.resolve(willTranslate ? doTranslate() : doRestore())
-        .then(() => sendResponse({ ok: true, translated: willTranslate }))
+      (willTranslate ? doTranslate() : (doRestore(), Promise.resolve('restored')))
+        .then((status) => sendResponse({ ok: true, status }))
         .catch((e: Error) => sendResponse({ ok: false, error: String(e) }));
 
       return true; // 保持通道开启

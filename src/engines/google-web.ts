@@ -2,7 +2,7 @@
 // 端点 translate.googleapis.com，单次只接受一段文本，批量靠并发多请求；
 // 外裹并发闸门防限流。
 
-import { getSettings } from '~/src/storage/settings';
+import { getSettings, onSettingsChanged } from '~/src/storage/settings';
 import { createGate } from '~/src/queue/concurrency';
 import { EngineError } from './types';
 import type { TranslateEngine } from './types';
@@ -41,10 +41,12 @@ async function fetchOne(
 // 惰性单例闸门 —— 阶段 3 起同一域名可能有多次并行 route() 调用，
 // 每次新建闸门会导致总并发 = 6 × 调用数，限流失效。
 // 上限推迟到首次翻译时读取，避免模块 import 时设置尚未加载。
+// 设置变更时重建，maxConcurrency 改动即时生效。
 let gate: ReturnType<typeof createGate> | null = null;
 function getGate() {
   return (gate ??= createGate(getSettings().maxConcurrency));
 }
+onSettingsChanged(() => { gate = null; });
 
 export const googleWeb: TranslateEngine = {
   id: 'google-web',

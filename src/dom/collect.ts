@@ -7,8 +7,7 @@ const DIRECT = 'h1,h2,h3,h4,h5,h6,p,li,dd,blockquote,figcaption';
 const SKIP =
   'nav,footer,aside,.reflist,.references,.refbegin,.mw-references-wrap,' +
   '.navbox,.sidebar,.toc,.mw-editsection,' +
-  '.vector-menu-content-list,#catlinks,#mw-hidden-catlinks,#mw-normal-catlinks,' +
-  '.mw-body-header';
+  '.vector-menu-content-list,#catlinks,#mw-hidden-catlinks,#mw-normal-catlinks';
 
 /**
  * 从 root 下收集待翻译的块级元素。
