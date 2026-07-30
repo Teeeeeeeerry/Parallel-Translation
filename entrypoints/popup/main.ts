@@ -13,6 +13,7 @@ import {
 
 // ---- DOM refs ----
 const toggle = document.getElementById('pt-toggle-master')!;
+const translatePageBtn = document.getElementById('pt-translate-page-btn')!;
 const engineSelect = document.getElementById('pt-engine-select') as HTMLSelectElement;
 const fromSelect = document.getElementById('pt-from-select') as HTMLSelectElement;
 const toSelect = document.getElementById('pt-to-select') as HTMLSelectElement;
@@ -73,6 +74,37 @@ function onToggleClick(): void {
   patchSettings({ enabled: !s.enabled });
 }
 
+async function onTranslatePageClick(): Promise<void> {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabId = tabs[0]?.id;
+  if (tabId == null) return;
+
+  try {
+    const resp = await chrome.tabs.sendMessage(tabId, {
+      type: 'pt:toggle-translate',
+    });
+    if (resp?.status === 'disabled') {
+      showHint('总开关已关闭');
+    } else if (resp?.status === 'no-elements') {
+      showHint('本页没有可翻译的内容');
+    }
+  } catch {
+    // 页面可能不支持内容脚本（如 chrome:// 页），静默忽略
+  }
+}
+
+function showHint(msg: string): void {
+  const hint = document.getElementById('pt-hint');
+  if (hint) {
+    hint.textContent = msg;
+    hint.style.display = '';
+    clearTimeout((hint as any)._timeout);
+    (hint as any)._timeout = setTimeout(() => {
+      hint.style.display = 'none';
+    }, 2000);
+  }
+}
+
 function onEngineChange(): void {
   const engine = engineSelect.value as EngineId;
   // enginePriority 数组按所选引擎调整 —— 所选引擎排最前，其余保持顺序
@@ -107,6 +139,7 @@ async function init(): Promise<void> {
 
   // 监听
   toggle.addEventListener('click', onToggleClick);
+  translatePageBtn.addEventListener('click', onTranslatePageClick);
   engineSelect.addEventListener('change', onEngineChange);
   fromSelect.addEventListener('change', onFromChange);
   toSelect.addEventListener('change', onToChange);

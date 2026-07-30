@@ -20,8 +20,12 @@
       <div class="pt-card">
         <div class="pt-card-label">状态</div>
         <div class="pt-option-row">
-          <span class="pt-option-label">翻译开关</span>
+          <span class="pt-option-label">总开关</span>
           <button class="pt-toggle pt-on" id="pt-toggle-master"></button>
+        </div>
+        <div class="pt-option-row">
+          <span class="pt-option-label">翻译本页</span>
+          <button class="pt-action-btn" id="pt-translate-page-btn">翻译</button>
         </div>
       </div>
 
@@ -58,8 +62,10 @@
       </div>
     </main>
 
+    <div id="pt-hint" class="pt-hint" style="display:none"></div>
+
     <footer class="pt-footer">
-      <span>v0.2.0</span>
+      <span>v0.3.0</span>
       <button class="pt-settings-btn" id="pt-settings-btn">设置</button>
     </footer>
   </div>

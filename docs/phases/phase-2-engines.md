@@ -264,8 +264,8 @@ export function collectSimple(root: ParentNode = document): Element[] {
 
 ## DoD 验收标准
 
-- [ ] Wikipedia 英文页点击工具栏图标，段落下方出现中文译文
-- [ ] 再次点击，译文消失（还原原文）
+- [ ] Wikipedia 英文页，popup 中点「翻译本页」，段落下方出现中文译文
+- [ ] 再次点击「翻译本页」，译文消失（还原原文）
 - [ ] 引擎优先级设为 `['bing-edge', 'google-web']` 后重新翻译，走 Bing
 - [ ] 屏蔽 `translate.googleapis.com` 后翻译仍成功（自动切 Bing），用户侧无感知
 - [ ] 两个引擎均不可用时，界面给出可读的错误提示，而非静默失败

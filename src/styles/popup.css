@@ -194,3 +194,34 @@ body {
   background: var(--pt-forest-08);
   color: var(--pt-forest);
 }
+
+.pt-action-btn {
+  font-family: var(--pt-font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--pt-paper);
+  background: var(--pt-forest);
+  border: none;
+  border-radius: var(--pt-r-sm);
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: opacity .15s ease;
+}
+
+.pt-action-btn:hover {
+  opacity: 0.85;
+}
+
+.pt-action-btn:active {
+  opacity: 0.7;
+}
+
+.pt-hint {
+  font-size: 10px;
+  color: var(--pt-forest-55);
+  text-align: center;
+  padding: 4px 0;
+  animation: pt-pop .15s ease;
+}
