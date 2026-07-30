@@ -54,27 +54,37 @@ export default defineContentScript({
     }
 
     function showError(el: Element, msg: string): void {
-      // 在页面上给出可见提示，而非静默失败
+      // 在页面上给出可见提示，而非静默失败。
+      // 宿主可能是 XML / SVG 文档，或 body 尚未就绪 —— 取不到挂载点就退回
+      // documentElement，绝不让这里抛错。
+      const host = document.body ?? document.documentElement;
+      if (!host) return;
       const div = document.createElement('div');
       div.textContent = `⚠ Parallel-Translation: ${msg}`;
       div.style.cssText =
         'position:fixed;top:12px;right:12px;' +
         'background:#c0392b;color:#fff;' +
         'padding:8px 14px;border-radius:6px;font-size:13px;z-index:2147483647;';
-      document.body.appendChild(div);
+      host.appendChild(div);
       setTimeout(() => div.remove(), 5000);
     }
 
     // 监听来自 popup 的 toggle 消息
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-      if (msg.type !== 'pt:toggle-translate') return;
+      // msg 可能是 null / 非对象 —— 直接解引用会把 TypeError 抛出监听器，
+      // Chrome 记为「Error in event handler」（堆栈 :0 匿名函数）。
+      if (msg?.type !== 'pt:toggle-translate') return;
 
-      const willTranslate = !translated;
-      (willTranslate
-        ? doTranslate()
-        : Promise.resolve().then(() => doRestore()).then(() => 'restored'))
-        .then((status) => sendResponse({ ok: true, status }))
-        .catch((e: Error) => sendResponse({ ok: false, error: String(e) }));
+      try {
+        const willTranslate = !translated;
+        (willTranslate
+          ? doTranslate()
+          : Promise.resolve().then(() => doRestore()).then(() => 'restored'))
+          .then((status) => sendResponse({ ok: true, status }))
+          .catch((e: Error) => sendResponse({ ok: false, error: String(e) }));
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e) });
+      }
 
       return true; // 保持通道开启
     });
