@@ -38,9 +38,13 @@ async function fetchOne(
   return parts.join('');
 }
 
-// 模块级单例闸门 —— 阶段 3 起同一域名可能有多次并行 route() 调用，
+// 惰性单例闸门 —— 阶段 3 起同一域名可能有多次并行 route() 调用，
 // 每次新建闸门会导致总并发 = 6 × 调用数，限流失效。
-const gate = createGate(getSettings().maxConcurrency);
+// 上限推迟到首次翻译时读取，避免模块 import 时设置尚未加载。
+let gate: ReturnType<typeof createGate> | null = null;
+function getGate() {
+  return (gate ??= createGate(getSettings().maxConcurrency));
+}
 
 export const googleWeb: TranslateEngine = {
   id: 'google-web',
@@ -50,7 +54,7 @@ export const googleWeb: TranslateEngine = {
 
   async translate({ texts, from, to }) {
     const translations = await Promise.all(
-      texts.map((text) => gate(() => fetchOne(text, from, to))),
+      texts.map((text) => getGate()(() => fetchOne(text, from, to))),
     );
     return { translations };
   },

@@ -15,6 +15,9 @@ export default defineContentScript({
       await settingsReady();
       const s = getSettings();
 
+      // 总开关关闭时不翻译
+      if (!s.enabled) return;
+
       // 收集待翻译节点
       const elements = collectSimple();
       if (elements.length === 0) return;
