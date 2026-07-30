@@ -6,22 +6,36 @@ export function createGate(max: number) {
   let active = 0;
   const waiting: (() => void)[] = [];
 
-  function run<T>(task: () => Promise<T>): Promise<T> {
-    if (active >= max) {
-      return new Promise<void>((r) => waiting.push(r)).then(() => run(task));
+  /**
+   * 在名额允许且队列非空时放行任务。
+   * active 必须在放行这一刻同步自增 —— 等待者要到微任务才继续执行，
+   * 若靠它推进循环条件，同步 while 会空转不止。
+   */
+  function pump(): void {
+    while (active < max && waiting.length > 0) {
+      active++;
+      waiting.shift()!();
     }
-    active++;
-    return task().finally(() => {
-      active--;
-      waiting.shift()?.();
+  }
+
+  function run<T>(task: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      waiting.push(() => {
+        task()
+          .then(resolve, reject)
+          .finally(() => {
+            active--;
+            pump();
+          });
+      });
+      pump();
     });
   }
 
   /** 动态调整上限，保留当前 active 计数与等待队列。 */
   run.setMax = (n: number) => {
     max = n;
-    // 上限放宽后，释放等待队列中可立即执行的任务
-    while (active < max) waiting.shift()?.();
+    pump();
   };
 
   return run;
