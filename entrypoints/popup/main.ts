@@ -13,6 +13,7 @@ import {
 
 // ---- DOM refs ----
 const toggle = document.getElementById('pt-toggle-master')!;
+const translatePageBtn = document.getElementById('pt-translate-page-btn')!;
 const engineSelect = document.getElementById('pt-engine-select') as HTMLSelectElement;
 const fromSelect = document.getElementById('pt-from-select') as HTMLSelectElement;
 const toSelect = document.getElementById('pt-to-select') as HTMLSelectElement;
@@ -71,8 +72,9 @@ function syncUI(): void {
 function onToggleClick(): void {
   const s = getSettings();
   patchSettings({ enabled: !s.enabled });
+}
 
-  // 通知当前标签页切换翻译状态
+function onTranslatePageClick(): void {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tabId = tabs[0]?.id;
     if (tabId != null) {
@@ -119,6 +121,7 @@ async function init(): Promise<void> {
 
   // 监听
   toggle.addEventListener('click', onToggleClick);
+  translatePageBtn.addEventListener('click', onTranslatePageClick);
   engineSelect.addEventListener('change', onEngineChange);
   fromSelect.addEventListener('change', onFromChange);
   toSelect.addEventListener('change', onToChange);

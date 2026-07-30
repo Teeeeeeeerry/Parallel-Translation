@@ -35,7 +35,7 @@ export default defineContentScript({
 
       const translations: string[] = resp.data.translations;
       for (let i = 0; i < elements.length; i++) {
-        injectSimple(elements[i]!, texts[i]!, translations[i]!);
+        injectSimple(elements[i]!, translations[i]!);
       }
 
       translated = true;
@@ -65,8 +65,9 @@ export default defineContentScript({
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg.type !== 'pt:toggle-translate') return;
 
-      Promise.resolve(translated ? doRestore() : doTranslate())
-        .then(() => sendResponse({ ok: true, translated }))
+      const willTranslate = !translated;
+      Promise.resolve(willTranslate ? doTranslate() : doRestore())
+        .then(() => sendResponse({ ok: true, translated: willTranslate }))
         .catch((e: Error) => sendResponse({ ok: false, error: String(e) }));
 
       return true; // 保持通道开启

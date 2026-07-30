@@ -16,7 +16,7 @@ const REGISTRY: Record<string, TranslateEngine> = {
 };
 
 export async function route(req: TranslateRequest): Promise<TranslateResponse> {
-  const { enginePriority, useCache, from, to } = getSettings();
+  const { enginePriority, useCache } = getSettings();
   const errors: EngineError[] = [];
 
   // 结果槽位，null 表示尚未取得
@@ -41,7 +41,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
     if (useCache) {
       for (let i = 0; i < req.texts.length; i++) {
         if (translations[i] !== null) continue;
-        const k = await cacheKey(id, from, to, req.texts[i]!);
+        const k = await cacheKey(id, req.from, req.to, req.texts[i]!);
         const cached = await cacheGet(k);
         if (cached !== null) {
           translations[i] = cached;
@@ -63,8 +63,8 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
     try {
       const subReq: TranslateRequest = {
         texts: uncached.map((u) => u.text),
-        from,
-        to,
+        from: req.from,
+        to: req.to,
       };
       const resp = await engine.translate(subReq);
 
@@ -76,7 +76,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       // 写缓存
       if (useCache) {
         for (let j = 0; j < uncached.length; j++) {
-          const k = await cacheKey(id, from, to, uncached[j]!.text);
+          const k = await cacheKey(id, req.from, req.to, uncached[j]!.text);
           await cacheSet(k, resp.translations[j]!);
         }
       }
