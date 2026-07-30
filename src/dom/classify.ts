@@ -25,6 +25,12 @@ export const INLINE_SET = new Set([
   'font', 'mark', 'cite', 'q', 'abbr', 'time', 'ruby', 'img', 'br', 'svg',
 ]);
 
+/** 应被整体跳过的非正文区域选择器（导航、页脚、侧栏、参考文献等） */
+const NON_CONTENT =
+  'nav,footer,aside,.reflist,.references,.refbegin,.mw-references-wrap,' +
+  '.navbox,.sidebar,.toc,.mw-editsection,' +
+  '.vector-menu-content-list,#catlinks,#mw-hidden-catlinks,#mw-normal-catlinks';
+
 const MAX_TEXT = 3072;
 const MAX_HTML = 4096;
 const MIN_TEXT = 3;
@@ -38,6 +44,13 @@ export function shouldSkip(el: Element): boolean {
 
   // 扩展自身注入的 UI —— 绝不能翻译自己的按钮文字
   if (el.closest('[data-pt-ui="1"]')) return true;
+
+  // 非正文区域：导航、页脚、侧栏、参考文献等
+  if (el.closest(NON_CONTENT)) return true;
+
+  // 不可见元素（display:none 或祖先被隐藏）
+  const rect = (el as HTMLElement).getBoundingClientRect?.();
+  if (rect && rect.width === 0 && rect.height === 0) return true;
 
   const text = el.textContent?.trim() ?? '';
   if (text.length < MIN_TEXT || text.length > MAX_TEXT) return true;

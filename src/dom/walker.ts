@@ -37,6 +37,14 @@ function walk(root: Node, out: Element[], seen: Set<Element>): void {
   while (node) {
     const el = node as Element;
 
+    // TreeWalker.currentNode 初值是 root 本身，acceptNode 不作用于根节点。
+    // 递归进入 shadowRoot 时 root 是 ShadowRoot（DocumentFragment，无 tagName），
+    // 必须跳过，否则 shouldSkip() 里 el.tagName.toLowerCase() 抛 TypeError。
+    if (el.nodeType !== Node.ELEMENT_NODE) {
+      node = walker.nextNode();
+      continue;
+    }
+
     // 关键：遇到 shadow host 就递归下沉。TreeWalker 自己不会做这件事
     if (el.shadowRoot) walk(el.shadowRoot, out, seen);
 

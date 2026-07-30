@@ -94,9 +94,12 @@ export default defineContentScript({
               // 首次翻译成功后启动 MutationObserver 增量补翻
               if (status === 'translated') {
                 translated = true;
-                stopObserving = startObserver(async (els) => {
+                stopObserving = startObserver((els) => {
                   // 增量补翻不改变 translated 状态，独立翻译新增节点
-                  await doTranslate(els);
+                  // 异步处理，但不阻塞 observer 防抖计时器
+                  doTranslate(els).catch((e) =>
+                    console.error('[PT] 增量补翻失败:', e),
+                  );
                 });
               }
               sendResponse({ ok: true, status });
