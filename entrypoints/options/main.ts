@@ -24,4 +24,9 @@ async function init(): Promise<void> {
   onSettingsChanged(() => render());
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  init().catch((e) => {
+    console.error('[PT] options 初始化失败:', e);
+    statusDiv.textContent = '设置加载失败，请刷新页面';
+  });
+});

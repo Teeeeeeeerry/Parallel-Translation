@@ -40,10 +40,19 @@ function merge(stored: Partial<Settings> | undefined): Settings {
  */
 export function settingsReady(): Promise<Settings> {
   if (!ready) {
-    ready = chrome.storage.sync.get(KEY).then((r) => {
-      current = merge(r[KEY]);
-      return current;
-    });
+    ready = chrome.storage.sync
+      .get(KEY)
+      .then((r) => {
+        current = merge(r[KEY]);
+        return current;
+      })
+      .catch((e) => {
+        // 失败的 Promise 不能留在缓存里 —— 否则首次读取一旦失败，
+        // 之后每次 settingsReady() 都拿到同一个 rejected Promise，
+        // 翻译在整个上下文生命周期内永久不可用。
+        ready = null;
+        throw e;
+      });
   }
   return ready;
 }

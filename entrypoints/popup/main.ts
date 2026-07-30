@@ -69,17 +69,25 @@ function syncUI(): void {
 
 // ---- Event handlers ----
 
+/** 写设置失败（配额、sync 不可用）不应变成未处理拒绝。 */
+function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
+  patchSettings(patch).catch((e) => {
+    console.error('[PT] 设置写入失败:', e);
+    showHint('设置保存失败');
+  });
+}
+
 function onToggleClick(): void {
   const s = getSettings();
-  patchSettings({ enabled: !s.enabled });
+  savePatch({ enabled: !s.enabled });
 }
 
 async function onTranslatePageClick(): Promise<void> {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  const tabId = tabs[0]?.id;
-  if (tabId == null) return;
-
   try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabId = tabs[0]?.id;
+    if (tabId == null) return;
+
     const resp = await chrome.tabs.sendMessage(tabId, {
       type: 'pt:toggle-translate',
     });
@@ -89,7 +97,10 @@ async function onTranslatePageClick(): Promise<void> {
       showHint('本页没有可翻译的内容');
     }
   } catch {
-    // 页面可能不支持内容脚本（如 chrome:// 页），静默忽略
+    // 页面可能不支持内容脚本（如 chrome:// 页）。
+    // tabs.query 也要罩在里面 —— 它抛出的 rejection 会变成 popup 里的
+    // 未处理拒绝，同样被记成事件处理器错误。
+    showHint('当前页面无法翻译');
   }
 }
 
@@ -113,19 +124,19 @@ function onEngineChange(): void {
     engine,
     ...prev.filter((e) => e !== engine),
   ];
-  patchSettings({ enginePriority: updated });
+  savePatch({ enginePriority: updated });
 }
 
 function onFromChange(): void {
-  patchSettings({ from: fromSelect.value });
+  savePatch({ from: fromSelect.value });
 }
 
 function onToChange(): void {
-  patchSettings({ to: toSelect.value });
+  savePatch({ to: toSelect.value });
 }
 
 function onModeChange(): void {
-  patchSettings({ displayMode: modeSelect.value as 'bilingual' | 'translation-only' });
+  savePatch({ displayMode: modeSelect.value as 'bilingual' | 'translation-only' });
 }
 
 // ---- Init ----
@@ -154,4 +165,9 @@ async function init(): Promise<void> {
   });
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  init().catch((e) => {
+    console.error('[PT] popup 初始化失败:', e);
+    showHint('初始化失败，请重新打开');
+  });
+});
