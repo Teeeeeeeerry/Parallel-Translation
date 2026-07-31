@@ -95,7 +95,7 @@
 - [x] 阶段 0 — 骨架与设计系统 —— 验收通过，见 [DoDR-2](../DoD-report/phase-0/DoDR-2.md)
 - [x] 阶段 1 — 设置与存储层 —— 验收通过，见 [DoDR-3](../DoD-report/phase-1/DoDR-3.md)
 - [x] 阶段 2 — 翻译引擎与最短闭环 —— 验收通过，见 [DoDR-6](../DoD-report/phase-2/DoDR-6.md)
-- [x] 阶段 3 — DOM 采集完备化
+- [x] 阶段 3 — DOM 采集完备化 —— 验收通过，见 [DoDR-4](../DoD-report/phase-3/DoDR-4.md)
 - [ ] 阶段 4 — 显示模式与译文样式
 - [ ] 阶段 5 — 注入式 UI
 - [ ] 阶段 6 — 快捷键与划词交互
