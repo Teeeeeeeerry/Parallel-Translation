@@ -44,12 +44,14 @@
 .pt-para-btn {
   position: fixed;
   display: none;
-  padding: 3px 7px;
+  /* 尺寸下限 24px —— 8px 字号那版实测约 20×15px，指针要瞄准才点得中 */
+  min-width: 24px;
+  min-height: 24px;
+  padding: 4px 8px;
   font-family: var(--pt-font-mono);
-  font-size: 8px;
+  font-size: 12px;
+  line-height: 1;
   font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
   background: var(--pt-surface);
   color: var(--pt-forest);
   border: 1px solid var(--pt-forest-15);
