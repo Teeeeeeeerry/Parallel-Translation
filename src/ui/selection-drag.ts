@@ -5,7 +5,8 @@
 
 type OnTranslateSelection = (text: string) => void;
 
-let listening = false;
+/** 当前挂载的清理函数。重复挂载时先摘旧的，否则一次拖选会翻译多次。 */
+let cleanup: (() => void) | null = null;
 
 /**
  * 启动划词拖动监听。
@@ -14,9 +15,7 @@ let listening = false;
 export function startSelectionDrag(
   onTranslate: OnTranslateSelection,
 ): () => void {
-  // 避免重复挂载
-  const prevCleanup = stopSelectionDrag;
-  prevCleanup();
+  stopSelectionDrag();
 
   let armed = false;
 
@@ -37,17 +36,16 @@ export function startSelectionDrag(
 
   document.addEventListener('mousedown', onDown, true);
   document.addEventListener('mouseup', onUp, true);
-  listening = true;
 
-  return () => {
+  cleanup = () => {
     document.removeEventListener('mousedown', onDown, true);
     document.removeEventListener('mouseup', onUp, true);
-    listening = false;
+    cleanup = null;
   };
+  return stopSelectionDrag;
 }
 
-/** 供外部调用以清理 */
-function stopSelectionDrag(): void {
-  // no-op when not listening, actual cleanup done by returned function
+/** 摘除当前挂载的监听。未挂载时为空操作。 */
+export function stopSelectionDrag(): void {
+  cleanup?.();
 }
-export { stopSelectionDrag };

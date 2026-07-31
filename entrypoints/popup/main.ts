@@ -154,6 +154,10 @@ function onStyleChange(): void {
 // ---- Init ----
 
 async function init(): Promise<void> {
+  // 版本号从 manifest 读取 —— 手工同步页脚已连续三个阶段出现漂移
+  const versionEl = document.getElementById('pt-version');
+  if (versionEl) versionEl.textContent = `v${chrome.runtime.getManifest().version}`;
+
   // 加载设置
   await settingsReady();
 

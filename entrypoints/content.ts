@@ -2,12 +2,15 @@
 // 集成：三模式渲染 + 注入式 UI（悬浮球/段落按钮/toast）+
 // 快捷键 + 划词交互。
 
+// tokens 必须与 presets 一同注入宿主页面 —— presets.css 里的 var(--pt-brass)
+// 只在有令牌定义时才成立，否则 border-left 在计算值时刻失效，默认样式无边框。
+import '~/src/styles/tokens.css';
 import '~/src/styles/presets.css';
 import { collect } from '~/src/dom/walker';
 import { startObserver } from '~/src/dom/observer';
 import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
 import { applyCustomCss } from '~/src/styles/custom';
-import { createBall } from '~/src/ui/floating-ball';
+import { createBall, setBallState } from '~/src/ui/floating-ball';
 import { createParaBtn } from '~/src/ui/paragraph-btn';
 import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
@@ -47,10 +50,7 @@ export default defineContentScript({
     // ── 注入 UI（仅主文档）──
     if (isMainFrame) {
       if (s.showFloatingBall) {
-        stopBall = createBall({
-          onTranslate: () => doTranslate(),
-          onRestore: () => doRestore(),
-        });
+        stopBall = createBall({ onToggle: () => void togglePage() });
       }
 
       if (s.showParagraphBtn) {
@@ -61,9 +61,7 @@ export default defineContentScript({
     // ── 快捷键（仅主文档，避免与 iframe 内输入冲突）──
     if (isMainFrame) {
       stopHotkeys = startHotkeys({
-        'toggle-translate': () => {
-          translated ? doRestore() : doTranslate();
-        },
+        'toggle-translate': () => void togglePage(),
         'toggle-mode': () => {
           const next: 'bilingual' | 'translation-only' =
             getSettings().displayMode === 'bilingual'
@@ -98,10 +96,7 @@ export default defineContentScript({
       if (isMainFrame) {
         // 悬浮球开关
         if (ns.showFloatingBall && !stopBall) {
-          stopBall = createBall({
-            onTranslate: () => doTranslate(),
-            onRestore: () => doRestore(),
-          });
+          stopBall = createBall({ onToggle: () => void togglePage() });
         } else if (!ns.showFloatingBall && stopBall) {
           stopBall();
           stopBall = null;
@@ -175,6 +170,58 @@ export default defineContentScript({
       translated = false;
     }
 
+    /**
+     * 翻译 / 还原的单一入口 —— 悬浮球、快捷键、popup 三条路径共用。
+     *
+     * 翻译态（`translated` + observer）是整个 frame 共享的一份状态，
+     * 任何入口各自记一份都会导致「按了没反应」或「重复翻一遍」。
+     * 悬浮球的视觉由这里通过 setBallState 单向推送。
+     */
+    async function togglePage(): Promise<string> {
+      if (translated) {
+        doRestore();
+        if (isMainFrame) setBallState('idle');
+        return 'restored';
+      }
+
+      if (isMainFrame) setBallState('loading');
+      let status: string;
+      try {
+        status = await doTranslate();
+      } catch (e) {
+        console.error('[PT] 翻译失败:', e);
+        if (isMainFrame) {
+          toast(String(e), 'error');
+          setBallState('error');
+        }
+        return 'error';
+      }
+
+      if (status === 'translated') {
+        translated = true;
+        // 增量补翻对三个入口一视同仁 —— 无限滚动/SPA 不该因为
+        // 用户点的是悬浮球而失效
+        if (!stopObserving) {
+          stopObserving = startObserver((els) => {
+            doTranslate(els).catch((e) =>
+              console.error('[PT] 增量补翻失败:', e),
+            );
+          });
+        }
+      }
+
+      if (isMainFrame) {
+        setBallState(
+          status === 'translated'
+            ? 'done'
+            : status === 'error'
+              ? 'error'
+              : 'idle',
+        );
+      }
+      return status;
+    }
+
     // ── 翻译单段 ──
     async function translateOne(el: Element): Promise<void> {
       const ns = getSettings();
@@ -219,31 +266,9 @@ export default defineContentScript({
       if (msg?.type === 'pt:toggle-translate') {
         const reply = isMainFrame ? sendResponse : () => {};
         try {
-          const willTranslate = !translated;
-          if (willTranslate) {
-            doTranslate()
-              .then((status) => {
-                if (status === 'translated') {
-                  translated = true;
-                  stopObserving = startObserver((els) => {
-                    doTranslate(els).catch((e) =>
-                      console.error('[PT] 增量补翻失败:', e),
-                    );
-                  });
-                }
-                reply({ ok: true, status });
-              })
-              .catch((e: Error) =>
-                reply({ ok: false, error: String(e) }),
-              );
-          } else {
-            Promise.resolve()
-              .then(() => doRestore())
-              .then(() => reply({ ok: true, status: 'restored' }))
-              .catch((e: Error) =>
-                reply({ ok: false, error: String(e) }),
-              );
-          }
+          togglePage()
+            .then((status) => reply({ ok: true, status }))
+            .catch((e: Error) => reply({ ok: false, error: String(e) }));
         } catch (e) {
           reply({ ok: false, error: String(e) });
         }
@@ -251,6 +276,10 @@ export default defineContentScript({
       }
 
       if (msg?.type === 'pt:translate-selection') {
+        // background 的 tabs.sendMessage 不带 frameId，会广播到全部 frame。
+        // 选区文本随消息带来、与本 frame 无关，若不拦住子 frame，
+        // 一次右键就会按 frame 数量重复翻译。
+        if (!isMainFrame) return;
         translateSelection(msg.text ?? '');
         sendResponse({ ok: true });
         return;

@@ -9,11 +9,16 @@ const BALL_POS_KEY = 'pt-ball-pos';
 type BallState = 'idle' | 'loading' | 'done' | 'error';
 
 interface BallCallbacks {
-  onTranslate: () => Promise<string>;
-  onRestore: () => void;
+  /**
+   * 翻译/还原的统一入口，由 content script 提供。
+   * 悬浮球不自己判断"该翻还是该还原" —— 翻译态是整个 frame 共享的，
+   * 由 content script 单点持有，球只负责把状态画出来。
+   */
+  onToggle: () => void;
 }
 
 let currentState: BallState = 'idle';
+let errorTimer: number | undefined;
 
 export function createBall(callbacks: BallCallbacks): () => void {
   const shadow = mountIsolated('ball');
@@ -21,8 +26,9 @@ export function createBall(callbacks: BallCallbacks): () => void {
   const ball = document.createElement('button');
   ball.className = 'pt-ball';
   ball.setAttribute('aria-label', '翻译此页');
-  ball.textContent = '译';
   shadow.appendChild(ball);
+  // 在设置里关掉又打开时，新球要接着上一次的状态画，而不是重置成 idle
+  setBallState(currentState);
 
   // --- 拖动 ---
   let dragging = false;
@@ -47,7 +53,7 @@ export function createBall(callbacks: BallCallbacks): () => void {
     })
     .catch(() => {});
 
-  ball.addEventListener('mousedown', (e) => {
+  const onMouseDown = (e: MouseEvent) => {
     dragging = true;
     dragged = false;
     startX = e.clientX;
@@ -56,9 +62,9 @@ export function createBall(callbacks: BallCallbacks): () => void {
     origX = rect.left;
     origY = rect.top;
     e.preventDefault();
-  });
+  };
 
-  document.addEventListener('mousemove', (e) => {
+  const onMouseMove = (e: MouseEvent) => {
     if (!dragging) return;
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
@@ -70,9 +76,9 @@ export function createBall(callbacks: BallCallbacks): () => void {
       ball.style.left = `${origX + dx}px`;
       ball.style.top = `${origY + dy}px`;
     }
-  });
+  };
 
-  document.addEventListener('mouseup', () => {
+  const onMouseUp = () => {
     if (dragging && dragged) {
       // 持久化新位置
       const rect = ball.getBoundingClientRect();
@@ -81,58 +87,57 @@ export function createBall(callbacks: BallCallbacks): () => void {
         .catch(() => {});
     }
     dragging = false;
-  });
+  };
+
+  ball.addEventListener('mousedown', onMouseDown);
+  // 拖动跨越整个视口，mousemove/mouseup 必须挂在 document 上；
+  // 相应地卸载时也必须由这里摘除，mount.ts 只管 host 元素的增删。
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
 
   // --- 点击 ---
-  ball.addEventListener('click', async () => {
+  // 翻译还是还原由 content script 决定，球只转发点击。
+  ball.addEventListener('click', () => {
     if (dragged) return;
-
-    if (currentState === 'idle' || currentState === 'done') {
-      const willTranslate = currentState !== 'done';
-      setState(willTranslate ? 'loading' : 'idle');
-      try {
-        const status = willTranslate
-          ? await callbacks.onTranslate()
-          : (callbacks.onRestore(), 'restored');
-        setState(status === 'translated' ? 'done' : 'idle');
-      } catch {
-        setState('error');
-        setTimeout(() => {
-          if (currentState === 'error') setState('idle');
-        }, 3000);
-      }
-    }
+    if (currentState === 'loading') return; // 翻译进行中，忽略重复点击
+    callbacks.onToggle();
   });
 
-  function setState(s: BallState) {
-    currentState = s;
-    ball.dataset.state = s;
-    ball.textContent =
-      s === 'loading' ? '…' : s === 'done' ? '✓' : s === 'error' ? '!' : '译';
-  }
-
-  // 监听设置中的开关
   return () => {
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+    clearTimeout(errorTimer);
     unmountIsolated('ball');
-    // mousemove/mouseup listener 清理由 mount 统一处理
   };
 }
 
-/** 暴露状态切换给外部，content script 内翻译完成后调用 */
-export function setBallState(s: BallState) {
+const GLYPH: Record<BallState, string> = {
+  idle: '译',
+  loading: '…',
+  done: '✓',
+  error: '!',
+};
+
+/**
+ * 状态切换的唯一入口。content script 在翻译的各个节点上调用，
+ * 因此悬浮球、popup、快捷键三个入口看到的永远是同一个状态。
+ */
+export function setBallState(s: BallState): void {
   currentState = s;
+  clearTimeout(errorTimer);
+
   const ball = document
     .getElementById('pt-host-ball')
     ?.shadowRoot?.querySelector('.pt-ball') as HTMLElement | null;
   if (ball) {
     ball.dataset.state = s;
-    ball.textContent =
-      s === 'loading'
-        ? '…'
-        : s === 'done'
-          ? '✓'
-          : s === 'error'
-            ? '!'
-            : '译';
+    ball.textContent = GLYPH[s];
+  }
+
+  // error 是瞬时态：停留 3 秒让用户看见，然后回到可再次点击的 idle
+  if (s === 'error') {
+    errorTimer = self.setTimeout(() => {
+      if (currentState === 'error') setBallState('idle');
+    }, 3000);
   }
 }
