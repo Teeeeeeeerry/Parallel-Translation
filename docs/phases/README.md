@@ -99,5 +99,5 @@
 - [x] 阶段 4 — 显示模式与译文样式 —— 验收通过，见 [DoDR-2](../DoD-report/phase-4/DoDR-2.md)
 - [x] 阶段 5 — 注入式 UI —— 验收通过，见 [DoDR-3](../DoD-report/phase-5/DoDR-3.md)
 - [x] 阶段 6 — 快捷键与划词交互 —— 验收通过，见 [DoDR-2](../DoD-report/phase-6/DoDR-2.md)
-- [ ] 阶段 7 — 设置页完整化与 BYOK
-- [ ] 阶段 8 — 兼容补丁、多浏览器与上架
+- [x] 阶段 7 — 设置页完整化与 BYOK —— 验收通过，见 [DoDR-2](../DoD-report/phase-7/DoDR-2.md)
+- [x] 阶段 8 — 兼容补丁与多浏览器适配 —— 除上架材料外验收通过，见 [DoDR-2](../DoD-report/phase-8/DoDR-2.md)；**提交商店审核推迟**，不阻塞后续开发

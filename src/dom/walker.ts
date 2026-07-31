@@ -1,10 +1,14 @@
-// Phase 3 — TreeWalker 递归穿透 shadowRoot。
+// Phase 3 / 8 — TreeWalker 递归穿透 shadowRoot + 域名级补丁。
 //
 // document.createTreeWalker 只遍历 light DOM，不会自动进入 shadow DOM。
 // Reddit 新版、YouTube、大量 Web Components 站点的内容放在 shadow root 里，
 // 必须显式递归才能覆盖。
+//
+// Phase 8 接入域名级采集补丁（src/dom/compat.ts），
+// 在通用规则判定之前给特定站点插入决策。
 
 import { SKIP_SET, shouldSkip, isTranslationUnit } from './classify';
+import { applyCompat } from './compat';
 
 /**
  * 采集可翻译节点。
@@ -47,6 +51,22 @@ function walk(root: Node, out: Element[], seen: Set<Element>): void {
 
     // 关键：遇到 shadow host 就递归下沉。TreeWalker 自己不会做这件事
     if (el.shadowRoot) walk(el.shadowRoot, out, seen);
+
+    // Phase 8 域名补丁：在通用判定之前给特定站点插入决策。
+    // 补丁的 skip/take 优先于通用规则；null 则交回通用逻辑。
+    const patched = applyCompat(el);
+    if (patched && 'skip' in patched) {
+      node = walker.nextNode();
+      continue;
+    }
+    if (patched && 'take' in patched) {
+      if (!seen.has(el)) {
+        seen.add(el);
+        out.push(patched.take);
+      }
+      node = walker.nextNode();
+      continue;
+    }
 
     // 判定顺序不能反：isTranslationUnit() 首步只是一次标签查表，而
     // shouldSkip() 要拼 outerHTML、算 textContent、调 getBoundingClientRect

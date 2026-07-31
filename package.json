@@ -1,6 +1,6 @@
 {
   "name": "parallel-translation",
-  "version": "0.5.4",
+  "version": "0.6.1",
   "description": "对照式网页翻译浏览器扩展",
   "private": true,
   "type": "module",
@@ -10,8 +10,10 @@
     "dev:firefox": "wxt -b firefox",
     "build": "wxt build",
     "build:firefox": "wxt build -b firefox",
+    "build:edge": "wxt build -b edge",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
+    "zip:edge": "wxt zip -b edge",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

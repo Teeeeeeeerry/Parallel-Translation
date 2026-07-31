@@ -4,6 +4,7 @@ import {
   ENGINE_LABELS,
   LANG_LIST,
 } from '~/src/storage/schema';
+import { applyI18n, tf } from '~/src/i18n';
 import {
   settingsReady,
   getSettings,
@@ -77,7 +78,7 @@ function syncUI(): void {
 function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
   patchSettings(patch).catch((e) => {
     console.error('[PT] 设置写入失败:', e);
-    showHint('设置保存失败');
+    showHint(tf('hintSaveFail', '设置保存失败'));
   });
 }
 
@@ -100,15 +101,15 @@ async function onTranslatePageClick(): Promise<void> {
       type: 'pt:toggle-translate',
     });
     if (resp?.status === 'disabled') {
-      showHint('总开关已关闭');
+      showHint(tf('hintDisabled', '总开关已关闭'));
     } else if (resp?.status === 'no-elements') {
-      showHint('本页没有可翻译的内容');
+      showHint(tf('hintNoElements', '本页没有可翻译的内容'));
     }
   } catch {
     // 页面可能不支持内容脚本（如 chrome:// 页）。
     // tabs.query 也要罩在里面 —— 它抛出的 rejection 会变成 popup 里的
     // 未处理拒绝，同样被记成事件处理器错误。
-    showHint('当前页面无法翻译');
+    showHint(tf('hintCantTranslate', '当前页面无法翻译'));
   }
 }
 
@@ -158,6 +159,9 @@ async function init(): Promise<void> {
   const versionEl = document.getElementById('pt-version');
   if (versionEl) versionEl.textContent = `v${chrome.runtime.getManifest().version}`;
 
+  // 静态文案本地化
+  applyI18n();
+
   // 加载设置
   await settingsReady();
 
@@ -185,6 +189,6 @@ async function init(): Promise<void> {
 document.addEventListener('DOMContentLoaded', () => {
   init().catch((e) => {
     console.error('[PT] popup 初始化失败:', e);
-    showHint('初始化失败，请重新打开');
+    showHint(tf('hintInitFail', '初始化失败，请重新打开'));
   });
 });

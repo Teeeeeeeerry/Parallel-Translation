@@ -5,6 +5,7 @@
 
 import type { HotkeyAction } from '../storage/schema';
 import { fromEvent } from './normalize';
+import { tf } from '../i18n';
 import type { OS } from './platform';
 
 /** 浏览器优先拦截、扩展收不到的组合 */
@@ -20,12 +21,22 @@ const RESERVED = [
   'Mod+Shift+W',
 ];
 
-const ACTION_LABELS: Record<HotkeyAction, string> = {
-  'toggle-translate': '全页翻译',
-  'toggle-mode': '切换显示模式',
-  'translate-paragraph': '翻译当前段',
-  'toggle-extension': '扩展总开关',
-};
+/** 动作显示名。取不到 i18n 文案时回退中文，保证漏配 key 不会显示空白。 */
+export function actionLabel(action: HotkeyAction): string {
+  const FALLBACK: Record<HotkeyAction, string> = {
+    'toggle-translate': '全页翻译',
+    'toggle-mode': '切换显示模式',
+    'translate-paragraph': '翻译当前段',
+    'toggle-extension': '扩展总开关',
+  };
+  const KEYS: Record<HotkeyAction, string> = {
+    'toggle-translate': 'actionToggleTranslate',
+    'toggle-mode': 'actionToggleMode',
+    'translate-paragraph': 'actionTranslateParagraph',
+    'toggle-extension': 'actionToggleExtension',
+  };
+  return tf(KEYS[action], FALLBACK[action]);
+}
 
 /**
  * 检测冲突：
@@ -38,11 +49,12 @@ export function checkConflict(
   self: HotkeyAction,
 ): string | null {
   if (RESERVED.includes(combo)) {
-    return '该组合被浏览器占用，扩展无法接收';
+    return tf('conflictReserved', '该组合被浏览器占用，扩展无法接收');
   }
   for (const [action, bound] of Object.entries(hotkeys)) {
     if (action !== self && bound === combo) {
-      return `与「${ACTION_LABELS[action as HotkeyAction]}」重复`;
+      const label = actionLabel(action as HotkeyAction);
+      return tf('conflictDuplicate', `与「${label}」重复`, label);
     }
   }
   return null;
@@ -67,7 +79,7 @@ export function startRecording(
 
     const combo = fromEvent(e, os);
     if (!combo) {
-      onReject('请使用带修饰键的组合（如 ⌘+Shift+Y）');
+      onReject(tf('needModifier', '请使用带修饰键的组合（如 ⌘+Shift+Y）'));
       return;
     }
 
@@ -77,5 +89,3 @@ export function startRecording(
   document.addEventListener('keydown', onKeyDown, true);
   return () => document.removeEventListener('keydown', onKeyDown, true);
 }
-
-export { ACTION_LABELS };
