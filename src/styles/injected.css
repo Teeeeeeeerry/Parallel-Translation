@@ -58,7 +58,8 @@
   border-radius: var(--pt-r-sm);
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(31, 58, 46, 0.15);
-  transition: background 0.12s ease;
+  /* 淡入，避免硬弹出；opacity 由 paragraph-btn.ts 在浮出时置 0 → 1 */
+  transition: background 0.12s ease, opacity 0.12s ease;
 }
 
 .pt-para-btn:hover {

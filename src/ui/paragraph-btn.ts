@@ -18,7 +18,19 @@ type TranslateOneFn = (el: Element) => Promise<void>;
  */
 const HIDE_DELAY = 1500;
 
-/** 按钮与段落右边缘的间隙 */
+/**
+ * 悬停意图延迟：指针在同一段落上停住这么久才浮出按钮。
+ *
+ * 没有这道闸门时，mouseover 一命中段落就立刻浮出并重定位 —— 鼠标从文章
+ * 上方扫到下方，按钮会挨个段落跳几十次，看起来就是不停闪。HIDE_DELAY
+ * 越长这个现象越显眼，因为按钮全程挂着而不是跳完就消失。
+ *
+ * 140ms 略低于人眼把"停顿"与"路过"区分开的阈值，有意停留时几乎无感，
+ * 单纯划过则完全不触发。
+ */
+const SHOW_DELAY = 140;
+
+/** 按钮与段落边缘的间隙 */
 const GAP = 4;
 /** 钳制到视口内时留的边距 */
 const MARGIN = 4;
@@ -33,19 +45,37 @@ export function createParaBtn(translateOne: TranslateOneFn): () => void {
 
   let target: Element | null = null;
   let hideTimer: number | undefined;
+  let showTimer: number | undefined;
 
   const DIRECT = 'p,li,dd,blockquote,h1,h2,h3,h4,h5,h6';
 
   const isOurUi = (n: EventTarget | null): boolean =>
     n instanceof Element && !!n.closest?.('[data-pt-ui="1"]');
 
+  const isVisible = () => btn.style.display === 'block';
+
   const show = (el: Element) => {
-    clearTimeout(hideTimer);
+    // 从无到有时淡入；在段落之间移动时只改位置，再淡一次反而更像闪。
+    // 标签页在后台时渲染挂起、过渡时间线不推进，淡入会冻在起点，
+    // 直接跳过动画一步到位。
+    if (!isVisible() && document.visibilityState === 'visible') {
+      btn.style.opacity = '0';
+    }
     target = el;
+
+    // position() 内部读 getBoundingClientRect 会强制一次布局，把上面的
+    // opacity: 0 与 display: block 一并提交，随后置 1 才会真正走过渡。
+    //
+    // 这里刻意不用 requestAnimationFrame：标签页在后台时 rAF 不回调，
+    // 回调里那句 opacity = '1' 就永远不执行，按钮卡在全透明 —— 看不见
+    // 却仍占着点击区域。用强制回流的失败模式只是"没有淡入动画"，
+    // 而不是"按钮消失"。
     position(btn, el);
+    btn.style.opacity = '1';
   };
 
   const scheduleHide = () => {
+    clearTimeout(showTimer);
     clearTimeout(hideTimer);
     hideTimer = self.setTimeout(() => {
       btn.style.display = 'none';
@@ -57,12 +87,21 @@ export function createParaBtn(translateOne: TranslateOneFn): () => void {
     const el = (e.target as Element)?.closest?.(DIRECT);
     if (!el || el.closest('[data-pt-ui="1"]')) return;
     if (el.getAttribute('data-pt') === 'done') return;
-    show(el);
+
+    clearTimeout(hideTimer);
+
+    // 已经停在这一段上了 —— 段落内部换子元素不重定位，省掉无谓的强制布局
+    if (el === target && isVisible()) return;
+
+    // 悬停意图：停住 SHOW_DELAY 才浮出。路过时后一次 mouseover 会把
+    // 前一段的计时重置掉，于是一路划过去一次都不弹。
+    clearTimeout(showTimer);
+    showTimer = self.setTimeout(() => show(el), SHOW_DELAY);
   };
 
   const onMouseOut = (e: MouseEvent) => {
     // relatedTarget 是指针即将进入的元素。仍在同一段落内部移动、
-    // 或正移向我们自己的按钮，都不该开始倒计时 —— 否则这 500ms
+    // 或正移向我们自己的按钮，都不该开始倒计时 —— 否则这 1.5 秒
     // 会被段落内的每次子元素切换白白消耗掉。
     const to = e.relatedTarget;
     if (isOurUi(to)) return;
@@ -86,11 +125,13 @@ export function createParaBtn(translateOne: TranslateOneFn): () => void {
 
   btn.addEventListener('click', () => {
     if (target) translateOne(target);
+    clearTimeout(showTimer);
     clearTimeout(hideTimer);
     btn.style.display = 'none';
   });
 
   return () => {
+    clearTimeout(showTimer);
     clearTimeout(hideTimer);
     document.removeEventListener('mouseover', onMouseOver, true);
     document.removeEventListener('mouseout', onMouseOut, true);
@@ -115,13 +156,21 @@ function position(btn: HTMLElement, el: Element): void {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
-  // 优先放在段落右外侧；放不下就压到段落右上角内侧
   let left = r.right + GAP;
+  let top = r.top;
+
   if (left + b.width > vw - MARGIN) {
+    // 右侧放不下（段落撑满内容列宽时的常态）。退到段落右上角，
+    // 并优先浮到段落**上方**的行间空白里 —— 压在正文上会遮住正在读的
+    // 那一行，视觉上同样像"闪"。上方也没地方时才落回段落内。
     left = Math.max(MARGIN, r.right - b.width - GAP);
+    const above = r.top - b.height - GAP;
+    if (above >= MARGIN) top = above;
   }
 
-  const top = Math.min(Math.max(r.top, MARGIN), vh - b.height - MARGIN);
+  // 先取上限再取下限：视口比按钮还矮时（极端窄窗、部分嵌入式 webview），
+  // 反过来写会让 Math.min 选中负的上限，把按钮推到视口外。
+  top = Math.max(MARGIN, Math.min(top, vh - b.height - MARGIN));
 
   btn.style.left = `${left}px`;
   btn.style.top = `${top}px`;
