@@ -60,12 +60,27 @@
           </select>
         </div>
       </div>
+
+      <!-- 译文样式 -->
+      <div class="pt-card">
+        <div class="pt-card-label">译文样式</div>
+        <div class="pt-option-row">
+          <select class="pt-select" id="pt-style-select">
+            <option value="default">默认</option>
+            <option value="dim">弱化</option>
+            <option value="underline">实线下划线</option>
+            <option value="bold">加粗</option>
+            <option value="italic">斜体</option>
+            <option value="fade">半透明</option>
+          </select>
+        </div>
+      </div>
     </main>
 
     <div id="pt-hint" class="pt-hint" style="display:none"></div>
 
     <footer class="pt-footer">
-      <span>v0.4.1</span>
+      <span id="pt-version"></span>
       <button class="pt-settings-btn" id="pt-settings-btn">设置</button>
     </footer>
   </div>

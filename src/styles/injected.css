@@ -1,0 +1,93 @@
+/* Phase 5 — 注入 shadow root 的 UI 专属样式。
+   此处可安全使用短类名，不会与宿主冲突。
+   设计令牌由 mount.ts 注入同一 shadow root，故 CSS 变量可用。 */
+
+.pt-ball {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--pt-forest);
+  color: var(--pt-paper);
+  border: 1.5px solid var(--pt-brass);
+  cursor: pointer;
+  font-family: var(--pt-font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(31, 58, 46, 0.3);
+  user-select: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pt-ball:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(31, 58, 46, 0.38);
+}
+
+.pt-ball[data-state='loading'] {
+  animation: pt-spin 1s linear infinite;
+  border-style: dashed;
+}
+
+.pt-ball[data-state='done'] {
+  background: var(--pt-brass);
+  border-color: var(--pt-brass);
+}
+
+.pt-ball[data-state='error'] {
+  border-color: var(--pt-danger);
+  box-shadow: 0 4px 16px rgba(122, 64, 48, 0.35);
+}
+
+.pt-para-btn {
+  position: fixed;
+  display: none;
+  padding: 3px 7px;
+  font-family: var(--pt-font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: var(--pt-surface);
+  color: var(--pt-forest);
+  border: 1px solid var(--pt-forest-15);
+  border-radius: var(--pt-r-sm);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(31, 58, 46, 0.15);
+  transition: background 0.12s ease;
+}
+
+.pt-para-btn:hover {
+  background: var(--pt-forest);
+  color: var(--pt-paper);
+}
+
+.pt-toast {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  padding: 8px 14px;
+  border-radius: var(--pt-r-sm);
+  font-family: var(--pt-font-ui);
+  font-size: 13px;
+  color: var(--pt-paper);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  animation: pt-pop 0.2s ease;
+  z-index: 1;
+}
+
+.pt-toast[data-kind='info'] {
+  background: var(--pt-forest);
+}
+
+.pt-toast[data-kind='error'] {
+  background: var(--pt-danger);
+}
+
+@keyframes pt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

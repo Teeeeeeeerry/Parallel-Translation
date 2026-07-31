@@ -1,133 +1,289 @@
-// Phase 3 — Content script。
-// 接收 popup 的 toggle 指令，驱动采集 → 翻译 → 注入 / 还原的闭环。
-// 升级点：shadow DOM 穿透采集 + MutationObserver 增量补翻 + all_frames。
+// Phase 4/5/6 — Content script。
+// 集成：三模式渲染 + 注入式 UI（悬浮球/段落按钮/toast）+
+// 快捷键 + 划词交互。
 
-import '~/src/styles/content.css';
+// tokens 必须与 presets 一同注入宿主页面 —— presets.css 里的 var(--pt-brass)
+// 只在有令牌定义时才成立，否则 border-left 在计算值时刻失效，默认样式无边框。
+import '~/src/styles/tokens.css';
+import '~/src/styles/presets.css';
 import { collect } from '~/src/dom/walker';
 import { startObserver } from '~/src/dom/observer';
-import { injectSimple, removeSimple, allTranslated } from '~/src/dom/inject';
-import { settingsReady, getSettings } from '~/src/storage/settings';
+import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
+import { applyCustomCss } from '~/src/styles/custom';
+import { createBall, setBallState } from '~/src/ui/floating-ball';
+import { createParaBtn } from '~/src/ui/paragraph-btn';
+import { toast } from '~/src/ui/toast';
+import { startHotkeys } from '~/src/hotkeys/listener';
+import { startSelectionDrag } from '~/src/ui/selection-drag';
+import { detectOS } from '~/src/hotkeys/platform';
+import {
+  settingsReady,
+  getSettings,
+  onSettingsChanged,
+  patchSettings,
+} from '~/src/storage/settings';
+import type { Settings } from '~/src/storage/schema';
 
 export default defineContentScript({
   matches: ['<all_urls>'],
-  allFrames: true, // 每个同源 iframe 自动获得独立 content script 实例
+  allFrames: true,
   runAt: 'document_end',
-  main() {
+  async main() {
+    await settingsReady();
+    detectOS(); // 预热平台缓存
+    const s = getSettings();
+
     let translated = false;
     let stopObserving: (() => void) | null = null;
+    let stopHotkeys: (() => void) | null = null;
+    let stopDrag: (() => void) | null = null;
+    let stopBall: (() => void) | null = null;
+    let stopParaBtn: (() => void) | null = null;
 
-    async function doTranslate(elements?: Element[]): Promise<string> {
-      await settingsReady();
-      const s = getSettings();
+    const isMainFrame = window.top === window;
 
-      // 总开关关闭时不翻译
-      if (!s.enabled) return 'disabled';
+    // ── 初始模式/样式 ──
+    applyMode(s.displayMode);
+    applyStyle(s.style);
+    if (s.customCss) applyCustomCss(s.customCss);
 
-      // 收集待翻译节点（未传入时从页面采集）
+    // ── 注入 UI（仅主文档）──
+    if (isMainFrame) {
+      if (s.showFloatingBall) {
+        stopBall = createBall({ onToggle: () => void togglePage() });
+      }
+
+      if (s.showParagraphBtn) {
+        stopParaBtn = createParaBtn((el) => translateOne(el));
+      }
+    }
+
+    // ── 快捷键（仅主文档，避免与 iframe 内输入冲突）──
+    if (isMainFrame) {
+      stopHotkeys = startHotkeys({
+        'toggle-translate': () => void togglePage(),
+        'toggle-mode': () => {
+          const next: 'bilingual' | 'translation-only' =
+            getSettings().displayMode === 'bilingual'
+              ? 'translation-only'
+              : 'bilingual';
+          patchSettings({ displayMode: next }).catch(() => {});
+        },
+        'translate-paragraph': () => {
+          const sel = window.getSelection();
+          if (sel?.rangeCount) {
+            const el = sel.getRangeAt(0).startContainer?.parentElement;
+            if (el) translateOne(el);
+          }
+        },
+        'toggle-extension': () => {
+          const cur = getSettings().enabled;
+          patchSettings({ enabled: !cur }).catch(() => {});
+          toast(cur ? '扩展已关闭' : '扩展已开启');
+        },
+      });
+    }
+
+    // ── 划词拖动 ──
+    stopDrag = startSelectionDrag((text) => translateSelection(text));
+
+    // ── 设置变更监听 ──
+    onSettingsChanged((ns: Settings) => {
+      applyMode(ns.displayMode);
+      applyStyle(ns.style);
+      applyCustomCss(ns.customCss);
+
+      if (isMainFrame) {
+        // 悬浮球开关
+        if (ns.showFloatingBall && !stopBall) {
+          stopBall = createBall({ onToggle: () => void togglePage() });
+        } else if (!ns.showFloatingBall && stopBall) {
+          stopBall();
+          stopBall = null;
+        }
+
+        // 段落按钮开关
+        if (ns.showParagraphBtn && !stopParaBtn) {
+          stopParaBtn = createParaBtn((el) => translateOne(el));
+        } else if (!ns.showParagraphBtn && stopParaBtn) {
+          stopParaBtn();
+          stopParaBtn = null;
+        }
+      }
+    });
+
+    // ── 翻译全页 ──
+    async function doTranslate(
+      elements?: Element[],
+    ): Promise<string> {
+      const ns = getSettings();
+      if (!ns.enabled) return 'disabled';
+
       const targets = elements ?? collect();
       if (targets.length === 0) return 'no-elements';
 
       const texts = targets.map((el) => el.textContent?.trim() ?? '');
 
-      // 通过 background 代理翻译（content script 不能直接 fetch 跨域端点）
       const resp = await chrome.runtime.sendMessage({
         type: 'pt:translate',
-        payload: { texts, from: s.from, to: s.to },
+        payload: { texts, from: ns.from, to: ns.to },
       });
 
       if (!resp?.ok) {
         console.error('[PT] 翻译失败:', resp?.error ?? '未知错误');
-        showError(targets[0]!, resp?.error ?? '所有引擎均失败');
+        if (isMainFrame)
+          toast(resp?.error ?? '所有引擎均失败', 'error');
         return 'error';
       }
 
       const translations: string[] = resp.data.translations;
       for (let i = 0; i < targets.length; i++) {
-        injectSimple(targets[i]!, translations[i]!);
+        render(targets[i]!, translations[i]!);
       }
 
       return 'translated';
     }
 
+    // ── 还原 ──
     function doRestore(): void {
-      // 停止增量监听
       if (stopObserving) {
         stopObserving();
         stopObserving = null;
       }
 
-      const els = allTranslated();
+      // allTranslated() 已支持 shadow 穿透（Phase 3 P3-3 修复）
+      const els: Element[] = [];
+      const collectFrom = (root: ParentNode) => {
+        root.querySelectorAll<Element>('[data-pt="done"]').forEach((el) =>
+          els.push(el),
+        );
+        root.querySelectorAll('*').forEach((el) => {
+          if ((el as Element).shadowRoot)
+            collectFrom((el as Element).shadowRoot!);
+        });
+      };
+      collectFrom(document);
+
       for (const el of els) {
-        removeSimple(el);
+        unrender(el);
       }
       translated = false;
     }
 
-    function showError(el: Element, msg: string): void {
-      // 在页面上给出可见提示，而非静默失败。
-      // 宿主可能是 XML / SVG 文档，或 body 尚未就绪 —— 取不到挂载点就退回
-      // documentElement，绝不让这里抛错。
-      const host = document.body ?? document.documentElement;
-      if (!host) return;
-      const div = document.createElement('div');
-      div.textContent = `⚠ Parallel-Translation: ${msg}`;
-      div.style.cssText =
-        'position:fixed;top:12px;right:12px;' +
-        'background:#c0392b;color:#fff;' +
-        'padding:8px 14px;border-radius:6px;font-size:13px;z-index:2147483647;';
-      host.appendChild(div);
-      setTimeout(() => div.remove(), 5000);
-    }
-
-    // popup 的 toggle 消息会广播到本标签页的每一个 frame（all_frames 注入）。
-    // 每个 frame 都要照常翻译自己的文档，但只有主文档应答 —— 多个 frame 抢答时
-    // 调用方只收得到其中一个，若被空 iframe 抢先，popup 会误报
-    // 「本页没有可翻译的内容」。子 frame 不调 sendResponse、返回 undefined，
-    // 响应通道就只由主文档占用。
-    const isMainFrame = window.top === window;
-
-    // 监听来自 popup 的 toggle 消息
-    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-      // msg 可能是 null / 非对象 —— 直接解引用会把 TypeError 抛出监听器，
-      // Chrome 记为「Error in event handler」（堆栈 :0 匿名函数）。
-      if (msg?.type !== 'pt:toggle-translate') return;
-
-      // 子 frame：照常执行，不应答
-      const reply = isMainFrame ? sendResponse : () => {};
-
-      try {
-        const willTranslate = !translated;
-
-        if (willTranslate) {
-          doTranslate()
-            .then((status) => {
-              // 首次翻译成功后启动 MutationObserver 增量补翻
-              if (status === 'translated') {
-                translated = true;
-                stopObserving = startObserver((els) => {
-                  // 增量补翻不改变 translated 状态，独立翻译新增节点
-                  // 异步处理，但不阻塞 observer 防抖计时器
-                  doTranslate(els).catch((e) =>
-                    console.error('[PT] 增量补翻失败:', e),
-                  );
-                });
-              }
-              reply({ ok: true, status });
-            })
-            .catch((e: Error) => reply({ ok: false, error: String(e) }));
-        } else {
-          Promise.resolve()
-            .then(() => doRestore())
-            .then(() => reply({ ok: true, status: 'restored' }))
-            .catch((e: Error) => reply({ ok: false, error: String(e) }));
-        }
-      } catch (e) {
-        reply({ ok: false, error: String(e) });
+    /**
+     * 翻译 / 还原的单一入口 —— 悬浮球、快捷键、popup 三条路径共用。
+     *
+     * 翻译态（`translated` + observer）是整个 frame 共享的一份状态，
+     * 任何入口各自记一份都会导致「按了没反应」或「重复翻一遍」。
+     * 悬浮球的视觉由这里通过 setBallState 单向推送。
+     */
+    async function togglePage(): Promise<string> {
+      if (translated) {
+        doRestore();
+        if (isMainFrame) setBallState('idle');
+        return 'restored';
       }
 
-      // 只有主文档保持通道开启；子 frame 返回 undefined 让通道立即关闭，
-      // 不参与抢答
-      return isMainFrame ? true : undefined;
+      if (isMainFrame) setBallState('loading');
+      let status: string;
+      try {
+        status = await doTranslate();
+      } catch (e) {
+        console.error('[PT] 翻译失败:', e);
+        if (isMainFrame) {
+          toast(String(e), 'error');
+          setBallState('error');
+        }
+        return 'error';
+      }
+
+      if (status === 'translated') {
+        translated = true;
+        // 增量补翻对三个入口一视同仁 —— 无限滚动/SPA 不该因为
+        // 用户点的是悬浮球而失效
+        if (!stopObserving) {
+          stopObserving = startObserver((els) => {
+            doTranslate(els).catch((e) =>
+              console.error('[PT] 增量补翻失败:', e),
+            );
+          });
+        }
+      }
+
+      if (isMainFrame) {
+        setBallState(
+          status === 'translated'
+            ? 'done'
+            : status === 'error'
+              ? 'error'
+              : 'idle',
+        );
+      }
+      return status;
+    }
+
+    // ── 翻译单段 ──
+    async function translateOne(el: Element): Promise<void> {
+      const ns = getSettings();
+      if (!ns.enabled) return;
+
+      const text = el.textContent?.trim() ?? '';
+      if (!text) return;
+
+      const resp = await chrome.runtime.sendMessage({
+        type: 'pt:translate',
+        payload: { texts: [text], from: ns.from, to: ns.to },
+      });
+
+      if (!resp?.ok) {
+        toast('翻译失败', 'error');
+        return;
+      }
+
+      render(el, resp.data.translations[0]);
+    }
+
+    // ── 翻译选区 ──
+    async function translateSelection(text: string): Promise<void> {
+      const ns = getSettings();
+      if (!ns.enabled) return;
+
+      const resp = await chrome.runtime.sendMessage({
+        type: 'pt:translate',
+        payload: { texts: [text], from: ns.from, to: ns.to },
+      });
+
+      if (!resp?.ok) {
+        toast('翻译失败', 'error');
+        return;
+      }
+
+      toast(resp.data.translations[0]);
+    }
+
+    // ── 监听 popup / background 消息 ──
+    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (msg?.type === 'pt:toggle-translate') {
+        const reply = isMainFrame ? sendResponse : () => {};
+        try {
+          togglePage()
+            .then((status) => reply({ ok: true, status }))
+            .catch((e: Error) => reply({ ok: false, error: String(e) }));
+        } catch (e) {
+          reply({ ok: false, error: String(e) });
+        }
+        return isMainFrame ? true : undefined;
+      }
+
+      if (msg?.type === 'pt:translate-selection') {
+        // background 的 tabs.sendMessage 不带 frameId，会广播到全部 frame。
+        // 选区文本随消息带来、与本 frame 无关，若不拦住子 frame，
+        // 一次右键就会按 frame 数量重复翻译。
+        if (!isMainFrame) return;
+        translateSelection(msg.text ?? '');
+        sendResponse({ ok: true });
+        return;
+      }
     });
   },
 });
