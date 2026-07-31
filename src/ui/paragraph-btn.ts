@@ -6,59 +6,172 @@ import { mountIsolated, unmountIsolated } from './mount';
 
 type TranslateOneFn = (el: Element) => Promise<void>;
 
+/**
+ * 离开段落后的隐藏延迟。
+ *
+ * 这个值是"按钮能不能点到"的决定性因素：它要覆盖用户从段落边缘跨过间隙、
+ * 移动到按钮上的全程。阶段文档给的 200ms 在真机上偏紧 —— 指针经过间隙时
+ * 落在宿主页面的其它元素上，那段时间计时器照常在跑，稍一犹豫按钮就没了。
+ *
+ * 取 1.5 秒是用户实机试用后定的值。偏长的代价是移开鼠标后按钮还会停留一会儿，
+ * 但它只占段落右上角一小块、不挡正文，比"够不着"轻得多。
+ */
+const HIDE_DELAY = 1500;
+
+/**
+ * 悬停意图延迟：指针在同一段落上停住这么久才浮出按钮。
+ *
+ * 没有这道闸门时，mouseover 一命中段落就立刻浮出并重定位 —— 鼠标从文章
+ * 上方扫到下方，按钮会挨个段落跳几十次，看起来就是不停闪。HIDE_DELAY
+ * 越长这个现象越显眼，因为按钮全程挂着而不是跳完就消失。
+ *
+ * 140ms 略低于人眼把"停顿"与"路过"区分开的阈值，有意停留时几乎无感，
+ * 单纯划过则完全不触发。
+ */
+const SHOW_DELAY = 140;
+
+/** 按钮与段落边缘的间隙 */
+const GAP = 4;
+/** 钳制到视口内时留的边距 */
+const MARGIN = 4;
+
 export function createParaBtn(translateOne: TranslateOneFn): () => void {
   const shadow = mountIsolated('para-btn');
   const btn = document.createElement('button');
   btn.className = 'pt-para-btn';
   btn.textContent = '译';
+  btn.setAttribute('aria-label', '翻译此段');
   shadow.appendChild(btn);
 
   let target: Element | null = null;
   let hideTimer: number | undefined;
+  let showTimer: number | undefined;
 
   const DIRECT = 'p,li,dd,blockquote,h1,h2,h3,h4,h5,h6';
 
-  document.addEventListener(
-    'mouseover',
-    (e) => {
-      const el = (e.target as Element)?.closest?.(DIRECT);
-      if (!el || el.closest('[data-pt-ui="1"]')) return;
-      if (el.getAttribute('data-pt') === 'done') return;
+  const isOurUi = (n: EventTarget | null): boolean =>
+    n instanceof Element && !!n.closest?.('[data-pt-ui="1"]');
 
-      clearTimeout(hideTimer);
-      target = el;
-      position(btn, el);
-    },
-    true,
-  );
+  const isVisible = () => btn.style.display === 'block';
 
-  // 延迟隐藏，给用户从段落移动到按钮的时间；否则按钮永远点不到
-  document.addEventListener('mouseout', () => {
+  const show = (el: Element) => {
+    // 从无到有时淡入；在段落之间移动时只改位置，再淡一次反而更像闪。
+    // 标签页在后台时渲染挂起、过渡时间线不推进，淡入会冻在起点，
+    // 直接跳过动画一步到位。
+    if (!isVisible() && document.visibilityState === 'visible') {
+      btn.style.opacity = '0';
+    }
+    target = el;
+
+    // position() 内部读 getBoundingClientRect 会强制一次布局，把上面的
+    // opacity: 0 与 display: block 一并提交，随后置 1 才会真正走过渡。
+    //
+    // 这里刻意不用 requestAnimationFrame：标签页在后台时 rAF 不回调，
+    // 回调里那句 opacity = '1' 就永远不执行，按钮卡在全透明 —— 看不见
+    // 却仍占着点击区域。用强制回流的失败模式只是"没有淡入动画"，
+    // 而不是"按钮消失"。
+    position(btn, el);
+    btn.style.opacity = '1';
+  };
+
+  const scheduleHide = () => {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
     hideTimer = self.setTimeout(() => {
       btn.style.display = 'none';
-    }, 200);
-  });
+      target = null;
+    }, HIDE_DELAY);
+  };
 
-  // 按钮自身 hover 时取消隐藏
+  const onMouseOver = (e: MouseEvent) => {
+    const el = (e.target as Element)?.closest?.(DIRECT);
+    if (!el || el.closest('[data-pt-ui="1"]')) return;
+    if (el.getAttribute('data-pt') === 'done') return;
+
+    clearTimeout(hideTimer);
+
+    // 已经停在这一段上了 —— 段落内部换子元素不重定位，省掉无谓的强制布局
+    if (el === target && isVisible()) return;
+
+    // 悬停意图：停住 SHOW_DELAY 才浮出。路过时后一次 mouseover 会把
+    // 前一段的计时重置掉，于是一路划过去一次都不弹。
+    clearTimeout(showTimer);
+    showTimer = self.setTimeout(() => show(el), SHOW_DELAY);
+  };
+
+  const onMouseOut = (e: MouseEvent) => {
+    // relatedTarget 是指针即将进入的元素。仍在同一段落内部移动、
+    // 或正移向我们自己的按钮，都不该开始倒计时 —— 否则这 1.5 秒
+    // 会被段落内的每次子元素切换白白消耗掉。
+    const to = e.relatedTarget;
+    if (isOurUi(to)) return;
+    if (target && to instanceof Node && target.contains(to)) return;
+    scheduleHide();
+  };
+
+  document.addEventListener('mouseover', onMouseOver, true);
+  document.addEventListener('mouseout', onMouseOut, true);
+
+  // 按钮自身的进出：进入取消隐藏，离开重新计时
   btn.addEventListener('mouseover', () => clearTimeout(hideTimer));
-  btn.addEventListener('mouseout', () => {
-    hideTimer = self.setTimeout(() => {
-      btn.style.display = 'none';
-    }, 200);
-  });
+  btn.addEventListener('mouseout', scheduleHide);
+
+  // 按钮是 fixed 定位，页面滚动时不会跟着段落走 —— 显示期间重新贴合
+  const onReflow = () => {
+    if (btn.style.display === 'block' && target) position(btn, target);
+  };
+  window.addEventListener('scroll', onReflow, { passive: true, capture: true });
+  window.addEventListener('resize', onReflow, { passive: true });
 
   btn.addEventListener('click', () => {
     if (target) translateOne(target);
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
     btn.style.display = 'none';
   });
 
-  return () => unmountIsolated('para-btn');
+  return () => {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    document.removeEventListener('mouseover', onMouseOver, true);
+    document.removeEventListener('mouseout', onMouseOut, true);
+    window.removeEventListener('scroll', onReflow, true);
+    window.removeEventListener('resize', onReflow);
+    unmountIsolated('para-btn');
+  };
 }
 
-/** 定位到段落右上角。用 getBoundingClientRect + fixed 定位，不依赖宿主布局 */
+/**
+ * 定位到段落右上角，并钳制在视口内。
+ *
+ * 不钳制的话按钮会落到屏幕外：段落通常撑满内容列宽，全宽布局下
+ * `r.right` 已经接近 innerWidth，再 +4 就出界了；长段落顶部滚出视口时
+ * `r.top` 同样会把按钮丢到视口上方。两种情况用户都只会觉得"按钮不见了"。
+ */
 function position(btn: HTMLElement, el: Element): void {
-  const r = el.getBoundingClientRect();
   btn.style.display = 'block';
-  btn.style.top = `${r.top}px`;
-  btn.style.left = `${r.right + 4}px`;
+
+  const r = el.getBoundingClientRect();
+  const b = btn.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  let left = r.right + GAP;
+  let top = r.top;
+
+  if (left + b.width > vw - MARGIN) {
+    // 右侧放不下（段落撑满内容列宽时的常态）。退到段落右上角，
+    // 并优先浮到段落**上方**的行间空白里 —— 压在正文上会遮住正在读的
+    // 那一行，视觉上同样像"闪"。上方也没地方时才落回段落内。
+    left = Math.max(MARGIN, r.right - b.width - GAP);
+    const above = r.top - b.height - GAP;
+    if (above >= MARGIN) top = above;
+  }
+
+  // 先取上限再取下限：视口比按钮还矮时（极端窄窗、部分嵌入式 webview），
+  // 反过来写会让 Math.min 选中负的上限，把按钮推到视口外。
+  top = Math.max(MARGIN, Math.min(top, vh - b.height - MARGIN));
+
+  btn.style.left = `${left}px`;
+  btn.style.top = `${top}px`;
 }
