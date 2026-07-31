@@ -470,7 +470,7 @@ pnpm test:e2e -- --grep "@real"            # 真实站点冒烟，人工确认
 外加下列**无法自动化**的人工项 —— 诚实列出，不假装覆盖：
 
 - [ ] 5 个真实站点 × 6 个入口 × 3 种模式的人工走查（详见 [phase-8](phases/phase-8-compat-release.md) 的回归矩阵）
-- [ ] 5 张 1280×800 商店截图实拍（规格见 [`store/screenshots/README.md`](../store/screenshots/README.md)）—— 这一项与上一项一样，工具链生成不了，只能人工完成
+- [ ] 5 张 1280×800 商店截图实拍（规格见 [`store/screenshots/README.md`](../store/screenshots/README.md)）—— 工具链生成不了，只能人工完成；**上架推迟期间不阻塞任何流程**
 - [ ] Firefox / Edge 手动加载并跑核心流程（跨浏览器自动化投入产出比不划算）
 - [ ] 译文质量主观评估（各引擎各抽 10 段人工阅读）
 - [ ] 注入 UI 在 10 个真实站点上的视觉一致性目测
