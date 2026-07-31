@@ -1,0 +1,58 @@
+// Phase 4 — 三模式渲染器，替换阶段 2 的 inject.ts。
+//
+// 三种显示模式共用同一套 DOM 结构 ——
+// 模式差异全部由挂在 <html> 上的类名 + CSS 表达，切换时只改 className，
+// 零 DOM 操作、零请求。
+//
+// 原文用 DOM 搬移（while + appendChild）而非 innerHTML，保留原有节点
+// 结构与事件监听器。
+
+import type { DisplayMode, StyleId } from '../storage/schema';
+
+/**
+ * 渲染译文。三种模式共用同一套 DOM 结构。
+ */
+export function render(el: Element, translation: string): void {
+  if (el.getAttribute('data-pt') === 'done') return;
+
+  // 把原有子节点整体包进 .pt-origin，保留其内部结构与事件绑定
+  const origin = document.createElement('span');
+  origin.className = 'pt-origin';
+  while (el.firstChild) origin.appendChild(el.firstChild);
+
+  const trans = document.createElement('span');
+  trans.className = 'pt-trans';
+  trans.textContent = translation;
+
+  el.appendChild(origin);
+  el.appendChild(trans);
+  el.setAttribute('data-pt', 'done');
+}
+
+/** 还原原文，把 .pt-origin 的子节点放回去 */
+export function unrender(el: Element): void {
+  const origin = el.querySelector(':scope > .pt-origin');
+  const trans = el.querySelector(':scope > .pt-trans');
+  if (!origin) return;
+  while (origin.firstChild) el.insertBefore(origin.firstChild, origin);
+  origin.remove();
+  trans?.remove();
+  el.removeAttribute('data-pt');
+}
+
+/** 模式切换：只改 <html> 上的类名，零 DOM 操作、零请求 */
+export function applyMode(mode: DisplayMode): void {
+  document.documentElement.classList.toggle(
+    'pt-only-trans',
+    mode === 'translation-only',
+  );
+}
+
+/** 样式切换：替换 pt-style-* 类名 */
+export function applyStyle(style: StyleId): void {
+  const root = document.documentElement;
+  [...root.classList]
+    .filter((c) => c.startsWith('pt-style-'))
+    .forEach((c) => root.classList.remove(c));
+  root.classList.add(`pt-style-${style}`);
+}

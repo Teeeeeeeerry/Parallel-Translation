@@ -18,6 +18,7 @@ const engineSelect = document.getElementById('pt-engine-select') as HTMLSelectEl
 const fromSelect = document.getElementById('pt-from-select') as HTMLSelectElement;
 const toSelect = document.getElementById('pt-to-select') as HTMLSelectElement;
 const modeSelect = document.getElementById('pt-mode-select') as HTMLSelectElement;
+const styleSelect = document.getElementById('pt-style-select') as HTMLSelectElement;
 const settingsBtn = document.getElementById('pt-settings-btn')!;
 
 // ---- Lang / engine option lists ----
@@ -65,6 +66,9 @@ function syncUI(): void {
 
   // Display mode
   modeSelect.value = s.displayMode;
+
+  // Style
+  styleSelect.value = s.style;
 }
 
 // ---- Event handlers ----
@@ -143,6 +147,10 @@ function onModeChange(): void {
   savePatch({ displayMode: modeSelect.value as 'bilingual' | 'translation-only' });
 }
 
+function onStyleChange(): void {
+  savePatch({ style: styleSelect.value as any });
+}
+
 // ---- Init ----
 
 async function init(): Promise<void> {
@@ -159,6 +167,7 @@ async function init(): Promise<void> {
   fromSelect.addEventListener('change', onFromChange);
   toSelect.addEventListener('change', onToChange);
   modeSelect.addEventListener('change', onModeChange);
+  styleSelect.addEventListener('change', onStyleChange);
 
   // 跨上下文同步：别处改了设置 → 自动刷新 UI
   onSettingsChanged(() => syncUI());
