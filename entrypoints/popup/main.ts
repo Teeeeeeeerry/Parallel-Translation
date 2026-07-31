@@ -88,6 +88,10 @@ async function onTranslatePageClick(): Promise<void> {
     const tabId = tabs[0]?.id;
     if (tabId == null) return;
 
+    // 必须广播到所有 frame（不带 frameId），否则 all_frames 注入的 iframe
+    // content script 收不到指令，iframe 内文本永远不会被翻译。
+    // 提示文案的准确性由 content script 保证：只有主文档那份会 sendResponse，
+    // 子 frame 照常翻译但不占用响应通道，因此这里拿到的必定是主文档的结果。
     const resp = await chrome.tabs.sendMessage(tabId, {
       type: 'pt:toggle-translate',
     });

@@ -49,7 +49,17 @@ export function removeSimple(el: Element): void {
 
 /**
  * 页面上所有已翻译容器。
+ * 递归穿透 shadow DOM —— document.querySelectorAll 只覆盖 light DOM。
  */
 export function allTranslated(): Element[] {
-  return [...document.querySelectorAll('[data-pt="done"]')];
+  const out: Element[] = [];
+  const collectFrom = (root: ParentNode) => {
+    root.querySelectorAll<Element>('[data-pt="done"]').forEach((el) => out.push(el));
+    // 递归下沉所有 shadow root
+    root.querySelectorAll('*').forEach((el) => {
+      if (el.shadowRoot) collectFrom(el.shadowRoot);
+    });
+  };
+  collectFrom(document);
+  return out;
 }
