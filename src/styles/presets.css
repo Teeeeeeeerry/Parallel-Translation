@@ -1,0 +1,51 @@
+/* Phase 4 — 6 种译文样式预设 + 基础结构 + 仅译文模式。
+   译文字体/字号不在此设定 —— .pt-trans 继承宿主页面排版。 */
+
+/* ── 基础结构 ───────────────────────────────────────── */
+.pt-trans {
+  /* 关键：不设 font-family / font-size —— 译文必须融入宿主页面排版 */
+  display: block;
+}
+
+/* ── 仅译文模式 ─────────────────────────────────────── */
+.pt-only-trans .pt-origin {
+  display: none;
+}
+
+/* ── 6 种样式预设 ───────────────────────────────────── */
+
+/* 默认：黄铜金左边框做弱标识 */
+.pt-style-default .pt-trans {
+  border-left: 2px solid var(--pt-brass);
+  padding-left: 0.5em;
+}
+
+/* 弱化：平时完全不可见，悬停到该段才淡入 */
+.pt-style-dim .pt-trans {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.pt-style-dim [data-pt='done']:hover .pt-trans {
+  opacity: 1;
+}
+
+/* 实线下划线 */
+.pt-style-underline .pt-trans {
+  text-decoration: underline solid;
+  text-underline-offset: 3px;
+}
+
+/* 加粗 */
+.pt-style-bold .pt-trans {
+  font-weight: 700;
+}
+
+/* 斜体 */
+.pt-style-italic .pt-trans {
+  font-style: italic;
+}
+
+/* 半透明：始终可见，只压低存在感 */
+.pt-style-fade .pt-trans {
+  opacity: 0.6;
+}

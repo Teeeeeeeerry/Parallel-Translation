@@ -4,7 +4,7 @@ export default defineConfig({
   manifest: {
     name: 'Parallel-Translation',
     description: '对照式网页翻译扩展',
-    permissions: ['storage'],
+    permissions: ['storage', 'contextMenus'],
     action: { default_title: 'Parallel-Translation' },
     options_ui: { open_in_tab: true },
     icons: {
