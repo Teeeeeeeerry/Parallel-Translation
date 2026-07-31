@@ -1,0 +1,12 @@
+{
+  "extName": { "message": "Parallel-Translation" },
+  "extDesc": { "message": "Bilingual web page translation extension" },
+  "translate": { "message": "Translate Page" },
+  "settings": { "message": "Settings" },
+  "styleDim": { "message": "Dimmed" },
+  "styleFade": { "message": "Faded" },
+  "styleUnderline": { "message": "Underline" },
+  "styleBold": { "message": "Bold" },
+  "styleItalic": { "message": "Italic" },
+  "cssNoSelector": { "message": "Only CSS properties, no selectors or braces needed" }
+}

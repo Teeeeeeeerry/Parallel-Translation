@@ -1,0 +1,12 @@
+{
+  "extName": { "message": "Parallel-Translation" },
+  "extDesc": { "message": "对照式网页翻译扩展" },
+  "translate": { "message": "翻译此页" },
+  "settings": { "message": "设置" },
+  "styleDim": { "message": "弱化显示" },
+  "styleFade": { "message": "半透明" },
+  "styleUnderline": { "message": "实线下划线" },
+  "styleBold": { "message": "加粗" },
+  "styleItalic": { "message": "斜体" },
+  "cssNoSelector": { "message": "只需填写 CSS 属性，无需选择器与花括号" }
+}

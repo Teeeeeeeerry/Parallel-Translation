@@ -6,13 +6,18 @@ import { getSettings } from '~/src/storage/settings';
 import { cacheGet, cacheSet, cacheKey } from '~/src/storage/cache';
 import { googleWeb } from './google-web';
 import { bingEdge } from './bing-edge';
+import { openai } from './openai';
+import { deepl } from './deepl';
+import { gemini } from './gemini';
 import { EngineError } from './types';
 import type { TranslateEngine, TranslateRequest, TranslateResponse } from './types';
 
 const REGISTRY: Record<string, TranslateEngine> = {
   'google-web': googleWeb,
   'bing-edge': bingEdge,
-  // 阶段 7 追加 openai / deepl / gemini
+  'openai': openai,
+  'deepl': deepl,
+  'gemini': gemini,
 };
 
 export async function route(req: TranslateRequest): Promise<TranslateResponse> {

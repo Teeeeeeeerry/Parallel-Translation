@@ -1,7 +1,7 @@
 import { defineConfig } from 'wxt';
 
 export default defineConfig({
-  manifest: {
+  manifest: ({ browser }) => ({
     name: 'Parallel-Translation',
     description: '对照式网页翻译扩展',
     permissions: ['storage', 'contextMenus'],
@@ -13,5 +13,14 @@ export default defineConfig({
       48: '/icon/48.png',
       128: '/icon/128.png',
     },
-  },
+    // Firefox 需要显式声明扩展 id，否则 AMO 拒收
+    ...(browser === 'firefox' && {
+      browser_specific_settings: {
+        gecko: {
+          id: 'parallel-translation@example.com',
+          strict_min_version: '109.0',
+        },
+      },
+    }),
+  }),
 });

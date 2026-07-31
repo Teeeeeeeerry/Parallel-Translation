@@ -1,0 +1,107 @@
+// Phase 7 — 快捷键分区：动作列表 + 格式化显示 + 录制按钮 + 冲突检测。
+
+import type { HotkeyAction } from '~/src/storage/schema';
+import type { OS } from '~/src/hotkeys/platform';
+import { formatHotkey } from '~/src/hotkeys/platform';
+import { ACTION_LABELS, startRecording, checkConflict } from '~/src/hotkeys/recorder';
+import {
+  getSettings,
+  patchSettings,
+  onSettingsChanged,
+} from '~/src/storage/settings';
+
+function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
+  patchSettings(patch).catch((e) => console.error('[PT] 设置写入失败:', e));
+}
+
+const ACTIONS: HotkeyAction[] = [
+  'toggle-translate',
+  'toggle-mode',
+  'translate-paragraph',
+  'toggle-extension',
+];
+
+export function initHotkeys(os: OS): void {
+  const listEl = document.getElementById('pt-hotkey-list')!;
+
+  function render(): void {
+    const s = getSettings();
+    listEl.innerHTML = ACTIONS.map((action) => {
+      const combo = s.hotkeys[action];
+      const conflict = checkConflict(combo, s.hotkeys, action);
+      return `
+        <div class="pt-hotkey-row">
+          <span class="pt-row-label">${ACTION_LABELS[action]}</span>
+          <button
+            class="pt-hotkey-combo"
+            id="pt-hotkey-${action}"
+            data-action="${action}"
+            title="点击录制新快捷键"
+          >${formatHotkey(combo, os)}</button>
+        </div>
+        ${conflict ? `<div class="pt-hotkey-conflict">⚠ ${conflict}</div>` : ''}
+      `;
+    }).join('');
+
+    bindRecording(os);
+  }
+
+  function bindRecording(recOS: OS): void {
+    for (const action of ACTIONS) {
+      const btn = document.getElementById(`pt-hotkey-${action}`);
+      if (!btn) continue;
+
+      btn.addEventListener('click', () => {
+        // Already recording? Cancel
+        if (btn.classList.contains('pt-recording')) {
+          btn.classList.remove('pt-recording');
+          btn.textContent = formatHotkey(getSettings().hotkeys[action], recOS);
+          return;
+        }
+
+        // Show recording state
+        btn.classList.add('pt-recording');
+        btn.textContent = '按下组合键…';
+
+        const cancelRecord = startRecording(
+          recOS,
+          (combo) => {
+            cancelRecord();
+            btn.classList.remove('pt-recording');
+            btn.textContent = formatHotkey(combo, recOS);
+
+            const conflict = checkConflict(combo, getSettings().hotkeys, action);
+            if (conflict) {
+              // Show conflict warning but still allow saving
+              const existing = document.getElementById(`pt-conflict-${action}`);
+              if (existing) existing.remove();
+              const warn = document.createElement('div');
+              warn.id = `pt-conflict-${action}`;
+              warn.className = 'pt-hotkey-conflict';
+              warn.textContent = `⚠ ${conflict}`;
+              btn.parentElement!.after(warn);
+            }
+
+            savePatch({ hotkeys: { ...getSettings().hotkeys, [action]: combo } });
+          },
+          (reason) => {
+            cancelRecord();
+            btn.classList.remove('pt-recording');
+            btn.textContent = formatHotkey(getSettings().hotkeys[action], recOS);
+            const existing = document.getElementById(`pt-conflict-${action}`);
+            if (existing) existing.remove();
+            const warn = document.createElement('div');
+            warn.id = `pt-conflict-${action}`;
+            warn.className = 'pt-hotkey-conflict';
+            warn.textContent = `⚠ ${reason}`;
+            btn.parentElement!.after(warn);
+            setTimeout(() => warn.remove(), 2500);
+          },
+        );
+      });
+    }
+  }
+
+  render();
+  onSettingsChanged(() => render());
+}

@@ -1,0 +1,12 @@
+{
+  "extName": { "message": "Parallel-Translation" },
+  "extDesc": { "message": "對照式網頁翻譯擴充功能" },
+  "translate": { "message": "翻譯此頁" },
+  "settings": { "message": "設定" },
+  "styleDim": { "message": "弱化顯示" },
+  "styleFade": { "message": "半透明" },
+  "styleUnderline": { "message": "實線底線" },
+  "styleBold": { "message": "粗體" },
+  "styleItalic": { "message": "斜體" },
+  "cssNoSelector": { "message": "只需填寫 CSS 屬性，無需選擇器與大括號" }
+}

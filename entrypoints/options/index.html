@@ -4,17 +4,179 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="manifest.open_in_tab" content="true" />
+  <link rel="stylesheet" href="./options.css" />
   <script type="module" src="./main.ts"></script>
 </head>
 <body>
-  <div class="pt-options">
-    <h1>Parallel-Translation — 设置</h1>
-    <p>阶段 1：设置页骨架。完整 UI 将在阶段 7 实现。</p>
-    <hr />
-    <div id="pt-options-status">
-      <h2>当前设置（实时）</h2>
-      <p>加载中…</p>
-    </div>
+  <div class="pt-options-layout">
+    <nav class="pt-nav">
+      <div class="pt-nav-title">Parallel-Translation</div>
+      <button class="pt-nav-btn pt-active" data-section="general">通用</button>
+      <button class="pt-nav-btn" data-section="engines">引擎</button>
+      <button class="pt-nav-btn" data-section="appearance">外观</button>
+      <button class="pt-nav-btn" data-section="hotkeys">快捷键</button>
+      <button class="pt-nav-btn" data-section="sites">站点</button>
+      <button class="pt-nav-btn" data-section="advanced">高级</button>
+    </nav>
+    <main class="pt-main">
+      <!-- 通用 -->
+      <section class="pt-section pt-active" id="pt-section-general">
+        <h2>通用</h2>
+        <p class="pt-section-desc">扩展的基本行为与语言偏好。</p>
+        <div class="pt-card">
+          <div class="pt-card-label">开关</div>
+          <div class="pt-row">
+            <span class="pt-row-label">扩展开关</span>
+            <button class="pt-toggle pt-on" id="pt-toggle-enabled"></button>
+          </div>
+        </div>
+        <div class="pt-card">
+          <div class="pt-card-label">翻译语言</div>
+          <div class="pt-row">
+            <span class="pt-row-label">源语言</span>
+            <select class="pt-select" id="pt-select-from"></select>
+          </div>
+          <div class="pt-row">
+            <span class="pt-row-label">目标语言</span>
+            <select class="pt-select" id="pt-select-to"></select>
+          </div>
+        </div>
+        <div class="pt-card">
+          <div class="pt-card-label">默认显示模式</div>
+          <div class="pt-row">
+            <span class="pt-row-label">显示模式</span>
+            <select class="pt-select" id="pt-select-mode">
+              <option value="bilingual">对照</option>
+              <option value="translation-only">仅译文</option>
+            </select>
+          </div>
+        </div>
+        <div class="pt-card">
+          <div class="pt-card-label">悬浮 UI</div>
+          <div class="pt-row">
+            <span class="pt-row-label">悬浮球</span>
+            <button class="pt-toggle pt-on" id="pt-toggle-floating-ball"></button>
+          </div>
+          <div class="pt-row">
+            <span class="pt-row-label">段落悬停按钮</span>
+            <button class="pt-toggle pt-on" id="pt-toggle-paragraph-btn"></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 引擎 -->
+      <section class="pt-section" id="pt-section-engines">
+        <h2>引擎</h2>
+        <p class="pt-section-desc">拖拽调整引擎优先级（从上到下即故障切换顺序），为 BYOK 引擎配置 API key。</p>
+        <div class="pt-card">
+          <div class="pt-card-label">优先级（拖拽排序）</div>
+          <ul class="pt-engine-list" id="pt-engine-list"></ul>
+        </div>
+        <!-- BYOK 密钥区由 engines.ts 动态生成 -->
+        <div id="pt-byok-keys"></div>
+      </section>
+
+      <!-- 外观 -->
+      <section class="pt-section" id="pt-section-appearance">
+        <h2>外观</h2>
+        <p class="pt-section-desc">选择译文样式预设或编写自定义 CSS。</p>
+        <div class="pt-card">
+          <div class="pt-card-label">样式预设</div>
+          <div class="pt-row">
+            <span class="pt-row-label">预设</span>
+            <select class="pt-select" id="pt-select-style">
+              <option value="default">默认</option>
+              <option value="dim">弱化</option>
+              <option value="underline">实线下划线</option>
+              <option value="bold">加粗</option>
+              <option value="italic">斜体</option>
+              <option value="fade">半透明</option>
+            </select>
+          </div>
+          <div class="pt-style-preview" id="pt-style-preview">
+            <span class="pt-origin">The quick brown fox jumps over the lazy dog.</span>
+            <span class="pt-trans pt-style-preview-trans">敏捷的棕色狐狸跃过那只懒狗。</span>
+          </div>
+        </div>
+        <div class="pt-card">
+          <div class="pt-card-label">自定义 CSS</div>
+          <textarea class="pt-input" id="pt-custom-css" rows="4" placeholder="color: var(--pt-forest); font-style: italic;"></textarea>
+          <p class="pt-input-err" id="pt-css-error">CSS 语法无效，请修正</p>
+        </div>
+      </section>
+
+      <!-- 快捷键 -->
+      <section class="pt-section" id="pt-section-hotkeys">
+        <h2>快捷键</h2>
+        <p class="pt-section-desc">点击快捷键组合进入录制模式，按下新组合键即可重新绑定。</p>
+        <div class="pt-card">
+          <div class="pt-card-label">动作绑定</div>
+          <div id="pt-hotkey-list"></div>
+        </div>
+      </section>
+
+      <!-- 站点 -->
+      <section class="pt-section" id="pt-section-sites">
+        <h2>站点</h2>
+        <p class="pt-section-desc">控制扩展在哪些站点生效。</p>
+        <div class="pt-card">
+          <div class="pt-card-label">名单模式</div>
+          <div class="pt-row">
+            <span class="pt-row-label">模式</span>
+            <select class="pt-select" id="pt-select-site-mode">
+              <option value="blacklist">黑名单（默认生效，列表内不翻）</option>
+              <option value="whitelist">白名单（仅列表内翻译）</option>
+            </select>
+          </div>
+        </div>
+        <div class="pt-card">
+          <div class="pt-card-label">域名列表</div>
+          <div class="pt-sites-add">
+            <input class="pt-input" id="pt-site-input" type="text" placeholder="example.com" />
+            <button class="pt-btn" id="pt-site-add-btn">添加</button>
+          </div>
+          <ul class="pt-site-list" id="pt-site-list"></ul>
+        </div>
+      </section>
+
+      <!-- 高级 -->
+      <section class="pt-section" id="pt-section-advanced">
+        <h2>高级</h2>
+        <p class="pt-section-desc">性能调优、缓存管理、配置的导入导出。</p>
+        <div class="pt-card">
+          <div class="pt-card-label">并发与缓存</div>
+          <div class="pt-row">
+            <span class="pt-row-label">最大并发请求数</span>
+            <select class="pt-select" id="pt-select-concurrency">
+              <option value="2">2</option>
+              <option value="4">4</option>
+              <option value="6">6</option>
+              <option value="8">8</option>
+              <option value="10">10</option>
+            </select>
+          </div>
+          <div class="pt-row">
+            <span class="pt-row-label">启用翻译缓存</span>
+            <button class="pt-toggle pt-on" id="pt-toggle-cache"></button>
+          </div>
+          <div class="pt-advanced-stats" id="pt-cache-stats"></div>
+          <button class="pt-btn pt-btn-danger" id="pt-clear-cache-btn">清空缓存</button>
+        </div>
+        <div class="pt-card">
+          <div class="pt-card-label">配置管理</div>
+          <p class="pt-section-desc">导出配置不包含 API key，可安全分享。</p>
+          <div class="pt-actions">
+            <button class="pt-btn pt-btn-secondary" id="pt-export-settings-btn">导出设置</button>
+            <button class="pt-btn pt-btn-secondary" id="pt-import-settings-btn">导入设置</button>
+            <input type="file" id="pt-import-file" accept=".json" style="display:none" />
+          </div>
+          <div class="pt-actions">
+            <button class="pt-btn pt-btn-secondary" id="pt-reset-settings-btn">恢复默认设置</button>
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
+  <div class="pt-toast" id="pt-toast" style="display:none"></div>
 </body>
 </html>
