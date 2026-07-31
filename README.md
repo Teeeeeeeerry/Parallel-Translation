@@ -71,8 +71,6 @@ pnpm dev
 | 7 | 设置页完整化与 BYOK | ✅ |
 | 8 | 兼容补丁与多浏览器适配 | ✅ |
 
-**商店上架推迟。** 材料（隐私政策、中英文商店文案、截图规格）已备在 [`store/`](store/) 并与代码同步维护，但 5 张实拍截图与真机走查项尚未完成 —— 详见 [阶段 8 DoDR-2](docs/DoD-report/phase-8/DoDR-2.md)。这条线不阻塞后续开发。
-
 ## 文档
 
 | 文档 | 内容 |
@@ -81,7 +79,7 @@ pnpm dev
 | [docs/phases/](docs/phases/) | 9 份阶段实施手册，含代码骨架、取舍理由、验收标准 |
 | [docs/DoD-report/](docs/DoD-report/) | 各阶段 DoD 验收报告 |
 | [docs/TESTING.md](docs/TESTING.md) | 自动化测试体系：分层策略、性能与内存、异常与边界、隐私与合规 |
-| [store/](store/) | 上架材料（提交审核推迟） |
+| [store/](store/) | 上架材料 |
 
 ## 约定
 
