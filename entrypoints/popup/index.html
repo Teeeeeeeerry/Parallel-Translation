@@ -18,20 +18,20 @@
     <main class="pt-content">
       <!-- 状态卡 -->
       <div class="pt-card">
-        <div class="pt-card-label">状态</div>
+        <div class="pt-card-label" data-i18n="popupStatus">状态</div>
         <div class="pt-option-row">
-          <span class="pt-option-label">总开关</span>
+          <span class="pt-option-label" data-i18n="popupMaster">总开关</span>
           <button class="pt-toggle pt-on" id="pt-toggle-master"></button>
         </div>
         <div class="pt-option-row">
-          <span class="pt-option-label">翻译本页</span>
-          <button class="pt-action-btn" id="pt-translate-page-btn">翻译</button>
+          <span class="pt-option-label" data-i18n="popupTranslateThis">翻译本页</span>
+          <button class="pt-action-btn" id="pt-translate-page-btn" data-i18n="btnTranslate">翻译</button>
         </div>
       </div>
 
       <!-- 引擎选择 -->
       <div class="pt-card">
-        <div class="pt-card-label">翻译引擎</div>
+        <div class="pt-card-label" data-i18n="popupEngine">翻译引擎</div>
         <div class="pt-option-row">
           <select class="pt-select" id="pt-engine-select"></select>
         </div>
@@ -39,39 +39,39 @@
 
       <!-- 语言对 -->
       <div class="pt-card">
-        <div class="pt-card-label">语言设置</div>
+        <div class="pt-card-label" data-i18n="popupLangs">语言设置</div>
         <div class="pt-option-row">
-          <span class="pt-option-label">源语言</span>
+          <span class="pt-option-label" data-i18n="rowFrom">源语言</span>
           <select class="pt-select" id="pt-from-select"></select>
         </div>
         <div class="pt-option-row">
-          <span class="pt-option-label">目标语言</span>
+          <span class="pt-option-label" data-i18n="rowTo">目标语言</span>
           <select class="pt-select" id="pt-to-select"></select>
         </div>
       </div>
 
       <!-- 显示模式 -->
       <div class="pt-card">
-        <div class="pt-card-label">显示模式</div>
+        <div class="pt-card-label" data-i18n="popupDisplayMode">显示模式</div>
         <div class="pt-option-row">
           <select class="pt-select" id="pt-mode-select">
-            <option value="bilingual">对照</option>
-            <option value="translation-only">仅译文</option>
+            <option value="bilingual" data-i18n="modeBilingual">对照</option>
+            <option value="translation-only" data-i18n="modeTranslationOnly">仅译文</option>
           </select>
         </div>
       </div>
 
       <!-- 译文样式 -->
       <div class="pt-card">
-        <div class="pt-card-label">译文样式</div>
+        <div class="pt-card-label" data-i18n="popupStyle">译文样式</div>
         <div class="pt-option-row">
           <select class="pt-select" id="pt-style-select">
-            <option value="default">默认</option>
-            <option value="dim">弱化</option>
-            <option value="underline">实线下划线</option>
-            <option value="bold">加粗</option>
-            <option value="italic">斜体</option>
-            <option value="fade">半透明</option>
+            <option value="default" data-i18n="styleDefault">默认</option>
+            <option value="dim" data-i18n="styleDim">弱化显示</option>
+            <option value="underline" data-i18n="styleUnderline">实线下划线</option>
+            <option value="bold" data-i18n="styleBold">加粗</option>
+            <option value="italic" data-i18n="styleItalic">斜体</option>
+            <option value="fade" data-i18n="styleFade">半透明</option>
           </select>
         </div>
       </div>
@@ -81,7 +81,7 @@
 
     <footer class="pt-footer">
       <span id="pt-version"></span>
-      <button class="pt-settings-btn" id="pt-settings-btn">设置</button>
+      <button class="pt-settings-btn" id="pt-settings-btn" data-i18n="settings">设置</button>
     </footer>
   </div>
 </body>

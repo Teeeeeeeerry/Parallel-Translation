@@ -9,6 +9,7 @@ import {
   onSettingsChanged,
 } from '~/src/storage/settings';
 import { detectOS } from '~/src/hotkeys/platform';
+import { applyI18n, tf } from '~/src/i18n';
 import { initGeneral } from './sections/general';
 import { initEngines } from './sections/engines';
 import { initAppearance } from './sections/appearance';
@@ -55,6 +56,9 @@ async function init(): Promise<void> {
   await settingsReady();
   const os = await detectOS();
 
+  // 静态文案先本地化，再交给各 section 渲染动态内容
+  applyI18n();
+
   initTabs();
   initGeneral();
   initEngines();
@@ -68,6 +72,6 @@ document.addEventListener('DOMContentLoaded', () => {
   init().catch((e) => {
     console.error('[PT] options 初始化失败:', e);
     const main = document.querySelector('.pt-main');
-    if (main) main.textContent = '设置加载失败，请刷新页面';
+    if (main) main.textContent = tf('optionsLoadFail', '设置加载失败，请刷新页面');
   });
 });

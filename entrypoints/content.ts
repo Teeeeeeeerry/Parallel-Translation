@@ -23,6 +23,7 @@ import {
   patchSettings,
 } from '~/src/storage/settings';
 import type { Settings } from '~/src/storage/schema';
+import { tf } from '~/src/i18n';
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -79,7 +80,7 @@ export default defineContentScript({
         'toggle-extension': () => {
           const cur = getSettings().enabled;
           patchSettings({ enabled: !cur }).catch(() => {});
-          toast(cur ? '扩展已关闭' : '扩展已开启');
+          toast(cur ? tf('toastExtOff', '扩展已关闭') : tf('toastExtOn', '扩展已开启'));
         },
       });
     }
@@ -132,7 +133,7 @@ export default defineContentScript({
       if (!resp?.ok) {
         console.error('[PT] 翻译失败:', resp?.error ?? '未知错误');
         if (isMainFrame)
-          toast(resp?.error ?? '所有引擎均失败', 'error');
+          toast(resp?.error ?? tf('toastAllEnginesFail', '所有引擎均失败'), 'error');
         return 'error';
       }
 
@@ -236,7 +237,7 @@ export default defineContentScript({
       });
 
       if (!resp?.ok) {
-        toast('翻译失败', 'error');
+        toast(tf('toastTranslateFail', '翻译失败'), 'error');
         return;
       }
 
@@ -254,7 +255,7 @@ export default defineContentScript({
       });
 
       if (!resp?.ok) {
-        toast('翻译失败', 'error');
+        toast(tf('toastTranslateFail', '翻译失败'), 'error');
         return;
       }
 

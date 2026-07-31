@@ -3,6 +3,7 @@
 // 位置可拖动并持久化到 storage.local。
 
 import { mountIsolated, unmountIsolated } from './mount';
+import { tf } from '../i18n';
 
 const BALL_POS_KEY = 'pt-ball-pos';
 
@@ -25,7 +26,7 @@ export function createBall(callbacks: BallCallbacks): () => void {
 
   const ball = document.createElement('button');
   ball.className = 'pt-ball';
-  ball.setAttribute('aria-label', '翻译此页');
+  ball.setAttribute('aria-label', tf('translate', '翻译此页'));
   shadow.appendChild(ball);
   // 在设置里关掉又打开时，新球要接着上一次的状态画，而不是重置成 idle
   setBallState(currentState);
@@ -112,7 +113,7 @@ export function createBall(callbacks: BallCallbacks): () => void {
 }
 
 const GLYPH: Record<BallState, string> = {
-  idle: '译',
+  get idle() { return tf('ballGlyph', '译'); },
   loading: '…',
   done: '✓',
   error: '!',

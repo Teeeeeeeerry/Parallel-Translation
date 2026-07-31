@@ -8,6 +8,7 @@ import {
 } from '~/src/storage/settings';
 import { cacheClear } from '~/src/storage/cache';
 import { removeKey } from '~/src/storage/keys';
+import { tf } from '~/src/i18n';
 import { showToast } from '../main';
 
 function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
@@ -42,9 +43,9 @@ async function importSettings(json: string): Promise<void> {
     // 显式移除任何密钥相关字段
     delete sanitized.apiKeys;
     await patchSettings(sanitized as any);
-    showToast('设置已导入');
+    showToast(tf('toastImported', '设置已导入'));
   } catch {
-    showToast('导入失败：JSON 格式无效');
+    showToast(tf('toastImportFail', '导入失败：JSON 格式无效'));
   }
 }
 
@@ -57,7 +58,7 @@ async function resetSettings(): Promise<void> {
   await removeKey('gemini');
   // 重置设置为默认值
   await patchSettings(DEFAULT_SETTINGS);
-  showToast('已恢复默认设置');
+  showToast(tf('toastReset', '已恢复默认设置'));
 }
 
 export function initAdvanced(): void {
@@ -80,9 +81,9 @@ export function initAdvanced(): void {
     try {
       const result = await chrome.storage.local.get('pt-cache-index');
       const index: string[] = result['pt-cache-index'] ?? [];
-      cacheStats.textContent = `缓存条目：${index.length}`;
+      cacheStats.textContent = tf('cacheEntries', `缓存条目：${index.length}`, String(index.length));
     } catch {
-      cacheStats.textContent = '缓存条目：未知';
+      cacheStats.textContent = tf('cacheUnknown', '缓存条目：未知');
     }
   }
 
@@ -97,7 +98,7 @@ export function initAdvanced(): void {
   clearCacheBtn.addEventListener('click', async () => {
     await cacheClear();
     await updateCacheStats();
-    showToast('缓存已清空');
+    showToast(tf('toastCacheCleared', '缓存已清空'));
   });
 
   exportBtn.addEventListener('click', async () => {
@@ -109,7 +110,7 @@ export function initAdvanced(): void {
     a.download = 'parallel-translation-settings.json';
     a.click();
     URL.revokeObjectURL(url);
-    showToast('设置已导出（不含 API key）');
+    showToast(tf('toastExported', '设置已导出（不含 API key）'));
   });
 
   importBtn.addEventListener('click', () => {
@@ -130,7 +131,7 @@ export function initAdvanced(): void {
   });
 
   resetBtn.addEventListener('click', () => {
-    if (confirm('确定要恢复所有设置为默认值并清除所有缓存和API key吗？此操作不可撤销。')) {
+    if (confirm(tf('confirmReset', '确定要恢复所有设置为默认值并清除所有缓存和 API key 吗？此操作不可撤销。'))) {
       resetSettings().catch((e) => console.error('[PT] 重置失败:', e));
     }
   });

@@ -3,7 +3,8 @@
 import type { HotkeyAction } from '~/src/storage/schema';
 import type { OS } from '~/src/hotkeys/platform';
 import { formatHotkey } from '~/src/hotkeys/platform';
-import { ACTION_LABELS, startRecording, checkConflict } from '~/src/hotkeys/recorder';
+import { actionLabel, startRecording, checkConflict } from '~/src/hotkeys/recorder';
+import { tf } from '~/src/i18n';
 import {
   getSettings,
   patchSettings,
@@ -31,12 +32,12 @@ export function initHotkeys(os: OS): void {
       const conflict = checkConflict(combo, s.hotkeys, action);
       return `
         <div class="pt-hotkey-row">
-          <span class="pt-row-label">${ACTION_LABELS[action]}</span>
+          <span class="pt-row-label">${actionLabel(action)}</span>
           <button
             class="pt-hotkey-combo"
             id="pt-hotkey-${action}"
             data-action="${action}"
-            title="点击录制新快捷键"
+            title="${tf('recordTitle', '点击录制新快捷键')}"
           >${formatHotkey(combo, os)}</button>
         </div>
         ${conflict ? `<div class="pt-hotkey-conflict">⚠ ${conflict}</div>` : ''}
@@ -61,7 +62,7 @@ export function initHotkeys(os: OS): void {
 
         // Show recording state
         btn.classList.add('pt-recording');
-        btn.textContent = '按下组合键…';
+        btn.textContent = tf('recording', '按下组合键…');
 
         const cancelRecord = startRecording(
           recOS,

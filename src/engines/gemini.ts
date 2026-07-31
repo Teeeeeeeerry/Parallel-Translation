@@ -18,8 +18,11 @@ export const gemini: TranslateEngine = {
     if (!key) throw new EngineError('gemini', false, '未配置 API key');
 
     const model = getSettings().models?.gemini ?? 'gemini-2.0-flash';
+    // key 走 x-goog-api-key 请求头而非 ?key= query。
+    // URL 会进浏览器网络日志、DevTools 记录与任何中间层的访问日志，请求头不会；
+    // 另两个引擎也都是走头，保持一致。
     const endpoint =
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
     const numbered = texts.map((t, i) => `${i + 1}. ${t}`).join('\n');
     const prompt =
@@ -28,7 +31,10 @@ export const gemini: TranslateEngine = {
 
     const resp = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': key,
+      },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0 },

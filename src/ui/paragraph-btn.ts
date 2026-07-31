@@ -3,6 +3,7 @@
 // 单个按钮实例复用，随鼠标在段落间移动，不为每段各建一个。
 
 import { mountIsolated, unmountIsolated } from './mount';
+import { tf } from '../i18n';
 
 type TranslateOneFn = (el: Element) => Promise<void>;
 
@@ -39,8 +40,8 @@ export function createParaBtn(translateOne: TranslateOneFn): () => void {
   const shadow = mountIsolated('para-btn');
   const btn = document.createElement('button');
   btn.className = 'pt-para-btn';
-  btn.textContent = '译';
-  btn.setAttribute('aria-label', '翻译此段');
+  btn.textContent = tf('paraBtnGlyph', '译');
+  btn.setAttribute('aria-label', tf('paraBtnLabel', '翻译此段'));
   shadow.appendChild(btn);
 
   let target: Element | null = null;
