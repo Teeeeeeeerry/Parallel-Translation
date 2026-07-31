@@ -79,11 +79,21 @@ export default defineContentScript({
       setTimeout(() => div.remove(), 5000);
     }
 
+    // popup 的 toggle 消息会广播到本标签页的每一个 frame（all_frames 注入）。
+    // 每个 frame 都要照常翻译自己的文档，但只有主文档应答 —— 多个 frame 抢答时
+    // 调用方只收得到其中一个，若被空 iframe 抢先，popup 会误报
+    // 「本页没有可翻译的内容」。子 frame 不调 sendResponse、返回 undefined，
+    // 响应通道就只由主文档占用。
+    const isMainFrame = window.top === window;
+
     // 监听来自 popup 的 toggle 消息
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       // msg 可能是 null / 非对象 —— 直接解引用会把 TypeError 抛出监听器，
       // Chrome 记为「Error in event handler」（堆栈 :0 匿名函数）。
       if (msg?.type !== 'pt:toggle-translate') return;
+
+      // 子 frame：照常执行，不应答
+      const reply = isMainFrame ? sendResponse : () => {};
 
       try {
         const willTranslate = !translated;
@@ -102,24 +112,22 @@ export default defineContentScript({
                   );
                 });
               }
-              sendResponse({ ok: true, status });
+              reply({ ok: true, status });
             })
-            .catch((e: Error) =>
-              sendResponse({ ok: false, error: String(e) }),
-            );
+            .catch((e: Error) => reply({ ok: false, error: String(e) }));
         } else {
           Promise.resolve()
             .then(() => doRestore())
-            .then(() => sendResponse({ ok: true, status: 'restored' }))
-            .catch((e: Error) =>
-              sendResponse({ ok: false, error: String(e) }),
-            );
+            .then(() => reply({ ok: true, status: 'restored' }))
+            .catch((e: Error) => reply({ ok: false, error: String(e) }));
         }
       } catch (e) {
-        sendResponse({ ok: false, error: String(e) });
+        reply({ ok: false, error: String(e) });
       }
 
-      return true; // 保持通道开启
+      // 只有主文档保持通道开启；子 frame 返回 undefined 让通道立即关闭，
+      // 不参与抢答
+      return isMainFrame ? true : undefined;
     });
   },
 });

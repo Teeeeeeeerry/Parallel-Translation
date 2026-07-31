@@ -25,22 +25,33 @@ function observeShadowRoots(
 ): MutationObserver[] {
   const observers: MutationObserver[] = [];
 
-  const walk = (node: Node) => {
-    if (node.nodeType !== Node.ELEMENT_NODE) return;
-    const el = node as Element;
-    if (el.shadowRoot && !seen.has(el.shadowRoot)) {
-      seen.add(el.shadowRoot);
-      const mo = new MutationObserver(onMutation);
-      mo.observe(el.shadowRoot, { childList: true, subtree: true });
-      observers.push(mo);
-      // 递归：shadow 内可能还有嵌套 shadow host
-      el.shadowRoot.querySelectorAll('*').forEach((child) => walk(child));
-    }
-    // light DOM 子元素
-    el.querySelectorAll?.('*')?.forEach((child) => walk(child));
+  const attach = (el: Element): boolean => {
+    if (!el.shadowRoot || seen.has(el.shadowRoot)) return false;
+    seen.add(el.shadowRoot);
+    const mo = new MutationObserver(onMutation);
+    mo.observe(el.shadowRoot, { childList: true, subtree: true });
+    observers.push(mo);
+    return true;
   };
 
-  walk(root);
+  // querySelectorAll('*') 返回的已经是整棵子树，因此每个 scope 只扫一遍即可。
+  // 若再对其中每个后代重复调用，深度 k 的节点会沿 2^(k-1) 条祖先路径被反复
+  // 访问 —— 代价随嵌套深度指数增长，真实页面上会直接冻结主线程。
+  // 递归只发生在 shadow 边界，因为 querySelectorAll 不穿透 shadow root。
+  const walk = (scope: ParentNode) => {
+    scope.querySelectorAll('*').forEach((el) => {
+      if (attach(el)) walk(el.shadowRoot!);
+    });
+  };
+
+  if (root.nodeType === Node.ELEMENT_NODE) {
+    // root 自身也可能是 shadow host —— querySelectorAll 不包含根节点
+    const el = root as Element;
+    if (attach(el)) walk(el.shadowRoot!);
+    walk(el);
+  } else if (root.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+    walk(root as ParentNode);
+  }
   return observers;
 }
 

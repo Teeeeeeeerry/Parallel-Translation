@@ -88,15 +88,13 @@ async function onTranslatePageClick(): Promise<void> {
     const tabId = tabs[0]?.id;
     if (tabId == null) return;
 
-    // all_frames 下 sendMessage 会广播至所有 frame，每个 frame 各自应答 ——
-    // 若某个空 iframe 先返回 no-elements，popup 会误报「本页没有可翻译的内容」。
-    // 限制 frameId: 0 只取主文档的响应做 UI 提示，其余 frame 由 background
-    // 的工具栏图标点击负责广播切换。
-    const resp = await chrome.tabs.sendMessage(
-      tabId,
-      { type: 'pt:toggle-translate' },
-      { frameId: 0 },
-    );
+    // 必须广播到所有 frame（不带 frameId），否则 all_frames 注入的 iframe
+    // content script 收不到指令，iframe 内文本永远不会被翻译。
+    // 提示文案的准确性由 content script 保证：只有主文档那份会 sendResponse，
+    // 子 frame 照常翻译但不占用响应通道，因此这里拿到的必定是主文档的结果。
+    const resp = await chrome.tabs.sendMessage(tabId, {
+      type: 'pt:toggle-translate',
+    });
     if (resp?.status === 'disabled') {
       showHint('总开关已关闭');
     } else if (resp?.status === 'no-elements') {
