@@ -6,6 +6,13 @@ import { mountIsolated, unmountIsolated } from './mount';
 import { tf } from '../i18n';
 
 type TranslateOneFn = (el: Element) => Promise<void>;
+type RestoreOneFn = (el: Element) => void;
+
+/** 段落按钮的回调：按目标段落当前的翻译态分流 */
+interface ParaBtnHandlers {
+  translate: TranslateOneFn;
+  restore: RestoreOneFn;
+}
 
 /**
  * 离开段落后的隐藏延迟。
@@ -39,11 +46,11 @@ const MARGIN = 4;
 /** 段落按钮的可翻译标签（与 DIRECT_SET 的块级正文一致，不含表格单元格） */
 const DIRECT = 'p,li,dd,blockquote,h1,h2,h3,h4,h5,h6';
 
-export function createParaBtn(translateOne: TranslateOneFn): () => void {
+export function createParaBtn(handlers: ParaBtnHandlers): () => void {
+  const { translate, restore } = handlers;
   const shadow = mountIsolated('para-btn');
   const btn = document.createElement('button');
   btn.className = 'pt-para-btn';
-  btn.textContent = tf('paraBtnGlyph', '译');
   btn.setAttribute('aria-label', tf('paraBtnLabel', '翻译此段'));
   shadow.appendChild(btn);
 
@@ -64,6 +71,17 @@ export function createParaBtn(translateOne: TranslateOneFn): () => void {
       btn.style.opacity = '0';
     }
     target = el;
+
+    // 双向切换：已翻译段落浮出「还原」态按钮，否则是「翻译」态。
+    // 文案与 aria-label 随态切换（走 i18n，不硬编码）。
+    const done = el.getAttribute('data-pt') === 'done';
+    btn.textContent = done
+      ? tf('paraBtnRestoreGlyph', '原')
+      : tf('paraBtnGlyph', '译');
+    btn.setAttribute(
+      'aria-label',
+      done ? tf('paraBtnRestoreLabel', '还原此段') : tf('paraBtnLabel', '翻译此段'),
+    );
 
     // position() 内部读 getBoundingClientRect 会强制一次布局，把上面的
     // opacity: 0 与 display: block 一并提交，随后置 1 才会真正走过渡。
@@ -117,7 +135,6 @@ export function createParaBtn(translateOne: TranslateOneFn): () => void {
    */
   const scheduleShow = (el: Element) => {
     if (el.closest('[data-pt-ui="1"]')) return;
-    if (el.getAttribute('data-pt') === 'done') return;
 
     clearTimeout(hideTimer);
 
@@ -153,7 +170,11 @@ export function createParaBtn(translateOne: TranslateOneFn): () => void {
   window.addEventListener('resize', onReflow, { passive: true });
 
   btn.addEventListener('click', () => {
-    if (target) translateOne(target);
+    if (!target) return;
+    // 按目标段落当前的翻译态分流：已翻译 → 还原，否则 → 翻译。
+    // 翻译/还原完成后按钮隐藏，下次悬停按新状态重新判定。
+    if (target.getAttribute('data-pt') === 'done') restore(target);
+    else translate(target);
     clearTimeout(showTimer);
     clearTimeout(hideTimer);
     btn.style.display = 'none';
@@ -183,7 +204,6 @@ function findUnderOverlay(x: number, y: number): Element | null {
   for (const n of stack.slice(0, 8)) {
     const el = n.closest?.(DIRECT);
     if (!el || el.closest('[data-pt-ui="1"]')) continue;
-    if (el.getAttribute('data-pt') === 'done') continue;
     return el;
   }
   return null;

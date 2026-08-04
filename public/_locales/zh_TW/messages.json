@@ -144,6 +144,8 @@
   "ballGlyph": { "message": "譯" },
   "paraBtnGlyph": { "message": "譯" },
   "paraBtnLabel": { "message": "翻譯此段" },
+  "paraBtnRestoreGlyph": { "message": "原" },
+  "paraBtnRestoreLabel": { "message": "還原此段" },
   "toastExtOn": { "message": "擴充功能已開啟" },
   "toastExtOff": { "message": "擴充功能已關閉" },
   "toastAllEnginesFail": { "message": "所有引擎均失敗" },
