@@ -215,31 +215,70 @@ function findUnderOverlay(x: number, y: number): Element | null {
 }
 
 /**
- * 定位到段落右上角，并钳制在视口内。
+ * 取元素内文字的实际行盒矩形列表（`Range.getClientRects()`）。
+ * 空列表意味着元素内容全是浮动/绝对定位子元素等没有行盒的情况。
+ */
+function textRects(el: Element): DOMRect[] {
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  return [...range.getClientRects()];
+}
+
+/**
+ * 定位到段落文字末尾，并钳制在视口内。
  *
- * 不钳制的话按钮会落到屏幕外：段落通常撑满内容列宽，全宽布局下
- * `r.right` 已经接近 innerWidth，再 +4 就出界了；长段落顶部滚出视口时
- * `r.top` 同样会把按钮丢到视口上方。两种情况用户都只会觉得"按钮不见了"。
+ * 改用文字实际占据的行盒而非元素边框盒定位：块级元素默认撑满容器宽度，
+ * `getBoundingClientRect().right` 是容器右边缘，与文字实际排到哪里无关。
+ * 列表这类「容器很宽、每行文字很短」的排版下，按钮和它所指的那行字之间
+ * 会被拉开一大段空白。
+ *
+ * 行盒取首行（竖直方向保持贴段落顶部的现有行为），单行条目紧贴文字末尾，
+ * 多行段落首行通常是满行，位置与现在一致。
+ *
+ * 视口钳制保留不动 —— 宽屏满行段落仍然需要右侧放不下的兜底分支。
  */
 function position(btn: HTMLElement, el: Element): void {
   btn.style.display = 'block';
 
-  const r = el.getBoundingClientRect();
+  const rects = textRects(el);
   const b = btn.getBoundingClientRect();
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
-  let left = r.right + GAP;
-  let top = r.top;
+  let left: number;
+  let top: number;
+
+  if (rects.length > 0) {
+    const isRtl = getComputedStyle(el).direction === 'rtl';
+    const first = rects[0];
+    top = first.top;
+
+    if (isRtl) {
+      // RTL：文字末尾在左边，按钮贴在文字左侧。
+      left = first.left - GAP - b.width;
+    } else {
+      // LTR：文字末尾在右边，按钮贴在文字右侧。
+      left = first.right + GAP;
+    }
+  } else {
+    // 空 rects 兜底（子元素全是浮动/绝对定位）：退回到 getBoundingClientRect。
+    const r = el.getBoundingClientRect();
+    top = r.top;
+    left = r.right + GAP;
+  }
 
   if (left + b.width > vw - MARGIN) {
-    // 右侧放不下（段落撑满内容列宽时的常态）。退到段落右上角，
+    // 右侧放不下（宽屏满行段落仍是这个情况）。退到段落右上角，
     // 并优先浮到段落**上方**的行间空白里 —— 压在正文上会遮住正在读的
     // 那一行，视觉上同样像"闪"。上方也没地方时才落回段落内。
+    const r = el.getBoundingClientRect();
     left = Math.max(MARGIN, r.right - b.width - GAP);
     const above = r.top - b.height - GAP;
     if (above >= MARGIN) top = above;
   }
+
+  // RTL 段落按钮贴左侧时可能超出左边界，做一次左侧钳制。
+  if (left < MARGIN) left = MARGIN;
 
   // 先取上限再取下限：视口比按钮还矮时（极端窄窗、部分嵌入式 webview），
   // 反过来写会让 Math.min 选中负的上限，把按钮推到视口外。
