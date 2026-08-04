@@ -7,6 +7,7 @@
 import '~/src/styles/tokens.css';
 import '~/src/styles/presets.css';
 import { collect } from '~/src/dom/walker';
+import { normalizeText } from '~/src/dom/normalize';
 import { startObserver } from '~/src/dom/observer';
 import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
 import { applyCustomCss } from '~/src/styles/custom';
@@ -123,7 +124,8 @@ export default defineContentScript({
       const targets = elements ?? collect();
       if (targets.length === 0) return 'no-elements';
 
-      const texts = targets.map((el) => el.textContent?.trim() ?? '');
+      // 归一化内部空白：硬换行切词、撑破 OpenAI 编号结构都源于未折叠的 \n
+      const texts = targets.map((el) => normalizeText(el.textContent ?? ''));
 
       const resp = await chrome.runtime.sendMessage({
         type: 'pt:translate',
@@ -228,7 +230,7 @@ export default defineContentScript({
       const ns = getSettings();
       if (!ns.enabled) return;
 
-      const text = el.textContent?.trim() ?? '';
+      const text = normalizeText(el.textContent ?? '');
       if (!text) return;
 
       const resp = await chrome.runtime.sendMessage({
@@ -246,6 +248,8 @@ export default defineContentScript({
 
     // ── 翻译选区 ──
     async function translateSelection(text: string): Promise<void> {
+      // 跨行划词时选区文本天然带 \n，入口归一化
+      text = normalizeText(text);
       const ns = getSettings();
       if (!ns.enabled) return;
 

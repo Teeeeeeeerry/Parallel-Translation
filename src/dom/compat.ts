@@ -4,6 +4,8 @@
 //
 // 补丁只做两件事：跳过(skip)、改指(take)。不在此处写翻译逻辑或 DOM 操作。
 
+import { normalizeText } from './normalize';
+
 type CompatResult =
   | { skip: true }
   | { take: Element }
@@ -55,7 +57,7 @@ const HANDLERS: Record<string, CompatHandler> = {
     }
     // 独立的行内 code 在非 pre 上下文中通常是变量名/hash
     if (el.tagName === 'CODE' && !el.closest('pre, .blob-code')) {
-      const text = el.textContent?.trim() ?? '';
+      const text = normalizeText(el.textContent ?? '');
       // 短 hash / 变量名 / 数字 不翻
       if (/^[a-f0-9]{7,40}$/.test(text) || /^[._a-zA-Z]\w*$/.test(text) || /^\d+$/.test(text)) {
         return { skip: true };
