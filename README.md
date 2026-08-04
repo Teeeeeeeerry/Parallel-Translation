@@ -2,7 +2,7 @@
 
 对照式网页翻译浏览器扩展。原文与译文并排呈现，让阅读外语内容不必在两个界面之间来回切换。
 
-Chrome / Edge / Firefox，Manifest V3，当前 v0.6.3。
+Chrome / Edge / Firefox，Manifest V3，当前 v0.6.4。
 
 ## 特性
 

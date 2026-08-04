@@ -36,6 +36,9 @@ const GAP = 4;
 /** 钳制到视口内时留的边距 */
 const MARGIN = 4;
 
+/** 段落按钮的可翻译标签（与 DIRECT_SET 的块级正文一致，不含表格单元格） */
+const DIRECT = 'p,li,dd,blockquote,h1,h2,h3,h4,h5,h6';
+
 export function createParaBtn(translateOne: TranslateOneFn): () => void {
   const shadow = mountIsolated('para-btn');
   const btn = document.createElement('button');
@@ -47,8 +50,6 @@ export function createParaBtn(translateOne: TranslateOneFn): () => void {
   let target: Element | null = null;
   let hideTimer: number | undefined;
   let showTimer: number | undefined;
-
-  const DIRECT = 'p,li,dd,blockquote,h1,h2,h3,h4,h5,h6';
 
   const isOurUi = (n: EventTarget | null): boolean =>
     n instanceof Element && !!n.closest?.('[data-pt-ui="1"]');
@@ -85,8 +86,37 @@ export function createParaBtn(translateOne: TranslateOneFn): () => void {
   };
 
   const onMouseOver = (e: MouseEvent) => {
-    const el = (e.target as Element)?.closest?.(DIRECT);
-    if (!el || el.closest('[data-pt-ui="1"]')) return;
+    const hit = (e.target as Element)?.closest?.(DIRECT);
+    if (hit) {
+      scheduleShow(hit);
+      return;
+    }
+
+    // 整卡点击覆盖层（stretched link）的兜底：命中测试落在铺满卡片的
+    // 伪元素上，而伪元素算到产生它的祖先 <a> —— closest() 只向上找，
+    // 够不到被盖住的后代段落（h2/p）。
+    //
+    // elementsFromPoint() 会强制同步布局，所以不在这里直接跑，而是
+    // 设进 SHOW_DELAY 的悬停意图计时器：鼠标划过空白区时计时器每次
+    // 都被重置，只有真正停住才会执行 —— 划过的路上零布局成本。
+    const x = e.clientX;
+    const y = e.clientY;
+    clearTimeout(showTimer);
+    showTimer = self.setTimeout(() => {
+      const el = findUnderOverlay(x, y);
+      if (!el) return;
+      clearTimeout(hideTimer);
+      show(el);
+    }, SHOW_DELAY);
+  };
+
+  /**
+   * 命中段落 → 计划浮出按钮（停住 SHOW_DELAY 才真正浮出）。
+   * 路过时后一次 mouseover 会把前一段的计时重置掉，于是一路划过去
+   * 一次都不弹。
+   */
+  const scheduleShow = (el: Element) => {
+    if (el.closest('[data-pt-ui="1"]')) return;
     if (el.getAttribute('data-pt') === 'done') return;
 
     clearTimeout(hideTimer);
@@ -94,8 +124,6 @@ export function createParaBtn(translateOne: TranslateOneFn): () => void {
     // 已经停在这一段上了 —— 段落内部换子元素不重定位，省掉无谓的强制布局
     if (el === target && isVisible()) return;
 
-    // 悬停意图：停住 SHOW_DELAY 才浮出。路过时后一次 mouseover 会把
-    // 前一段的计时重置掉，于是一路划过去一次都不弹。
     clearTimeout(showTimer);
     showTimer = self.setTimeout(() => show(el), SHOW_DELAY);
   };
@@ -140,6 +168,25 @@ export function createParaBtn(translateOne: TranslateOneFn): () => void {
     window.removeEventListener('resize', onReflow);
     unmountIsolated('para-btn');
   };
+}
+
+/**
+ * 沿 elementsFromPoint 的命中栈找被覆盖层遮住的段落（stretched link 兜底）。
+ * 命中栈按 z 序从顶层元素排到 <html>，被伪元素盖住的后代段落也在栈里 ——
+ * 对每层做 closest(DIRECT)，即可捞到覆盖层下方的 h2/p。
+ *
+ * 只取前 8 层：覆盖层 → 卡片容器 → 标题包裹层 → 段落的典型结构在
+ * 3~5 层内，更深处在深层嵌套页面上会捞到远处无关元素。
+ */
+function findUnderOverlay(x: number, y: number): Element | null {
+  const stack = document.elementsFromPoint(x, y);
+  for (const n of stack.slice(0, 8)) {
+    const el = n.closest?.(DIRECT);
+    if (!el || el.closest('[data-pt-ui="1"]')) continue;
+    if (el.getAttribute('data-pt') === 'done') continue;
+    return el;
+  }
+  return null;
 }
 
 /**
