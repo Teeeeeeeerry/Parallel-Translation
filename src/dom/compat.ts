@@ -13,6 +13,8 @@ type CompatResult =
 
 type CompatHandler = (el: Element) => CompatResult;
 
+type OmitHandler = (el: Element) => boolean;
+
 /**
  * 取主域名（末两段）。
  * news.ycombinator.com → ycombinator.com
@@ -70,5 +72,24 @@ const HANDLERS: Record<string, CompatHandler> = {
 export function applyCompat(el: Element): CompatResult {
   const handler = HANDLERS[mainDomain(location.hostname)];
   if (!handler) return null;
+  return handler(el);
+}
+
+/**
+ * 提取文本时应剔除的站点元数据（来源角标、计数 chip 等 UI 碎片）。
+ * 与 skip 的区别：skip 影响采集器是否收集该节点，这里影响已收集单元的
+ * 文本内容 —— AI 概览的来源角标是行内元素，永远当不成单元，只能从
+ * 文本层面剔除。
+ *
+ * 类名来自社区抓包记录而非官方文档，Google 改版可能失效 —— 失效只是
+ * 噪声回退（chip 文本重新进入译文），不会翻错。
+ */
+const OMIT_HANDLERS: Record<string, OmitHandler> = {
+  'google.com': (el: Element) => el.matches('span.wJwe6c, .WTfRgd'),
+};
+
+export function shouldOmitText(el: Element): boolean {
+  const handler = OMIT_HANDLERS[mainDomain(location.hostname)];
+  if (!handler) return false;
   return handler(el);
 }
