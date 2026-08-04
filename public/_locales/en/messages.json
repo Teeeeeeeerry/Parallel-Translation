@@ -144,6 +144,8 @@
   "ballGlyph": { "message": "T" },
   "paraBtnGlyph": { "message": "T" },
   "paraBtnLabel": { "message": "Translate this paragraph" },
+  "paraBtnRestoreGlyph": { "message": "R" },
+  "paraBtnRestoreLabel": { "message": "Restore this paragraph" },
   "toastExtOn": { "message": "Extension enabled" },
   "toastExtOff": { "message": "Extension disabled" },
   "toastAllEnginesFail": { "message": "All engines failed" },

@@ -35,7 +35,6 @@ export default defineContentScript({
     detectOS(); // 预热平台缓存
     const s = getSettings();
 
-    let translated = false;
     let stopObserving: (() => void) | null = null;
     let stopHotkeys: (() => void) | null = null;
     let stopDrag: (() => void) | null = null;
@@ -56,7 +55,10 @@ export default defineContentScript({
       }
 
       if (s.showParagraphBtn) {
-        stopParaBtn = createParaBtn((el) => translateOne(el));
+        stopParaBtn = createParaBtn({
+          translate: (el) => translateOne(el),
+          restore: (el) => unrender(el),
+        });
       }
     }
 
@@ -106,7 +108,10 @@ export default defineContentScript({
 
         // 段落按钮开关
         if (ns.showParagraphBtn && !stopParaBtn) {
-          stopParaBtn = createParaBtn((el) => translateOne(el));
+          stopParaBtn = createParaBtn({
+          translate: (el) => translateOne(el),
+          restore: (el) => unrender(el),
+        });
         } else if (!ns.showParagraphBtn && stopParaBtn) {
           stopParaBtn();
           stopParaBtn = null;
@@ -170,18 +175,35 @@ export default defineContentScript({
       for (const el of els) {
         unrender(el);
       }
-      translated = false;
+    }
+
+    /**
+     * 页面上是否存在已翻译段落（带 shadow 穿透，短路返回）。
+     * 翻译态以真实 DOM 为准而不是布尔标志：单段翻译（translateOne）与
+     * observer 增量补翻都会落 data-pt="done"，只有整页翻译会记布尔，
+     * 仅查标志会把「页面上已有译文」误判成「没翻过」，toggle 走错分支。
+     */
+    function hasTranslated(): boolean {
+      const walk = (root: ParentNode): boolean => {
+        if (root.querySelector('[data-pt="done"]')) return true;
+        for (const el of root.querySelectorAll('*')) {
+          const sr = (el as Element).shadowRoot;
+          if (sr && walk(sr)) return true;
+        }
+        return false;
+      };
+      return walk(document);
     }
 
     /**
      * 翻译 / 还原的单一入口 —— 悬浮球、快捷键、popup 三条路径共用。
      *
-     * 翻译态（`translated` + observer）是整个 frame 共享的一份状态，
-     * 任何入口各自记一份都会导致「按了没反应」或「重复翻一遍」。
+     * 翻译态（DOM 上是否存在译文 + observer）是整个 frame 共享的一份
+     * 状态，任何入口各自记一份都会导致「按了没反应」或「重复翻一遍」。
      * 悬浮球的视觉由这里通过 setBallState 单向推送。
      */
     async function togglePage(): Promise<string> {
-      if (translated) {
+      if (hasTranslated()) {
         doRestore();
         if (isMainFrame) setBallState('idle');
         return 'restored';
@@ -201,7 +223,6 @@ export default defineContentScript({
       }
 
       if (status === 'translated') {
-        translated = true;
         // 增量补翻对三个入口一视同仁 —— 无限滚动/SPA 不该因为
         // 用户点的是悬浮球而失效
         if (!stopObserving) {
