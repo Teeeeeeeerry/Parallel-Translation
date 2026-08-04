@@ -3,6 +3,7 @@
 // 单个按钮实例复用，随鼠标在段落间移动，不为每段各建一个。
 
 import { mountIsolated, unmountIsolated } from './mount';
+import { closestUnit } from '../dom/classify';
 import { tf } from '../i18n';
 
 type TranslateOneFn = (el: Element) => Promise<void>;
@@ -43,8 +44,16 @@ const GAP = 4;
 /** 钳制到视口内时留的边距 */
 const MARGIN = 4;
 
-/** 段落按钮的可翻译标签（与 DIRECT_SET 的块级正文一致，不含表格单元格） */
-const DIRECT = 'p,li,dd,blockquote,h1,h2,h3,h4,h5,h6';
+/**
+ * 段落按钮的候选选择器：可翻译块级正文 + div 型正文容器。
+ * 只做便宜的初筛 —— closest() 命中后，真正的判定（isTranslationUnit +
+ * shouldSkip，与采集器同一套）在 SHOW_DELAY 计时器回调里做：
+ * shouldSkip 拼 outerHTML、调 getBoundingClientRect 会强制同步布局，
+ * 不能挂在每次 mouseover 上。
+ */
+const CANDIDATE =
+  'p,li,dd,blockquote,h1,h2,h3,h4,h5,h6,' +
+  'div,section,article,main,figure';
 
 export function createParaBtn(handlers: ParaBtnHandlers): () => void {
   const { translate, restore } = handlers;
@@ -104,45 +113,39 @@ export function createParaBtn(handlers: ParaBtnHandlers): () => void {
   };
 
   const onMouseOver = (e: MouseEvent) => {
-    const hit = (e.target as Element)?.closest?.(DIRECT);
-    if (hit) {
-      scheduleShow(hit);
-      return;
-    }
-
-    // 整卡点击覆盖层（stretched link）的兜底：命中测试落在铺满卡片的
-    // 伪元素上，而伪元素算到产生它的祖先 <a> —— closest() 只向上找，
-    // 够不到被盖住的后代段落（h2/p）。
-    //
-    // elementsFromPoint() 会强制同步布局，所以不在这里直接跑，而是
-    // 设进 SHOW_DELAY 的悬停意图计时器：鼠标划过空白区时计时器每次
-    // 都被重置，只有真正停住才会执行 —— 划过的路上零布局成本。
+    // 便宜初筛：候选选择器向上找最近的段落/容器。Google 搜索摘要等
+    // div 型正文不在旧的 p/li/h* 白名单里 —— 候选放宽到正文容器，
+    // 判定精度交给计时器里的 closestUnit()。
+    const hit = (e.target as Element)?.closest?.(CANDIDATE);
     const x = e.clientX;
     const y = e.clientY;
     clearTimeout(showTimer);
     showTimer = self.setTimeout(() => {
-      const el = findUnderOverlay(x, y);
+      // 悬停意图确认后才做精判。命中测试与 elementsFromPoint 都会强制
+      // 同步布局（shouldSkip 拼 outerHTML、调 getBoundingClientRect），
+      // 鼠标划过时计时器每次都被重置、只有真正停住才执行 ——
+      // 划过的路上零布局成本。
+      //
+      // 自己的 UI（悬浮球等）不触发按钮；兜底找覆盖层也不能越过 UI。
+      if (hit && hit.closest('[data-pt-ui="1"]')) return;
+
+      // 精判（isTranslationUnit + shouldSkip）：按钮与采集器同一套标准，
+      // 白名单之外的大容器（如 AI 概览的外层 li）不会再被错误命中。
+      let el = hit ? closestUnit(hit) : null;
+      if (!el) {
+        // 整卡点击覆盖层（stretched link）的兜底：命中测试落在铺满卡片
+        // 的伪元素上，而伪元素算到产生它的祖先 <a> —— closest() 只向上
+        // 找，够不到被盖住的后代段落（h2/p）。
+        el = findUnderOverlay(x, y);
+      }
       if (!el) return;
+
+      // 已经停在这一段上了 —— 段落内部换子元素不重定位，省掉无谓的强制布局
+      if (el === target && isVisible()) return;
+
       clearTimeout(hideTimer);
       show(el);
     }, SHOW_DELAY);
-  };
-
-  /**
-   * 命中段落 → 计划浮出按钮（停住 SHOW_DELAY 才真正浮出）。
-   * 路过时后一次 mouseover 会把前一段的计时重置掉，于是一路划过去
-   * 一次都不弹。
-   */
-  const scheduleShow = (el: Element) => {
-    if (el.closest('[data-pt-ui="1"]')) return;
-
-    clearTimeout(hideTimer);
-
-    // 已经停在这一段上了 —— 段落内部换子元素不重定位，省掉无谓的强制布局
-    if (el === target && isVisible()) return;
-
-    clearTimeout(showTimer);
-    showTimer = self.setTimeout(() => show(el), SHOW_DELAY);
   };
 
   const onMouseOut = (e: MouseEvent) => {
@@ -194,7 +197,8 @@ export function createParaBtn(handlers: ParaBtnHandlers): () => void {
 /**
  * 沿 elementsFromPoint 的命中栈找被覆盖层遮住的段落（stretched link 兜底）。
  * 命中栈按 z 序从顶层元素排到 <html>，被伪元素盖住的后代段落也在栈里 ——
- * 对每层做 closest(DIRECT)，即可捞到覆盖层下方的 h2/p。
+ * 对每层做 closest(CANDIDATE) 再 closestUnit() 精判，即可捞到覆盖层
+ * 下方可翻的 h2/p/div 型正文。
  *
  * 只取前 8 层：覆盖层 → 卡片容器 → 标题包裹层 → 段落的典型结构在
  * 3~5 层内，更深处在深层嵌套页面上会捞到远处无关元素。
@@ -202,9 +206,10 @@ export function createParaBtn(handlers: ParaBtnHandlers): () => void {
 function findUnderOverlay(x: number, y: number): Element | null {
   const stack = document.elementsFromPoint(x, y);
   for (const n of stack.slice(0, 8)) {
-    const el = n.closest?.(DIRECT);
+    const el = n.closest?.(CANDIDATE);
     if (!el || el.closest('[data-pt-ui="1"]')) continue;
-    return el;
+    const unit = closestUnit(el);
+    if (unit) return unit;
   }
   return null;
 }

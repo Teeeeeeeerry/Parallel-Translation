@@ -7,7 +7,9 @@
 import '~/src/styles/tokens.css';
 import '~/src/styles/presets.css';
 import { collect } from '~/src/dom/walker';
+import { closestUnit } from '~/src/dom/classify';
 import { normalizeText } from '~/src/dom/normalize';
+import { translatableText } from '~/src/dom/text';
 import { startObserver } from '~/src/dom/observer';
 import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
 import { applyCustomCss } from '~/src/styles/custom';
@@ -129,8 +131,9 @@ export default defineContentScript({
       const targets = elements ?? collect();
       if (targets.length === 0) return 'no-elements';
 
-      // 归一化内部空白：硬换行切词、撑破 OpenAI 编号结构都源于未折叠的 \n
-      const texts = targets.map((el) => normalizeText(el.textContent ?? ''));
+      // 归一化内部空白：硬换行切词、撑破 OpenAI 编号结构都源于未折叠的 \n。
+      // translatableText 剔除 .notranslate 与站点元数据（如 Google 来源角标）。
+      const texts = targets.map((el) => normalizeText(translatableText(el)));
 
       const resp = await chrome.runtime.sendMessage({
         type: 'pt:translate',
@@ -251,7 +254,14 @@ export default defineContentScript({
       const ns = getSettings();
       if (!ns.enabled) return;
 
-      const text = normalizeText(el.textContent ?? '');
+      // 提级到最近的可翻单元：按钮路径传来的已是精判通过的单元（原样返回）；
+      // 快捷键路径拿的是选区起点的 parentElement，可能是 span 等内联元素，
+      // 由这里统一向上找整段。找不到（超长 / .notranslate / 非正文区 /
+      // 已翻译）则 shouldSkip 已拦下，不翻。
+      const unit = closestUnit(el);
+      if (!unit) return;
+
+      const text = normalizeText(translatableText(unit));
       if (!text) return;
 
       const resp = await chrome.runtime.sendMessage({
@@ -264,7 +274,7 @@ export default defineContentScript({
         return;
       }
 
-      render(el, resp.data.translations[0]);
+      render(unit, resp.data.translations[0]);
     }
 
     // ── 翻译选区 ──

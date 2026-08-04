@@ -13,6 +13,15 @@ export const DIRECT_SET = new Set([
   'td', 'th', 'caption', 'summary',
 ]);
 
+/**
+ * div 型正文容器：直接持有文本时本身即为翻译单元（#19）。
+ * Google 搜索摘要、AI 概览等现代站点把正文层层裹在 div 里，白名单
+ * 永远选不中 —— 按钮不浮出、采集器也不收集。此集合在标签之外放行。
+ */
+export const CONTAINER_SET = new Set([
+  'div', 'section', 'article', 'main', 'figure',
+]);
+
 /** 整棵子树跳过，不再深入 */
 export const SKIP_SET = new Set([
   'html', 'body', 'script', 'style', 'noscript',
@@ -71,10 +80,17 @@ function isMainlyNumeric(text: string): boolean {
  * 判定元素是否是一个完整的翻译单元。
  * 核心规则：若子元素中存在非内联且带文本的元素，
  * 说明文本还在更深层，当前节点不是叶子翻译单元。
+ *
+ * div 型正文（CONTAINER_SET）走同一套规则，只多一道门槛：必须直接持有
+ * 文本 —— 纯壳容器（文本全在更深层）不算。两条规则对称，祖先与后代
+ * 不会同时成单元，无需额外去重。
  */
 export function isTranslationUnit(el: Element): boolean {
   const tag = el.tagName.toLowerCase();
-  if (!DIRECT_SET.has(tag)) return false;
+  const isContainer = CONTAINER_SET.has(tag);
+
+  if (isContainer && directTextLength(el) === 0) return false;
+  if (!DIRECT_SET.has(tag) && !isContainer) return false;
 
   for (const child of el.children) {
     const childTag = child.tagName.toLowerCase();
@@ -84,4 +100,31 @@ export function isTranslationUnit(el: Element): boolean {
     if (child.textContent?.trim()) return false;
   }
   return true;
+}
+
+/** 直接子文本节点的字符数（不深入子元素）。div 型正文判定的依据 */
+function directTextLength(el: Element): number {
+  let len = 0;
+  for (const node of el.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) len += (node.textContent ?? '').length;
+  }
+  return len;
+}
+
+/**
+ * 从 el（含自身）向上找最近的翻译单元（isTranslationUnit + shouldSkip）。
+ * 按钮路径与 translateOne 共用 —— 判定标准与采集器同一套，不再各立门户，
+ * 白名单之外的大容器（如 AI 概览的外层 li）不会再被错误命中。
+ *
+ * shouldSkip 有强制同步布局的昂贵步骤（outerHTML、getBoundingClientRect），
+ * 只应在低频率路径调用：悬停意图计时器、点击/快捷键入口，不能挂在
+ * 每次 mouseover 上。
+ */
+export function closestUnit(el: Element): Element | null {
+  let cur: Element | null = el;
+  while (cur) {
+    if (isTranslationUnit(cur) && !shouldSkip(cur)) return cur;
+    cur = cur.parentElement;
+  }
+  return null;
 }
