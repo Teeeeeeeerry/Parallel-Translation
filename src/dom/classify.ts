@@ -9,7 +9,8 @@
 /** 直接翻译的块级元素 */
 export const DIRECT_SET = new Set([
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-  'p', 'li', 'dd', 'blockquote', 'figcaption',
+  'p', 'li', 'dd', 'dt', 'blockquote', 'figcaption',
+  'td', 'th', 'caption', 'summary',
 ]);
 
 /** 整棵子树跳过，不再深入 */
