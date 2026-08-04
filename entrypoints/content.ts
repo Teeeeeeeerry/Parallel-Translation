@@ -46,7 +46,7 @@ export default defineContentScript({
     const isMainFrame = window.top === window;
 
     // ── 初始模式/样式 ──
-    applyMode(s.displayMode);
+    applyMode(s.displayMode, s.paraDisplayMode);
     applyStyle(s.style);
     if (s.customCss) applyCustomCss(s.customCss);
 
@@ -69,6 +69,8 @@ export default defineContentScript({
       stopHotkeys = startHotkeys({
         'toggle-translate': () => void togglePage(),
         'toggle-mode': () => {
+          // 只翻转全局显示模式。paraDisplayMode 为 'follow' 时跟着变；
+          // 显式设过独立值的不受快捷键影响。
           const next: 'bilingual' | 'translation-only' =
             getSettings().displayMode === 'bilingual'
               ? 'translation-only'
@@ -95,7 +97,7 @@ export default defineContentScript({
 
     // ── 设置变更监听 ──
     onSettingsChanged((ns: Settings) => {
-      applyMode(ns.displayMode);
+      applyMode(ns.displayMode, ns.paraDisplayMode);
       applyStyle(ns.style);
       applyCustomCss(ns.customCss);
 
@@ -149,7 +151,7 @@ export default defineContentScript({
 
       const translations: string[] = resp.data.translations;
       for (let i = 0; i < targets.length; i++) {
-        render(targets[i]!, translations[i]!);
+        render(targets[i]!, translations[i]!, 'page');
       }
 
       return 'translated';
@@ -274,7 +276,7 @@ export default defineContentScript({
         return;
       }
 
-      render(unit, resp.data.translations[0]);
+      render(unit, resp.data.translations[0], 'para');
     }
 
     // ── 翻译选区 ──
