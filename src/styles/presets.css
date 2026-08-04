@@ -7,8 +7,11 @@
   display: block;
 }
 
-/* ── 仅译文模式 ─────────────────────────────────────── */
-.pt-only-trans .pt-origin {
+/* ── 仅译文模式（按来源分流）─────────────────────────── */
+.pt-only-trans-page [data-pt-src='page'] .pt-origin {
+  display: none;
+}
+.pt-only-trans-para [data-pt-src='para'] .pt-origin {
   display: none;
 }
 

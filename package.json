@@ -1,6 +1,6 @@
 {
   "name": "parallel-translation",
-  "version": "0.6.7",
+  "version": "0.6.8",
   "description": "对照式网页翻译浏览器扩展",
   "private": true,
   "type": "module",

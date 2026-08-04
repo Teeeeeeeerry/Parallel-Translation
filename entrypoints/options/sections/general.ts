@@ -7,6 +7,7 @@ import {
   patchSettings,
   onSettingsChanged,
 } from '~/src/storage/settings';
+import { tf } from '~/src/i18n';
 
 function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
   patchSettings(patch).catch((e) => console.error('[PT] 设置写入失败:', e));
@@ -27,6 +28,7 @@ export function initGeneral(): void {
   const selectFrom = document.getElementById('pt-select-from') as HTMLSelectElement;
   const selectTo = document.getElementById('pt-select-to') as HTMLSelectElement;
   const selectMode = document.getElementById('pt-select-mode') as HTMLSelectElement;
+  const selectParaMode = document.getElementById('pt-select-para-mode') as HTMLSelectElement;
   const toggleFloatingBall = document.getElementById('pt-toggle-floating-ball')!;
   const toggleParagraphBtn = document.getElementById('pt-toggle-paragraph-btn')!;
 
@@ -36,6 +38,7 @@ export function initGeneral(): void {
     selectFrom.innerHTML = buildLangOptions(s.from, true);
     selectTo.innerHTML = buildLangOptions(s.to, false);
     selectMode.value = s.displayMode;
+    selectParaMode.value = s.paraDisplayMode ?? 'follow';
     toggleFloatingBall.classList.toggle('pt-on', s.showFloatingBall);
     toggleParagraphBtn.classList.toggle('pt-on', s.showParagraphBtn);
   }
@@ -54,6 +57,12 @@ export function initGeneral(): void {
 
   selectMode.addEventListener('change', () => {
     savePatch({ displayMode: selectMode.value as DisplayMode });
+  });
+
+  selectParaMode.addEventListener('change', () => {
+    savePatch({
+      paraDisplayMode: selectParaMode.value as DisplayMode | 'follow',
+    });
   });
 
   toggleFloatingBall.addEventListener('click', () => {

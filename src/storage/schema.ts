@@ -43,6 +43,13 @@ export interface Settings {
   to: string;
 
   displayMode: DisplayMode;
+
+  /**
+   * 单段翻译的显示模式。'follow' 表示跟随全局 displayMode。
+   * 默认 'follow'，升级后现有用户行为完全不变。
+   */
+  paraDisplayMode: DisplayMode | 'follow';
+
   style: StyleId;
 
   /** 自定义 CSS 声明块（不含选择器）。阶段 4 校验。 */
@@ -101,6 +108,7 @@ export const DEFAULT_SETTINGS: Settings = {
   from: 'auto',
   to: 'zh-CN',
   displayMode: 'bilingual',
+  paraDisplayMode: 'follow',
   style: 'default',
   customCss: '',
   hotkeys: {

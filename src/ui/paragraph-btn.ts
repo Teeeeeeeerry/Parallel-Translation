@@ -250,7 +250,7 @@ function position(btn: HTMLElement, el: Element): void {
 
   if (rects.length > 0) {
     const isRtl = getComputedStyle(el).direction === 'rtl';
-    const first = rects[0];
+    const first = rects[0]!;
     top = first.top;
 
     if (isRtl) {

@@ -9,10 +9,17 @@
 
 import type { DisplayMode, StyleId } from '../storage/schema';
 
+/** 渲染来源：区分整页翻译与单段翻译，落成 data-pt-src 属性供 CSS 分流。 */
+export type RenderSource = 'page' | 'para';
+
 /**
  * 渲染译文。三种模式共用同一套 DOM 结构。
  */
-export function render(el: Element, translation: string): void {
+export function render(
+  el: Element,
+  translation: string,
+  src: RenderSource = 'page',
+): void {
   if (el.getAttribute('data-pt') === 'done') return;
 
   // 把原有子节点整体包进 .pt-origin，保留其内部结构与事件绑定
@@ -27,6 +34,7 @@ export function render(el: Element, translation: string): void {
   el.appendChild(origin);
   el.appendChild(trans);
   el.setAttribute('data-pt', 'done');
+  el.setAttribute('data-pt-src', src);
 }
 
 /** 还原原文，把 .pt-origin 的子节点放回去 */
@@ -38,14 +46,22 @@ export function unrender(el: Element): void {
   origin.remove();
   trans?.remove();
   el.removeAttribute('data-pt');
+  el.removeAttribute('data-pt-src');
 }
 
-/** 模式切换：只改 <html> 上的类名，零 DOM 操作、零请求 */
-export function applyMode(mode: DisplayMode): void {
-  document.documentElement.classList.toggle(
-    'pt-only-trans',
-    mode === 'translation-only',
-  );
+/**
+ * 模式切换：只改 <html> 上的类名，零 DOM 操作、零请求。
+ *
+ * paraMode 为 'follow' 时跟随 pageMode，否则独立生效。
+ */
+export function applyMode(
+  pageMode: DisplayMode,
+  paraMode: DisplayMode | 'follow',
+): void {
+  const root = document.documentElement;
+  const effectivePara = paraMode === 'follow' ? pageMode : paraMode;
+  root.classList.toggle('pt-only-trans-page', pageMode === 'translation-only');
+  root.classList.toggle('pt-only-trans-para', effectivePara === 'translation-only');
 }
 
 /** 样式切换：替换 pt-style-* 类名 */
