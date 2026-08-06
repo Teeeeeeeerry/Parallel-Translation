@@ -33,7 +33,7 @@ export function render(
   // 正常路径不应再走到这里。保留此检查为纵深防御，仅在最外层代码路径
   // 绕过采集器（如手动构造 DOM 元素调用）时兜底。
   if (hasNonTextContent(el)) {
-    console.warn('[PT] render 拒绝（纵深防御）：元素含非文本内容（媒体 / 交互控件）', el);
+    console.debug('[PT] render 拒绝（纵深防御）：元素含非文本内容（媒体 / 交互控件）', el);
     return false;
   }
 
