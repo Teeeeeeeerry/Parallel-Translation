@@ -132,11 +132,11 @@ export function isTranslationUnit(el: Element): boolean {
   return true;
 }
 
-/** 直接子文本节点的字符数（不深入子元素）。div 型正文判定的依据 */
+/** 直接子文本节点的有效字符数（不深入子元素，trim 后计数，排除格式化空白）。div 型正文判定的依据 */
 function directTextLength(el: Element): number {
   let len = 0;
   for (const node of el.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) len += (node.textContent ?? '').length;
+    if (node.nodeType === Node.TEXT_NODE) len += (node.textContent ?? '').trim().length;
   }
   return len;
 }
