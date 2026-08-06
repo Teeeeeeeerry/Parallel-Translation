@@ -22,17 +22,30 @@ export const CONTAINER_SET = new Set([
   'div', 'section', 'article', 'main', 'figure',
 ]);
 
-/** 整棵子树跳过，不再深入 */
+/**
+ * 整棵子树跳过，不再深入。
+ * code 同时属于 INLINE_SET —— 见 INLINE_SET 注释（#41）。
+ */
 export const SKIP_SET = new Set([
   'html', 'body', 'script', 'style', 'noscript',
   'input', 'textarea', 'select', 'button',
   'code', 'pre',
 ]);
 
-/** 内联元素：自身不作为翻译单元，需向上找可翻父节点 */
+/**
+ * 内联元素：自身不作为翻译单元，需向上找可翻父节点。
+ *
+ * code 同时属于 SKIP_SET 与 INLINE_SET —— 两个集合回答不同的问题：
+ * SKIP_SET 告诉 walker「不要下沉进 code 子树」（行内代码内容不独立采集），
+ * INLINE_SET 告诉 isTranslationUnit「code 子元素不阻断父段落判定」，
+ * 使含行内代码的段落仍能被识别为翻译单元（#41）。
+ */
 export const INLINE_SET = new Set([
   'a', 'b', 'strong', 'span', 'em', 'i', 'u', 'small', 'sub', 'sup',
   'font', 'mark', 'cite', 'q', 'abbr', 'time', 'ruby', 'img', 'br', 'svg',
+  'code', 'kbd', 'samp', 'var', 'dfn',
+  'del', 'ins', 's', 'bdi', 'bdo', 'wbr',
+  'tt', 'big',
 ]);
 
 /** 应被整体跳过的非正文区域选择器（导航、页脚、侧栏、参考文献等） */
