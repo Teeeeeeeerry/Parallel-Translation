@@ -21,7 +21,12 @@ export function translatableText(el: Element): string {
         const c = child as Element;
         if (c.classList.contains('notranslate')) continue;
         if (shouldOmitText(c)) continue;
+        // 元素子节点之间补空格，防止源 HTML 中相邻元素无空白时
+        // textContent 把末字与首字粘在一起（如 "CertifiedProfessional"，#22）。
+        // normalizeText 会将多余空白折叠为单个空格，多余的不会到达引擎。
+        out += ' ';
         walk(c);
+        out += ' ';
       }
     }
   };

@@ -151,5 +151,6 @@
   "toastExtOn": { "message": "扩展已开启" },
   "toastExtOff": { "message": "扩展已关闭" },
   "toastAllEnginesFail": { "message": "所有引擎均失败" },
-  "toastTranslateFail": { "message": "翻译失败" }
+  "toastTranslateFail": { "message": "翻译失败" },
+  "toastNotTranslatable": { "message": "该区域无法单独翻译" }
 }
