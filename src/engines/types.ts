@@ -14,6 +14,12 @@ export interface TranslateResponse {
   translations: string[];
   /** 检测到的源语言（可选）。 */
   detectedFrom?: string;
+  /**
+   * 翻译失败的槽位索引（可选）。
+   * router 根据此字段将失败槽位交给下一个引擎重试，
+   * 已成功的译文保留在 translations 中不被丢弃。
+   */
+  failedIndices?: number[];
 }
 
 export interface TranslateEngine {

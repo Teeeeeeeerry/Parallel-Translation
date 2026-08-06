@@ -59,9 +59,31 @@ export const googleWeb: TranslateEngine = {
   supportedLangs: 'all',
 
   async translate({ texts, from, to }) {
-    const translations = await Promise.all(
+    const results = await Promise.allSettled(
       texts.map((text) => getGate()(() => fetchOne(text, from, to))),
     );
-    return { translations };
+
+    const translations: string[] = [];
+    const failedIndices: number[] = [];
+
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i]!;
+      if (r.status === 'fulfilled') {
+        translations[i] = r.value;
+      } else {
+        translations[i] = '';
+        failedIndices.push(i);
+      }
+    }
+
+    // 全部失败 → 抛出让 router 整体切换到下一个引擎
+    if (failedIndices.length === texts.length) {
+      throw new EngineError('google-web', true, `全部 ${texts.length} 条翻译失败`);
+    }
+
+    return {
+      translations,
+      failedIndices: failedIndices.length > 0 ? failedIndices : undefined,
+    };
   },
 };

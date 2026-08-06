@@ -124,6 +124,10 @@ export default defineContentScript({
     });
 
     // ── 翻译全页 ──
+    // #25: 分批发送 + 渐进渲染。每批独立 sendMessage，返回即渲染，
+    // 用户在第一屏译文出现前不再需要等待全页最慢段。
+    const FULL_PAGE_BATCH_SIZE = 15;
+
     async function doTranslate(
       elements?: Element[],
     ): Promise<string> {
@@ -145,21 +149,44 @@ export default defineContentScript({
         ),
       );
 
-      const resp = await chrome.runtime.sendMessage({
-        type: 'pt:translate',
-        payload: { texts, from: ns.from, to: ns.to },
-      });
-
-      if (!resp?.ok) {
-        console.error('[PT] 翻译失败:', resp?.error ?? '未知错误');
-        if (isMainFrame)
-          toast(resp?.error ?? tf('toastAllEnginesFail', '所有引擎均失败'), 'error');
-        return 'error';
+      // 切分为批次
+      const batches: { texts: string[]; targets: Element[] }[] = [];
+      for (let i = 0; i < targets.length; i += FULL_PAGE_BATCH_SIZE) {
+        batches.push({
+          texts: texts.slice(i, i + FULL_PAGE_BATCH_SIZE),
+          targets: targets.slice(i, i + FULL_PAGE_BATCH_SIZE),
+        });
       }
 
-      const translations: string[] = resp.data.translations;
-      for (let i = 0; i < targets.length; i++) {
-        render(targets[i]!, translations[i]!, 'page');
+      let allFailed = true;
+
+      // 所有批次并发发送，每批返回即渲染。
+      // Google Web 的并发闸门是惰性单例，所有批次共享，自然排队。
+      await Promise.all(
+        batches.map(async ({ texts: batchTexts, targets: batchTargets }) => {
+          const resp = await chrome.runtime.sendMessage({
+            type: 'pt:translate',
+            payload: { texts: batchTexts, from: ns.from, to: ns.to },
+          });
+
+          if (!resp?.ok) {
+            console.error('[PT] 批次翻译失败:', resp?.error ?? '未知错误');
+            return;
+          }
+
+          allFailed = false;
+
+          const translations: string[] = resp.data.translations;
+          for (let i = 0; i < batchTargets.length; i++) {
+            render(batchTargets[i]!, translations[i]!, 'page');
+          }
+        }),
+      );
+
+      if (allFailed) {
+        if (isMainFrame)
+          toast(tf('toastAllEnginesFail', '所有引擎均失败'), 'error');
+        return 'error';
       }
 
       return 'translated';
