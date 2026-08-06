@@ -9,8 +9,8 @@ import '~/src/styles/presets.css';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
 import { normalizeText } from '~/src/dom/normalize';
-import { translatableText } from '~/src/dom/text';
-import { startObserver } from '~/src/dom/observer';
+import { translatableText, shallowTranslatableText, hasBlockTextChildren } from '~/src/dom/text';
+import { startObserver, registerHidden } from '~/src/dom/observer';
 import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
 import { applyCustomCss } from '~/src/styles/custom';
 import { createBall, setBallState } from '~/src/ui/floating-ball';
@@ -130,12 +130,20 @@ export default defineContentScript({
       const ns = getSettings();
       if (!ns.enabled) return 'disabled';
 
-      const targets = elements ?? collect();
+      const targets = elements ?? collect(document.body, registerHidden);
       if (targets.length === 0) return 'no-elements';
 
       // 归一化内部空白：硬换行切词、撑破 OpenAI 编号结构都源于未折叠的 \n。
       // translatableText 剔除 .notranslate 与站点元数据（如 Google 来源角标）。
-      const texts = targets.map((el) => normalizeText(translatableText(el)));
+      // #23：混合内容元素（直接文本 + 块级子元素）使用 shallowTranslatableText，
+      // 只提取直接文本，嵌套块级子元素由各自的翻译单元独立翻译。
+      const texts = targets.map((el) =>
+        normalizeText(
+          hasBlockTextChildren(el)
+            ? shallowTranslatableText(el)
+            : translatableText(el),
+        ),
+      );
 
       const resp = await chrome.runtime.sendMessage({
         type: 'pt:translate',

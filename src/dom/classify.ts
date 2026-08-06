@@ -45,7 +45,8 @@ const MAX_TEXT = 3072;
 const MAX_HTML = 4096;
 const MIN_TEXT = 3;
 
-export function shouldSkip(el: Element): boolean {
+/** 非可见性相关的所有跳过判定。元素即便变为可见，这些条件也不会改变。 */
+export function shouldSkipNonVisual(el: Element): boolean {
   const tag = el.tagName.toLowerCase();
   if (SKIP_SET.has(tag)) return true;
   if (el.classList.contains('notranslate')) return true;
@@ -58,15 +59,24 @@ export function shouldSkip(el: Element): boolean {
   // 非正文区域：导航、页脚、侧栏、参考文献等
   if (el.closest(NON_CONTENT)) return true;
 
-  // 不可见元素（display:none 或祖先被隐藏）
-  const rect = (el as HTMLElement).getBoundingClientRect?.();
-  if (rect && rect.width === 0 && rect.height === 0) return true;
-
   const text = el.textContent?.trim() ?? '';
   if (text.length < MIN_TEXT || text.length > MAX_TEXT) return true;
   if ((el as HTMLElement).outerHTML.length > MAX_HTML) return true;
   if (isMainlyNumeric(text)) return true;
 
+  return false;
+}
+
+/** 元素是否可见（非 display:none 且祖先均可见）。 */
+export function isVisible(el: Element): boolean {
+  const rect = (el as HTMLElement).getBoundingClientRect?.();
+  if (rect && rect.width === 0 && rect.height === 0) return false;
+  return true;
+}
+
+export function shouldSkip(el: Element): boolean {
+  if (shouldSkipNonVisual(el)) return true;
+  if (!isVisible(el)) return true;
   return false;
 }
 
@@ -92,12 +102,19 @@ export function isTranslationUnit(el: Element): boolean {
   if (isContainer && directTextLength(el) === 0) return false;
   if (!DIRECT_SET.has(tag) && !isContainer) return false;
 
+  // #23：元素自身持有直接文本时，即使有带文本的块级子元素也接受为翻译单元。
+  // 直接文本部分由 shallowTranslatableText 提取，嵌套块级子元素各自独立采集。
+  const hasDirect = directTextLength(el) > 0;
+
   for (const child of el.children) {
     const childTag = child.tagName.toLowerCase();
     // 内联子元素属于本段的一部分，不影响判定
     if (INLINE_SET.has(childTag)) continue;
-    // 非内联且有文本 → 文本在更深层，当前节点不是翻译单元
-    if (child.textContent?.trim()) return false;
+    // 非内联且有文本 → 若当前元素有直接文本则接受（仅翻直接文本），否则拒收
+    if (child.textContent?.trim()) {
+      if (hasDirect) continue;
+      return false;
+    }
   }
   return true;
 }

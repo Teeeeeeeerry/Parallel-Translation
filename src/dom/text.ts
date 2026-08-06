@@ -6,6 +6,7 @@
 // - shouldOmitText()：域名补丁（compat.ts），站点的特定元数据
 
 import { shouldOmitText } from './compat';
+import { INLINE_SET } from './classify';
 
 /**
  * 提取元素的全部可翻译文本：递归遍历子节点，跳过 .notranslate 与
@@ -32,4 +33,46 @@ export function translatableText(el: Element): string {
   };
   walk(el);
   return out;
+}
+
+/**
+ * 浅层提取：只取直接文本节点与内联子元素的文本，跳过块级子元素。
+ *
+ * #23 混合内容元素专用 —— 对 `<li>标签文字<ul><li>子条目</li></ul></li>`
+ * 只提取"标签文字"，子条目由各自的翻译单元独立翻译，避免重复。
+ */
+export function shallowTranslatableText(el: Element): string {
+  let out = '';
+  for (const child of el.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      out += child.textContent ?? '';
+    } else if (child.nodeType === Node.ELEMENT_NODE) {
+      const c = child as Element;
+      const tag = c.tagName.toLowerCase();
+
+      // 跳过块级子元素 —— 它们的文本由各自翻译单元覆盖
+      if (!INLINE_SET.has(tag)) continue;
+
+      if (c.classList.contains('notranslate')) continue;
+      if (shouldOmitText(c)) continue;
+      out += ' ';
+      out += translatableText(c); // 内联元素全递归
+      out += ' ';
+    }
+  }
+  return out;
+}
+
+/**
+ * 元素是否含有带文本的非内联子元素（即混合内容元素）。
+ * 此类元素在整页翻译时应使用 shallowTranslatableText，
+ * 避免把嵌套子条目的文本重复翻译进父单元。
+ */
+export function hasBlockTextChildren(el: Element): boolean {
+  for (const child of el.children) {
+    const tag = child.tagName.toLowerCase();
+    if (INLINE_SET.has(tag)) continue;
+    if (child.textContent?.trim()) return true;
+  }
+  return false;
 }

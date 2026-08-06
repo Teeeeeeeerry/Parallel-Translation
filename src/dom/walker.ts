@@ -7,21 +7,29 @@
 // Phase 8 接入域名级采集补丁（src/dom/compat.ts），
 // 在通用规则判定之前给特定站点插入决策。
 
-import { SKIP_SET, shouldSkip, isTranslationUnit } from './classify';
+import { SKIP_SET, shouldSkipNonVisual, isVisible, isTranslationUnit } from './classify';
 import { applyCompat } from './compat';
 
 /**
  * 采集可翻译节点。
  * TreeWalker 不会自动进入 shadowRoot，必须显式递归。
  */
-export function collect(root: Node = document.body): Element[] {
+export function collect(
+  root: Node = document.body,
+  onHidden?: (el: Element) => void,
+): Element[] {
   const out: Element[] = [];
   const seen = new Set<Element>();
-  walk(root, out, seen);
+  walk(root, out, seen, onHidden);
   return out;
 }
 
-function walk(root: Node, out: Element[], seen: Set<Element>): void {
+function walk(
+  root: Node,
+  out: Element[],
+  seen: Set<Element>,
+  onHidden?: (el: Element) => void,
+): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
     acceptNode(node) {
       const el = node as Element;
@@ -69,9 +77,18 @@ function walk(root: Node, out: Element[], seen: Set<Element>): void {
     }
 
     // 判定顺序不能反：isTranslationUnit() 首步只是一次标签查表，而
-    // shouldSkip() 要拼 outerHTML、算 textContent、调 getBoundingClientRect
-    // （真实浏览器中会强制同步布局）。先便宜后昂贵，整页采集耗时约降至 1/5。
-    if (!seen.has(el) && isTranslationUnit(el) && !shouldSkip(el)) {
+    // shouldSkipNonVisual() 要拼 outerHTML、算 textContent。先便宜后昂贵。
+    if (!seen.has(el) && isTranslationUnit(el)) {
+      if (shouldSkipNonVisual(el)) {
+        node = walker.nextNode();
+        continue;
+      }
+      // #23：不可见的翻译单元记入延迟队列，等 IntersectionObserver 补翻
+      if (!isVisible(el)) {
+        onHidden?.(el);
+        node = walker.nextNode();
+        continue;
+      }
       seen.add(el);
       out.push(el);
     }
