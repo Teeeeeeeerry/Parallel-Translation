@@ -135,7 +135,11 @@ export default defineContentScript({
       if (!ns.enabled) return 'disabled';
 
       const targets = elements ?? collect(document.body, registerHidden);
-      if (targets.length === 0) return 'no-elements';
+      if (targets.length === 0) {
+        if (isMainFrame)
+          toast(tf('hintNoElements', '本页没有可翻译的内容'));
+        return 'no-elements';
+      }
 
       // 归一化内部空白：硬换行切词、撑破 OpenAI 编号结构都源于未折叠的 \n。
       // translatableText 剔除 .notranslate 与站点元数据（如 Google 来源角标）。
