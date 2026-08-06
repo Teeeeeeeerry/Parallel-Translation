@@ -44,14 +44,23 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
     const uncached: { idx: number; text: string }[] = [];
 
     if (useCache) {
-      for (let i = 0; i < req.texts.length; i++) {
+      // 并行查询缓存 —— cacheKey 内的 crypto.subtle.digest 是纯 CPU 操作，
+      // N 条可以并行计算，消除串行 for-await 的 2N 次往返延迟。
+      const cacheChecks = await Promise.all(
+        req.texts.map(async (text, i) => {
+          if (translations[i] !== null) return { i, cached: null, text };
+          const k = await cacheKey(id, req.from, req.to, text);
+          const cached = await cacheGet(k);
+          return { i, cached, text };
+        }),
+      );
+
+      for (const { i, cached, text } of cacheChecks) {
         if (translations[i] !== null) continue;
-        const k = await cacheKey(id, req.from, req.to, req.texts[i]!);
-        const cached = await cacheGet(k);
         if (cached !== null) {
           translations[i] = cached;
         } else {
-          uncached.push({ idx: i, text: req.texts[i]! });
+          uncached.push({ idx: i, text: text! });
         }
       }
     } else {
@@ -78,12 +87,47 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
         translations[uncached[j]!.idx] = resp.translations[j]!;
       }
 
-      // 写缓存
-      if (useCache) {
-        for (let j = 0; j < uncached.length; j++) {
-          const k = await cacheKey(id, req.from, req.to, uncached[j]!.text);
-          await cacheSet(k, resp.translations[j]!);
+      // 处理部分失败：将失败槽位重置为 null，交给下一个引擎重试
+      if (resp.failedIndices && resp.failedIndices.length > 0) {
+        for (const j of resp.failedIndices) {
+          translations[uncached[j]!.idx] = null;
         }
+
+        // 并行写缓存（仅成功的条目）
+        if (useCache) {
+          const succeeded = uncached.filter(
+            (_, j) => !resp.failedIndices!.includes(j),
+          );
+          if (succeeded.length > 0) {
+            await Promise.all(
+              succeeded.map(async (u) => {
+                const k = await cacheKey(id, req.from, req.to, u.text);
+                const idx = uncached.indexOf(u);
+                await cacheSet(k, resp.translations[idx]!);
+              }),
+            );
+          }
+        }
+
+        errors.push(
+          new EngineError(
+            id,
+            true,
+            `${resp.failedIndices.length}/${uncached.length} 条失败，尝试下一个引擎`,
+          ),
+        );
+        continue; // 下一个引擎自动拾取 translations[i] === null 的槽位
+      }
+
+      // 全部成功 → 并行写缓存
+      if (useCache) {
+        await Promise.all(
+          uncached.map(async (u) => {
+            const k = await cacheKey(id, req.from, req.to, u.text);
+            const idx = uncached.indexOf(u);
+            await cacheSet(k, resp.translations[idx]!);
+          }),
+        );
       }
 
       return {
