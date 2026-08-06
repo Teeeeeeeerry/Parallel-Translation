@@ -8,19 +8,10 @@
 // 结构与事件监听器。
 
 import type { DisplayMode, StyleId } from '../storage/schema';
+import { hasNonTextContent } from './classify';
 
 /** 渲染来源：区分整页翻译与单段翻译，落成 data-pt-src 属性供 CSS 分流。 */
 export type RenderSource = 'page' | 'para';
-
-/**
- * 子树中含有不应被藏进 .pt-origin 的节点时的匹配选择器。
- * img / video / iframe 等是可见媒体内容，button / input 等是交互控件，
- * 若被搬进 display:none 的隐藏容器，卡片结构就塌了（#22）。
- */
-const NON_TEXT_SELECTOR =
-  'img, picture, video, audio, iframe, canvas, object, embed,' +
-  ' button, input, select, textarea,' +
-  ' [role="button"], [role="tab"], [role="menuitem"], [role="switch"], [role="checkbox"]';
 
 /**
  * 渲染译文。三种模式共用同一套 DOM 结构。
@@ -36,10 +27,13 @@ export function render(
   if (el.getAttribute('data-pt') === 'done') return true;
 
   // 纵深防御：拒绝含非文本内容的容器，防止缩略图、按钮等被藏进
-  // display:none 的 .pt-origin（#22）。此检查与采集器的 isTranslationUnit
-  // 互补 —— 后者允许 img（内联元素），render() 则对可见媒体说「不」。
-  if (el.querySelector(NON_TEXT_SELECTOR)) {
-    console.warn('[PT] render 拒绝：元素含非文本内容（媒体 / 交互控件）', el);
+  // display:none 的 .pt-origin（#22）。
+  //
+  // #50：主守卫已前移到 classify.ts 的 closestUnit() 与 collect() 中，
+  // 正常路径不应再走到这里。保留此检查为纵深防御，仅在最外层代码路径
+  // 绕过采集器（如手动构造 DOM 元素调用）时兜底。
+  if (hasNonTextContent(el)) {
+    console.warn('[PT] render 拒绝（纵深防御）：元素含非文本内容（媒体 / 交互控件）', el);
     return false;
   }
 

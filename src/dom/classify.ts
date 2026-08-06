@@ -93,6 +93,62 @@ export function shouldSkip(el: Element): boolean {
   return false;
 }
 
+/**
+ * 子树中含有不应被藏进 .pt-origin 的节点时的匹配选择器。
+ * img / video / iframe 等是可见媒体内容，button / input 等是交互控件，
+ * 若被搬进 display:none 的隐藏容器，卡片结构就塌了（#22）。
+ *
+ * #50：此选择器同时用于采集侧（closestUnit + collect），
+ * 在按钮浮出/采集阶段就把含非文本内容的容器排除掉，
+ * render() 里保留同一道检查作为纵深防御。
+ */
+export const NON_TEXT_SELECTOR =
+  'img, picture, video, audio, iframe, canvas, object, embed,' +
+  ' button, input, select, textarea,' +
+  ' [role="button"], [role="tab"], [role="menuitem"], [role="switch"], [role="checkbox"]';
+
+/** 元素子树中是否含有非文本内容（媒体 / 交互控件），若有则不应整体翻译。 */
+export function hasNonTextContent(el: Element): boolean {
+  return el.querySelector(NON_TEXT_SELECTOR) !== null;
+}
+
+/**
+ * 从含非文本内容的容器向下搜索，找到子树里真正持有文本的纯文本翻译单元。
+ *
+ * #50：命中非文本内容时，与其返回 null，不如继续向下找到那个叶子单元 ——
+ * 这直接决定 PR 页那 5193 字符是「翻不了」还是「翻得了」。
+ */
+function findTextOnlyDescendant(
+  container: Element,
+  origin: Element,
+): Element | null {
+  let best: Element | null = null;
+  let bestDepth = -1;
+
+  // 只在含 origin 的分支里搜索，避免扫到无关兄弟子树
+  function dfs(el: Element, depth: number): void {
+    if (
+      el !== container &&
+      el.contains(origin) &&
+      isTranslationUnit(el) &&
+      !hasNonTextContent(el) &&
+      !shouldSkip(el)
+    ) {
+      // 越深越好 —— leaf-most text-only unit
+      if (depth > bestDepth) {
+        best = el;
+        bestDepth = depth;
+      }
+    }
+    for (const child of el.children) {
+      if (child.contains(origin)) dfs(child, depth + 1);
+    }
+  }
+
+  dfs(container, 0);
+  return best;
+}
+
 /** 纯数字、日期、计数（"1.2k"、"2026-07-30"）翻了没意义还浪费额度 */
 function isMainlyNumeric(text: string): boolean {
   if (text.length > 30) return false;
@@ -146,6 +202,9 @@ function directTextLength(el: Element): number {
  * 按钮路径与 translateOne 共用 —— 判定标准与采集器同一套，不再各立门户，
  * 白名单之外的大容器（如 AI 概览的外层 li）不会再被错误命中。
  *
+ * #50：同时检查非文本内容（媒体 / 交互控件），与 render() 准入标准一致。
+ * 若命中则向下降级到子树中真正持有文本的叶子单元，而非整块放弃。
+ *
  * shouldSkip 有强制同步布局的昂贵步骤（outerHTML、getBoundingClientRect），
  * 只应在低频率路径调用：悬停意图计时器、点击/快捷键入口，不能挂在
  * 每次 mouseover 上。
@@ -153,7 +212,18 @@ function directTextLength(el: Element): number {
 export function closestUnit(el: Element): Element | null {
   let cur: Element | null = el;
   while (cur) {
-    if (isTranslationUnit(cur) && !shouldSkip(cur)) return cur;
+    if (isTranslationUnit(cur) && !shouldSkip(cur)) {
+      // #50：容器含媒体 / 交互控件时，向下降级到纯文本后代。
+      // 否则用户看到一个注定失败的段落按钮，等一次网络往返后被 render() 拒绝。
+      if (hasNonTextContent(cur)) {
+        const descendant = findTextOnlyDescendant(cur, el);
+        if (descendant) return descendant;
+        // 无纯文本后代 —— 继续向上找，避免把含非文本内容的容器
+        // 误判为可翻单元（它会回到这里再次尝试向下降级）。
+      } else {
+        return cur;
+      }
+    }
     cur = cur.parentElement;
   }
   return null;
