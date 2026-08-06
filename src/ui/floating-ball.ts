@@ -58,6 +58,10 @@ export function createBall(callbacks: BallCallbacks): () => void {
   let startY = 0;
   let origX = 0;
   let origY = 0;
+  // 球的实际渲染尺寸，从 getBoundingClientRect 获取。
+  // 页面缩放时 CSS 像素可能产生子像素差异，用实际值比硬编码 BALL_SIZE 准确。
+  let ballW = BALL_SIZE;
+  let ballH = BALL_SIZE;
 
   // 恢复持久化位置（钳制到视口内）
   chrome.storage.local
@@ -65,7 +69,8 @@ export function createBall(callbacks: BallCallbacks): () => void {
     .then((r) => {
       const pos = r[BALL_POS_KEY] as { x: number; y: number } | undefined;
       if (pos) {
-        const clamped = clampToViewport(pos.x, pos.y, BALL_SIZE, BALL_SIZE);
+        const rect = ball.getBoundingClientRect();
+        const clamped = clampToViewport(pos.x, pos.y, rect.width, rect.height);
         // 钳制后与存储值不同时写回，防止下次再读到越界坐标
         if (clamped.x !== pos.x || clamped.y !== pos.y) {
           chrome.storage.local
@@ -89,6 +94,8 @@ export function createBall(callbacks: BallCallbacks): () => void {
     const rect = ball.getBoundingClientRect();
     origX = rect.left;
     origY = rect.top;
+    ballW = rect.width;
+    ballH = rect.height;
     e.preventDefault();
   };
 
@@ -100,7 +107,7 @@ export function createBall(callbacks: BallCallbacks): () => void {
       dragged = true;
       const rawX = origX + dx;
       const rawY = origY + dy;
-      const clamped = clampToViewport(rawX, rawY, BALL_SIZE, BALL_SIZE);
+      const clamped = clampToViewport(rawX, rawY, ballW, ballH);
       ball.style.position = 'fixed';
       ball.style.right = 'auto';
       ball.style.bottom = 'auto';

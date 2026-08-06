@@ -3,6 +3,7 @@
    设计令牌由 mount.ts 注入同一 shadow root，故 CSS 变量可用。 */
 
 .pt-ball {
+  box-sizing: border-box;
   width: 44px;
   height: 44px;
   border-radius: 50%;
