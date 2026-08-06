@@ -6,8 +6,15 @@
 import tokens from '@/src/styles/tokens.css?inline';
 import injected from '@/src/styles/injected.css?inline';
 
+/** 活跃的 host 守护 observer，按 id 索引。同一 id 只有一个实例。 */
+const guards = new Map<string, MutationObserver>();
+
 /**
  * 创建一个与宿主页面完全隔离的挂载点。
+ *
+ * 包含自动恢复机制：如果宿主元素被页面脚本（如 React SPA 的客户端渲染）
+ * 从 DOM 中移除，MutationObserver 会检测到并自动重新挂载。
+ * 这对于 Reddit 新版等会在 document_end 之后替换 body 子节点的站点至关重要。
  */
 export function mountIsolated(id: string): ShadowRoot {
   const host = document.createElement('div');
@@ -28,9 +35,44 @@ export function mountIsolated(id: string): ShadowRoot {
   shadow.appendChild(style);
 
   document.body.appendChild(host);
+
+  // 启动守护：监听 host 被外部脚本（如 React SPA 渲染）移除的情况
+  startHostGuard(id, host);
+
   return shadow;
 }
 
 export function unmountIsolated(id: string): void {
+  // 先停掉守护，避免 observer 在我们主动移除时重新挂载
+  stopHostGuard(id);
   document.getElementById(`pt-host-${id}`)?.remove();
+}
+
+// ── 内部：host 守护 ──
+
+function startHostGuard(id: string, host: HTMLDivElement): void {
+  // 避免同一 id 注册多个 observer
+  stopHostGuard(id);
+
+  const fullId = `pt-host-${id}`;
+
+  const observer = new MutationObserver(() => {
+    // 检查 host 是否仍在文档中
+    if (!document.getElementById(fullId) && document.body) {
+      document.body.appendChild(host);
+    }
+  });
+
+  // 监听 body 的直接子节点变化（React 替换 body 内容时触发）
+  observer.observe(document.body, { childList: true });
+
+  guards.set(id, observer);
+}
+
+function stopHostGuard(id: string): void {
+  const existing = guards.get(id);
+  if (existing) {
+    existing.disconnect();
+    guards.delete(id);
+  }
 }
