@@ -55,6 +55,22 @@ const HANDLERS: Record<string, CompatHandler> = {
     ) {
       return { skip: true };
     }
+
+    // #49：文件树侧栏（blob 页）、贡献者面板（仓库首页）均为纯 UI 而非正文。
+    // 即使 #50 已在采集阶段过滤含非文本内容的容器，提前跳过整棵子树
+    // 可避免无效的 translate-unit 判定。
+    if (
+      el.closest(
+        '.file-tree,' +            // blob 页文件树（新版）
+        '.js-file-tree,' +         // blob 页文件树（旧版 JS 挂钩）
+        '.tree-browser,' +         // blob 页文件树（旧版）
+        '.BorderGrid,' +           // 仓库首页贡献者网格
+        '.repository-lang-stats,'  // 仓库首页语言统计条
+      )
+    ) {
+      return { skip: true };
+    }
+
     // 行内 code 的短 hash / 变量名 / 纯数字判定（#61-#67）已移除：
     // walker 的 acceptNode 通过 SKIP_SET 先一步拒绝 CODE 节点，
     // applyCompat(el) 永远收不到 CODE，该分支不可达（#41 附带分析）。

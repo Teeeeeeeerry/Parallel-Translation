@@ -163,6 +163,8 @@ export default defineContentScript({
       }
 
       let allFailed = true;
+      let renderRejected = 0;
+      let renderSucceeded = 0;
 
       // 所有批次并发发送，每批返回即渲染。
       // Google Web 的并发闸门是惰性单例，所有批次共享，自然排队。
@@ -182,14 +184,34 @@ export default defineContentScript({
 
           const translations: string[] = resp.data.translations;
           for (let i = 0; i < batchTargets.length; i++) {
-            render(batchTargets[i]!, translations[i]!, 'page');
+            if (render(batchTargets[i]!, translations[i]!, 'page')) {
+              renderSucceeded++;
+            } else {
+              renderRejected++;
+            }
           }
         }),
       );
 
+      // #49：整页翻译结束后用一条 toast 汇总被拒数量，而不是逐条刷屏
+      if (renderRejected > 0 && isMainFrame) {
+        toast(
+          tf('toastRenderRejected', `${renderRejected} 段因含图片/按钮未翻译`),
+          'info',
+        );
+      }
+
       if (allFailed) {
         if (isMainFrame)
           toast(tf('toastAllEnginesFail', '所有引擎均失败'), 'error');
+        return 'error';
+      }
+
+      // #49：引擎返回了结果，但全被 render() 拒绝（纵深防御命中），
+      // 状态不应是 'translated'，悬浮球不应点亮成「已翻译」
+      if (renderSucceeded === 0) {
+        if (isMainFrame)
+          toast(tf('toastAllRejected', '所有段落均含图片/按钮，无法翻译'), 'error');
         return 'error';
       }
 
