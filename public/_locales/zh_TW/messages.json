@@ -152,5 +152,22 @@
   "toastExtOff": { "message": "擴充功能已關閉" },
   "toastAllEnginesFail": { "message": "所有引擎均失敗" },
   "toastTranslateFail": { "message": "翻譯失敗" },
-  "toastNotTranslatable": { "message": "此區域無法單獨翻譯" }
+  "toastNotTranslatable": { "message": "此區域無法單獨翻譯" },
+
+  "welcomeTagline": { "message": "對照式網頁翻譯，開箱即用" },
+  "welcomeReady": { "message": "現在就能用" },
+  "welcomeReadyDesc": { "message": "預設使用 Google 翻譯引擎，無需額外設定。點擊工具列圖示或使用快速鍵即可開始翻譯。" },
+  "welcomeHotkeys": { "message": "快速鍵" },
+  "welcomeHotkeysDesc": { "message": "以下快速鍵在所有頁面均可使用：" },
+  "welcomeTargetLang": { "message": "目標語言" },
+  "welcomeTargetLangDesc": { "message": "翻譯結果將以此語言顯示，可依需求修改：" },
+  "welcomeInteractions": { "message": "互動方式" },
+  "welcomeBall": { "message": "浮動球" },
+  "welcomeBallDesc": { "message": "頁面右側的浮動按鈕「譯」，點擊即可翻譯整頁" },
+  "welcomeParaBtn": { "message": "段落停留按鈕" },
+  "welcomeParaBtnDesc": { "message": "滑鼠停留在段落上時出現「譯」按鈕，點擊翻譯該段落" },
+  "welcomeSelection": { "message": "選取文字與右鍵翻譯" },
+  "welcomeSelectionDesc": { "message": "選取文字後按右鍵，點擊「翻譯所選文字」即可翻譯選取內容" },
+  "welcomeOpenSettings": { "message": "開啟完整設定" },
+  "welcomeClose": { "message": "開始使用" }
 }

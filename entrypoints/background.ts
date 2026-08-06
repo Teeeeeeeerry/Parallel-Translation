@@ -3,9 +3,25 @@
 
 import { cacheSet, cacheKey, cacheGet, cacheClear } from '~/src/storage/cache';
 import { getKey, setKey, removeKey } from '~/src/storage/keys';
-import { settingsReady, onSettingsChanged } from '~/src/storage/settings';
+import { settingsReady, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import { route } from '~/src/engines/router';
 import { initContextMenu } from '~/src/ui/context-menu';
+
+/** 将浏览器 UI 语言映射到 LANG_LIST 中可用的目标语言码 */
+function deriveTargetLanguage(uiLang: string): string {
+  const lang = uiLang.split('-')[0]?.toLowerCase() ?? '';
+  // 中文特殊处理：繁体 → zh-TW，其余默认简体
+  if (lang === 'zh') {
+    return uiLang.includes('TW') || uiLang.includes('Hant') ? 'zh-TW' : 'zh-CN';
+  }
+  // 已知语言前缀 → 对应语言码
+  const MAP: Record<string, string> = {
+    en: 'en', ja: 'ja', ko: 'ko', fr: 'fr', de: 'de',
+    es: 'es', pt: 'pt', ru: 'ru', ar: 'ar', th: 'th',
+    vi: 'vi', it: 'it',
+  };
+  return MAP[lang] ?? 'en';
+}
 
 export default defineBackground(() => {
   console.log('[PT] Background service worker started');
@@ -22,9 +38,25 @@ export default defineBackground(() => {
   (self as any).setKey = setKey;
   (self as any).removeKey = removeKey;
 
-  // 右键菜单 —— onInstalled 中注册，避免每次 SW 唤醒重复创建报错
-  chrome.runtime.onInstalled.addListener(() => {
+  // 右键菜单 + 首次安装引导
+  chrome.runtime.onInstalled.addListener((details) => {
     initContextMenu();
+
+    if (details.reason === 'install') {
+      // 根据浏览器 UI 语言推导默认目标语言
+      settingsReady()
+        .then(async () => {
+          const uiLang = chrome.i18n.getUILanguage();
+          const derived = deriveTargetLanguage(uiLang);
+          if (derived !== 'zh-CN') {
+            await patchSettings({ to: derived });
+          }
+        })
+        .catch((e) => console.error('[PT] 设置默认语言失败:', e));
+
+      // 打开欢迎页
+      chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
+    }
   });
 
   chrome.contextMenus.onClicked.addListener((info, tab) => {

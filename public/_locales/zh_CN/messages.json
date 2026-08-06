@@ -152,5 +152,22 @@
   "toastExtOff": { "message": "扩展已关闭" },
   "toastAllEnginesFail": { "message": "所有引擎均失败" },
   "toastTranslateFail": { "message": "翻译失败" },
-  "toastNotTranslatable": { "message": "该区域无法单独翻译" }
+  "toastNotTranslatable": { "message": "该区域无法单独翻译" },
+
+  "welcomeTagline": { "message": "对照式网页翻译，开箱即用" },
+  "welcomeReady": { "message": "现在就能用" },
+  "welcomeReadyDesc": { "message": "默认使用 Google 翻译引擎，无需额外配置。点击工具栏图标或使用快捷键即可开始翻译。" },
+  "welcomeHotkeys": { "message": "快捷键" },
+  "welcomeHotkeysDesc": { "message": "以下快捷键在所有页面均可使用：" },
+  "welcomeTargetLang": { "message": "目标语言" },
+  "welcomeTargetLangDesc": { "message": "翻译结果将以此语言显示，可根据需要修改：" },
+  "welcomeInteractions": { "message": "交互方式" },
+  "welcomeBall": { "message": "悬浮球" },
+  "welcomeBallDesc": { "message": "页面右侧的悬浮按钮「译」，点击即可翻译整页" },
+  "welcomeParaBtn": { "message": "段落悬停按钮" },
+  "welcomeParaBtnDesc": { "message": "鼠标悬停在段落上时出现「译」按钮，点击翻译该段落" },
+  "welcomeSelection": { "message": "划词与右键翻译" },
+  "welcomeSelectionDesc": { "message": "选中文本后右键，点击「翻译所选文本」即可翻译选中内容" },
+  "welcomeOpenSettings": { "message": "打开完整设置" },
+  "welcomeClose": { "message": "开始使用" }
 }

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="./welcome.css" />
+  <script type="module" src="./main.ts"></script>
+</head>
+<body>
+  <div class="pt-welcome">
+    <header class="pt-welcome-header">
+      <h1>Parallel-Translation</h1>
+      <p class="pt-welcome-tagline" data-i18n="welcomeTagline">对照式网页翻译，开箱即用</p>
+    </header>
+
+    <section class="pt-card">
+      <h2 class="pt-welcome-section-title" data-i18n="welcomeReady">✅ 现在就能用</h2>
+      <p data-i18n="welcomeReadyDesc">默认使用 Google 翻译引擎，无需额外配置。点击工具栏图标或使用快捷键即可开始翻译。</p>
+    </section>
+
+    <section class="pt-card">
+      <h2 class="pt-welcome-section-title" data-i18n="welcomeHotkeys">⌨️ 快捷键</h2>
+      <p class="pt-welcome-desc" data-i18n="welcomeHotkeysDesc">以下快捷键在所有页面均可使用：</p>
+      <div class="pt-welcome-hotkeys" id="pt-welcome-hotkeys">
+        <!-- 动态渲染 -->
+      </div>
+    </section>
+
+    <section class="pt-card">
+      <h2 class="pt-welcome-section-title" data-i18n="welcomeTargetLang">🌐 目标语言</h2>
+      <p class="pt-welcome-desc" data-i18n="welcomeTargetLangDesc">翻译结果将以此语言显示，可根据需要修改：</p>
+      <select class="pt-select" id="pt-welcome-lang-select"></select>
+    </section>
+
+    <section class="pt-card">
+      <h2 class="pt-welcome-section-title" data-i18n="welcomeInteractions">🖱️ 交互方式</h2>
+      <ul class="pt-welcome-interactions">
+        <li>
+          <strong data-i18n="welcomeBall">悬浮球</strong>
+          <span data-i18n="welcomeBallDesc">页面右侧的悬浮按钮「译」，点击即可翻译整页</span>
+        </li>
+        <li>
+          <strong data-i18n="welcomeParaBtn">段落悬停按钮</strong>
+          <span data-i18n="welcomeParaBtnDesc">鼠标悬停在段落上时出现「译」按钮，点击翻译该段落</span>
+        </li>
+        <li>
+          <strong data-i18n="welcomeSelection">划词与右键翻译</strong>
+          <span data-i18n="welcomeSelectionDesc">选中文本后右键，点击「翻译所选文本」即可翻译选中内容</span>
+        </li>
+      </ul>
+    </section>
+
+    <footer class="pt-welcome-footer">
+      <button class="pt-btn pt-btn-secondary" id="pt-welcome-settings" data-i18n="welcomeOpenSettings">打开完整设置</button>
+      <button class="pt-btn" id="pt-welcome-close" data-i18n="welcomeClose">开始使用</button>
+    </footer>
+  </div>
+</body>
+</html>
