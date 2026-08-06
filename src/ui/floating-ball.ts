@@ -6,8 +6,28 @@ import { mountIsolated, unmountIsolated } from './mount';
 import { tf } from '../i18n';
 
 const BALL_POS_KEY = 'pt-ball-pos';
+const BALL_SIZE = 44;
+const VIEWPORT_MARGIN = 8;
 
 type BallState = 'idle' | 'loading' | 'done' | 'error';
+
+/**
+ * 将坐标钳制在视口内。
+ * 先取上限再取下限：视口比球还小时不会算出负值。
+ */
+function clampToViewport(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): { x: number; y: number } {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  return {
+    x: Math.max(VIEWPORT_MARGIN, Math.min(x, vw - w - VIEWPORT_MARGIN)),
+    y: Math.max(VIEWPORT_MARGIN, Math.min(y, vh - h - VIEWPORT_MARGIN)),
+  };
+}
 
 interface BallCallbacks {
   /**
@@ -39,17 +59,24 @@ export function createBall(callbacks: BallCallbacks): () => void {
   let origX = 0;
   let origY = 0;
 
-  // 恢复持久化位置
+  // 恢复持久化位置（钳制到视口内）
   chrome.storage.local
     .get(BALL_POS_KEY)
     .then((r) => {
       const pos = r[BALL_POS_KEY] as { x: number; y: number } | undefined;
       if (pos) {
+        const clamped = clampToViewport(pos.x, pos.y, BALL_SIZE, BALL_SIZE);
+        // 钳制后与存储值不同时写回，防止下次再读到越界坐标
+        if (clamped.x !== pos.x || clamped.y !== pos.y) {
+          chrome.storage.local
+            .set({ [BALL_POS_KEY]: clamped })
+            .catch(() => {});
+        }
         ball.style.position = 'fixed';
         ball.style.right = 'auto';
         ball.style.bottom = 'auto';
-        ball.style.left = `${pos.x}px`;
-        ball.style.top = `${pos.y}px`;
+        ball.style.left = `${clamped.x}px`;
+        ball.style.top = `${clamped.y}px`;
       }
     })
     .catch(() => {});
@@ -71,11 +98,14 @@ export function createBall(callbacks: BallCallbacks): () => void {
     const dy = e.clientY - startY;
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
       dragged = true;
+      const rawX = origX + dx;
+      const rawY = origY + dy;
+      const clamped = clampToViewport(rawX, rawY, BALL_SIZE, BALL_SIZE);
       ball.style.position = 'fixed';
       ball.style.right = 'auto';
       ball.style.bottom = 'auto';
-      ball.style.left = `${origX + dx}px`;
-      ball.style.top = `${origY + dy}px`;
+      ball.style.left = `${clamped.x}px`;
+      ball.style.top = `${clamped.y}px`;
     }
   };
 
@@ -104,7 +134,29 @@ export function createBall(callbacks: BallCallbacks): () => void {
     callbacks.onToggle();
   });
 
+  // --- 窗口 resize 时重新贴合 ---
+  // 窗口缩小后，曾经合法的拖动位置可能落出视口。
+  // 仅在球被手动定位（position= fixed）时才需要做这件事；
+  // 默认右下角锚点由 host 的 right/bottom 保证，不受 resize 影响。
+  const onResize = () => {
+    // 拖动过程中不干预 —— onMouseMove 已经在做钳制
+    if (dragging) return;
+    // 没有手动定位的球靠 host 的 right/bottom 锚定，无需处理
+    if (ball.style.position !== 'fixed') return;
+    const rect = ball.getBoundingClientRect();
+    const clamped = clampToViewport(rect.left, rect.top, rect.width, rect.height);
+    if (clamped.x !== rect.left || clamped.y !== rect.top) {
+      ball.style.left = `${clamped.x}px`;
+      ball.style.top = `${clamped.y}px`;
+      chrome.storage.local
+        .set({ [BALL_POS_KEY]: { x: clamped.x, y: clamped.y } })
+        .catch(() => {});
+    }
+  };
+  window.addEventListener('resize', onResize);
+
   return () => {
+    window.removeEventListener('resize', onResize);
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
     clearTimeout(errorTimer);

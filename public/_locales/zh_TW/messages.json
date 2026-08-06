@@ -26,6 +26,8 @@
   "cardFloatingUi": { "message": "浮動 UI" },
   "rowFloatingBall": { "message": "浮動球" },
   "rowParagraphBtn": { "message": "段落停留按鈕" },
+  "btnResetBallPos": { "message": "重設浮動球位置" },
+  "toastBallPosReset": { "message": "已重設" },
 
   "secEnginesDesc": { "message": "拖曳調整引擎優先順序（由上而下即故障切換順序），為 BYOK 引擎設定 API key。" },
   "cardPriority": { "message": "優先順序（拖曳排序）" },
