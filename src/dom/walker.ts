@@ -7,7 +7,7 @@
 // Phase 8 接入域名级采集补丁（src/dom/compat.ts），
 // 在通用规则判定之前给特定站点插入决策。
 
-import { SKIP_SET, shouldSkipNonVisual, isVisible, isTranslationUnit } from './classify';
+import { SKIP_SET, shouldSkipNonVisual, isVisible, isTranslationUnit, hasNonTextContent } from './classify';
 import { applyCompat } from './compat';
 
 /**
@@ -79,6 +79,13 @@ function walk(
     // 判定顺序不能反：isTranslationUnit() 首步只是一次标签查表，而
     // shouldSkipNonVisual() 要拼 outerHTML、算 textContent。先便宜后昂贵。
     if (!seen.has(el) && isTranslationUnit(el)) {
+      // #50：含媒体/交互控件的容器不能整体翻译（render 会拒绝），
+      // 跳过但不影响子树 —— walker 依旧会访问其子元素，
+      // 它们可能是不含非文本内容的纯文本翻译单元。
+      if (hasNonTextContent(el)) {
+        node = walker.nextNode();
+        continue;
+      }
       if (shouldSkipNonVisual(el)) {
         node = walker.nextNode();
         continue;
