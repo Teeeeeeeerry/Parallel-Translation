@@ -73,6 +73,16 @@ export function initGeneral(): void {
     savePatch({ showParagraphBtn: !getSettings().showParagraphBtn });
   });
 
+  const resetBallPosBtn = document.getElementById('pt-reset-ball-pos-btn')!;
+  resetBallPosBtn.addEventListener('click', () => {
+    chrome.storage.local.remove('pt-ball-pos').catch(() => {});
+    // 简单反馈：按钮文字短暂变化
+    resetBallPosBtn.textContent = tf('toastBallPosReset', '已重置');
+    setTimeout(() => {
+      resetBallPosBtn.textContent = tf('btnResetBallPos', '重置悬浮球位置');
+    }, 1500);
+  });
+
   syncUI();
   onSettingsChanged(() => syncUI());
 }

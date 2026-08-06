@@ -19,7 +19,7 @@ export function mountIsolated(id: string): ShadowRoot {
   // 宿主页面可能有 div { position: static !important } 之类的规则，
   // 用 all: initial 兜底
   host.style.cssText =
-    'all: initial; position: fixed; z-index: 2147483647;';
+    'all: initial; position: fixed; z-index: 2147483647; right: 24px; bottom: 24px;';
 
   const shadow = host.attachShadow({ mode: 'open' });
 
