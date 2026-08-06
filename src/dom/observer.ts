@@ -1,4 +1,4 @@
-// Phase 3 — MutationObserver 增量补翻。
+// Phase 3 — MutationObserver 增量补翻 + IntersectionObserver 可见性补翻。
 //
 // 监听 DOM 变化，对新增节点补翻。
 // 覆盖三种场景：无限滚动、SPA 路由切换、懒加载内容。
@@ -10,6 +10,12 @@
 //   不防抖会导致全量采集与翻译请求瞬间打爆并发闸门
 // - 每个 shadowRoot 各挂一个 MutationObserver ——
 //   MutationObserver 与 TreeWalker 一样不穿透 shadow 边界
+//
+// #23 新增 IntersectionObserver：
+// - 初次采集时 display:none 的元素被跳过（0×0 rect），展开时若无 DOM 增删
+//   （纯 CSS class/style 切换），MutationObserver 感知不到，内容永久漏翻。
+// - IntersectionObserver 监听这些隐藏元素，一旦进入视口就触发补翻。
+// - rootMargin 提前 300px 触发，让即将滚入视口的内容提前翻译。
 
 import { collect } from './walker';
 
@@ -55,10 +61,53 @@ function observeShadowRoots(
   return observers;
 }
 
+// ── #23 可见性追踪 ──
+
+/** 初次采集时因 display:none 被跳过的翻译单元 */
+const hiddenTargets = new Set<Element>();
+let io: IntersectionObserver | null = null;
+let onVisibleCb: ((els: Element[]) => void) | null = null;
+
 /**
- * 启动 MutationObserver，对新增节点触发补翻回调。
- * 返回取消订阅函数。
+ * 注册因不可见而被跳过的翻译单元。
+ * 由 walker 的 onHidden 回调调用，也可在 IO 启动后直接挂载观察。
  */
+export function registerHidden(el: Element): void {
+  hiddenTargets.add(el);
+  if (io) io.observe(el);
+}
+
+function startWatching(onNewNodes: (els: Element[]) => void): void {
+  if (io) return; // 已经启动
+  onVisibleCb = onNewNodes;
+  io = new IntersectionObserver(
+    (entries) => {
+      const newlyVisible: Element[] = [];
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          io!.unobserve(entry.target);
+          hiddenTargets.delete(entry.target as Element);
+          // 元素变为可见，重新采集其子树中的翻译单元
+          newlyVisible.push(...collect(entry.target, registerHidden));
+        }
+      }
+      if (newlyVisible.length && onVisibleCb) {
+        onVisibleCb(newlyVisible);
+      }
+    },
+    {
+      // 提前 300px 触发，让即将滚入视口的内容提前翻译
+      rootMargin: '300px',
+      threshold: 0,
+    },
+  );
+  // 观察所有已注册的隐藏元素
+  for (const el of hiddenTargets) {
+    io.observe(el);
+  }
+}
+
+/** 启动 MutationObserver，对新增节点触发补翻回调。 */
 export function startObserver(
   onNewNodes: (els: Element[]) => void,
 ): () => void {
@@ -74,7 +123,7 @@ export function startObserver(
     const batch = pending;
     pending = [];
     const found = batch.flatMap((n) =>
-      n.nodeType === Node.ELEMENT_NODE ? collect(n) : [],
+      n.nodeType === Node.ELEMENT_NODE ? collect(n, registerHidden) : [],
     );
 
     // 新增节点中可能出现新的 shadow host，为其 shadow root 补挂 observer
@@ -116,8 +165,17 @@ export function startObserver(
   const initial = observeShadowRoots(document.body, onMutationRecord, observedRoots);
   observers.push(...initial);
 
+  // #23：启动 IntersectionObserver，监听初次采集时因 display:none 被跳过的元素
+  startWatching(onNewNodes);
+
   return () => {
     for (const mo of observers) mo.disconnect();
     if (timer) clearTimeout(timer);
+    if (io) {
+      io.disconnect();
+      io = null;
+    }
+    hiddenTargets.clear();
+    onVisibleCb = null;
   };
 }
