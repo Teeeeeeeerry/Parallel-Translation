@@ -151,5 +151,6 @@
   "toastExtOn": { "message": "Extension enabled" },
   "toastExtOff": { "message": "Extension disabled" },
   "toastAllEnginesFail": { "message": "All engines failed" },
-  "toastTranslateFail": { "message": "Translation failed" }
+  "toastTranslateFail": { "message": "Translation failed" },
+  "toastNotTranslatable": { "message": "This area cannot be translated individually" }
 }

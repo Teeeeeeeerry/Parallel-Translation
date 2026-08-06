@@ -276,7 +276,11 @@ export default defineContentScript({
         return;
       }
 
-      render(unit, resp.data.translations[0], 'para');
+      // render() 在含媒体 / 交互控件时会拒绝渲染（#22），此时告知用户
+      // 而非静默吞掉元素
+      if (!render(unit, resp.data.translations[0], 'para')) {
+        toast(tf('toastNotTranslatable', '该区域无法单独翻译'), 'error');
+      }
     }
 
     // ── 翻译选区 ──

@@ -13,14 +13,35 @@ import type { DisplayMode, StyleId } from '../storage/schema';
 export type RenderSource = 'page' | 'para';
 
 /**
+ * 子树中含有不应被藏进 .pt-origin 的节点时的匹配选择器。
+ * img / video / iframe 等是可见媒体内容，button / input 等是交互控件，
+ * 若被搬进 display:none 的隐藏容器，卡片结构就塌了（#22）。
+ */
+const NON_TEXT_SELECTOR =
+  'img, picture, video, audio, iframe, canvas, object, embed,' +
+  ' button, input, select, textarea,' +
+  ' [role="button"], [role="tab"], [role="menuitem"], [role="switch"], [role="checkbox"]';
+
+/**
  * 渲染译文。三种模式共用同一套 DOM 结构。
+ *
+ * 返回 false 表示元素含非文本内容（媒体 / 交互控件），拒绝渲染，
+ * 由调用方决定是否提示用户。
  */
 export function render(
   el: Element,
   translation: string,
   src: RenderSource = 'page',
-): void {
-  if (el.getAttribute('data-pt') === 'done') return;
+): boolean {
+  if (el.getAttribute('data-pt') === 'done') return true;
+
+  // 纵深防御：拒绝含非文本内容的容器，防止缩略图、按钮等被藏进
+  // display:none 的 .pt-origin（#22）。此检查与采集器的 isTranslationUnit
+  // 互补 —— 后者允许 img（内联元素），render() 则对可见媒体说「不」。
+  if (el.querySelector(NON_TEXT_SELECTOR)) {
+    console.warn('[PT] render 拒绝：元素含非文本内容（媒体 / 交互控件）', el);
+    return false;
+  }
 
   // 把原有子节点整体包进 .pt-origin，保留其内部结构与事件绑定
   const origin = document.createElement('span');
@@ -35,6 +56,7 @@ export function render(
   el.appendChild(trans);
   el.setAttribute('data-pt', 'done');
   el.setAttribute('data-pt-src', src);
+  return true;
 }
 
 /** 还原原文，把 .pt-origin 的子节点放回去 */
