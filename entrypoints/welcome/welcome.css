@@ -1,0 +1,181 @@
+@import '../../src/styles/tokens.css';
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--pt-paper);
+  color: var(--pt-forest);
+  font-family: var(--pt-font-ui);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ===== Layout ===== */
+
+.pt-welcome {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 48px 24px 32px;
+}
+
+/* ===== Header ===== */
+
+.pt-welcome-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.pt-welcome-header h1 {
+  font-family: var(--pt-font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  margin-bottom: 6px;
+}
+
+.pt-welcome-tagline {
+  font-size: 13px;
+  color: var(--pt-forest-55);
+}
+
+/* ===== Cards ===== */
+
+.pt-welcome .pt-card {
+  background: var(--pt-surface);
+  border: 1px solid var(--pt-forest-09);
+  border-radius: var(--pt-r-md);
+  padding: 20px 24px;
+  margin-bottom: 14px;
+}
+
+.pt-welcome-section-title {
+  font-family: var(--pt-font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  margin-bottom: 8px;
+}
+
+.pt-welcome-desc {
+  font-size: 12px;
+  color: var(--pt-forest-55);
+  margin-bottom: 14px;
+}
+
+/* ===== Hotkey list ===== */
+
+.pt-welcome-hotkeys {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pt-welcome-hotkey-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pt-welcome-hotkey-label {
+  font-size: 13px;
+  color: var(--pt-forest);
+}
+
+.pt-welcome-kbd {
+  font-family: var(--pt-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  background: var(--pt-paper);
+  border: 1px solid var(--pt-forest-15);
+  border-radius: var(--pt-r-sm);
+  color: var(--pt-forest);
+  white-space: nowrap;
+}
+
+/* ===== Select ===== */
+
+.pt-select {
+  font-family: var(--pt-font-mono);
+  font-size: 12px;
+  color: var(--pt-forest);
+  background: var(--pt-paper);
+  border: 1px solid var(--pt-forest-22);
+  border-radius: var(--pt-r-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+  appearance: none;
+  min-width: 160px;
+}
+
+/* ===== Interaction list ===== */
+
+.pt-welcome-interactions {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pt-welcome-interactions li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pt-welcome-interactions strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pt-welcome-interactions span {
+  font-size: 12px;
+  color: var(--pt-forest-55);
+}
+
+/* ===== Footer ===== */
+
+.pt-welcome-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 28px;
+}
+
+/* ===== Buttons ===== */
+
+.pt-btn {
+  font-family: var(--pt-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  background: var(--pt-forest);
+  color: var(--pt-paper);
+  border: none;
+  border-radius: var(--pt-r-sm);
+  padding: 10px 24px;
+  cursor: pointer;
+  transition: opacity .15s ease;
+}
+
+.pt-btn:hover { opacity: 0.85; }
+.pt-btn:active { opacity: 0.7; }
+
+.pt-btn.pt-btn-secondary {
+  background: transparent;
+  color: var(--pt-forest-55);
+  border: 1px solid var(--pt-forest-15);
+}
+
+.pt-btn.pt-btn-secondary:hover {
+  background: var(--pt-forest-08);
+  color: var(--pt-forest);
+}

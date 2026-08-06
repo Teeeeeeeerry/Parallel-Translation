@@ -152,5 +152,22 @@
   "toastExtOff": { "message": "Extension disabled" },
   "toastAllEnginesFail": { "message": "All engines failed" },
   "toastTranslateFail": { "message": "Translation failed" },
-  "toastNotTranslatable": { "message": "This area cannot be translated individually" }
+  "toastNotTranslatable": { "message": "This area cannot be translated individually" },
+
+  "welcomeTagline": { "message": "Bilingual web translation, ready out of the box" },
+  "welcomeReady": { "message": "Ready to use" },
+  "welcomeReadyDesc": { "message": "Uses Google Translate by default — no configuration needed. Click the toolbar icon or use a keyboard shortcut to start translating." },
+  "welcomeHotkeys": { "message": "Keyboard shortcuts" },
+  "welcomeHotkeysDesc": { "message": "These shortcuts work on every page:" },
+  "welcomeTargetLang": { "message": "Target language" },
+  "welcomeTargetLangDesc": { "message": "Translations will be shown in this language. Change it here or in Settings anytime:" },
+  "welcomeInteractions": { "message": "Ways to interact" },
+  "welcomeBall": { "message": "Floating ball" },
+  "welcomeBallDesc": { "message": "The \"T\" button on the right side of the page — click to translate the entire page" },
+  "welcomeParaBtn": { "message": "Paragraph hover button" },
+  "welcomeParaBtnDesc": { "message": "A \"T\" button appears when you hover over a paragraph — click to translate just that paragraph" },
+  "welcomeSelection": { "message": "Selection & context menu" },
+  "welcomeSelectionDesc": { "message": "Select text, right-click, and choose \"Translate selected text\" to translate the selection" },
+  "welcomeOpenSettings": { "message": "Open full settings" },
+  "welcomeClose": { "message": "Get started" }
 }
