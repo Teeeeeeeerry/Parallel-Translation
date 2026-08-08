@@ -62,42 +62,51 @@ function walk(
 
     // Phase 8 域名补丁：在通用判定之前给特定站点插入决策。
     // 补丁的 skip/take 优先于通用规则；null 则交回通用逻辑。
-    const patched = applyCompat(el);
-    if (patched && 'skip' in patched) {
-      node = walker.nextNode();
-      continue;
-    }
-    if (patched && 'take' in patched) {
-      if (!seen.has(el)) {
-        seen.add(el);
-        out.push(patched.take);
+    //
+    // Web Components（<relative-time>、<clipboard-copy> 等）上访问
+    // textContent / outerHTML / closest() 可能抛出 DOMException，
+    // 用 try-catch 包裹整段逐元素判定，失败时安全跳过当前节点，
+    // 宁可漏翻单个可疑节点也不要整页崩溃（#54）。
+    try {
+      const patched = applyCompat(el);
+      if (patched && 'skip' in patched) {
+        node = walker.nextNode();
+        continue;
       }
-      node = walker.nextNode();
-      continue;
-    }
+      if (patched && 'take' in patched) {
+        if (!seen.has(el)) {
+          seen.add(el);
+          out.push(patched.take);
+        }
+        node = walker.nextNode();
+        continue;
+      }
 
-    // 判定顺序不能反：isTranslationUnit() 首步只是一次标签查表，而
-    // shouldSkipNonVisual() 要拼 outerHTML、算 textContent。先便宜后昂贵。
-    if (!seen.has(el) && isTranslationUnit(el)) {
-      // #50：含媒体/交互控件的容器不能整体翻译（render 会拒绝），
-      // 跳过但不影响子树 —— walker 依旧会访问其子元素，
-      // 它们可能是不含非文本内容的纯文本翻译单元。
-      if (hasNonTextContent(el)) {
-        node = walker.nextNode();
-        continue;
+      // 判定顺序不能反：isTranslationUnit() 首步只是一次标签查表，而
+      // shouldSkipNonVisual() 要拼 outerHTML、算 textContent。先便宜后昂贵。
+      if (!seen.has(el) && isTranslationUnit(el)) {
+        // #50：含媒体/交互控件的容器不能整体翻译（render 会拒绝），
+        // 跳过但不影响子树 —— walker 依旧会访问其子元素，
+        // 它们可能是不含非文本内容的纯文本翻译单元。
+        if (hasNonTextContent(el)) {
+          node = walker.nextNode();
+          continue;
+        }
+        if (shouldSkipNonVisual(el)) {
+          node = walker.nextNode();
+          continue;
+        }
+        // #23：不可见的翻译单元记入延迟队列，等 IntersectionObserver 补翻
+        if (!isVisible(el)) {
+          onHidden?.(el);
+          node = walker.nextNode();
+          continue;
+        }
+        seen.add(el);
+        out.push(el);
       }
-      if (shouldSkipNonVisual(el)) {
-        node = walker.nextNode();
-        continue;
-      }
-      // #23：不可见的翻译单元记入延迟队列，等 IntersectionObserver 补翻
-      if (!isVisible(el)) {
-        onHidden?.(el);
-        node = walker.nextNode();
-        continue;
-      }
-      seen.add(el);
-      out.push(el);
+    } catch {
+      // Web Components 等节点上 DOM 属性访问可能抛异常，安全跳过
     }
     node = walker.nextNode();
   }

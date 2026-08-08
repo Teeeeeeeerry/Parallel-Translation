@@ -136,7 +136,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       };
     } catch (e) {
       const err =
-        e instanceof EngineError ? e : new EngineError(id, true, String(e));
+        e instanceof EngineError ? e : new EngineError(id, true, e instanceof Error ? e.message : String(e));
       errors.push(err);
       if (!err.retryable) throw err;
       // retryable → 下一个引擎重试
