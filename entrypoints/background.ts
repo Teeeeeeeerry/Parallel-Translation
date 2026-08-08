@@ -76,9 +76,9 @@ export default defineBackground(() => {
       settingsReady()
         .then(() => route(msg.payload))
         .then((r) => sendResponse({ ok: true, data: r }))
-        .catch((e) => sendResponse({ ok: false, error: String(e) }));
+        .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
     } catch (e) {
-      sendResponse({ ok: false, error: String(e) });
+      sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
     }
 
     return true;

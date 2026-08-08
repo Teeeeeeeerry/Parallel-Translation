@@ -134,7 +134,14 @@ export default defineContentScript({
       const ns = getSettings();
       if (!ns.enabled) return 'disabled';
 
-      const targets = elements ?? collect(document.body, registerHidden);
+      let targets: Element[];
+      try {
+        targets = elements ?? collect(document.body, registerHidden);
+      } catch (e) {
+        throw new Error(
+          `[collect] ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
       if (targets.length === 0) {
         if (isMainFrame)
           toast(tf('hintNoElements', '本页没有可翻译的内容'));
@@ -184,10 +191,16 @@ export default defineContentScript({
 
           const translations: string[] = resp.data.translations;
           for (let i = 0; i < batchTargets.length; i++) {
-            if (render(batchTargets[i]!, translations[i]!, 'page')) {
-              renderSucceeded++;
-            } else {
-              renderRejected++;
+            try {
+              if (render(batchTargets[i]!, translations[i]!, 'page')) {
+                renderSucceeded++;
+              } else {
+                renderRejected++;
+              }
+            } catch (e) {
+              throw new Error(
+                `[render idx=${i}] ${e instanceof Error ? e.message : String(e)}`,
+              );
             }
           }
         }),
@@ -280,9 +293,10 @@ export default defineContentScript({
       try {
         status = await doTranslate();
       } catch (e) {
-        console.error('[PT] 翻译失败:', e);
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[PT] 翻译失败:', msg, e);
         if (isMainFrame) {
-          toast(String(e), 'error');
+          toast(msg, 'error');
           setBallState('error');
         }
         return 'error';
@@ -371,9 +385,9 @@ export default defineContentScript({
         try {
           togglePage()
             .then((status) => reply({ ok: true, status }))
-            .catch((e: Error) => reply({ ok: false, error: String(e) }));
+            .catch((e: Error) => reply({ ok: false, error: e instanceof Error ? e.message : String(e) }));
         } catch (e) {
-          reply({ ok: false, error: String(e) });
+          reply({ ok: false, error: e instanceof Error ? e.message : String(e) });
         }
         return isMainFrame ? true : undefined;
       }
