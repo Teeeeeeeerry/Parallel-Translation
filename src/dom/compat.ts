@@ -24,16 +24,28 @@ const MAX_FAVICON_PX = 24;
 const MAX_BADGE_TEXT = 40;
 
 /**
- * 元素是否包含 favicon 尺寸的图片（任一边 ≤ MAX_FAVICON_PX）。
- * 来源角标通常内嵌站点 favicon，而正文内链不含此类小图。
+ * 折叠计数角标："+3"、" +12"。+N 必须顶在行首或空白之后、
+ * 位于文本末尾 —— 排除 "iPhone 16+128GB"、"电话 +86 123"、"团队+2"
+ * 这类正文形态。{1,3} 限制数字位数，应对真实来源折叠计数。
+ */
+const COUNTER_RE = /(^|\s)\+\d{1,3}$/;
+
+/**
+ * 元素是否包含 favicon 尺寸的图片（宽高均 ≤ MAX_FAVICON_PX）。
+ * 用 img.width（CSS 渲染宽，未加载时回退 width 属性）而非
+ * getBoundingClientRect：不强制同步布局、2x retina（16 CSS px 的
+ * 32px 自然宽）仍命中、懒加载未解码的 favicon 也能按属性判定。
  */
 function hasFaviconImage(el: Element): boolean {
-  const imgs = el.querySelectorAll('img');
+  const imgs = el.getElementsByTagName('img');
   for (const img of imgs) {
-    const rect = img.getBoundingClientRect();
+    const w = img.width || img.naturalWidth;
+    const h = img.height || img.naturalHeight;
     if (
-      (rect.width > 0 && rect.width <= MAX_FAVICON_PX) ||
-      (rect.height > 0 && rect.height <= MAX_FAVICON_PX)
+      w > 0 &&
+      w <= MAX_FAVICON_PX &&
+      h > 0 &&
+      h <= MAX_FAVICON_PX
     ) {
       return true;
     }
@@ -58,8 +70,8 @@ function isGenericInlineBadge(el: Element): boolean {
   const text = el.textContent?.trim() ?? '';
   if (text.length === 0 || text.length > MAX_BADGE_TEXT) return false;
 
-  // 信号 1：以 +N 结尾（"+3"、"+5 more"、"+10条"）
-  if (/\+\d+/.test(text)) return true;
+  // 信号 1：以「行首/空白 + +N」结尾（"+3"、" +12"）
+  if (COUNTER_RE.test(text)) return true;
 
   // 信号 2：交互角色 + favicon 尺寸图片
   const hasInteractiveRole =
