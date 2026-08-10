@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  wxt@0.19.29: 495967bc71b295b9f8e549e84763d5ffc4a2071f5ec630b323c80b0fb1f9af56
+
 importers:
 
   .:
@@ -13,7 +16,7 @@ importers:
         version: 5.9.3
       wxt:
         specifier: ^0.19.0
-        version: 0.19.29(@types/node@26.1.2)(rollup@4.62.3)
+        version: 0.19.29(patch_hash=495967bc71b295b9f8e549e84763d5ffc4a2071f5ec630b323c80b0fb1f9af56)(@types/node@26.1.2)(rollup@4.62.3)
 
 packages:
 
@@ -3360,7 +3363,7 @@ snapshots:
     dependencies:
       is-wsl: 3.1.1
 
-  wxt@0.19.29(@types/node@26.1.2)(rollup@4.62.3):
+  wxt@0.19.29(patch_hash=495967bc71b295b9f8e549e84763d5ffc4a2071f5ec630b323c80b0fb1f9af56)(@types/node@26.1.2)(rollup@4.62.3):
     dependencies:
       '@1natsu/wait-element': 4.2.0
       '@aklinker1/rollup-plugin-visualizer': 5.12.0(rollup@4.62.3)
