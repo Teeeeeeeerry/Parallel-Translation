@@ -28,6 +28,11 @@
   "rowParagraphBtn": { "message": "Paragraph hover button" },
   "btnResetBallPos": { "message": "Reset ball position" },
   "toastBallPosReset": { "message": "Reset" },
+  "ballPosColHostname": { "message": "Hostname" },
+  "ballPosColPosition": { "message": "Position" },
+  "btnDelete": { "message": "Delete" },
+  "ballPosListEmpty": { "message": "No custom position data" },
+  "ballPosDefaultTag": { "message": "Default (bottom-right)" },
 
   "secEnginesDesc": { "message": "Drag to reorder engine priority (top to bottom is the failover order), and configure API keys for BYOK engines." },
   "cardPriority": { "message": "Priority (drag to reorder)" },

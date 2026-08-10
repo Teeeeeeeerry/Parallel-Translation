@@ -69,7 +69,23 @@
             <span class="pt-row-label" data-i18n="rowParagraphBtn">段落悬停按钮</span>
             <button class="pt-toggle pt-on" id="pt-toggle-paragraph-btn"></button>
           </div>
-          <button class="pt-btn pt-btn-secondary" id="pt-reset-ball-pos-btn" data-i18n="btnResetBallPos">重置悬浮球位置</button>
+          <div class="pt-btn-split">
+            <button class="pt-btn pt-btn-secondary" id="pt-reset-ball-pos-btn" data-i18n="btnResetBallPos">重置悬浮球位置</button>
+            <button class="pt-btn pt-btn-secondary pt-btn-dropdown-toggle" id="pt-ball-pos-toggle" aria-label="展开站点列表">▾</button>
+          </div>
+          <div class="pt-dropdown-panel" id="pt-ball-pos-panel" style="display:none">
+            <div class="pt-ball-pos-empty" id="pt-ball-pos-empty" data-i18n="ballPosListEmpty">暂无自定义位置数据</div>
+            <table class="pt-ball-pos-table" id="pt-ball-pos-table" style="display:none">
+              <thead>
+                <tr>
+                  <th data-i18n="ballPosColHostname">域名</th>
+                  <th data-i18n="ballPosColPosition">位置</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="pt-ball-pos-list"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
