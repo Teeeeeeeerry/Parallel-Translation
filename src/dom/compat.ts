@@ -15,6 +15,16 @@ type CompatHandler = (el: Element) => CompatResult;
 
 type OmitHandler = (el: Element) => boolean;
 
+/**
+ * Preserve 处理器：返回要保留的原文，或 null 表示不保留。
+ * 保留文本用占位符替换后送入引擎，译文回填时再将占位符换回原文。
+ *
+ * 与 omit 的区别：
+ *   omit  — 文本完全丢弃，不进入译文（用于来源角标等 UI 元数据）
+ *   preserve — 文本不翻译，但原样保留在译文里（用于用户名等标识符）
+ */
+type PreserveHandler = (el: Element) => string | null;
+
 // ---- 通用行内角标检测 ----
 
 /** Favicon 尺寸上限（像素），超过此值视为内容图片而非角标图标 */
@@ -79,6 +89,43 @@ function isGenericInlineBadge(el: Element): boolean {
   if (hasInteractiveRole && hasFaviconImage(el)) return true;
 
   return false;
+}
+
+// ---- preserve：不翻译但保留原文（用户名等标识符） ----
+
+const PRESERVE_HANDLERS: Record<string, PreserveHandler> = {
+  'github.com': (el: Element) => {
+    // 评论正文里的 @mention（a.user-mention）：最高频场景
+    if (el.matches('a.user-mention')) {
+      return el.textContent?.trim() || null;
+    }
+
+    // hovercard 机制多年未变，覆盖几乎所有用户名链接
+    if (el.matches('[data-hovercard-url^="/users/"]')) {
+      return el.textContent?.trim() || null;
+    }
+
+    // 微数据属性：author 关联
+    if (el.matches('[rel="author"], [itemprop="author"]')) {
+      return el.textContent?.trim() || null;
+    }
+
+    return null;
+  },
+};
+
+/**
+ * 元素文本是否应保留原文、不参与翻译。
+ * 返回非 null 的保留文本，或 null 表示不保留。
+ */
+export function shouldPreserveText(el: Element): string | null {
+  // 只在内联元素上生效 —— 块级元素走 skip 路径，不在此处判定
+  const tag = el.tagName.toLowerCase();
+  if (!INLINE_SET.has(tag)) return null;
+
+  const handler = PRESERVE_HANDLERS[mainDomain(location.hostname)];
+  if (!handler) return null;
+  return handler(el);
 }
 
 // ---- 域名精修补丁 ----

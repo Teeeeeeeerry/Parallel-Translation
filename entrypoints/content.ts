@@ -9,7 +9,14 @@ import '~/src/styles/presets.css';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
 import { normalizeText } from '~/src/dom/normalize';
-import { translatableText, shallowTranslatableText, hasBlockTextChildren } from '~/src/dom/text';
+import {
+  translatableText,
+  translatableTextEx,
+  shallowTranslatableText,
+  shallowTranslatableTextEx,
+  hasBlockTextChildren,
+  restorePreserves,
+} from '~/src/dom/text';
 import { startObserver, registerHidden } from '~/src/dom/observer';
 import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
 import { unsplitPre } from '~/src/dom/pre-split';
@@ -153,20 +160,36 @@ export default defineContentScript({
       // translatableText 剔除 .notranslate 与站点元数据（如 Google 来源角标）。
       // #23：混合内容元素（直接文本 + 块级子元素）使用 shallowTranslatableText，
       // 只提取直接文本，嵌套块级子元素由各自的翻译单元独立翻译。
-      const texts = targets.map((el) =>
-        normalizeText(
-          hasBlockTextChildren(el)
-            ? shallowTranslatableText(el)
-            : translatableText(el),
-        ),
-      );
+      // #58：translatableTextEx 同时返回 preserves 映射表（占位符 → 原文），
+      // 译文回填时替换占位符，使 GitHub 用户名等标识符保持原样。
+      const textData = targets.map((el) => {
+        const useShallow = hasBlockTextChildren(el);
+        const { text: rawText, preserves } = useShallow
+          ? shallowTranslatableTextEx(el)
+          : translatableTextEx(el);
+        return {
+          text: normalizeText(rawText),
+          preserves,
+          rawText: normalizeText(rawText),
+        };
+      });
+      const texts = textData.map((d) => d.text);
 
-      // 切分为批次
-      const batches: { texts: string[]; targets: Element[] }[] = [];
+      // 切分为批次。每批同时携带 preserves 映射表与原文，
+      // 供译文回填时 restorePreserves 校验与替换。
+      const batches: {
+        texts: string[];
+        targets: Element[];
+        preserves: Map<string, string>[];
+        rawTexts: string[];
+      }[] = [];
       for (let i = 0; i < targets.length; i += FULL_PAGE_BATCH_SIZE) {
+        const slice = textData.slice(i, i + FULL_PAGE_BATCH_SIZE);
         batches.push({
-          texts: texts.slice(i, i + FULL_PAGE_BATCH_SIZE),
+          texts: slice.map((d) => d.text),
           targets: targets.slice(i, i + FULL_PAGE_BATCH_SIZE),
+          preserves: slice.map((d) => d.preserves),
+          rawTexts: slice.map((d) => d.rawText),
         });
       }
 
@@ -177,7 +200,7 @@ export default defineContentScript({
       // 所有批次并发发送，每批返回即渲染。
       // Google Web 的并发闸门是惰性单例，所有批次共享，自然排队。
       await Promise.all(
-        batches.map(async ({ texts: batchTexts, targets: batchTargets }) => {
+        batches.map(async ({ texts: batchTexts, targets: batchTargets, preserves: batchPreserves, rawTexts: batchRawTexts }) => {
           const resp = await chrome.runtime.sendMessage({
             type: 'pt:translate',
             payload: { texts: batchTexts, from: ns.from, to: ns.to },
@@ -193,7 +216,13 @@ export default defineContentScript({
           const translations: string[] = resp.data.translations;
           for (let i = 0; i < batchTargets.length; i++) {
             try {
-              if (render(batchTargets[i]!, translations[i]!, 'page')) {
+              // #58：将占位符替换回原文（用户名等标识符不翻译但保留）
+              const restored = restorePreserves(
+                translations[i]!,
+                batchPreserves[i]!,
+                batchRawTexts[i]!,
+              );
+              if (render(batchTargets[i]!, restored, 'page')) {
                 renderSucceeded++;
               } else {
                 renderRejected++;
@@ -352,7 +381,8 @@ export default defineContentScript({
         return;
       }
 
-      const text = normalizeText(translatableText(unit));
+      const { text: rawText, preserves } = translatableTextEx(unit);
+      const text = normalizeText(rawText);
       if (!text) return;
 
       const resp = await chrome.runtime.sendMessage({
@@ -365,9 +395,16 @@ export default defineContentScript({
         return;
       }
 
+      // #58：将占位符替换回原文
+      const restored = restorePreserves(
+        resp.data.translations[0],
+        preserves,
+        text,
+      );
+
       // render() 在含媒体 / 交互控件时会拒绝渲染（#22），此时告知用户
       // 而非静默吞掉元素
-      if (!render(unit, resp.data.translations[0], 'para')) {
+      if (!render(unit, restored, 'para')) {
         toast(tf('toastNotTranslatable', '该区域无法单独翻译'), 'error');
       }
     }
