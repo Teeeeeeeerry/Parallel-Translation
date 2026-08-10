@@ -4,6 +4,8 @@
 //
 // 补丁只做两件事：跳过(skip)、改指(take)。不在此处写翻译逻辑或 DOM 操作。
 
+import { INLINE_SET } from './classify';
+
 type CompatResult =
   | { skip: true }
   | { take: Element }
@@ -12,6 +14,62 @@ type CompatResult =
 type CompatHandler = (el: Element) => CompatResult;
 
 type OmitHandler = (el: Element) => boolean;
+
+// ---- 通用行内角标检测 ----
+
+/** Favicon 尺寸上限（像素），超过此值视为内容图片而非角标图标 */
+const MAX_FAVICON_PX = 24;
+
+/** 角标文字长度上限（字符），超过此值视为正文片段而非角标 */
+const MAX_BADGE_TEXT = 40;
+
+/**
+ * 元素是否包含 favicon 尺寸的图片（任一边 ≤ MAX_FAVICON_PX）。
+ * 来源角标通常内嵌站点 favicon，而正文内链不含此类小图。
+ */
+function hasFaviconImage(el: Element): boolean {
+  const imgs = el.querySelectorAll('img');
+  for (const img of imgs) {
+    const rect = img.getBoundingClientRect();
+    if (
+      (rect.width > 0 && rect.width <= MAX_FAVICON_PX) ||
+      (rect.height > 0 && rect.height <= MAX_FAVICON_PX)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 通用行内来源角标识别 —— 跨站生效，不依赖类名。
+ *
+ * 识别混在正文里的角标 chip（来源链接、"YouTube +3" 等），它们不是
+ * 可翻译正文而是 UI 元数据，译文不该包含角标文字，也不应浪费引擎额度。
+ *
+ * 信号（命中任一即返回 true）：
+ * 1. 文本以 +N 结尾 —— 极强信号，正文几乎不会以 "+3" 结尾
+ * 2. 交互角色 + favicon 尺寸图片 —— 来源链接 chip 的典型结构
+ */
+function isGenericInlineBadge(el: Element): boolean {
+  const tag = el.tagName.toLowerCase();
+  if (!INLINE_SET.has(tag)) return false;
+
+  const text = el.textContent?.trim() ?? '';
+  if (text.length === 0 || text.length > MAX_BADGE_TEXT) return false;
+
+  // 信号 1：以 +N 结尾（"+3"、"+5 more"、"+10条"）
+  if (/\+\d+/.test(text)) return true;
+
+  // 信号 2：交互角色 + favicon 尺寸图片
+  const hasInteractiveRole =
+    el.matches('[role="button"], [role="link"]') || tag === 'a';
+  if (hasInteractiveRole && hasFaviconImage(el)) return true;
+
+  return false;
+}
+
+// ---- 域名精修补丁 ----
 
 /**
  * 取主域名（末两段）。
@@ -90,14 +148,22 @@ export function applyCompat(el: Element): CompatResult {
  * 文本内容 —— AI 概览的来源角标是行内元素，永远当不成单元，只能从
  * 文本层面剔除。
  *
- * 类名来自社区抓包记录而非官方文档，Google 改版可能失效 —— 失效只是
- * 噪声回退（chip 文本重新进入译文），不会翻错。
+ * 规则分两层：通用行内角标检测（isGenericInlineBadge，跨站）、
+ * 域名补丁（本表，精修层）。通用规则覆盖 Bing / DuckDuckGo / Perplexity
+ * 等未单独适配但角标形态相同的站点。
+ *
+ * 类名来自社区抓包记录而非官方文档，Google 改版可能失效 ——
+ * 失效时通用规则兜底，角标文字仍会被剔除。
  */
 const OMIT_HANDLERS: Record<string, OmitHandler> = {
   'google.com': (el: Element) => el.matches('span.wJwe6c, .WTfRgd'),
 };
 
 export function shouldOmitText(el: Element): boolean {
+  // 通用行内角标检测（跨站，不依赖类名）
+  if (isGenericInlineBadge(el)) return true;
+
+  // 域名精修补丁
   const handler = OMIT_HANDLERS[mainDomain(location.hostname)];
   if (!handler) return false;
   return handler(el);
