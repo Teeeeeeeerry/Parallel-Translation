@@ -336,7 +336,11 @@ export default defineContentScript({
       // 由这里统一向上找整段。找不到（超长 / .notranslate / 非正文区 /
       // 已翻译）则 shouldSkip 已拦下，不翻。
       const unit = closestUnit(el);
-      if (!unit) return;
+      if (!unit) {
+        console.debug('[PT] translateOne 跳过：closestUnit 返回 null', el);
+        toast(tf('toastNotTranslatable', '该区域无法单独翻译'), 'error');
+        return;
+      }
 
       const text = normalizeText(translatableText(unit));
       if (!text) return;
