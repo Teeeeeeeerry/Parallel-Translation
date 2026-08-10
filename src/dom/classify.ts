@@ -55,9 +55,14 @@ const NON_CONTENT =
   '.navbox,.sidebar,.toc,.mw-editsection,' +
   '.vector-menu-content-list,#catlinks,#mw-hidden-catlinks,#mw-normal-catlinks';
 
-const MAX_TEXT = 3072;
+export const MAX_TEXT = 3072;
 const MAX_HTML = 4096;
 const MIN_TEXT = 3;
+
+/** pre 是否处于代码块上下文（.highlight / .notranslate 祖先）—— #64/#65 站点相关判定 */
+export function isCodeBlockPre(el: Element): boolean {
+  return el.closest('.highlight, .notranslate') !== null;
+}
 
 /** 非可见性相关的所有跳过判定。元素即便变为可见，这些条件也不会改变。 */
 export function shouldSkipNonVisual(el: Element): boolean {
@@ -66,7 +71,7 @@ export function shouldSkipNonVisual(el: Element): boolean {
 
   // pre 在代码上下文（.highlight / .notranslate 祖先）→ 跳过；
   // 纯文本文档型 pre（如 .plain > pre）则放行（#64）
-  if (tag === 'pre' && el.closest('.highlight, .notranslate')) return true;
+  if (tag === 'pre' && isCodeBlockPre(el)) return true;
 
   if (el.classList.contains('notranslate')) return true;
   if ((el as HTMLElement).isContentEditable) return true;
@@ -189,6 +194,10 @@ function isMainlyNumeric(text: string): boolean {
  */
 export function isTranslationUnit(el: Element): boolean {
   const tag = el.tagName.toLowerCase();
+
+  // #65：pre 切块包装 span —— 块本身就是翻译单元（尺寸已由 splitPre 保证）
+  if ((el as HTMLElement).dataset?.ptChunk === '1') return true;
+
   const isContainer = CONTAINER_SET.has(tag);
 
   if (isContainer && directTextLength(el) === 0) return false;
