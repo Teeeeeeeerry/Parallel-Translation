@@ -117,7 +117,6 @@ const HANDLERS: Record<string, CompatHandler> = {
           '.file-info, .file-header, ' +
           '.commit-tease-sha, ' +
           '.commit-message code, ' +
-          'pre, ' + // GitHub 的 pre 通常是代码块
           '.highlight, ' +
           '.blame-hunk, ' +
           '.text-mono',

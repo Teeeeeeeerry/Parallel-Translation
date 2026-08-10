@@ -20,6 +20,7 @@ export const DIRECT_SET = new Set([
  */
 export const CONTAINER_SET = new Set([
   'div', 'section', 'article', 'main', 'figure',
+  'pre',
 ]);
 
 /**
@@ -29,7 +30,7 @@ export const CONTAINER_SET = new Set([
 export const SKIP_SET = new Set([
   'html', 'body', 'script', 'style', 'noscript',
   'input', 'textarea', 'select', 'button',
-  'code', 'pre',
+  'code',
 ]);
 
 /**
@@ -62,6 +63,11 @@ const MIN_TEXT = 3;
 export function shouldSkipNonVisual(el: Element): boolean {
   const tag = el.tagName.toLowerCase();
   if (SKIP_SET.has(tag)) return true;
+
+  // pre 在代码上下文（.highlight / .notranslate 祖先）→ 跳过；
+  // 纯文本文档型 pre（如 .plain > pre）则放行（#64）
+  if (tag === 'pre' && el.closest('.highlight, .notranslate')) return true;
+
   if (el.classList.contains('notranslate')) return true;
   if ((el as HTMLElement).isContentEditable) return true;
   if (el.closest('[data-pt="done"]')) return true;
