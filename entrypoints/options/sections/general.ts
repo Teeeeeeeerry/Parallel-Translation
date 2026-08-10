@@ -74,8 +74,15 @@ export function initGeneral(): void {
   });
 
   const resetBallPosBtn = document.getElementById('pt-reset-ball-pos-btn')!;
-  resetBallPosBtn.addEventListener('click', () => {
-    chrome.storage.local.remove('pt-ball-pos').catch(() => {});
+  resetBallPosBtn.addEventListener('click', async () => {
+    // 清除所有按域名存储的悬浮球位置键（pt-ball-pos:<hostname>）以及旧的全局键
+    const all = await chrome.storage.local.get(null);
+    const ballKeys = Object.keys(all).filter(
+      (k) => k === 'pt-ball-pos' || k.startsWith('pt-ball-pos:'),
+    );
+    if (ballKeys.length > 0) {
+      await chrome.storage.local.remove(ballKeys).catch(() => {});
+    }
     // 简单反馈：按钮文字短暂变化
     resetBallPosBtn.textContent = tf('toastBallPosReset', '已重置');
     setTimeout(() => {
