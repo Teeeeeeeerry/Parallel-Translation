@@ -1,0 +1,13 @@
+diff --git a/dist/client/content-scripts/content-script-context.mjs b/dist/client/content-scripts/content-script-context.mjs
+index 7c0e8104df2ba08266aaed517bc9b8f243f41381..4b69814d1a71a9ae2b84458793268f9abc823be8 100644
+--- a/dist/client/content-scripts/content-script-context.mjs
++++ b/dist/client/content-scripts/content-script-context.mjs
+@@ -11,7 +11,7 @@ export class ContentScriptContext {
+       this.listenForNewerScripts({ ignoreFirstEvent: true });
+       this.stopOldScripts();
+     } else {
+-      this.listenForNewerScripts();
++      this.listenForNewerScripts({ ignoreFirstEvent: true });
+     }
+   }
+   static SCRIPT_STARTED_MESSAGE_TYPE = getUniqueEventName(
