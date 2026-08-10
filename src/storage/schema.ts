@@ -2,6 +2,13 @@
 // 此文件为全局唯一真相来源。后续所有阶段新增配置项都改这里，
 // 不要在别处另开定义。
 
+/** 递归 Partial：嵌套字段也可部分提供。数组保持原类型，不递归到索引。 */
+export type DeepPartial<T> = T extends Array<infer U>
+  ? Array<U>
+  : T extends object
+    ? { [P in keyof T]?: DeepPartial<T[P]> }
+    : T;
+
 export type DisplayMode = 'bilingual' | 'translation-only';
 
 export type StyleId =

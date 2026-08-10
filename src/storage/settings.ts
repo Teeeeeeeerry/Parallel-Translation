@@ -1,4 +1,4 @@
-import type { Settings } from './schema';
+import type { DeepPartial, Settings } from './schema';
 import { DEFAULT_SETTINGS } from './schema';
 
 const KEY = 'pt-settings';
@@ -12,7 +12,7 @@ let ready: Promise<Settings> | null = null;
  * 嵌套对象（hotkeys / siteList / models）递归到叶子，
  * 其余字段浅覆盖。嵌套键单一定义，日后加第四个嵌套对象只改此处。
  */
-function mergeInto(base: Settings, patch: Partial<Settings>): Settings {
+function mergeInto(base: Settings, patch: DeepPartial<Settings>): Settings {
   return {
     ...base,
     ...patch,
@@ -63,7 +63,7 @@ export function getSettings(): Settings {
 }
 
 /** 部分更新设置并写回 sync。嵌套对象递归合并，不会丢兄弟键。 */
-export async function patchSettings(patch: Partial<Settings>): Promise<void> {
+export async function patchSettings(patch: DeepPartial<Settings>): Promise<void> {
   current = mergeInto(current, patch);
   await chrome.storage.sync.set({ [KEY]: current });
 }
