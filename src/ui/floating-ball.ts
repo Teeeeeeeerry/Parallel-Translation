@@ -5,7 +5,9 @@
 import { mountIsolated, unmountIsolated } from './mount';
 import { tf } from '../i18n';
 
-const BALL_POS_KEY = 'pt-ball-pos';
+function ballPosKey(): string {
+  return `pt-ball-pos:${location.hostname}`;
+}
 const BALL_SIZE = 44;
 const VIEWPORT_MARGIN = 8;
 
@@ -64,17 +66,18 @@ export function createBall(callbacks: BallCallbacks): () => void {
   let ballH = BALL_SIZE;
 
   // 恢复持久化位置（钳制到视口内）
+  const posKey = ballPosKey();
   chrome.storage.local
-    .get(BALL_POS_KEY)
+    .get(posKey)
     .then((r) => {
-      const pos = r[BALL_POS_KEY] as { x: number; y: number } | undefined;
+      const pos = r[posKey] as { x: number; y: number } | undefined;
       if (pos) {
         const rect = ball.getBoundingClientRect();
         const clamped = clampToViewport(pos.x, pos.y, rect.width, rect.height);
         // 钳制后与存储值不同时写回，防止下次再读到越界坐标
         if (clamped.x !== pos.x || clamped.y !== pos.y) {
           chrome.storage.local
-            .set({ [BALL_POS_KEY]: clamped })
+            .set({ [posKey]: clamped })
             .catch(() => {});
         }
         ball.style.position = 'fixed';
@@ -121,7 +124,7 @@ export function createBall(callbacks: BallCallbacks): () => void {
       // 持久化新位置
       const rect = ball.getBoundingClientRect();
       chrome.storage.local
-        .set({ [BALL_POS_KEY]: { x: rect.left, y: rect.top } })
+        .set({ [posKey]: { x: rect.left, y: rect.top } })
         .catch(() => {});
     }
     dragging = false;
@@ -156,7 +159,7 @@ export function createBall(callbacks: BallCallbacks): () => void {
       ball.style.left = `${clamped.x}px`;
       ball.style.top = `${clamped.y}px`;
       chrome.storage.local
-        .set({ [BALL_POS_KEY]: { x: clamped.x, y: clamped.y } })
+        .set({ [posKey]: { x: clamped.x, y: clamped.y } })
         .catch(() => {});
     }
   };
