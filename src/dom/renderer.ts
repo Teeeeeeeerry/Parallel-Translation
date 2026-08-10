@@ -46,6 +46,12 @@ export function render(
   trans.className = 'pt-trans';
   trans.textContent = translation;
 
+  // #66：pre 内译文需要脱离等宽约束，按普通段落排版。
+  // closest 从自身沿祖先链向上匹配，覆盖两种场景：
+  // 1. pre 自身是翻译单元（短文本，未被 splitPre 切分）
+  // 2. .pt-chunk 包装 span 是翻译单元（#65 切分后的块）
+  if (el.closest('pre')) trans.classList.add('pt-pre');
+
   el.appendChild(origin);
   el.appendChild(trans);
   el.setAttribute('data-pt', 'done');

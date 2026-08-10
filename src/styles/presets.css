@@ -52,3 +52,11 @@
 .pt-style-fade .pt-trans {
   opacity: 0.6;
 }
+
+/* ── pre 内译文脱离等宽约束（#66）────────────────────────── */
+.pt-trans.pt-pre {
+  white-space: normal;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  border-left: none;
+  padding-left: 0;
+}
