@@ -28,6 +28,11 @@
   "rowParagraphBtn": { "message": "段落停留按鈕" },
   "btnResetBallPos": { "message": "重設浮動球位置" },
   "toastBallPosReset": { "message": "已重設" },
+  "ballPosColHostname": { "message": "網域" },
+  "ballPosColPosition": { "message": "位置" },
+  "btnDelete": { "message": "刪除" },
+  "ballPosListEmpty": { "message": "尚無自訂位置資料" },
+  "ballPosDefaultTag": { "message": "預設（右下角）" },
 
   "secEnginesDesc": { "message": "拖曳調整引擎優先順序（由上而下即故障切換順序），為 BYOK 引擎設定 API key。" },
   "cardPriority": { "message": "優先順序（拖曳排序）" },

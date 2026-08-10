@@ -74,8 +74,57 @@ export function initGeneral(): void {
   });
 
   const resetBallPosBtn = document.getElementById('pt-reset-ball-pos-btn')!;
-  resetBallPosBtn.addEventListener('click', async () => {
-    // 清除所有按域名存储的悬浮球位置键（pt-ball-pos:<hostname>）以及旧的全局键
+  const ballPosToggle = document.getElementById('pt-ball-pos-toggle')!;
+  const ballPosPanel = document.getElementById('pt-ball-pos-panel')!;
+  const ballPosList = document.getElementById('pt-ball-pos-list')!;
+  const ballPosTable = document.getElementById('pt-ball-pos-table')!;
+  const ballPosEmpty = document.getElementById('pt-ball-pos-empty')!;
+
+  async function loadBallPosSites(): Promise<void> {
+    const all = await chrome.storage.local.get(null);
+    const ballKeys = Object.keys(all).filter(
+      (k) => k === 'pt-ball-pos' || k.startsWith('pt-ball-pos:'),
+    );
+    if (ballKeys.length === 0) {
+      ballPosEmpty.style.display = 'block';
+      ballPosTable.style.display = 'none';
+      return;
+    }
+    ballPosEmpty.style.display = 'none';
+    ballPosTable.style.display = '';
+
+    const rows: string[] = [];
+    for (const key of ballKeys) {
+      const hostname = key === 'pt-ball-pos' ? '(全局)' : key.slice('pt-ball-pos:'.length);
+      const pos = all[key] as { x: number; y: number } | undefined;
+      const posText = pos
+        ? `(${Math.round(pos.x)}, ${Math.round(pos.y)})`
+        : tf('ballPosDefaultTag', '默认（右下角）');
+      rows.push(`
+        <tr data-key="${hostname}">
+          <td>${hostname}</td>
+          <td>${posText}</td>
+          <td class="pt-ball-pos-cell-btn">
+            <button class="pt-btn-icon pt-ball-pos-delete" data-key="${hostname}" data-i18n="btnDelete" title="${tf('btnDelete', '删除')}">✕</button>
+          </td>
+        </tr>
+      `);
+    }
+    ballPosList.innerHTML = rows.join('');
+
+    // 绑定删除事件
+    ballPosList.querySelectorAll('.pt-ball-pos-delete').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const hostname = (btn as HTMLElement).dataset.key!;
+        const storageKey = hostname === '(全局)' ? 'pt-ball-pos' : `pt-ball-pos:${hostname}`;
+        await chrome.storage.local.remove(storageKey).catch(() => {});
+        await loadBallPosSites();
+      });
+    });
+  }
+
+  async function resetAllBallPos(): Promise<void> {
     const all = await chrome.storage.local.get(null);
     const ballKeys = Object.keys(all).filter(
       (k) => k === 'pt-ball-pos' || k.startsWith('pt-ball-pos:'),
@@ -83,11 +132,44 @@ export function initGeneral(): void {
     if (ballKeys.length > 0) {
       await chrome.storage.local.remove(ballKeys).catch(() => {});
     }
-    // 简单反馈：按钮文字短暂变化
+    await loadBallPosSites();
     resetBallPosBtn.textContent = tf('toastBallPosReset', '已重置');
     setTimeout(() => {
       resetBallPosBtn.textContent = tf('btnResetBallPos', '重置悬浮球位置');
     }, 1500);
+  }
+
+  resetBallPosBtn.addEventListener('click', async () => {
+    const all = await chrome.storage.local.get(null);
+    const ballKeys = Object.keys(all).filter(
+      (k) => k === 'pt-ball-pos' || k.startsWith('pt-ball-pos:'),
+    );
+    if (ballKeys.length === 0) {
+      resetBallPosBtn.textContent = tf('toastBallPosReset', '已重置');
+      setTimeout(() => {
+        resetBallPosBtn.textContent = tf('btnResetBallPos', '重置悬浮球位置');
+      }, 1500);
+      return;
+    }
+    await resetAllBallPos();
+  });
+
+  ballPosToggle.addEventListener('click', () => {
+    const isOpen = ballPosPanel.style.display !== 'none';
+    ballPosPanel.style.display = isOpen ? 'none' : '';
+    if (!isOpen) loadBallPosSites();
+  });
+
+  // 点击面板外关闭
+  document.addEventListener('click', (e) => {
+    if (
+      ballPosPanel.style.display !== 'none' &&
+      !ballPosPanel.contains(e.target as Node) &&
+      e.target !== ballPosToggle &&
+      !ballPosToggle.contains(e.target as Node)
+    ) {
+      ballPosPanel.style.display = 'none';
+    }
   });
 
   syncUI();

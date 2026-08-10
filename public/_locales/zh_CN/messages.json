@@ -28,6 +28,11 @@
   "rowParagraphBtn": { "message": "段落悬停按钮" },
   "btnResetBallPos": { "message": "重置悬浮球位置" },
   "toastBallPosReset": { "message": "已重置" },
+  "ballPosColHostname": { "message": "域名" },
+  "ballPosColPosition": { "message": "位置" },
+  "btnDelete": { "message": "删除" },
+  "ballPosListEmpty": { "message": "暂无自定义位置数据" },
+  "ballPosDefaultTag": { "message": "默认（右下角）" },
 
   "secEnginesDesc": { "message": "拖拽调整引擎优先级（从上到下即故障切换顺序），为 BYOK 引擎配置 API key。" },
   "cardPriority": { "message": "优先级（拖拽排序）" },
