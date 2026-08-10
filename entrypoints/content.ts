@@ -12,6 +12,7 @@ import { normalizeText } from '~/src/dom/normalize';
 import { translatableText, shallowTranslatableText, hasBlockTextChildren } from '~/src/dom/text';
 import { startObserver, registerHidden } from '~/src/dom/observer';
 import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
+import { unsplitPre } from '~/src/dom/pre-split';
 import { applyCustomCss } from '~/src/styles/custom';
 import { createBall, setBallState } from '~/src/ui/floating-ball';
 import { createParaBtn } from '~/src/ui/paragraph-btn';
@@ -240,9 +241,14 @@ export default defineContentScript({
 
       // allTranslated() 已支持 shadow 穿透（Phase 3 P3-3 修复）
       const els: Element[] = [];
+      const splitPres: Element[] = [];
       const collectFrom = (root: ParentNode) => {
         root.querySelectorAll<Element>('[data-pt="done"]').forEach((el) =>
           els.push(el),
+        );
+        // #65：收集被切分的 pre，在 unrender 后还原 DOM
+        root.querySelectorAll<Element>('[data-pt-split="1"]').forEach((el) =>
+          splitPres.push(el),
         );
         root.querySelectorAll('*').forEach((el) => {
           if ((el as Element).shadowRoot)
@@ -253,6 +259,10 @@ export default defineContentScript({
 
       for (const el of els) {
         unrender(el);
+      }
+      // #65：unrender chunk 后再还原 pre 的切分包装，将 DOM 恢复为逐字节原貌
+      for (const pre of splitPres) {
+        unsplitPre(pre);
       }
     }
 

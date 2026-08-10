@@ -9,6 +9,7 @@
 
 import { SKIP_SET, shouldSkipNonVisual, isVisible, isTranslationUnit, hasNonTextContent } from './classify';
 import { applyCompat } from './compat';
+import { splitPre } from './pre-split';
 
 /**
  * 采集可翻译节点。
@@ -81,6 +82,11 @@ function walk(
         node = walker.nextNode();
         continue;
       }
+
+      // #65：超大纯文本 pre（如 GitHub README 的 .plain > pre）按空行切块，
+      // 块是独立翻译单元。切分是纯文本结构操作，无站点相关性；
+      // 代码块判定（isCodeBlockPre）是唯一站点相关部分（#64）。
+      if (el.tagName === 'PRE') splitPre(el as HTMLPreElement);
 
       // 判定顺序不能反：isTranslationUnit() 首步只是一次标签查表，而
       // shouldSkipNonVisual() 要拼 outerHTML、算 textContent。先便宜后昂贵。
