@@ -23,9 +23,9 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm build
       - run: pnpm test:verify-build
       - run: pnpm test:artifacts
       # ── 上传日志 ──
