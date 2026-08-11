@@ -80,7 +80,7 @@ export function initAdvanced(): void {
   async function updateCacheStats(): Promise<void> {
     try {
       const result = await chrome.storage.local.get('pt-cache-index');
-      const index: string[] = result['pt-cache-index'] ?? [];
+      const index: string[] = (result['pt-cache-index'] as string[] | undefined) ?? [];
       cacheStats.textContent = tf('cacheEntries', `缓存条目：${index.length}`, String(index.length));
     } catch {
       cacheStats.textContent = tf('cacheUnknown', '缓存条目：未知');

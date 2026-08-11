@@ -14,6 +14,9 @@ importers:
       '@playwright/test':
         specifier: ^1.49.0
         version: 1.62.1
+      '@types/chrome':
+        specifier: ^0.2.5
+        version: 0.2.5
       '@vitest/coverage-v8':
         specifier: ^3.1.0
         version: 3.2.7(supports-color@7.2.0)(vitest@3.2.7(@types/node@26.1.2)(jiti@2.7.0)(jsdom@25.0.1(supports-color@7.2.0))(supports-color@7.2.0))
@@ -484,6 +487,9 @@ packages:
 
   '@types/chrome@0.0.280':
     resolution: {integrity: sha512-AotSmZrL9bcZDDmSI1D9dE7PGbhOur5L0cKxXd7IqbVizQWCY4gcvupPUVsQ4FfDj3V2tt/iOpomT9EY0s+w1g==}
+
+  '@types/chrome@0.2.5':
+    resolution: {integrity: sha512-DwLFgwj3D0zjxRBhQ3610RBso2g+yI1cakq/JdIGopZ9Bc5UhQluyfcLGZwivFE4t2h4b2QZYZhPV7KylExSbA==}
 
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
@@ -2611,6 +2617,11 @@ snapshots:
       assertion-error: 2.0.1
 
   '@types/chrome@0.0.280':
+    dependencies:
+      '@types/filesystem': 0.0.36
+      '@types/har-format': 1.2.16
+
+  '@types/chrome@0.2.5':
     dependencies:
       '@types/filesystem': 0.0.36
       '@types/har-format': 1.2.16
