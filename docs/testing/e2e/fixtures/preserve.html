@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Preserve — GitHub Username Placeholders (#58)</title></head>
+<body>
+  <h1>GitHub Username Preservation Test</h1>
+
+  <!-- 模拟 GitHub Issue 评论 -->
+  <p>
+    <a class="user-mention" data-hovercard-url="/users/testuser">@testuser</a>
+    commented on this issue and provided a detailed analysis.
+  </p>
+
+  <p>
+    Multiple users participated:
+    <a class="user-mention">@alice</a>,
+    <a class="user-mention">@bob</a>, and others joined the discussion.
+  </p>
+
+  <p>
+    <a data-hovercard-url="/users/octocat">octocat</a>
+    opened this pull request to fix the navigation bug.
+  </p>
+
+  <!-- 普通链接不应被 preserve -->
+  <p>
+    Check out this
+    <a href="https://example.com">useful resource</a>
+    for more information on the topic.
+  </p>
+</body>
+</html>

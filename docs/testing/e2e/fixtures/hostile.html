@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Hostile CSS</title>
+<style>
+  /* Aggressive CSS reset — z-index / positioning that could clash with injected UI */
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 0; position: relative; }
+  div, p, h1, h2 { position: relative; z-index: 100; }
+  /* Override common injected styles */
+  .pt-origin, .pt-trans, [data-pt] { all: initial; }
+</style>
+</head>
+<body>
+  <h1>Hostile Environment Test</h1>
+  <p>This page has aggressive CSS that could interfere with injected translation UI elements. The floating ball, paragraph buttons, and translated content should all display correctly despite these styles.</p>
+  <p>Second paragraph to verify translation rendering works in hostile CSS contexts.</p>
+</body>
+</html>

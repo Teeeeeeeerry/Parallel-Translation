@@ -16,6 +16,7 @@ stats.html
 playwright-report/
 test-results/
 coverage/
+docs/testing/logs/
 
 # 编辑器与系统
 .DS_Store
