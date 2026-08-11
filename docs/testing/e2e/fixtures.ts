@@ -39,7 +39,6 @@ export function fixtureUrl(name: FixtureName): string {
 }
 
 // ── Google Translate API 响应形状 ──
-// google-web.ts 解析: data[0] 是分句数组, 每项 [0] 为译文
 interface GoogleResponse {
   0: Array<[string, string, null, null, number]>;
 }
@@ -56,35 +55,27 @@ function googleBody(translation: string): [GoogleResponse, null, string] {
 
 export const test = base.extend<
   {
-    /** Background service worker — 可 evaluate + 访问 chrome.storage */
     serviceWorker: Worker;
-    /** Mock Google 翻译端点（在 SW fetch 层拦截） */
     mockGoogle: (opts?: {
       fail?: boolean;
       translation?: (q: string) => string;
     }) => Promise<void>;
-    /** 向 chrome.storage.sync 写入设置并等待生效 */
     seedSettings: (patch: Record<string, unknown>) => Promise<void>;
-    /** 导航到 fixture 页面 */
     gotoFixture: (name: FixtureName) => Promise<Page>;
   },
   {
-    /** 被 context 覆盖 — Playwright 的 context fixture 返回我们的 persistent context */
     context: object;
   }
 >({
   // ── 扩展加载：persistent context ──
-  // scope: 'test' 确保每个测试有独立的浏览器 profile，状态不串扰。
   context: [
-    async ({}, use, testInfo) => {
+    async ({}, use: any, testInfo: any) => {
       const userDataDir = path.resolve(
         '.output/.playwright-profiles',
         testInfo.testId,
       );
 
       const context = await chromium.launchPersistentContext(userDataDir, {
-        // headless shell 不完全支持 content script 注入（#pt-host-ball 不会出现）。
-        // 通过 executablePath 显式指向完整 chromium 来解决。
         headless: true,
         executablePath: chromium.executablePath(),
         viewport: { width: 1280, height: 720 },
@@ -96,9 +87,7 @@ export const test = base.extend<
         ],
       });
 
-      // 关闭 onInstalled 打开的 welcome tab（如果有的话）
-      const pages = context.pages();
-      for (const p of pages) {
+      for (const p of context.pages()) {
         if (p.url().startsWith('chrome-extension://')) {
           await p.close().catch(() => {});
         }
@@ -107,12 +96,11 @@ export const test = base.extend<
       await use(context);
       await context.close();
     },
-    { scope: 'worker' },
+    { scope: 'test' },
   ] as any,
 
   // ── Service Worker ──
   serviceWorker: async ({ context }, use) => {
-    // 等待 background service worker 启动
     const worker =
       context.serviceWorkers()[0] ??
       (await context.waitForEvent('serviceworker', { timeout: 30_000 }));
@@ -146,7 +134,6 @@ export const test = base.extend<
   // ── 设置种子 ──
   seedSettings: async ({ serviceWorker }, use) => {
     await use(async (patch: Record<string, unknown>) => {
-      // 确保关闭缓存 + 开启悬浮球/段落按钮 + 仅启用 google-web
       const merged = {
         enabled: true,
         useCache: false,
@@ -157,19 +144,15 @@ export const test = base.extend<
         enginePriority: ['google-web'],
         ...patch,
       };
-      // 写入并等待 SW 确认
       await serviceWorker.evaluate(
         (p) =>
           new Promise<void>((resolve) => {
             chrome.storage.sync.set({ 'pt-settings': p }, () => {
-              // 验证写入成功
               chrome.storage.sync.get('pt-settings', () => resolve());
             });
           }),
         merged,
       );
-      // background.ts 的 onSettingsChanged 在 storage 事件中同步更新;
-      // content script 在页面导航后通过 settingsReady() 读取。
     });
   },
 

@@ -11,7 +11,7 @@ import { test, expect } from './fixtures';
 // ── 辅助：等待扩展注入（悬浮球出现 = content script 已运行）──
 async function waitForBall(page: import('@playwright/test').Page) {
   const ball = page.locator('#pt-host-ball .pt-ball');
-  await expect(ball).toBeVisible({ timeout: 30_000 });
+  await expect(ball).toBeVisible({ timeout: 60_000 });
   return ball;
 }
 

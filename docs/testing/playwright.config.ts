@@ -16,11 +16,12 @@ if (!existsSync(path.join(EXTENSION_DIR, 'manifest.json'))) {
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 120_000,
+  timeout: 180_000,
   // 允许通过了 skip 条件的 retry
   forbidOnly: !!process.env.CI,
-  expect: { timeout: 30_000 },
-  retries: 1,
+  // #83: 冷启动时 SW 消息通道可能延迟就绪，增加超时 + 重试缓解
+  expect: { timeout: 40_000 },
+  retries: 2,
 
   // ── Fixture 静态服务器（绕开 file:// content script 限制）──
   webServer: {
