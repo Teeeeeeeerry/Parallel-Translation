@@ -1,5 +1,19 @@
 import { defineConfig } from 'wxt';
-import type { Plugin } from 'vite';
+
+/**
+ * wxt.config.ts 需要的 Vite Plugin 接口子集。
+ *
+ * 这里不从 'vite' 导入 Plugin 类型 —— vite 仅是 wxt 的传递依赖，
+ * 在 CI 的 pnpm 严格解析下可能不可见。只声明本文件实际用到的成员即可。
+ */
+interface VitePlugin {
+  name: string;
+  resolveId(
+    source: string,
+    importer: string | undefined,
+  ): string | null | undefined | void;
+  load(id: string): string | null | undefined | void;
+}
 
 /**
  * Vite 插件：阻止测试文件进入构建产物。
@@ -8,11 +22,11 @@ import type { Plugin } from 'vite';
  * 此插件在 build 阶段检查每个被解析的模块，若路径命中 docs/testing/
  * 则直接抛出错误 —— 宁可构建失败也不让测试代码泄漏进用户下载的扩展包。
  */
-function blockTestFiles(): Plugin {
+function blockTestFiles(): VitePlugin {
   const BLOCKED = /[/\\]docs[/\\]testing[/\\]/;
   return {
     name: 'block-test-files',
-    resolveId(source, importer) {
+    resolveId(source: string, importer: string | undefined) {
       if (BLOCKED.test(source)) {
         throw new Error(
           `[block-test-files] 测试文件不应被打包进扩展产物: ${source}\n` +
@@ -28,7 +42,7 @@ function blockTestFiles(): Plugin {
       }
       return null; // 不处理，交回默认解析
     },
-    load(id) {
+    load(id: string) {
       if (BLOCKED.test(id)) {
         throw new Error(
           `[block-test-files] 测试文件被意外加载进构建: ${id}`,
