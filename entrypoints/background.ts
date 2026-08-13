@@ -5,6 +5,7 @@ import { cacheSet, cacheKey, cacheGet, cacheClear } from '~/src/storage/cache';
 import { getKey, setKey, removeKey } from '~/src/storage/keys';
 import { settingsReady, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import { route } from '~/src/engines/router';
+import { ensureE2EMock, applyE2EMock } from '~/src/engines/e2e-mock';
 import { initContextMenu } from '~/src/ui/context-menu';
 
 /** 将浏览器 UI 语言映射到 LANG_LIST 中可用的目标语言码 */
@@ -37,6 +38,8 @@ export default defineBackground(() => {
   (self as any).getKey = getKey;
   (self as any).setKey = setKey;
   (self as any).removeKey = removeKey;
+  // E2E fixtures 的 mock 注入入口（#90，与上同理的调试面）
+  (self as any).applyE2EMock = applyE2EMock;
 
   // 右键菜单 + 首次安装引导
   chrome.runtime.onInstalled.addListener((details) => {
@@ -82,6 +85,9 @@ export default defineBackground(() => {
 
     try {
       settingsReady()
+        // #90：路由前确保 E2E mock 已从 storage 安装 —— SW 实例被替换后，
+        // 实例内存里的 stub 消失，此步让 mock 随每次翻译自愈
+        .then(() => ensureE2EMock())
         .then(() => route(msg.payload))
         .then((r) => sendResponse({ ok: true, data: r }))
         .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));

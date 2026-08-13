@@ -251,6 +251,39 @@ test.describe('Fixture: infinite', () => {
     await page.click('#load-more');
     await expect(page.locator('[data-pt="done"]')).toHaveCount(initialDone + 3, { timeout: 15_000 });
   });
+
+  test('@core TC-E2E-46: mock 丢失后增量翻译自动恢复（#90 回归）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    // 在装 mock 前捕获真实 fetch —— 用于模拟 SW 实例被替换：
+    // 实例内存里的 fetch stub 随实例消失。
+    await serviceWorker.evaluate(() => {
+      (self as any).__ptRealFetch = self.fetch.bind(self);
+    });
+    // 显式前缀：断言不依赖 mockGoogle 的默认值
+    await mockGoogle({ prefix: '[MOCK] ' });
+    await gotoFixture('infinite');
+
+    await translateAndWait(page);
+    const initialDone = await page.locator('[data-pt="done"]').count();
+
+    // 模拟 stub 丢失（等效实例替换后的状态）。修复前后续翻译直连真实
+    // Google（本地可侥幸通过但译文不带 mock 前缀；CI 无外网则必失败）。
+    await serviceWorker.evaluate(() => {
+      (self as any).fetch = (self as any).__ptRealFetch;
+    });
+
+    await page.click('#load-more');
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(initialDone + 3, { timeout: 15_000 });
+
+    // 新段译文必须带 mock 前缀 —— 证明翻译路由前自动重装了 mock。
+    // 注：本测试验证「路由前重装」这条 seam（同实例内 stub 丢失即恢复）；
+    // 跨实例的 storage 持久由 chrome.storage 保证（真实重启无法在
+    // headless 测试中可靠触发，见 #90 调查记录）。
+    const newPara = page.locator('#content p').nth(3);
+    await expect(newPara.locator('.pt-trans')).toContainText('[MOCK]');
+  });
 });
 
 test.describe('Fixture: spa', () => {
@@ -366,9 +399,14 @@ test.describe('Fixture: pre-blocks', () => {
     const codeDone = await codePre.locator('[data-pt="done"]').count();
     expect(codeDone).toBe(0);
 
-    // 纯文本 pre 存在（切分由 pre-split.ts 处理）
-    const plainPre = page.locator('.plain pre');
-    await expect(plainPre.first()).toBeVisible();
+    // 纯文本 pre 超长 → 被 splitPre 按空行切块，切出的块独立翻译
+    const plainPre = page.locator('pre.plain');
+    await expect(plainPre).toHaveAttribute('data-pt-split', '1');
+    const chunks = plainPre.locator(':scope > [data-pt-chunk="1"]');
+    await expect(chunks.first()).toBeVisible();
+    // 至少 2 个块，且块已被翻译（data-pt="done" 落在 .pt-chunk 自身）
+    expect(await chunks.count()).toBeGreaterThanOrEqual(2);
+    await expect(chunks.first()).toHaveAttribute('data-pt', 'done');
   });
 });
 
