@@ -38,9 +38,11 @@ jobs:
           path: docs/testing/logs/
           retention-days: 7
 
-  # Level 2 — PR 合并前跑（< 5min）
+  # Level 2 — PR 合并前 + main push（< 5min）
+  # #96：原来只在 pull_request 触发，push 到 main 被跳过 ——
+  # main 分支 CI 一直显示绿色但从未真正执行过 e2e-core。
   e2e-core:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     concurrency:
       group: e2e-${{ github.ref }}
@@ -71,9 +73,9 @@ jobs:
           path: docs/testing/logs/
           retention-days: 7
 
-  # macOS — 快捷键
+  # macOS — 快捷键（与 e2e-core 同触发矩阵，#96）
   hotkeys-macos:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
