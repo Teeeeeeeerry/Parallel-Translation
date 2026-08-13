@@ -42,6 +42,69 @@ describe('splitPre', () => {
     expect(result).toBeNull();
   });
 
+  test('含 code 子元素的超长 pre → 返回 null（代码块结构拒切）', () => {
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    code.textContent = 'function f() { return 1; }\n'.repeat(100);
+    pre.appendChild(code);
+
+    const result = splitPre(pre);
+    expect(result).toBeNull();
+    expect(pre.hasAttribute('data-pt-split')).toBe(false);
+  });
+
+  test('含内联 <a> 的超长 pre → 切分，链接保留在 chunk 内', () => {
+    // GitHub 对 RST README 的 .plain > pre 渲染：纯文本 + autolink <a>。
+    // 两个大段各 ~2300 字符（单段不超 MAX_TEXT，全文超 3072 触发切分）。
+    const para = 'The Linux kernel is the core of any Linux operating system. '.repeat(40);
+    const text = [
+      'Linux kernel',
+      '============',
+      '',
+      `${para}`,
+      '',
+      `${para}`,
+      '',
+      'Quick Start',
+      '-----------',
+      '',
+      '* Get the latest kernel: https://kernel.org',
+      '* Join the community: https://lore.kernel.org/',
+    ].join('\n');
+
+    const pre = document.createElement('pre');
+    pre.innerHTML = text
+      .replace(
+        'https://kernel.org',
+        '<a href="https://kernel.org" rel="nofollow">https://kernel.org</a>',
+      )
+      .replace(
+        'https://lore.kernel.org/',
+        '<a href="https://lore.kernel.org/" rel="nofollow">https://lore.kernel.org/</a>',
+      );
+
+    const originalText = pre.textContent ?? '';
+
+    const result = splitPre(pre);
+
+    expect(result).not.toBeNull();
+    if (result) {
+      expect(result.length).toBeGreaterThanOrEqual(3);
+      // 链接必须保留在切出的 chunk 里
+      const anchors = pre.querySelectorAll('a');
+      expect(anchors.length).toBe(2);
+      expect([...anchors].map((a) => a.getAttribute('href'))).toEqual([
+        'https://kernel.org',
+        'https://lore.kernel.org/',
+      ]);
+      for (const a of anchors) {
+        expect(a.closest('span.pt-chunk')).not.toBeNull();
+      }
+      // 切分后文本逐字节不变
+      expect(pre.textContent).toBe(originalText);
+    }
+  });
+
   test('已切分的 pre → 返回 null（幂等）', () => {
     const longText = 'a'.repeat(3100);
     const pre = createPre(longText);
