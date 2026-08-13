@@ -5,7 +5,7 @@
  *       样式切换、自定义 CSS、禁用扩展、BYOK key 无效、
  *       响应不足、中途切语言、悬浮球钳制、超长段落、RTL 全文
  */
-import { test, expect } from './fixtures';
+import { test, expect, fixtureFileUrl } from './fixtures';
 
 test.describe('故障切换 @extended', () => {
   test('TC-E2E-31: mock Google 500 → 自动切 Bing', async ({ page }) => {
@@ -70,7 +70,7 @@ test.describe('边界情况 @extended', () => {
   });
 
   test('TC-E2E-44: 超长段落 5000 字符 → 被跳过不发送请求', async ({ page }) => {
-    await page.goto('file://' + __dirname + '/fixtures/basic.html');
+    await page.goto(fixtureFileUrl('basic'));
     // 注入超长段落
     await page.evaluate(() => {
       const p = document.createElement('p');
@@ -84,7 +84,7 @@ test.describe('边界情况 @extended', () => {
   });
 
   test('TC-E2E-45: RTL 页面全文翻译 → 段落按钮在正确位置', async ({ page }) => {
-    await page.goto('file://' + __dirname + '/fixtures/rtl.html');
+    await page.goto(fixtureFileUrl('rtl'));
     const dir = await page.evaluate(() => document.documentElement.dir);
     expect(dir).toBe('rtl');
     test.skip(true, '需要扩展环境验证段落按钮 RTL 定位');

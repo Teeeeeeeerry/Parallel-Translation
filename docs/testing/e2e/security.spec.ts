@@ -3,7 +3,7 @@
  *
  * API key 隔离、导出不含 key、禁用后零请求、XSS 阻止
  */
-import { test, expect } from './fixtures';
+import { test, expect, fixtureFileUrl } from './fixtures';
 
 test.describe('安全验证 @security', () => {
   test('SEC-01: 禁用扩展后零翻译请求', async ({ page }) => {
@@ -11,7 +11,7 @@ test.describe('安全验证 @security', () => {
   });
 
   test('SEC-02: 自定义 CSS XSS 阻止', async ({ page }) => {
-    await page.goto('file://' + __dirname + '/fixtures/basic.html');
+    await page.goto(fixtureFileUrl('basic'));
 
     // 验证非法 CSS 注入被阻止（模拟 validateCustomCss 逻辑）
     const results = await page.evaluate(() => {
