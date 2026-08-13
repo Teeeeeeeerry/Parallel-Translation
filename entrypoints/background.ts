@@ -68,6 +68,14 @@ export default defineBackground(() => {
     }
   });
 
+  // 健康检查（E2E 测试用于验证消息通道就绪）
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === 'pt:ping') {
+      sendResponse({ ok: true });
+      return true;
+    }
+  });
+
   // 翻译代理
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type !== 'pt:translate') return;

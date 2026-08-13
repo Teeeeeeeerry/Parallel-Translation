@@ -12,7 +12,7 @@ interface KeyRecord {
  */
 export async function getKey(engine: EngineId): Promise<string | undefined> {
   const result = await chrome.storage.local.get(KEY);
-  const keys: KeyRecord = result[KEY] ?? {};
+  const keys: KeyRecord = (result[KEY] as KeyRecord | undefined) ?? {};
   return keys[engine];
 }
 
@@ -21,7 +21,7 @@ export async function getKey(engine: EngineId): Promise<string | undefined> {
  */
 export async function setKey(engine: EngineId, value: string): Promise<void> {
   const result = await chrome.storage.local.get(KEY);
-  const keys: KeyRecord = result[KEY] ?? {};
+  const keys: KeyRecord = (result[KEY] as KeyRecord | undefined) ?? {};
   keys[engine] = value;
   await chrome.storage.local.set({ [KEY]: keys });
 }
@@ -31,7 +31,7 @@ export async function setKey(engine: EngineId, value: string): Promise<void> {
  */
 export async function removeKey(engine: EngineId): Promise<void> {
   const result = await chrome.storage.local.get(KEY);
-  const keys: KeyRecord = result[KEY] ?? {};
+  const keys: KeyRecord = (result[KEY] as KeyRecord | undefined) ?? {};
   delete keys[engine];
   await chrome.storage.local.set({ [KEY]: keys });
 }

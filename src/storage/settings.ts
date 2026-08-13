@@ -43,7 +43,7 @@ export function settingsReady(): Promise<Settings> {
     ready = chrome.storage.sync
       .get(KEY)
       .then((r) => {
-        current = merge(r[KEY]);
+        current = merge(r[KEY] as Partial<Settings> | undefined);
         return current;
       })
       .catch((e) => {
@@ -80,7 +80,7 @@ export function onSettingsChanged(fn: (s: Settings) => void): () => void {
     area: string,
   ) => {
     if (area !== 'sync' || !changes[KEY]) return;
-    current = merge(changes[KEY].newValue);
+    current = merge(changes[KEY].newValue as Partial<Settings> | undefined);
     fn(current);
   };
   chrome.storage.onChanged.addListener(listener);

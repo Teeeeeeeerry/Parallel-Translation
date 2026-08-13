@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>SPA Navigation</title></head>
+<body>
+  <nav><a href="#page1" onclick="navigate('page1');return false">Page 1</a> | <a href="#page2" onclick="navigate('page2');return false">Page 2</a></nav>
+  <div id="view">
+    <h1>Page 1</h1>
+    <p>This is the first page content. Navigate to page 2 to trigger a simulated SPA route change.</p>
+  </div>
+  <script>
+    function navigate(page) {
+      const view = document.getElementById('view');
+      if (page === 'page2') {
+        view.innerHTML = '<h1>Page 2</h1><p>This is the second page content. If the observer works, this new content should be automatically translated.</p><p>Another paragraph on page 2 to verify all new elements are handled.</p>';
+        history.pushState({ page }, '', '#' + page);
+      } else {
+        view.innerHTML = '<h1>Page 1</h1><p>This is the first page content. Navigate to page 2 to trigger a simulated SPA route change.</p>';
+        history.pushState({ page }, '', '#' + page);
+      }
+    }
+  </script>
+</body>
+</html>

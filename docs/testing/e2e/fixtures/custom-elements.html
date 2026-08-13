@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Custom Elements</title></head>
+<body>
+  <h1>Custom Elements with Slots</h1>
+  <my-card>
+    <span slot="title">Card Title in Slot</span>
+    <p slot="body">This is the body text inside a named slot. It should be picked up for translation.</p>
+  </my-card>
+  <script>
+    class MyCard extends HTMLElement {
+      constructor() {
+        super();
+        const shadow = this.attachShadow({ mode: 'open' });
+        shadow.innerHTML = '<div><slot name="title"></slot><slot name="body"></slot></div>';
+      }
+    }
+    customElements.define('my-card', MyCard);
+  </script>
+  <p>Light DOM paragraph after custom element.</p>
+</body>
+</html>

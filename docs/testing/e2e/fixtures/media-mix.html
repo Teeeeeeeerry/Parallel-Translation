@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Media Mix — Text + Interactive (#50 #55)</title></head>
+<body>
+  <h1>Media and Text Mix Test</h1>
+
+  <!-- 行内 favicon 不阻断翻译 -->
+  <p>
+    <span><a><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Crect fill='%23444' width='16' height='16'/%3E%3C/svg%3E" width="16" height="16"></a> text with inline favicon</span>
+    that should still be translatable as a whole paragraph.
+  </p>
+
+  <!-- 大图阻断翻译，但内嵌 p 独立翻译 -->
+  <div>
+    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600'%3E%3Crect fill='%23ddd' width='800' height='600'/%3E%3C/svg%3E" width="800" height="600">
+    <p>A caption paragraph under the large image that should be independently translated.</p>
+  </div>
+
+  <!-- 交互控件阻断 -->
+  <section>
+    <p>A text paragraph that should be translated.</p>
+    <button>Click Me</button>
+    <p>Another paragraph after the button should also be translated.</p>
+  </section>
+
+  <!-- 纯文本 section 可整体翻译 -->
+  <article>
+    <p>First paragraph in article.</p>
+    <p>Second paragraph in article, also translatable.</p>
+  </article>
+</body>
+</html>

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Shadow DOM — Nested Shadow Roots</title>
+</head>
+<body>
+  <h1>Shadow DOM Test Page</h1>
+  <p>This paragraph is in the light DOM and should be translated normally.</p>
+
+  <div id="host1"></div>
+  <div id="host2"></div>
+
+  <script>
+    // 三层嵌套 shadowRoot
+    const host1 = document.getElementById('host1');
+    const root1 = host1.attachShadow({ mode: 'open' });
+    root1.innerHTML = '<div id="inner-host"></div><p>Shadow level 1 text that needs translation.</p>';
+
+    const innerHost = root1.getElementById('inner-host');
+    const root2 = innerHost.attachShadow({ mode: 'open' });
+    root2.innerHTML = '<div id="deep-host"></div><p>Shadow level 2 text — deeper nested content.</p>';
+
+    const deepHost = root2.getElementById('deep-host');
+    const root3 = deepHost.attachShadow({ mode: 'open' });
+    root3.innerHTML = '<p>Shadow level 3 — deepest nested translatable text.</p>';
+
+    // 第二个独立 shadow host
+    const host2 = document.getElementById('host2');
+    const root4 = host2.attachShadow({ mode: 'open' });
+    root4.innerHTML = '<p>Independent shadow root with its own translatable content.</p>';
+  </script>
+</body>
+</html>

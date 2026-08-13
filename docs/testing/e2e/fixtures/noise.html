@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Noise — Non-translatable Content</title></head>
+<body>
+  <h1>Noise Filtering Test</h1>
+
+  <p>123</p>
+  <p>1.2k</p>
+  <p>2026-07-30</p>
+  <p>$99.99</p>
+  <p>Normal text that should be translated.</p>
+  <p class="notranslate">This paragraph has notranslate class and should be skipped entirely.</p>
+
+  <p>Short</p>
+  <p>A much longer paragraph that exceeds the minimum text length requirement and contains sufficient content to be considered a valid translation unit by the classifier.</p>
+
+  <div class="notranslate">
+    <p>This nested paragraph is inside a notranslate container and should also be skipped.</p>
+  </div>
+
+  <nav><p>Navigation text that should be skipped.</p></nav>
+  <footer><p>Footer text that should be skipped.</p></footer>
+</body>
+</html>

@@ -1,0 +1,153 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '23 9 * * 1' # 每周一 9:23 UTC，真实站点冒烟
+  workflow_dispatch:
+
+jobs:
+  # Level 1 — 每次 push 必跑（< 30s）
+  unit-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec wxt prepare
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm test:verify-build
+      - run: pnpm test:artifacts
+      # ── 上传日志 ──
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-unit-${{ github.run_id }}
+          path: docs/testing/logs/
+          retention-days: 7
+
+  # Level 2 — PR 合并前跑（< 5min）
+  e2e-core:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: e2e-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm build
+      - run: pnpm test:e2e:core
+      # 防止"永远绿"回归 —— 检查 skipped 测试数是否异常
+      - name: Verify E2E active
+        if: always()
+        run: node docs/testing/verify-e2e-active.mjs --threshold 10
+      # ── 上传日志 ──
+      - name: Upload E2E logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-e2e-core-${{ github.run_id }}
+          path: docs/testing/logs/
+          retention-days: 7
+
+  # macOS — 快捷键
+  hotkeys-macos:
+    if: github.event_name == 'pull_request'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm build
+      - run: pnpm test:e2e -- --grep "@mac"
+      # ── 上传日志 ──
+      - name: Upload macOS test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-macos-${{ github.run_id }}
+          path: docs/testing/logs/
+          retention-days: 7
+
+  # Level 3 — 定时 + 手动触发
+  e2e-full:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: e2e-full
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm build
+      - run: pnpm test:e2e -- --grep-invert "@real"
+      # ── 上传日志 ──
+      - name: Upload full E2E logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-e2e-full-${{ github.run_id }}
+          path: docs/testing/logs/
+          retention-days: 14
+
+  smoke-real-sites:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    continue-on-error: true # 允许红
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm build
+      - run: pnpm test:e2e -- --grep "@real"
+      # ── 上传日志 ──
+      - name: Upload smoke test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-smoke-${{ github.run_id }}
+          path: docs/testing/logs/
+          retention-days: 14

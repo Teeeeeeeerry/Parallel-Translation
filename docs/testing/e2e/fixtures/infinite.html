@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Infinite Scroll</title></head>
+<body>
+  <h1>Infinite Scroll Simulation</h1>
+  <div id="content">
+    <p>Initial paragraph 1 — should be translated on page load or scroll.</p>
+    <p>Initial paragraph 2 — more content visible immediately.</p>
+    <p>Initial paragraph 3 — the last of the initial batch.</p>
+  </div>
+  <button id="load-more" onclick="loadMore()">Load More</button>
+  <script>
+    let count = 4;
+    function loadMore() {
+      const div = document.getElementById('content');
+      for (let i = 0; i < 3; i++) {
+        const p = document.createElement('p');
+        p.textContent = 'Dynamically added paragraph ' + (count++) + ' — this content appeared after scrolling.';
+        div.appendChild(p);
+      }
+    }
+  </script>
+</body>
+</html>

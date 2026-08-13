@@ -34,7 +34,7 @@ let chain: Promise<void> = Promise.resolve();
 /** 将 key 移到 index 末尾（"最近使用"），必要时淘汰最旧的条目。 */
 async function refreshIndex(key: string): Promise<void> {
   const idxResult = await chrome.storage.local.get(INDEX_KEY);
-  let index: string[] = idxResult[INDEX_KEY] ?? [];
+  let index: string[] = (idxResult[INDEX_KEY] as string[] | undefined) ?? [];
 
   const existing = index.indexOf(key);
   if (existing !== -1) {
@@ -90,7 +90,7 @@ export function cacheClear(): Promise<void> {
   chain = chain
     .then(async () => {
       const idxResult = await chrome.storage.local.get(INDEX_KEY);
-      const index: string[] = idxResult[INDEX_KEY] ?? [];
+      const index: string[] = (idxResult[INDEX_KEY] as string[] | undefined) ?? [];
       if (index.length > 0) {
         await chrome.storage.local.remove(index);
       }

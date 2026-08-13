@@ -1,10 +1,13 @@
 {
   "name": "parallel-translation",
-  "version": "0.6.29",
+  "version": "0.6.30",
   "description": "对照式网页翻译浏览器扩展",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
@@ -14,10 +17,30 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "zip:edge": "wxt zip -b edge",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config docs/testing/vitest.config.ts",
+    "test:watch": "vitest --config docs/testing/vitest.config.ts",
+    "test:coverage": "vitest run --config docs/testing/vitest.config.ts --coverage",
+    "test:e2e": "playwright test --config docs/testing/playwright.config.ts",
+    "test:e2e:core": "playwright test --config docs/testing/playwright.config.ts --grep \"@core\"",
+    "test:e2e:extended": "playwright test --config docs/testing/playwright.config.ts --grep \"@extended\"",
+    "test:artifacts": "vitest run --config docs/testing/vitest.config.ts docs/testing/artifacts/",
+    "test:all": "pnpm test && pnpm build && pnpm test:verify-build && pnpm test:e2e:core",
+    "test:stubs": "npx tsx docs/testing/generate-test-stubs.ts",
+    "test:stubs:dry": "npx tsx docs/testing/generate-test-stubs.ts --dry-run",
+    "test:stubs:verify": "npx tsx docs/testing/generate-test-stubs.ts --verify",
+    "test:report": "npx tsx docs/testing/generate-test-report.ts",
+    "test:report:ci": "npx tsx docs/testing/generate-test-report.ts --no-e2e",
+    "test:logs": "cat docs/testing/logs/test-report.md",
+    "test:verify-build": "bash docs/testing/verify-build.sh"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/chrome": "^0.2.5",
+    "@vitest/coverage-v8": "^3.1.0",
+    "jsdom": "^25.0.0",
     "typescript": "^5.7.0",
+    "vitest": "^3.1.0",
     "wxt": "^0.19.0"
   }
 }
