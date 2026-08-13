@@ -493,12 +493,35 @@ test.describe('Fixture: media-mix', () => {
 
     await translateAndWait(page);
 
-    // 含 img 的容器存在
-    const divImages = page.locator('div img');
-    await expect(divImages.first()).toBeVisible();
+    // 1. 行内 favicon 不阻断翻译（#55：位置性判定 —— 行内装饰不阻断）
+    const faviconP = page.locator('p:has(img[width="16"])');
+    await expect(faviconP).toHaveAttribute('data-pt', 'done');
 
-    // 独立文本段落被翻译
-    await expect(page.locator('[data-pt="done"]').first()).toBeVisible();
+    // 2. 大图容器整体不翻译，内嵌 caption p 独立翻译
+    const imageDiv = page.locator('div:has(> img[width="800"])');
+    await expect(imageDiv.locator('img').first()).toBeVisible();
+    await expect(imageDiv).not.toHaveAttribute('data-pt', 'done');
+    await expect(imageDiv.locator('p')).toHaveAttribute('data-pt', 'done');
+
+    // 3. 含 button 的 section 被降级，内嵌两段 p 各自翻译
+    const buttonSection = page.locator('section:has(button)');
+    await expect(buttonSection).not.toHaveAttribute('data-pt', 'done');
+    const sectionPs = buttonSection.locator('p');
+    await expect(sectionPs).toHaveCount(2);
+    for (let i = 0; i < 2; i++) {
+      await expect(sectionPs.nth(i)).toHaveAttribute('data-pt', 'done');
+    }
+
+    // 4. 媒体/交互控件不被藏进译文单元：done 单元不含 button，
+    //    大图不在任何 done 单元内（行内 favicon 由 #55 允许，见断言 1）
+    const mediaLeak = await page.evaluate(() => {
+      const done = [...document.querySelectorAll('[data-pt="done"]')];
+      return {
+        hasButton: done.some((el) => el.querySelector('button')),
+        bigImgInDone: done.some((el) => el.querySelector('img[width="800"]')),
+      };
+    });
+    expect(mediaLeak).toEqual({ hasButton: false, bigImgInDone: false });
   });
 });
 
