@@ -395,9 +395,14 @@ test.describe('Fixture: pre-blocks', () => {
     const codeDone = await codePre.locator('[data-pt="done"]').count();
     expect(codeDone).toBe(0);
 
-    // 纯文本 pre 存在（切分由 pre-split.ts 处理）
-    const plainPre = page.locator('.plain pre');
-    await expect(plainPre.first()).toBeVisible();
+    // 纯文本 pre 超长 → 被 splitPre 按空行切块，切出的块独立翻译
+    const plainPre = page.locator('pre.plain');
+    await expect(plainPre).toHaveAttribute('data-pt-split', '1');
+    const chunks = plainPre.locator(':scope > [data-pt-chunk="1"]');
+    await expect(chunks.first()).toBeVisible();
+    // 至少 2 个块，且块已被翻译（data-pt="done" 落在 .pt-chunk 自身）
+    expect(await chunks.count()).toBeGreaterThanOrEqual(2);
+    await expect(chunks.first()).toHaveAttribute('data-pt', 'done');
   });
 });
 

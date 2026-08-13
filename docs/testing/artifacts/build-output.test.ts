@@ -127,7 +127,13 @@ function firstOutputDir(): string | null {
   if (!fs.existsSync(OUTPUT_DIR)) return null;
   const dirs = fs
     .readdirSync(OUTPUT_DIR)
-    .filter((d) => fs.statSync(path.join(OUTPUT_DIR, d)).isDirectory());
+    // 排除点目录：E2E 运行残留的 .playwright-profiles 不是浏览器构建产物，
+    // 且按字母序排在 chrome-mv3 之前，会劫持「第一个产物目录」
+    .filter(
+      (d) =>
+        !d.startsWith('.') &&
+        fs.statSync(path.join(OUTPUT_DIR, d)).isDirectory(),
+    );
   if (dirs.length === 0) return null;
   return path.join(OUTPUT_DIR, dirs[0]!);
 }
