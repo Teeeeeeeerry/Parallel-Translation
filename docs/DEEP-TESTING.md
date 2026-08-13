@@ -663,12 +663,12 @@ Fixture: pre-blocks.html
   1. 触发全页翻译
   2. 检查 DOM
 
-断言：
-  1. .plain pre 的子元素被替换为 .pt-chunk span（切分发生）
-  2. .highlight pre 没有被切分（代码块跳过）
-  3. 切分后 pre 的文本逐字节不变（拼接所有子节点 textContent）
-  4. chunk span 的译文不继承等宽字体（.pt-pre 类生效）
-  5. 还原后 pre 恢复为原始单个文本节点
+断言（当前 E2E 实现）：
+  1. pre.plain 带 data-pt-split="1" 且切出 ≥2 个 .pt-chunk 块，首个块已翻译（切分发生）
+  2. .highlight pre 内无 data-pt="done"（代码块跳过）
+
+（文本逐字节不变、.pt-pre 字体、还原恢复等由单元测试
+ docs/testing/unit/dom/pre-split.test.ts 覆盖）
 ```
 
 #### TC-E2E-29: 非文本内容降级验证（#50 #55 回归）
@@ -892,7 +892,7 @@ __tests__/
 │   │   ├── entity.html              # 新增
 │   │   └── ...
 │   ├── fixtures.ts                  # Playwright 夹具
-│   ├── core.spec.ts                 # 核心 E2E（TC-E2E-01 ~ 30）
+│   ├── core.spec.ts                 # 核心 E2E（TC-E2E-01 ~ 30、46）
 │   ├── extended.spec.ts             # 扩展 E2E（TC-E2E-31 ~ 45）
 │   ├── perf.spec.ts                 # 性能基准
 │   ├── security.spec.ts             # 安全验证
@@ -949,7 +949,8 @@ export default defineConfig({
 |----|---------|-------|
 | 单元 | chrome.storage、chrome.i18n、fetch、crypto.subtle | vitest mock / fake-indexeddb |
 | 集成 | fetch（翻译端点） | msw / Playwright route |
-| E2E | Google、Bing（部分用例） | Playwright route.fulfill |
+| E2E | Google（`mockGoogle` fixture） | SW 内 stub fetch：描述符存 chrome.storage.local + 翻译路由前自愈安装（#90；CDP route 对 SW 请求拦截不可靠，已弃用） |
+| E2E | Bing（TC-E2E-16） | SW 内 stub fetch（单测内联注入，同上原因） |
 | E2E | BYOK 引擎（全部用例） | Playwright route.fulfill（不消耗真实 API key） |
 
 ## 九、测试用例优先级与实施顺序

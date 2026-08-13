@@ -257,18 +257,19 @@ test.describe('Fixture: infinite', () => {
   }) => {
     await seedSettings({});
     // 在装 mock 前捕获真实 fetch —— 用于模拟 SW 实例被替换：
-    // 实例内存里的 fetch stub 随实例消失，只剩 storage 里的 mock 描述符。
+    // 实例内存里的 fetch stub 随实例消失。
     await serviceWorker.evaluate(() => {
       (self as any).__ptRealFetch = self.fetch.bind(self);
     });
-    await mockGoogle();
+    // 显式前缀：断言不依赖 mockGoogle 的默认值
+    await mockGoogle({ prefix: '[MOCK] ' });
     await gotoFixture('infinite');
 
     await translateAndWait(page);
     const initialDone = await page.locator('[data-pt="done"]').count();
 
-    // 模拟 SW 实例替换：清掉 stub。修复前后续翻译直连真实 Google
-    // （本地可侥幸通过但译文不带 mock 前缀；CI 无外网则必失败）。
+    // 模拟 stub 丢失（等效实例替换后的状态）。修复前后续翻译直连真实
+    // Google（本地可侥幸通过但译文不带 mock 前缀；CI 无外网则必失败）。
     await serviceWorker.evaluate(() => {
       (self as any).fetch = (self as any).__ptRealFetch;
     });
@@ -276,9 +277,12 @@ test.describe('Fixture: infinite', () => {
     await page.click('#load-more');
     await expect(page.locator('[data-pt="done"]')).toHaveCount(initialDone + 3, { timeout: 15_000 });
 
-    // 新段译文必须带 mock 前缀 —— 证明翻译路由前从 storage 重装了 mock
+    // 新段译文必须带 mock 前缀 —— 证明翻译路由前自动重装了 mock。
+    // 注：本测试验证「路由前重装」这条 seam（同实例内 stub 丢失即恢复）；
+    // 跨实例的 storage 持久由 chrome.storage 保证（真实重启无法在
+    // headless 测试中可靠触发，见 #90 调查记录）。
     const newPara = page.locator('#content p').nth(3);
-    await expect(newPara.locator('.pt-trans')).toContainText('【译】');
+    await expect(newPara.locator('.pt-trans')).toContainText('[MOCK]');
   });
 });
 

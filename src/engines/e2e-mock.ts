@@ -67,16 +67,26 @@ function installStub(): void {
  * 翻译路由前调用：从 storage 读取 mock 描述符并安装。
  * 每次翻译都读 —— SW 实例被替换后，下一次翻译即恢复 mock。
  * 线上无此键：一次 storage.local.get，无其他开销。
+ *
+ * 尽力而为：mock 腿的任何失败都不得拖垮线上翻译 —— storage 读取异常
+ * 时静默降级为直连真实端点。
  */
 export async function ensureE2EMock(): Promise<void> {
-  const { [STORAGE_KEY]: cfg } = await chrome.storage.local.get(STORAGE_KEY);
-  if (!cfg) return;
-  activeCfg = cfg as E2EMockConfig;
-  installStub();
+  try {
+    const { [STORAGE_KEY]: cfg } = await chrome.storage.local.get(STORAGE_KEY);
+    if (!cfg) return;
+    activeCfg = cfg as E2EMockConfig;
+    installStub();
+  } catch (e) {
+    console.warn('[PT] E2E mock 自愈失败，直连真实端点:', e);
+  }
 }
 
 /**
  * fixtures 注入路径：写入描述符 + 当前实例立即安装。
+ *
+ * 无清除 API 是有意为之：E2E 每个测试独占 fresh profile，
+ * 描述符只存活于该测试的 storage 中，无需反激活。
  */
 export function applyE2EMock(cfg: E2EMockConfig): Promise<void> {
   activeCfg = cfg;
