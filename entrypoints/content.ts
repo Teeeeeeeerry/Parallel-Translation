@@ -26,6 +26,7 @@ import { createParaBtn } from '~/src/ui/paragraph-btn';
 import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
+import { translateViaBackground } from '~/src/runtime/messaging';
 import { detectOS } from '~/src/hotkeys/platform';
 import {
   settingsReady,
@@ -201,9 +202,12 @@ export default defineContentScript({
       // Google Web 的并发闸门是惰性单例，所有批次共享，自然排队。
       await Promise.all(
         batches.map(async ({ texts: batchTexts, targets: batchTargets, preserves: batchPreserves, rawTexts: batchRawTexts }) => {
-          const resp = await chrome.runtime.sendMessage({
-            type: 'pt:translate',
-            payload: { texts: batchTexts, from: ns.from, to: ns.to },
+          // #89: SW 未就绪时消息会被丢弃 —— 经 translateViaBackground
+          // 先 ping 确认通道就绪，传输层失败自动重试。
+          const resp = await translateViaBackground({
+            texts: batchTexts,
+            from: ns.from,
+            to: ns.to,
           });
 
           if (!resp?.ok) {
@@ -385,9 +389,10 @@ export default defineContentScript({
       const text = normalizeText(rawText);
       if (!text) return;
 
-      const resp = await chrome.runtime.sendMessage({
-        type: 'pt:translate',
-        payload: { texts: [text], from: ns.from, to: ns.to },
+      const resp = await translateViaBackground({
+        texts: [text],
+        from: ns.from,
+        to: ns.to,
       });
 
       if (!resp?.ok) {
@@ -397,7 +402,7 @@ export default defineContentScript({
 
       // #58：将占位符替换回原文
       const restored = restorePreserves(
-        resp.data.translations[0],
+        resp.data.translations[0]!,
         preserves,
         text,
       );
@@ -416,9 +421,10 @@ export default defineContentScript({
       const ns = getSettings();
       if (!ns.enabled) return;
 
-      const resp = await chrome.runtime.sendMessage({
-        type: 'pt:translate',
-        payload: { texts: [text], from: ns.from, to: ns.to },
+      const resp = await translateViaBackground({
+        texts: [text],
+        from: ns.from,
+        to: ns.to,
       });
 
       if (!resp?.ok) {
@@ -426,7 +432,7 @@ export default defineContentScript({
         return;
       }
 
-      toast(resp.data.translations[0]);
+      toast(resp.data.translations[0]!);
     }
 
     // ── 监听 popup / background 消息 ──

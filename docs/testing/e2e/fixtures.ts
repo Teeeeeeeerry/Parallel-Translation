@@ -3,7 +3,7 @@
  *
  * 关键设计:
  * 1. persistent context + --load-extension 加载扩展
- * 2. context.route mock 翻译 API（已验证可拦截 SW 请求）
+ * 2. mockGoogle 在 SW 内 stub fetch（#89：CDP route 对 SW 请求拦截不可靠）
  * 3. seedSettings 写入 chrome.storage.sync 并等待生效
  * 4. fixture 页面通过 HTTP 提供（绕开 file:// 的 content script 限制）
  */
@@ -51,27 +51,12 @@ export function fixtureFileUrl(name: FixtureName): string {
   return 'file://' + fileURLToPath(new URL(`./fixtures/${name}.html`, import.meta.url));
 }
 
-// ── Google Translate API 响应形状 ──
-interface GoogleResponse {
-  0: Array<[string, string, null, null, number]>;
-}
-
-function googleBody(translation: string): [GoogleResponse, null, string] {
-  return [
-    {
-      0: [[translation, '', null, null, 1]],
-    },
-    null,
-    'en',
-  ];
-}
-
 export const test = base.extend<
   {
     serviceWorker: Worker;
     mockGoogle: (opts?: {
       fail?: boolean;
-      translation?: (q: string) => string;
+      prefix?: string;
     }) => Promise<void>;
     seedSettings: (patch: Record<string, unknown>) => Promise<void>;
     gotoFixture: (name: FixtureName) => Promise<Page>;
@@ -121,26 +106,42 @@ export const test = base.extend<
   },
 
   // ── Mock Google Translate ──
-  mockGoogle: async ({ context }, use) => {
-    await use(async (opts = {}) => {
-      const { fail = false, translation } = opts;
-      await context.route('https://translate.googleapis.com/**', (route) => {
-        if (fail) {
-          return route.fulfill({
-            status: 500,
-            contentType: 'text/plain',
-            body: 'Service Unavailable',
-          });
-        }
-        const q = new URL(route.request().url()).searchParams.get('q') ?? '';
-        const t = translation ? translation(q) : `【译】${q}`;
-        const body = JSON.stringify(googleBody(t));
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body,
-        });
-      });
+  // #89: 在 SW 内 stub fetch（引擎运行处），而不是 context.route ——
+  // CDP 对 SW 发起的请求拦截不可靠：部分请求绕过时，本地恰好直连真实
+  // Google 而「假绿」，CI 无外网则必失败。SW 侧 stub 完全确定性。
+  mockGoogle: async ({ serviceWorker }, use) => {
+    await use(async (opts: { fail?: boolean; prefix?: string } = {}) => {
+      const { fail = false, prefix = '【译】' } = opts;
+      await serviceWorker.evaluate(
+        (cfg: { fail: boolean; prefix: string }) => {
+          const realFetch = self.fetch.bind(self);
+          (self as any).fetch = async (input: any, init?: any) => {
+            const url =
+              typeof input === 'string'
+                ? input
+                : input?.url ?? input?.href ?? '';
+            if (!url.startsWith('https://translate.googleapis.com/')) {
+              return realFetch(input, init);
+            }
+            if (cfg.fail) {
+              return new Response('Service Unavailable', { status: 500 });
+            }
+            const q = new URL(url).searchParams.get('q') ?? '';
+            // 与真实端点同形：data[0] 是分句数组，每项 [0] 为译文。
+            // 注意必须是 [[[...]]] —— {0: [...]} 序列化后是对象，引擎解析抛错。
+            const body = JSON.stringify([
+              [[cfg.prefix + q, '', null, null, 1]],
+              null,
+              'en',
+            ]);
+            return new Response(body, {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            });
+          };
+        },
+        { fail, prefix },
+      );
     });
   },
 
