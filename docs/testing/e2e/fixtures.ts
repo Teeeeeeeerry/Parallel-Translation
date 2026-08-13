@@ -9,6 +9,7 @@
  */
 import { test as base, chromium, expect, type Page, type Worker } from '@playwright/test';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
 
 const EXTENSION_PATH = path.resolve('.output/chrome-mv3');
 const FIXTURES_BASE = 'http://localhost:4173';
@@ -36,6 +37,18 @@ export type FixtureName = (typeof FIXTURES)[number];
 /** 获取 fixture 页面的 HTTP URL（content script 通过 <all_urls> 注入） */
 export function fixtureUrl(name: FixtureName): string {
   return `${FIXTURES_BASE}/${name}.html`;
+}
+
+/**
+ * 获取 fixture 页面的 file:// URL（#88）。
+ *
+ * 用于不需要 content script 注入的自包含用例（如纯 DOM 逻辑验证）：
+ * 经 HTTP 加载时 content script 会注入并可能干扰页面 DOM 计数等断言，
+ * 因此这类用例直接以 file:// 打开本地 fixture。
+ * spec 以 ES module 运行，__dirname 不存在，须用 import.meta.url 推导目录。
+ */
+export function fixtureFileUrl(name: FixtureName): string {
+  return 'file://' + fileURLToPath(new URL(`./fixtures/${name}.html`, import.meta.url));
 }
 
 // ── Google Translate API 响应形状 ──

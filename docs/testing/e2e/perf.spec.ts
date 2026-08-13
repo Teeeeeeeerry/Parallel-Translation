@@ -6,7 +6,7 @@
  * - DOM 节点增长
  * - 内存使用
  */
-import { test, expect } from './fixtures';
+import { test, expect, fixtureFileUrl } from './fixtures';
 
 test.describe('性能基准 @perf', () => {
   test('PERF-01: 200 段整页翻译总耗时 < 30s', async ({ page }) => {
@@ -14,7 +14,7 @@ test.describe('性能基准 @perf', () => {
   });
 
   test('PERF-02: 翻译-还原循环 ×100 后 DOM 节点数无增长', async ({ page }) => {
-    await page.goto('file://' + __dirname + '/fixtures/basic.html');
+    await page.goto(fixtureFileUrl('basic'));
 
     const countBefore = await page.evaluate(() => document.querySelectorAll('*').length);
 
