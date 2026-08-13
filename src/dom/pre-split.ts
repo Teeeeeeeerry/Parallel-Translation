@@ -3,8 +3,37 @@
 // #65：大型纯文本文档（如 GitHub README 的 .plain > pre）一次性文本过长，
 // 无法通过 MAX_TEXT 阈值。本模块按连续空行将其切分为多个 <span> 翻译单元，
 // 保留原始渲染逐字节不变，让现有 collect → translate → render 管道零改动复用。
+//
+// GitHub 对 RST README 的 .plain > pre 渲染会插入 autolink <a>。
+// 早退条件「pre.children.length > 0」把这类 pre 整棵拒切 —— 全文远超
+// MAX_TEXT / MAX_HTML，采集 0 单元（翻译静默失败）。改为仅当存在
+// 块级子元素才拒切，内联子元素随文本流切分保留。
 
-import { MAX_TEXT, isCodeBlockPre } from './classify';
+import { INLINE_SET, MAX_TEXT, isCodeBlockPre } from './classify';
+
+/** 节点流 token：行内文本片段 / 行内元素 / 换行 */
+type Tok =
+  | { kind: 'text'; text: string }
+  | { kind: 'node'; node: Node }
+  | { kind: 'nl' };
+
+/** 行内 token（nl 在行聚合时被消费，不进 Line） */
+type LineTok = Exclude<Tok, { kind: 'nl' }>;
+
+interface Line {
+  toks: LineTok[];
+  endsWithNl: boolean;
+}
+
+/** 行的纯文本（含内联节点文本），用于空行 / 装饰行判定 */
+function lineText(line: Line): string {
+  let s = '';
+  for (const t of line.toks) {
+    if (t.kind === 'text') s += t.text;
+    else if (t.kind === 'node') s += t.node.textContent ?? '';
+  }
+  return s;
+}
 
 /**
  * 装饰行：=====、-----、***** 等纯符号行 —— plain-text 文档的分节装饰。
@@ -40,46 +69,79 @@ export function splitPre(pre: HTMLPreElement): HTMLSpanElement[] | null {
   // 代码块上下文不切（#64 通用规则）
   if (isCodeBlockPre(pre)) return null;
 
-  // 含子元素的 pre 可能有内联标记，保持现有行为
-  if (pre.children.length > 0) return null;
+  // 含块级或代码语义子元素的 pre 结构复杂，保持现有行为不切；
+  // 仅纯行内文本子元素（GitHub .plain > pre 的 autolink <a>）可随文本流切分保留。
+  // <pre><code> 是经典代码块结构，code 虽在 INLINE_SET（供段落判定用），
+  // 但此处必须视为代码语义而拒切，避免纯代码 pre 被翻译。
+  const CODE_SEMANTIC = new Set(['code', 'kbd', 'samp', 'var']);
+  for (const child of pre.children) {
+    const tag = child.tagName.toLowerCase();
+    if (!INLINE_SET.has(tag) || CODE_SEMANTIC.has(tag)) return null;
+  }
 
   const text = pre.textContent ?? '';
   if (text.trim().length <= MAX_TEXT) return null;
 
-  // ── 按连续空行 / 装饰行切分 ──
-  const lines = text.split('\n');
-  const parts: { kind: 'raw' | 'chunk'; text: string }[] = [];
-  let cur: string[] = [];
-  let curKind: 'raw' | 'chunk' | null = null;
-
-  for (const line of lines) {
-    const kind =
-      line.trim() === '' || isDecorationLine(line) ? 'raw' : 'chunk';
-    if (kind !== curKind) {
-      if (cur.length > 0) parts.push({ kind: curKind!, text: cur.join('\n') });
-      cur = [];
-      curKind = kind;
+  // ── 节点流 token 化：文本节点按 '\n' 拆行片段，内联元素整体作为行内 token ──
+  const toks: Tok[] = [];
+  for (const child of [...pre.childNodes]) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      const parts = (child.textContent ?? '').split('\n');
+      parts.forEach((p, i) => {
+        if (p.length > 0) toks.push({ kind: 'text', text: p });
+        if (i < parts.length - 1) toks.push({ kind: 'nl' });
+      });
+    } else {
+      toks.push({ kind: 'node', node: child });
     }
-    cur.push(line);
-  }
-  if (cur.length > 0 && curKind) {
-    parts.push({ kind: curKind, text: cur.join('\n') });
   }
 
-  // ── 重建 pre 内容 ──
+  // ── 行聚合：行结束于换行 token（含） ──
+  const lines: Line[] = [];
+  let cur: LineTok[] = [];
+  for (const t of toks) {
+    if (t.kind === 'nl') {
+      lines.push({ toks: cur, endsWithNl: true });
+      cur = [];
+    } else {
+      cur.push(t);
+    }
+  }
+  if (cur.length > 0) lines.push({ toks: cur, endsWithNl: false });
+
+  // ── 按行 kind 聚合为块：空行 / 装饰行 → raw，其余 → chunk ──
+  const parts: { kind: 'raw' | 'chunk'; lines: Line[] }[] = [];
+  for (const line of lines) {
+    const lt = lineText(line).trim();
+    const kind = lt === '' || isDecorationLine(lt) ? 'raw' : 'chunk';
+    const last = parts[parts.length - 1];
+    if (last && last.kind === kind) last.lines.push(line);
+    else parts.push({ kind, lines: [line] });
+  }
+
+  // ── 重建 pre 内容：按 token 顺序 append，逐字节还原 ──
+  // textContent = '' 只清空 DOM 树，node token 持有的引用仍可重新挂回。
   pre.textContent = '';
   const spans: HTMLSpanElement[] = [];
+  const appendLine = (holder: Node, line: Line) => {
+    for (const t of line.toks) {
+      if (t.kind === 'text') holder.appendChild(document.createTextNode(t.text));
+      else holder.appendChild(t.node); // 原内联节点移入，属性 / 事件保留
+    }
+    if (line.endsWithNl) holder.appendChild(document.createTextNode('\n'));
+  };
 
-  for (const p of parts) {
-    if (p.kind === 'chunk' && !isOversized(p.text)) {
+  for (const part of parts) {
+    const partText = part.lines.map(lineText).join('\n');
+    if (part.kind === 'chunk' && !isOversized(partText)) {
       const span = document.createElement('span');
       span.className = 'pt-chunk';
       span.setAttribute('data-pt-chunk', '1');
-      span.textContent = p.text;
+      for (const line of part.lines) appendLine(span, line);
       pre.appendChild(span);
       spans.push(span);
     } else {
-      pre.appendChild(document.createTextNode(p.text));
+      for (const line of part.lines) appendLine(pre, line);
     }
   }
 

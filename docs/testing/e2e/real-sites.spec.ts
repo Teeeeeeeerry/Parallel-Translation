@@ -46,6 +46,31 @@ test.describe('GitHub @real', () => {
     await expect(ball).toHaveAttribute('data-state', 'done');
   });
 
+  test('RST README 页面（.plain > pre）：纯文本 README 可翻译', async ({
+    page, mockGoogle, seedSettings,
+  }) => {
+    await seedSettings({ enginePriority: ['google-web'] });
+    await mockGoogle();
+
+    // torvalds/linux 的 README 是 RST 格式，GitHub 以 .plain > pre
+    // （纯文本 + autolink <a>）渲染。修复前 splitPre 因 pre 含子元素
+    // 拒切，整篇超长被跳过 —— 采集 0 单元、翻译静默失败。
+    await page.goto('https://github.com/torvalds/linux', {
+      waitUntil: 'domcontentloaded',
+    });
+
+    const ball = await waitForBall(page);
+    await ball.click();
+    await expect(page.locator('[data-pt="done"]').first()).toBeVisible({ timeout: 30_000 });
+
+    // bug 核心断言：README 内出现翻译完成的 chunk
+    const readmeDone = page.locator('div.plain > pre .pt-chunk[data-pt="done"]');
+    await expect(readmeDone.first()).toBeVisible({ timeout: 15_000 });
+
+    // 译文带 mock 前缀，原文保留在 .pt-origin 里
+    await expect(readmeDone.first().locator('.pt-trans')).toContainText('【译】');
+  });
+
   test('Issue 页面：@username 原样保留', async ({
     page, mockGoogle, seedSettings,
   }) => {
