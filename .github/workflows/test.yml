@@ -87,7 +87,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm build
-      - run: pnpm test:e2e -- --grep "@mac"
+      - run: pnpm test:e2e --grep "@mac"
       # ── 上传日志 ──
       - name: Upload macOS test logs
         if: always()
