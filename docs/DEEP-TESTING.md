@@ -435,6 +435,31 @@ describe('applyStyle', () => {
 })
 ```
 
+### 2.15 `runtime/messaging.ts` — content → background 消息通道健壮性（#89）
+
+测试文件：unit/runtime/messaging.test.ts
+
+```typescript
+// #89：MV3 headless 下 SW 未就绪时 pt:translate 被丢弃。
+// 契约：ping 预热 + 传输层重试；引擎级失败不重试；永不抛出。
+
+describe('translateViaBackground — SW 就绪时', () => {
+  test('ping 一次 + translate 一次，直接返回译文')
+})
+
+describe('translateViaBackground — SW 冷启动（#89 根因）', () => {
+  test('ping 前两次无响应，第三次就绪后翻译成功')
+  test('translate 首次无响应（SW 在 ping 后失联）→ 自动重试成功')
+  test('sendMessage reject（Receiving end does not exist）→ 重试成功')
+})
+
+describe('translateViaBackground — 失败语义', () => {
+  test('SW 响应 {ok:false}（引擎级失败）→ 原样返回，不重试')
+  test('SW 始终无响应：ping 预算耗尽 → {ok:false}，不发送 translate')
+  test('translate 持续无响应：重试预算耗尽 → {ok:false}')
+})
+```
+
 ## 三、集成测试用例
 
 集成测试在扩展的真实上下文（chrome.storage、chrome.runtime.sendMessage）中运行，mock 翻译端点的 fetch。

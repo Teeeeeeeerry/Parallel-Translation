@@ -27,6 +27,7 @@ export default defineConfig({
         'src/hotkeys/**',
         'src/styles/**',
         'src/queue/**',
+        'src/runtime/**',
       ],
       thresholds: {
         'src/engines': { lines: 85 },
@@ -35,6 +36,7 @@ export default defineConfig({
         'src/hotkeys': { lines: 85 },
         'src/styles': { lines: 85 },
         'src/queue': { lines: 85 },
+        'src/runtime': { lines: 85 },
       },
       // 覆盖率报告也写到 logs 目录
       reportsDirectory: `${LOGS_DIR}/coverage`,

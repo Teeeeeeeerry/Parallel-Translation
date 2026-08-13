@@ -67,6 +67,9 @@ test.describe('入口：快捷键', () => {
   test('@core TC-E2E-03: Mod+Shift+Y → 翻译 (Linux/Windows)', async ({
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {
+    // Mod 在 macOS 上是 Meta（⌘），Control 变体在 mac 上不触发 ——
+    // mac 平台由 TC-E2E-03-Mac 覆盖
+    test.skip(process.platform === 'darwin', 'macOS 用 Meta 键（见 TC-E2E-03-Mac）');
     await seedSettings({});
     await mockGoogle();
     await gotoFixture('basic');
@@ -79,6 +82,9 @@ test.describe('入口：快捷键', () => {
   test('@core @mac TC-E2E-03-Mac: Mod+Shift+Y → 翻译 (macOS)', async ({
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {
+    // fromEvent 在 Linux 上忽略 metaKey，Meta 变体在 Linux 不触发 ——
+    // Linux/Windows 平台由 TC-E2E-03 覆盖
+    test.skip(process.platform === 'linux', 'Linux 无 Meta 语义（见 TC-E2E-03）');
     await seedSettings({});
     await mockGoogle();
     await gotoFixture('basic');
@@ -91,6 +97,7 @@ test.describe('入口：快捷键', () => {
   test('@core TC-E2E-04: Mod+Shift+M → 切换显示模式', async ({
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {
+    test.skip(process.platform === 'darwin', 'macOS 上 Mod=Meta，Control 变体不触发');
     await seedSettings({});
     await mockGoogle();
     await gotoFixture('basic');
@@ -215,15 +222,15 @@ test.describe('Fixture: nested', () => {
     const doneCount = await page.locator('[data-pt="done"]').count();
     expect(doneCount).toBeGreaterThan(0);
 
-    // 验证没有重复翻译（同一元素内无嵌套 data-pt="done"）
-    const nestedDone = await page.evaluate(() => {
-      const all = document.querySelectorAll('[data-pt="done"]');
-      for (const el of all) {
-        if (el.parentElement?.closest('[data-pt="done"]')) return true;
-      }
-      return false;
-    });
-    expect(nestedDone).toBe(false);
+    // 验证没有重复文本（#23：混合内容元素只翻直接文本，块级子元素独立
+    // 翻译 —— 父译文不得吞掉子段落内容；父子均为 done 是预期结构，
+    // 判定重复的标准是译文内容而非 DOM 嵌套）
+    const mixedDiv = page.locator('div').first();
+    const divTrans = mixedDiv.locator(':scope > .pt-trans');
+    await expect(divTrans).toContainText('Direct text in div');
+    await expect(divTrans).not.toContainText('block-level child paragraph');
+    // 子段落独立成翻译单元
+    await expect(page.locator('p').first()).toHaveAttribute('data-pt', 'done');
   });
 });
 
@@ -425,9 +432,7 @@ test.describe('引擎', () => {
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ enginePriority: ['google-web'] });
-    await mockGoogle({
-      translation: (q) => `[GOOGLE] ${q}`,
-    });
+    await mockGoogle({ prefix: '[GOOGLE] ' });
     await gotoFixture('basic');
 
     await translateAndWait(page);
@@ -438,32 +443,35 @@ test.describe('引擎', () => {
   });
 
   test('@core TC-E2E-16: Bing mock 返回译文', async ({
-    page, mockGoogle, seedSettings, gotoFixture, context,
+    page, serviceWorker, seedSettings, gotoFixture,
   }) => {
-    // Mock Bing 的两个端点
-    await context.route('https://edge.microsoft.com/translate/auth', (route) => {
-      route.fulfill({
-        status: 200,
-        contentType: 'text/plain',
-        body: 'mock-jwt-token',
-      });
+    // #89: 在 SW 内 stub Bing 的两个端点（CDP route 对 SW 请求拦截不确定）
+    await serviceWorker.evaluate(() => {
+      const realFetch = self.fetch.bind(self);
+      (self as any).fetch = async (input: any, init?: any) => {
+        const url =
+          typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
+        if (url.startsWith('https://edge.microsoft.com/translate/auth')) {
+          return new Response('mock-jwt-token', { status: 200 });
+        }
+        if (
+          url.startsWith('https://api-edge.cognitive.microsofttranslator.com/')
+        ) {
+          const body = JSON.parse((init?.body ?? '[]') as string) as Array<{
+            Text: string;
+          }>;
+          return new Response(
+            JSON.stringify(
+              body.map((t) => ({
+                translations: [{ text: `[BING] ${t.Text}` }],
+              })),
+            ),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        return realFetch(input, init);
+      };
     });
-    await context.route(
-      'https://api-edge.cognitive.microsofttranslator.com/translate**',
-      (route) => {
-        const body = route.request().postDataJSON();
-        const texts: Array<{ Text: string }> = body ?? [];
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify(
-            texts.map((t: { Text: string }) => ({
-              translations: [{ text: `[BING] ${t.Text}` }],
-            })),
-          ),
-        });
-      },
-    );
 
     await seedSettings({ enginePriority: ['bing-edge'] });
     await gotoFixture('basic');
