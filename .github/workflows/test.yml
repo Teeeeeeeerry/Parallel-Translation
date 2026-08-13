@@ -116,7 +116,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm build
-      - run: pnpm test:e2e -- --grep-invert "@real"
+      - run: pnpm test:e2e --grep-invert "@real"
       # ── 上传日志 ──
       - name: Upload full E2E logs
         if: always()
@@ -142,7 +142,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm build
-      - run: pnpm test:e2e -- --grep "@real"
+      - run: pnpm test:e2e --grep "@real"
       # ── 上传日志 ──
       - name: Upload smoke test logs
         if: always()

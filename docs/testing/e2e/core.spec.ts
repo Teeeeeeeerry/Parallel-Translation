@@ -306,6 +306,64 @@ test.describe('Fixture: spa', () => {
     // 新内容的 3 个翻译单元（h1 + 2p）应被 observer 自动补翻
     await expect(page.locator('#view [data-pt="done"]')).toHaveCount(3, { timeout: 15_000 });
   });
+
+  test('@core TC-E2E-47: 增量翻译瞬时失败后自动重试（#91 回归）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle({ prefix: '[MOCK] ' });
+    await gotoFixture('spa');
+
+    await translateAndWait(page);
+
+    // 武装一次性故障：下一次翻译请求必失败（等效 CI 中 SW 实例替换
+    // 后的瞬时引擎故障）。修复前增量翻译是一次性的 —— 失败后
+    // 新内容永久漏翻，与 #91 的「Retry #1/#2」失败签名一致。
+    await mockGoogle({ failOnce: true, prefix: '[MOCK] ' });
+
+    await page.click('a[href="#page2"]');
+
+    // 故障已被触发且只触发一次（failOnceServed === 1 证明重试发生
+    // 在失败之后；failOnce 失效时计数为 0，测试不再假绿）
+    await expect(page.locator('#view [data-pt="done"]')).toHaveCount(3, { timeout: 20_000 });
+    await expect(page.locator('#view h1 .pt-trans').first()).toContainText('[MOCK]');
+    const stats = await serviceWorker.evaluate(() =>
+      (self as any).getE2EMockStats(),
+    );
+    expect(stats.failOnceServed).toBe(1);
+  });
+
+  test('@core TC-E2E-48: 多批增量翻译部分失败自动重试（#91 审查跟进）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle({ prefix: '[MOCK] ' });
+    await gotoFixture('basic');
+
+    await translateAndWait(page);
+    const initialDone = await page.locator('[data-pt="done"]').count();
+
+    // 一次性注入 20 段 —— 跨 FULL_PAGE_BATCH_SIZE(15) 两个批次；
+    // failOnce 只击落其中一个批次的请求，另一批正常。修复前失败
+    // 批被 allFailed 掩码（整页 status 仍是 'translated'），漏翻永
+    // 不重试；修复后批次级重试补齐。
+    await mockGoogle({ failOnce: true, prefix: '[MOCK] ' });
+    await page.evaluate(() => {
+      const frag = document.createDocumentFragment();
+      for (let i = 1; i <= 20; i++) {
+        const p = document.createElement('p');
+        p.textContent = `Paragraph ${i} added after initial translation.`;
+        frag.appendChild(p);
+      }
+      document.body.appendChild(frag);
+    });
+
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(initialDone + 20, { timeout: 30_000 });
+    const stats = await serviceWorker.evaluate(() =>
+      (self as any).getE2EMockStats(),
+    );
+    expect(stats.failOnceServed).toBe(1);
+  });
 });
 
 test.describe('Fixture: hostile', () => {

@@ -137,6 +137,14 @@ export default defineContentScript({
     // 用户在第一屏译文出现前不再需要等待全页最慢段。
     const FULL_PAGE_BATCH_SIZE = 15;
 
+    // #91: 批次级引擎失败有限重试（见 doTranslate 内 attemptBatch）。
+    const BATCH_RETRY_LIMIT = 2;
+    const BATCH_RETRY_DELAYS_MS = [1000, 3000];
+    /** 还原纪元：doRestore 递增，在飞翻译据此放弃重试与渲染。 */
+    const translateEpoch = { value: 0 };
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => self.setTimeout(resolve, ms));
+
     async function doTranslate(
       elements?: Element[],
     ): Promise<string> {
@@ -198,45 +206,75 @@ export default defineContentScript({
       let renderRejected = 0;
       let renderSucceeded = 0;
 
-      // 所有批次并发发送，每批返回即渲染。
-      // Google Web 的并发闸门是惰性单例，所有批次共享，自然排队。
-      await Promise.all(
-        batches.map(async ({ texts: batchTexts, targets: batchTargets, preserves: batchPreserves, rawTexts: batchRawTexts }) => {
+      // #91: 批次级引擎失败有限重试。传输层失败由 translateViaBackground
+      // 内部重试（重新 ping + 有界退避），这里只处理引擎级失败（{ok:false}）
+      // —— 修复前增量翻译是一次性的：瞬时故障（CI 中 SW 冷启动/实例替换）
+      // 后新内容永久漏翻，正是 #91 的失败签名。初始翻译与增量翻译共用此
+      // 路径，部分批次失败（多批并发）与全部失败（单批）统一自愈。
+      // 文本在批次切分时捕获一次，重试复用同一份 —— 不会因 DOM 已变
+      // 而重新采集到译文本身。
+      const epochAtStart = translateEpoch.value;
+      async function attemptBatch(
+        batch: (typeof batches)[number],
+      ): Promise<{ rendered: number; rejected: number; failed: boolean }> {
+        let rendered = 0;
+        let rejected = 0;
+        let lastError = '未知错误';
+        for (let attempt = 0; ; attempt++) {
           // #89: SW 未就绪时消息会被丢弃 —— 经 translateViaBackground
           // 先 ping 确认通道就绪，传输层失败自动重试。
           const resp = await translateViaBackground({
-            texts: batchTexts,
+            texts: batch.texts,
             from: ns.from,
             to: ns.to,
           });
-
-          if (!resp?.ok) {
-            console.error('[PT] 批次翻译失败:', resp?.error ?? '未知错误');
-            return;
+          // 已还原（doRestore 递增纪元）—— 放弃渲染，不再重试
+          if (translateEpoch.value !== epochAtStart) {
+            return { rendered, rejected, failed: true };
           }
-
-          allFailed = false;
-
-          const translations: string[] = resp.data.translations;
-          for (let i = 0; i < batchTargets.length; i++) {
-            try {
-              // #58：将占位符替换回原文（用户名等标识符不翻译但保留）
-              const restored = restorePreserves(
-                translations[i]!,
-                batchPreserves[i]!,
-                batchRawTexts[i]!,
-              );
-              if (render(batchTargets[i]!, restored, 'page')) {
-                renderSucceeded++;
-              } else {
-                renderRejected++;
+          if (resp?.ok) {
+            const translations: string[] = resp.data.translations;
+            for (let i = 0; i < batch.targets.length; i++) {
+              try {
+                // #58：将占位符替换回原文（用户名等标识符不翻译但保留）
+                const restored = restorePreserves(
+                  translations[i]!,
+                  batch.preserves[i]!,
+                  batch.rawTexts[i]!,
+                );
+                if (render(batch.targets[i]!, restored, 'page')) {
+                  rendered++;
+                } else {
+                  rejected++;
+                }
+              } catch (e) {
+                throw new Error(
+                  `[render idx=${i}] ${e instanceof Error ? e.message : String(e)}`,
+                );
               }
-            } catch (e) {
-              throw new Error(
-                `[render idx=${i}] ${e instanceof Error ? e.message : String(e)}`,
-              );
             }
+            return { rendered, rejected, failed: false };
           }
+          lastError = resp?.error ?? '未知错误';
+          if (attempt >= BATCH_RETRY_LIMIT) break;
+          await sleep(BATCH_RETRY_DELAYS_MS[attempt]!);
+          // 睡眠期间被还原 —— 放弃重试
+          if (translateEpoch.value !== epochAtStart) {
+            return { rendered, rejected, failed: true };
+          }
+        }
+        console.error('[PT] 批次翻译失败:', lastError);
+        return { rendered, rejected, failed: true };
+      }
+
+      // 所有批次并发发送，每批返回即渲染。
+      // Google Web 的并发闸门是惰性单例，所有批次共享，自然排队。
+      await Promise.all(
+        batches.map(async (batch) => {
+          const r = await attemptBatch(batch);
+          renderSucceeded += r.rendered;
+          renderRejected += r.rejected;
+          if (!r.failed) allFailed = false;
         }),
       );
 
@@ -271,6 +309,10 @@ export default defineContentScript({
         stopObserving();
         stopObserving = null;
       }
+
+      // 递增还原纪元 —— 在飞翻译的批次重试检测到变化后放弃重试与
+      // 渲染，避免还原后把内容翻回来（#91）
+      translateEpoch.value++;
 
       // allTranslated() 已支持 shadow 穿透（Phase 3 P3-3 修复）
       const els: Element[] = [];
