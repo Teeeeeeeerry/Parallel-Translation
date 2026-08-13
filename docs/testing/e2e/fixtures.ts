@@ -8,6 +8,7 @@
  * 4. fixture 页面通过 HTTP 提供（绕开 file:// 的 content script 限制）
  */
 import { test as base, chromium, expect, type Page, type Worker } from '@playwright/test';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
 
@@ -57,6 +58,8 @@ export const test = base.extend<
     mockGoogle: (opts?: {
       fail?: boolean;
       prefix?: string;
+      /** 一次性故障：下一次翻译请求 500，随后自动恢复（#91） */
+      failOnce?: boolean;
     }) => Promise<void>;
     seedSettings: (patch: Record<string, unknown>) => Promise<void>;
     gotoFixture: (name: FixtureName) => Promise<Page>;
@@ -72,6 +75,12 @@ export const test = base.extend<
         '.output/.playwright-profiles',
         testInfo.testId,
       );
+
+      // 每次启动前清空 profile：testId 跨运行稳定，上次运行留下的
+      // profile 里缓存着旧版 service worker 脚本 —— Chrome 会直接
+      // 复用旧脚本，扩展改动在本地迭代时「假失败」（SW 里查不到新
+      // 加的全局函数）。清空保证每个用例都从干净的扩展状态出发。
+      fs.rmSync(userDataDir, { recursive: true, force: true });
 
       const context = await chromium.launchPersistentContext(userDataDir, {
         headless: true,
@@ -114,12 +123,12 @@ export const test = base.extend<
   // SW 实例一旦被 Chrome 替换，实例内存里的 stub 会消失 —— 翻译路由
   // 前的 ensureE2EMock 从 storage 自愈重装，增量翻译不再直连真实端点。
   mockGoogle: async ({ serviceWorker }, use) => {
-    await use(async (opts: { fail?: boolean; prefix?: string } = {}) => {
-      const { fail = false, prefix = '【译】' } = opts;
+    await use(async (opts: { fail?: boolean; prefix?: string; failOnce?: boolean } = {}) => {
+      const { fail = false, prefix = '【译】', failOnce = false } = opts;
       await serviceWorker.evaluate(
-        (cfg: { fail: boolean; prefix: string }) =>
+        (cfg: { fail: boolean; prefix: string; failOnce: boolean }) =>
           (self as any).applyE2EMock(cfg),
-        { fail, prefix },
+        { fail, prefix, failOnce },
       );
     });
   },

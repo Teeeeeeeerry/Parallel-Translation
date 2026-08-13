@@ -5,7 +5,7 @@ import { cacheSet, cacheKey, cacheGet, cacheClear } from '~/src/storage/cache';
 import { getKey, setKey, removeKey } from '~/src/storage/keys';
 import { settingsReady, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import { route } from '~/src/engines/router';
-import { ensureE2EMock, applyE2EMock } from '~/src/engines/e2e-mock';
+import { ensureE2EMock, applyE2EMock, getE2EMockStats } from '~/src/engines/e2e-mock';
 import { initContextMenu } from '~/src/ui/context-menu';
 
 /** 将浏览器 UI 语言映射到 LANG_LIST 中可用的目标语言码 */
@@ -40,6 +40,8 @@ export default defineBackground(() => {
   (self as any).removeKey = removeKey;
   // E2E fixtures 的 mock 注入入口（#90，与上同理的调试面）
   (self as any).applyE2EMock = applyE2EMock;
+  // mock 统计探针 —— TC-E2E-47/48 断言一次性故障确实被触发（#91）
+  (self as any).getE2EMockStats = getE2EMockStats;
 
   // 右键菜单 + 首次安装引导
   chrome.runtime.onInstalled.addListener((details) => {

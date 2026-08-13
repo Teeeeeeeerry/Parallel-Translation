@@ -600,6 +600,8 @@ DOM 覆盖（每 fixture 至少 1 个用例）：
   TC-E2E-29: media-mix.html → 含图片的容器被降级
   TC-E2E-30: iframe.html → 主文档翻译不影响 iframe 内
   TC-E2E-46: infinite.html → mock 丢失后增量翻译自动恢复（#90 回归）
+  TC-E2E-47: spa.html → 增量翻译瞬时失败后自动重试（#91 回归）
+  TC-E2E-48: basic.html → 多批增量翻译部分失败自动重试（#91 回归）
 ```
 
 **扩展 E2E 套件（发布前跑，~15 个）**：
@@ -892,7 +894,7 @@ __tests__/
 │   │   ├── entity.html              # 新增
 │   │   └── ...
 │   ├── fixtures.ts                  # Playwright 夹具
-│   ├── core.spec.ts                 # 核心 E2E（TC-E2E-01 ~ 30、46）
+│   ├── core.spec.ts                 # 核心 E2E（TC-E2E-01 ~ 30、46 ~ 48）
 │   ├── extended.spec.ts             # 扩展 E2E（TC-E2E-31 ~ 45）
 │   ├── perf.spec.ts                 # 性能基准
 │   ├── security.spec.ts             # 安全验证

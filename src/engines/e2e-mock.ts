@@ -16,12 +16,22 @@
 export interface E2EMockConfig {
   prefix?: string;
   fail?: boolean;
+  /** 一次性故障：下一次翻译请求返回 500，随后自动恢复（测试专用）。 */
+  failOnce?: boolean;
 }
 
 const STORAGE_KEY = 'pt-e2e-mock';
 
 /** 当前生效的 mock 配置。null = 无 mock（线上行为）。 */
 let activeCfg: E2EMockConfig | null = null;
+
+/** 已触发的一次性故障次数（测试断言用，防止 failOnce 失效导致假绿）。 */
+let failOnceServed = 0;
+
+/** 测试探针：返回 mock 统计。 */
+export function getE2EMockStats(): { failOnceServed: number } {
+  return { failOnceServed };
+}
 
 /** mock 包裹层函数：带标记字段以便幂等安装 */
 type MockFetch = ((input: any, init?: any) => Promise<Response>) & {
@@ -43,6 +53,14 @@ function installStub(): void {
       typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
     if (!url.startsWith('https://translate.googleapis.com/')) {
       return realFetch(input, init);
+    }
+    if (activeCfg.failOnce) {
+      // 一次性故障：只活在实例内存里（不持久化）。消费即清除 ——
+      // 并发批次消息各自在路由前重读 storage 描述符，若 failOnce
+      // 走持久化通道，读到的旧值会重新武装，一个请求变成多个 500。
+      failOnceServed++;
+      activeCfg = { ...activeCfg, failOnce: false };
+      return new Response('Service Unavailable', { status: 500 });
     }
     if (activeCfg.fail) {
       return new Response('Service Unavailable', { status: 500 });
@@ -75,7 +93,9 @@ export async function ensureE2EMock(): Promise<void> {
   try {
     const { [STORAGE_KEY]: cfg } = await chrome.storage.local.get(STORAGE_KEY);
     if (!cfg) return;
-    activeCfg = cfg as E2EMockConfig;
+    // failOnce 是实例内存态，不随描述符持久化 —— 合并时保留在飞
+    // 的一次性开关，否则路由前的这次读取会把它清掉（#91 调查）
+    activeCfg = { ...(cfg as E2EMockConfig), failOnce: activeCfg?.failOnce };
     installStub();
   } catch (e) {
     console.warn('[PT] E2E mock 自愈失败，直连真实端点:', e);
@@ -91,7 +111,12 @@ export async function ensureE2EMock(): Promise<void> {
 export function applyE2EMock(cfg: E2EMockConfig): Promise<void> {
   activeCfg = cfg;
   installStub();
+  // failOnce 不持久化：它只在当前 SW 实例内一次性生效。
+  // SW 意外被替换时开关丢失 → 测试因 failOnceServed === 0 响亮失败，
+  // 不会假绿。
+  const persisted = { ...cfg };
+  delete persisted.failOnce;
   return new Promise<void>((resolve) => {
-    chrome.storage.local.set({ [STORAGE_KEY]: cfg }, () => resolve());
+    chrome.storage.local.set({ [STORAGE_KEY]: persisted }, () => resolve());
   });
 }
