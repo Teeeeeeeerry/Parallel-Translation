@@ -109,37 +109,16 @@ export const test = base.extend<
   // #89: 在 SW 内 stub fetch（引擎运行处），而不是 context.route ——
   // CDP 对 SW 发起的请求拦截不可靠：部分请求绕过时，本地恰好直连真实
   // Google 而「假绿」，CI 无外网则必失败。SW 侧 stub 完全确定性。
+  //
+  // #90: 描述符经 applyE2EMock 写入 chrome.storage.local 并立即安装。
+  // SW 实例一旦被 Chrome 替换，实例内存里的 stub 会消失 —— 翻译路由
+  // 前的 ensureE2EMock 从 storage 自愈重装，增量翻译不再直连真实端点。
   mockGoogle: async ({ serviceWorker }, use) => {
     await use(async (opts: { fail?: boolean; prefix?: string } = {}) => {
       const { fail = false, prefix = '【译】' } = opts;
       await serviceWorker.evaluate(
-        (cfg: { fail: boolean; prefix: string }) => {
-          const realFetch = self.fetch.bind(self);
-          (self as any).fetch = async (input: any, init?: any) => {
-            const url =
-              typeof input === 'string'
-                ? input
-                : input?.url ?? input?.href ?? '';
-            if (!url.startsWith('https://translate.googleapis.com/')) {
-              return realFetch(input, init);
-            }
-            if (cfg.fail) {
-              return new Response('Service Unavailable', { status: 500 });
-            }
-            const q = new URL(url).searchParams.get('q') ?? '';
-            // 与真实端点同形：data[0] 是分句数组，每项 [0] 为译文。
-            // 注意必须是 [[[...]]] —— {0: [...]} 序列化后是对象，引擎解析抛错。
-            const body = JSON.stringify([
-              [[cfg.prefix + q, '', null, null, 1]],
-              null,
-              'en',
-            ]);
-            return new Response(body, {
-              status: 200,
-              headers: { 'content-type': 'application/json' },
-            });
-          };
-        },
+        (cfg: { fail: boolean; prefix: string }) =>
+          (self as any).applyE2EMock(cfg),
         { fail, prefix },
       );
     });

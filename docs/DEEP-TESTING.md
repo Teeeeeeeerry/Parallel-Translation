@@ -599,6 +599,7 @@ DOM 覆盖（每 fixture 至少 1 个用例）：
   TC-E2E-28: rtl.html → 段落按钮贴在文字左侧
   TC-E2E-29: media-mix.html → 含图片的容器被降级
   TC-E2E-30: iframe.html → 主文档翻译不影响 iframe 内
+  TC-E2E-46: infinite.html → mock 丢失后增量翻译自动恢复（#90 回归）
 ```
 
 **扩展 E2E 套件（发布前跑，~15 个）**：
@@ -655,7 +656,7 @@ Fixture: preserve.html
 ```
 Fixture: pre-blocks.html
 结构：
-  <pre class="plain"><code>（3000+ 字符纯文本，含空行）</code></pre>
+  <pre class="plain">（7000+ 字符纯文本直接持有，含空行 —— 无子元素且超过 MAX_TEXT，splitPre 才能触发）</pre>
   <pre class="highlight"><code>function hello() { return 1; }</code></pre>
 
 操作：

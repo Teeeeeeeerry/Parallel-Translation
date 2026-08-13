@@ -251,6 +251,35 @@ test.describe('Fixture: infinite', () => {
     await page.click('#load-more');
     await expect(page.locator('[data-pt="done"]')).toHaveCount(initialDone + 3, { timeout: 15_000 });
   });
+
+  test('@core TC-E2E-46: mock 丢失后增量翻译自动恢复（#90 回归）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    // 在装 mock 前捕获真实 fetch —— 用于模拟 SW 实例被替换：
+    // 实例内存里的 fetch stub 随实例消失，只剩 storage 里的 mock 描述符。
+    await serviceWorker.evaluate(() => {
+      (self as any).__ptRealFetch = self.fetch.bind(self);
+    });
+    await mockGoogle();
+    await gotoFixture('infinite');
+
+    await translateAndWait(page);
+    const initialDone = await page.locator('[data-pt="done"]').count();
+
+    // 模拟 SW 实例替换：清掉 stub。修复前后续翻译直连真实 Google
+    // （本地可侥幸通过但译文不带 mock 前缀；CI 无外网则必失败）。
+    await serviceWorker.evaluate(() => {
+      (self as any).fetch = (self as any).__ptRealFetch;
+    });
+
+    await page.click('#load-more');
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(initialDone + 3, { timeout: 15_000 });
+
+    // 新段译文必须带 mock 前缀 —— 证明翻译路由前从 storage 重装了 mock
+    const newPara = page.locator('#content p').nth(3);
+    await expect(newPara.locator('.pt-trans')).toContainText('【译】');
+  });
 });
 
 test.describe('Fixture: spa', () => {
