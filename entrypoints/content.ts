@@ -8,7 +8,7 @@ import '~/src/styles/tokens.css';
 import '~/src/styles/presets.css';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
-import { normalizeText } from '~/src/dom/normalize';
+import { normalizeText, normalizePreText } from '~/src/dom/normalize';
 import {
   translatableText,
   translatableTextEx,
@@ -176,10 +176,14 @@ export default defineContentScript({
         const { text: rawText, preserves } = useShallow
           ? shallowTranslatableTextEx(el)
           : translatableTextEx(el);
+        // pre 内单元（.pt-chunk / 纯文本 pre）保留硬换行：
+        // 列表逐行条目是文档结构，折叠成一行后译文也回不来行结构
+        const normalize = el.closest('pre') ? normalizePreText : normalizeText;
+        const text = normalize(rawText);
         return {
-          text: normalizeText(rawText),
+          text,
           preserves,
-          rawText: normalizeText(rawText),
+          rawText: text,
         };
       });
       const texts = textData.map((d) => d.text);
@@ -428,7 +432,8 @@ export default defineContentScript({
       }
 
       const { text: rawText, preserves } = translatableTextEx(unit);
-      const text = normalizeText(rawText);
+      const normalize = unit.closest('pre') ? normalizePreText : normalizeText;
+      const text = normalize(rawText);
       if (!text) return;
 
       const resp = await translateViaBackground({

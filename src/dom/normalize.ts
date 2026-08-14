@@ -12,3 +12,17 @@
 export function normalizeText(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
 }
+
+/**
+ * pre 上下文（.pt-chunk / 纯文本 pre）的归一化：折叠行内空白但保留
+ * 硬换行。列表逐行条目（RST 的 * item）是文档结构，normalizeText
+ * 会把整个列表折叠成一行 —— 引擎收到无结构文本，译文也回不来行结构。
+ * 逐行折叠后引擎按行切句，恰好是列表翻译期望的行为。
+ */
+export function normalizePreText(s: string): string {
+  return s
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .trim();
+}
