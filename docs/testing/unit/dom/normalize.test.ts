@@ -2,7 +2,7 @@
  * dom/normalize.ts — 空白归一化 单元测试
  */
 import { describe, test, expect } from 'vitest';
-import { normalizeText } from '~/src/dom/normalize';
+import { normalizeText, normalizePreText } from '~/src/dom/normalize';
 
 describe('normalizeText', () => {
   test('\\s+ → 单个空格', () => {
@@ -47,5 +47,38 @@ describe('normalizeText', () => {
 
   test('\\r\\n Windows 换行 → 空格', () => {
     expect(normalizeText('a\r\nb')).toBe('a b');
+  });
+});
+
+describe('normalizePreText', () => {
+  test('保留硬换行，折叠行内空白', () => {
+    expect(normalizePreText('* New Kernel Developer  -  Getting started\n* Academic  Researcher - Studying')).toBe(
+      '* New Kernel Developer - Getting started\n* Academic Researcher - Studying',
+    );
+  });
+
+  test('多行列表逐行保留（RST README 形态）', () => {
+    const list = [
+      '* New Kernel Developer - Getting started with kernel development',
+      '* Academic Researcher - Studying kernel internals and architecture',
+      '* Security Expert - Hardening and vulnerability analysis',
+    ].join('\n');
+    expect(normalizePreText(list)).toBe(list);
+  });
+
+  test('连续空行折叠保留为 \\n 序列', () => {
+    expect(normalizePreText('a\n\n\nb')).toBe('a\n\n\nb');
+  });
+
+  test('行首行尾空白去除', () => {
+    expect(normalizePreText('  * item  \n  * item2  ')).toBe('* item\n* item2');
+  });
+
+  test('纯空白 → ""', () => {
+    expect(normalizePreText('   \n \n  ')).toBe('');
+  });
+
+  test('\\r\\n Windows 换行 → 统一为 \\n', () => {
+    expect(normalizePreText('a\r\nb')).toBe('a\nb');
   });
 });

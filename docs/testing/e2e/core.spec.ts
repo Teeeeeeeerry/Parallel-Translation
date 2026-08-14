@@ -498,7 +498,9 @@ test.describe('Fixture: pre-blocks', () => {
       };
     });
     expect(styles.display).toBe('inline');
-    expect(styles.whiteSpace).toBe('normal');
+    // pre-line：保留引擎译文中的硬换行 —— normal 会把列表译文的
+    // 换行折叠成一行长文本
+    expect(styles.whiteSpace).toBe('pre-line');
     expect(styles.afterContent).toContain('\\a ');
     expect(styles.afterWhiteSpace).toBe('pre');
 
@@ -540,6 +542,33 @@ test.describe('Fixture: pre-blocks', () => {
     expect(rects.transTop).not.toBeNull();
     // 装饰行在译文行下方（y 更大），且不与译文行重叠
     expect(rects.decoTop!).toBeGreaterThanOrEqual(rects.transBottom!);
+
+    // ── 列表 chunk：译文必须逐行显示（normalizePreText 保留硬换行 +
+    // pre-line 渲染）。修复前输入归一化折叠 \n、white-space:normal
+    // 再折叠一次 —— 5 行列表译文显示为 1 行长文本。
+    const listChunk = page
+      .locator('pre.plain > .pt-chunk')
+      .filter({ hasText: 'New Kernel Developer' });
+    await expect(listChunk).toHaveAttribute('data-pt', 'done', { timeout: 15_000 });
+
+    const listLines = await listChunk.evaluate((el) => {
+      const trans = el.querySelector('.pt-trans.pt-pre')!;
+      const text = trans.textContent ?? '';
+      const range = document.createRange();
+      const first = trans.firstChild as Text;
+      const rows = new Set<number>();
+      for (let i = 0; i < first.length; i++) {
+        range.setStart(first, i);
+        range.setEnd(first, i + 1);
+        const r = range.getBoundingClientRect();
+        if (r.height > 0) rows.add(Math.round(r.top));
+      }
+      return { visualLines: rows.size, text };
+    });
+    // mock 译文 = 【译】+ 原文（5 行列表），逐行渲染 ≥ 4 行；
+    // 折叠成一行的回归下此处为 1
+    expect(listLines.visualLines).toBeGreaterThanOrEqual(4);
+    expect(listLines.text).toContain('\n');
   });
 });
 

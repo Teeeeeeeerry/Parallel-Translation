@@ -55,7 +55,10 @@
 
 /* ── pre 内译文脱离等宽约束（#66）────────────────────────── */
 .pt-trans.pt-pre {
-  white-space: normal;
+  /* pre-line：保留引擎译文中的硬换行（多行列表逐行对照原文），
+     其余空白折叠、长行自动换行 —— normal 会把列表译文的换行
+     折叠成一行长文本 */
+  white-space: pre-line;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   border-left: none;
   padding-left: 0;
