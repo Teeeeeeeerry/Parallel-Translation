@@ -466,6 +466,81 @@ test.describe('Fixture: pre-blocks', () => {
     expect(await chunks.count()).toBeGreaterThanOrEqual(2);
     await expect(chunks.first()).toHaveAttribute('data-pt', 'done');
   });
+
+  test('@core TC-E2E-49: pre 内译文行内贴合原文，与装饰行视觉分行', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('pre-blocks');
+
+    await translateAndWait(page);
+
+    // 翻译并发乱序，不能取「第一个 trans」——定位标题 chunk（原文含
+    // README Title）的译文，它与装饰行的位置关系才是本用例的断言对象。
+    const titleChunk = page
+      .locator('pre.plain > .pt-chunk')
+      .filter({ hasText: 'README Title' });
+    const titleTrans = titleChunk.locator('.pt-trans.pt-pre');
+    await expect(titleTrans).toBeVisible();
+
+    // ── 机制：译文必须行内显示（display:inline），否则块级换行 +
+    // 原文行尾 \n 会在原文与译文之间制造空行、把装饰行挤离标题。
+    // ::after 补行尾硬换行，隔开后续装饰行。
+    const styles = await titleTrans.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const after = getComputedStyle(el, '::after');
+      return {
+        display: cs.display,
+        whiteSpace: cs.whiteSpace,
+        afterContent: after.content,
+        afterWhiteSpace: after.whiteSpace,
+      };
+    });
+    expect(styles.display).toBe('inline');
+    expect(styles.whiteSpace).toBe('normal');
+    expect(styles.afterContent).toContain('\\a ');
+    expect(styles.afterWhiteSpace).toBe('pre');
+
+    // ── 行为：标题译文行与装饰行「============」必须视觉分行
+    // （::after 失效时会粘成同一行「【译】README Title============」）。
+    // 装饰行是 chunk 之外的 raw 文本节点，用 Range 定位取 y 坐标。
+    const rects = await page.evaluate(() => {
+      const pre = document.querySelector('pre.plain')!;
+      // 标题 chunk 的译文（与 Playwright 侧 titleTrans 同一元素）
+      const titleChunk = [...pre.querySelectorAll('.pt-chunk')].find((c) =>
+        (c.textContent ?? '').includes('README Title'),
+      );
+      const trans = titleChunk?.querySelector('.pt-trans.pt-pre') ?? null;
+      const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+      // currentNode 初始是 root（pre 自身，textContent 含装饰行会误命中），
+      // 必须先 nextNode() 进入遍历
+      let node: Node | null = walker.nextNode();
+      let decoTop: number | null = null;
+      while (node) {
+        if ((node.textContent ?? '').includes('============')) {
+          // Range.selectNodeContents() 返回 undefined，不能链式调用
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          decoTop = range.getBoundingClientRect().top;
+          break;
+        }
+        node = walker.nextNode();
+      }
+      const transRect = trans?.getBoundingClientRect();
+      return {
+        transFound: trans !== null,
+        decoTop,
+        transTop: transRect?.top ?? null,
+        transBottom: transRect?.bottom ?? null,
+      };
+    });
+    expect(rects.transFound).toBe(true);
+    expect(rects.decoTop).not.toBeNull();
+    expect(rects.transTop).not.toBeNull();
+    // 装饰行在译文行下方（y 更大），且不与译文行重叠
+    expect(rects.decoTop!).toBeGreaterThanOrEqual(rects.transBottom!);
+  });
 });
 
 test.describe('Fixture: rtl', () => {
