@@ -59,4 +59,11 @@
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   border-left: none;
   padding-left: 0;
+  /* inline：译文紧贴原文块尾换行，不产生块级换行 + 空行框。
+     ::after 补行尾硬换行，隔开后面的装饰行 / 下一块原文 */
+  display: inline;
+}
+.pt-trans.pt-pre::after {
+  content: '\A';
+  white-space: pre;
 }
