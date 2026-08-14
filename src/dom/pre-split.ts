@@ -45,6 +45,17 @@ function isDecorationLine(line: string): boolean {
   return /^[=\-*_~#]+$/.test(t);
 }
 
+/**
+ * 列表条目行：行首（允许缩进）为项目符号或编号标记。
+ * 条目行强制独立成翻译单元 —— 渲染后一行原文紧贴一行译文，
+ * 行级对照。非列表行保持段落块聚合（按行翻译会切断句子）。
+ */
+const LIST_MARKER_RE = /^\s*(?:[*+-]\s+|\d+\.\s+)/;
+
+function isListLine(line: string): boolean {
+  return LIST_MARKER_RE.test(line);
+}
+
 /** 文本是否超过单块上限 —— 超长块不参与翻译 */
 function isOversized(text: string): boolean {
   return text.trim().length > MAX_TEXT;
@@ -109,14 +120,20 @@ export function splitPre(pre: HTMLPreElement): HTMLSpanElement[] | null {
   }
   if (cur.length > 0) lines.push({ toks: cur, endsWithNl: false });
 
-  // ── 按行 kind 聚合为块：空行 / 装饰行 → raw，其余 → chunk ──
+  // ── 按行 kind 聚合为块：空行 / 装饰行 → raw，其余 → chunk。
+  //    列表条目行强制独立成块 —— 行级对照（一行原文一行译文）──
   const parts: { kind: 'raw' | 'chunk'; lines: Line[] }[] = [];
   for (const line of lines) {
     const lt = lineText(line).trim();
     const kind = lt === '' || isDecorationLine(lt) ? 'raw' : 'chunk';
     const last = parts[parts.length - 1];
-    if (last && last.kind === kind) last.lines.push(line);
-    else parts.push({ kind, lines: [line] });
+    if (kind === 'chunk' && isListLine(lt)) {
+      parts.push({ kind, lines: [line] });
+    } else if (last && last.kind === kind) {
+      last.lines.push(line);
+    } else {
+      parts.push({ kind, lines: [line] });
+    }
   }
 
   // ── 重建 pre 内容：按 token 顺序 append，逐字节还原 ──
