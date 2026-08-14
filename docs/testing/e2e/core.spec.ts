@@ -543,32 +543,34 @@ test.describe('Fixture: pre-blocks', () => {
     // 装饰行在译文行下方（y 更大），且不与译文行重叠
     expect(rects.decoTop!).toBeGreaterThanOrEqual(rects.transBottom!);
 
-    // ── 列表 chunk：译文必须逐行显示（normalizePreText 保留硬换行 +
-    // pre-line 渲染）。修复前输入归一化折叠 \n、white-space:normal
-    // 再折叠一次 —— 5 行列表译文显示为 1 行长文本。
-    const listChunk = page
-      .locator('pre.plain > .pt-chunk')
-      .filter({ hasText: 'New Kernel Developer' });
-    await expect(listChunk).toHaveAttribute('data-pt', 'done', { timeout: 15_000 });
-
-    const listLines = await listChunk.evaluate((el) => {
-      const trans = el.querySelector('.pt-trans.pt-pre')!;
-      const text = trans.textContent ?? '';
-      const range = document.createRange();
-      const first = trans.firstChild as Text;
-      const rows = new Set<number>();
-      for (let i = 0; i < first.length; i++) {
-        range.setStart(first, i);
-        range.setEnd(first, i + 1);
-        const r = range.getBoundingClientRect();
-        if (r.height > 0) rows.add(Math.round(r.top));
-      }
-      return { visualLines: rows.size, text };
+    // ── 列表行级对照：每条目独立成翻译单元，渲染后
+    //    一行原文紧贴一行译文交替（原文 i → 译文 i → 原文 i+1 …）。
+    //    回归背景：列表曾作为一个 chunk 整块翻译（块级对照），
+    //    也曾因输入归一化折叠成一行长文本。
+    const listLayout = await page.evaluate(() => {
+      const pre = document.querySelector('pre.plain')!;
+      const chunks = [...pre.querySelectorAll('.pt-chunk')];
+      // 列表条目 chunk：origin 文本以 '* ' 开头
+      const listChunks = chunks.filter((c) =>
+        (c.querySelector('.pt-origin')?.textContent ?? '').trimStart().startsWith('* '),
+      );
+      return listChunks.map((c) => {
+        const o = c.querySelector('.pt-origin')!.getBoundingClientRect();
+        const t = c.querySelector('.pt-trans')!.getBoundingClientRect();
+        return { oTop: o.top, oBottom: o.bottom, tTop: t.top, tBottom: t.bottom };
+      });
     });
-    // mock 译文 = 【译】+ 原文（5 行列表），逐行渲染 ≥ 4 行；
-    // 折叠成一行的回归下此处为 1
-    expect(listLines.visualLines).toBeGreaterThanOrEqual(4);
-    expect(listLines.text).toContain('\n');
+
+    // fixture 里 5 个列表条目 → 5 个独立单元
+    expect(listLayout.length).toBe(5);
+    listLayout.forEach((r, i) => {
+      // 译文行紧跟自己的原文行（y 相邻，无空行）
+      expect(r.tTop).toBeGreaterThanOrEqual(r.oBottom - 1);
+      if (i > 0) {
+        // 交错：条目 i 的原文在条目 i-1 的译文之后
+        expect(r.oTop).toBeGreaterThanOrEqual(listLayout[i - 1]!.tBottom);
+      }
+    });
   });
 });
 

@@ -105,6 +105,38 @@ describe('splitPre', () => {
     }
   });
 
+  test('列表条目行各自独立成翻译单元（行级对照）', () => {
+    // 5 行列表条目 + 超长段落（保证全文超 MAX_TEXT 触发切分）
+    const para = 'Paragraph content. '.repeat(170);
+    const text = [
+      '* New Kernel Developer - Getting started with kernel development',
+      '* Academic Researcher - Studying kernel internals and architecture',
+      '* Security Expert - Hardening and vulnerability analysis',
+      '* Backport/Maintenance Engineer - Maintaining stable kernels',
+      '* System Administrator - Configuring and troubleshooting',
+      '',
+      `${para}`,
+    ].join('\n');
+
+    const pre = createPre(text);
+    const result = splitPre(pre);
+
+    expect(result).not.toBeNull();
+    if (result) {
+      // 每个列表条目是独立 chunk（原文以 '* ' 开头）
+      const listSpans = result.filter((s) =>
+        (s.textContent ?? '').trimStart().startsWith('* '),
+      );
+      expect(listSpans.length).toBe(5);
+      // 条目 chunk 各自只含单行文本
+      for (const span of listSpans) {
+        expect((span.textContent ?? '').trim()).not.toContain('\n');
+      }
+      // 切分后文本逐字节不变
+      expect(pre.textContent).toBe(text);
+    }
+  });
+
   test('已切分的 pre → 返回 null（幂等）', () => {
     const longText = 'a'.repeat(3100);
     const pre = createPre(longText);
