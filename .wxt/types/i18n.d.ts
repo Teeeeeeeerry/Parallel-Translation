@@ -265,7 +265,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "段落悬停按钮"
+     * "逐段翻译"
      */
     getMessage(
       messageName: "rowParagraphBtn",
@@ -1217,7 +1217,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "段落悬停按钮"
+     * "逐段翻译"
      */
     getMessage(
       messageName: "welcomeParaBtn",
