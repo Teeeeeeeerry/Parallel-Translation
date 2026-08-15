@@ -6,7 +6,7 @@ Parallel-Translation 是一个对照式网页翻译浏览器扩展（WXT + TypeS
 
 本方案在 TESTING.md 的策略骨架上补充**具体可执行的测试用例**，聚焦三个维度：
 1. **风险驱动的优先级排序** — 不按模块平均分配，高风险模块深测
-2. **可机械执行的测试用例** — 不用"测试 walker"这种模糊描述，写清输入/操作/断言
+2. **可机械执行的测试用例** — 不用“测试 walker”这种模糊描述，写清输入/操作/断言
 3. **组合爆炸的系统性裁剪** — 6 入口 × 3 模式 × 5 引擎 × N 站点不可全排，用正交表/pairwise 覆盖关键组合
 
 ## 一、风险分级与测试深度
@@ -41,7 +41,7 @@ Parallel-Translation 是一个对照式网页翻译浏览器扩展（WXT + TypeS
 | `queue/concurrency` | ★★★ | ☆☆☆ | ★☆☆ | 纯状态机，穷举 |
 | `hotkeys/normalize` | ★★★ | ☆☆☆ | ★★☆ | 平台映射穷举 |
 | `hotkeys/platform` | ★★☆ | ☆☆☆ | ★★☆ | Mac 分支需 macOS runner |
-| `ui/*` | ★☆☆ | ★☆☆ | ★★★ | 交互=E2E 专属（jsdom 判不了"点得到"） |
+| `ui/*` | ★☆☆ | ★☆☆ | ★★★ | 交互=E2E 专属（jsdom 判不了“点得到”） |
 | `styles/custom` | ★★★ | ☆☆☆ | ★☆☆ | 注入规则=产物断言 |
 | `i18n` | ★★☆ | ☆☆☆ | ☆☆☆ | key 覆盖率检查 |
 
@@ -118,7 +118,7 @@ describe('translatableTextEx', () => {
 
 describe('shallowTranslatableTextEx', () => {
   test('只提取直接文本 + 内联子元素，块级子元素被跳过')
-  test('<li>标签文字<ul><li>子条目</li></ul></li> → 只提取"标签文字"')
+  test('<li>标签文字<ul><li>子条目</li></ul></li> → 只提取“标签文字”')
   test('内联子元素的 preserve 仍生效')
   test('纯文本无块级子元素 → 与 translatableTextEx 结果一致')
 })
@@ -567,8 +567,8 @@ describe('translateViaBackground — 失败语义', () => {
   TC-E2E-02: 悬浮球再次点击 → 还原 → 状态变化（done→idle）
   TC-E2E-03: 快捷键 Mod+Shift+Y → 翻译
   TC-E2E-04: 快捷键 Mod+Shift+M → 切换显示模式
-  TC-E2E-05: 段落悬停按钮 → 浮出 → 点击翻译 → 按钮变"还原"态
-  TC-E2E-06: 段落悬停按钮还原态 → 点击 → 按钮变"翻译"态
+  TC-E2E-05: 段落悬停按钮 → 浮出 → 点击翻译 → 按钮变“还原”态
+  TC-E2E-06: 段落悬停按钮还原态 → 点击 → 按钮变“翻译”态
   TC-E2E-07: 右键菜单 → 选中文本 → 翻译 toast 显示译文
   TC-E2E-08: 修饰键拖光标 → 翻译选区 → toast 显示译文
   TC-E2E-09: 工具栏 popup → 点击翻译按钮 → 状态上报
