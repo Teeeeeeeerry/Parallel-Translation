@@ -209,6 +209,9 @@ export default defineContentScript({
       let allFailed = true;
       let renderRejected = 0;
       let renderSucceeded = 0;
+      // 不可恢复的失败原因（如扩展上下文失效）—— 全失败时优先展示，
+      // 而不是泛化的「所有引擎均失败」
+      let fatalError: string | null = null;
 
       // #91: 批次级引擎失败有限重试。传输层失败由 translateViaBackground
       // 内部重试（重新 ping + 有界退避），这里只处理引擎级失败（{ok:false}）
@@ -268,6 +271,8 @@ export default defineContentScript({
           }
         }
         console.error('[PT] 批次翻译失败:', lastError);
+        // 扩展上下文失效（重载/更新）不可恢复 —— 记录给全失败分支展示
+        if (lastError.includes('已失效')) fatalError = lastError;
         return { rendered, rejected, failed: true };
       }
 
@@ -292,7 +297,10 @@ export default defineContentScript({
 
       if (allFailed) {
         if (isMainFrame)
-          toast(tf('toastAllEnginesFail', '所有引擎均失败'), 'error');
+          toast(
+            fatalError ?? tf('toastAllEnginesFail', '所有引擎均失败'),
+            'error',
+          );
         return 'error';
       }
 
