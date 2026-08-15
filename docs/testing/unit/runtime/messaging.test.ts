@@ -117,6 +117,51 @@ describe('translateViaBackground — SW 冷启动（#89 根因）', () => {
   });
 });
 
+describe('translateViaBackground — 扩展上下文失效', () => {
+  test('chrome.runtime 为 undefined → 立即失败并提示刷新页面，不空等重试预算', async () => {
+    // 扩展重载 / 更新后，已注入页面的 content script 上下文失效：
+    // chrome.runtime 变 undefined，且永不恢复。修复前此处被当作
+    // SW 冷启动重试 10+15 秒，最终报「消息通道不可用: Cannot read
+    // properties of undefined (reading 'sendMessage')」。
+    vi.useFakeTimers();
+    // setup.ts 用 vi.stubGlobal 挂载 chrome —— 不能用 unstubAllGlobals
+    // 恢复（会把 setup 的 mock 一并撤销），测试内手动保存 / 恢复
+    const savedChrome = (globalThis as { chrome?: unknown }).chrome;
+    (globalThis as { chrome?: unknown }).chrome = { runtime: undefined };
+    try {
+      const pending = translateViaBackground(PAYLOAD);
+      await vi.advanceTimersByTimeAsync(0);
+      const result = await pending;
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain('已失效');
+        expect(result.error).toContain('刷新');
+      }
+    } finally {
+      (globalThis as { chrome?: unknown }).chrome = savedChrome;
+    }
+  });
+
+  test('chrome.runtime.sendMessage 抛 TypeError（上下文失效形态）→ 同样立即失败', async () => {
+    vi.useFakeTimers();
+    sendMessage.mockImplementation(async () => {
+      throw new TypeError(
+        "Cannot read properties of undefined (reading 'sendMessage')",
+      );
+    });
+
+    const pending = translateViaBackground(PAYLOAD);
+    await vi.advanceTimersByTimeAsync(0);
+    const result = await pending;
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('已失效');
+    }
+  });
+});
+
 describe('translateViaBackground — 失败语义', () => {
   test('SW 响应 {ok:false}（引擎级失败）→ 原样返回，不重试', async () => {
     sendMessage.mockImplementation(async (msg: unknown) => {

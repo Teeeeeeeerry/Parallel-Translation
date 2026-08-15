@@ -137,6 +137,9 @@ vi.stubGlobal('chrome', {
     },
   },
   runtime: {
+    // 真实 content script 里 runtime.id 是扩展 id 字符串；messaging.ts
+    // 的 isContextInvalidated 以 id == null 判定上下文失效
+    id: 'mock-extension-id',
     getURL: vi.fn().mockImplementation((path: string) => `chrome-extension://mock/${path}`),
     sendMessage: vi.fn().mockResolvedValue(undefined),
     onMessage: {

@@ -30,6 +30,27 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const CONTEXT_INVALIDATED_MSG =
+  '[PT] 扩展上下文已失效（扩展已更新或重载），请刷新页面后重试';
+
+/** 不可恢复的通道错误 —— 重试永远无意义，立即失败并提示用户 */
+const FATAL_CHANNEL_RE = /Extension context invalidated|Cannot read propert/i;
+
+/**
+ * 扩展上下文是否已失效。重载 / 更新 / 禁用扩展后，已注入页面的
+ * content script 里 chrome.runtime 变为 undefined 且永不恢复 ——
+ * 当作 SW 冷启动重试只会空耗 ping + translate 两级预算（25 秒），
+ * 最终报出误导性的「消息通道不可用」。
+ */
+function isContextInvalidated(): boolean {
+  try {
+    return (globalThis.chrome as { runtime?: { id?: string } } | undefined)
+      ?.runtime?.id == null;
+  } catch {
+    return true; // chrome 访问本身抛异常 —— 上下文已异常
+  }
+}
+
 /**
  * 有界重试发送：只要收不到任何响应（undefined / 连接被拒），
  * 就以指数退避重发，直到预算耗尽。收到响应（无论内容）即返回。
@@ -44,11 +65,21 @@ async function sendWithTransportRetry(
   let lastError = 'background 无响应';
 
   for (;;) {
+    // 上下文失效不可恢复：立即失败并提示刷新页面，不空等重试预算
+    if (isContextInvalidated()) {
+      throw new Error(CONTEXT_INVALIDATED_MSG);
+    }
+
     let resp: unknown;
     try {
       resp = await chrome.runtime.sendMessage(msg);
     } catch (e) {
-      lastError = e instanceof Error ? e.message : String(e);
+      const msgText = e instanceof Error ? e.message : String(e);
+      // 不可恢复错误（上下文失效的 TypeError / Chrome 标准错误）
+      if (FATAL_CHANNEL_RE.test(msgText)) {
+        throw new Error(CONTEXT_INVALIDATED_MSG);
+      }
+      lastError = msgText;
       resp = undefined;
     }
     if (resp !== undefined) return resp;
