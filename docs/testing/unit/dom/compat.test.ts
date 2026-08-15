@@ -118,7 +118,7 @@ describe('isGenericInlineBadge counter regex', () => {
   });
 
   test('"+3" in middle → not omit', () => {
-    // "电话 +86 123" → COUNTER_RE 要求 +N 在文本末尾
+    // “电话 +86 123” → COUNTER_RE 要求 +N 在文本末尾
     const span = el('<span>电话 +86 123</span>');
     // "+123" 在末尾但不是 "+数字" 前有空白的简单形态
     expect(shouldOmitText(span)).toBe(false);

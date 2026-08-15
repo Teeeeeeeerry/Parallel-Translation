@@ -34,7 +34,7 @@ function clampToViewport(
 interface BallCallbacks {
   /**
    * 翻译/还原的统一入口，由 content script 提供。
-   * 悬浮球不自己判断"该翻还是该还原" —— 翻译态是整个 frame 共享的，
+   * 悬浮球不自己判断“该翻还是该还原” —— 翻译态是整个 frame 共享的，
    * 由 content script 单点持有，球只负责把状态画出来。
    */
   onToggle: () => void;

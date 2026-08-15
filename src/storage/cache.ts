@@ -31,7 +31,7 @@ let chain: Promise<void> = Promise.resolve();
 
 // ---- Index 内部操作 ----
 
-/** 将 key 移到 index 末尾（"最近使用"），必要时淘汰最旧的条目。 */
+/** 将 key 移到 index 末尾（“最近使用”），必要时淘汰最旧的条目。 */
 async function refreshIndex(key: string): Promise<void> {
   const idxResult = await chrome.storage.local.get(INDEX_KEY);
   let index: string[] = (idxResult[INDEX_KEY] as string[] | undefined) ?? [];

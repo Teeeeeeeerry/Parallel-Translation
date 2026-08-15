@@ -94,7 +94,7 @@ function walkTranslatable(el: Element, pm: PreserveMap | null): string {
  * 浅层提取：只取直接文本节点与内联子元素的文本，跳过块级子元素。
  *
  * #23 混合内容元素专用 —— 对 `<li>标签文字<ul><li>子条目</li></ul></li>`
- * 只提取"标签文字"，子条目由各自的翻译单元独立翻译，避免重复。
+ * 只提取“标签文字”，子条目由各自的翻译单元独立翻译，避免重复。
  */
 export function shallowTranslatableText(el: Element): string {
   return walkShallow(el, null);
