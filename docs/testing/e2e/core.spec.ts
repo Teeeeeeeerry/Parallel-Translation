@@ -565,6 +565,60 @@ test.describe('Fixture: pre-blocks', () => {
       }
     });
   });
+
+  test('@core TC-E2E-50: 分步 append + 慢引擎 —— 每单元只发一次请求（#158 回归）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    // 慢引擎（800ms > 300ms 防抖窗口）：二次 flush 发生时首轮翻译仍在飞，
+    // 修复前同一单元被再次请求（分步 append 祖先+后代 / pre 切块两条路径）
+    await mockGoogle({ prefix: '[MOCK] ', delayMs: 800 });
+    await gotoFixture('basic');
+
+    await translateAndWait(page);
+    const initialDone = await page.locator('[data-pt="done"]').count();
+    const served = () =>
+      serviceWorker.evaluate(() => (self as any).getE2EMockStats().totalServed);
+
+    // 阶段 1：分步 append 容器 + 20 段（同一防抖窗口）。修复前 collect(容器)
+    // 与 collect(每段) 各收集一遍 → 40 单元 → 40 请求；修复后只收容器
+    // 覆盖的子树 → 20 单元 → 20 请求（google-web 每文本一个请求）
+    const before1 = await served();
+    await page.evaluate(() => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      for (let i = 1; i <= 20; i++) {
+        const p = document.createElement('p');
+        p.textContent = `Stepwise paragraph ${i} added after initial translation.`;
+        container.appendChild(p);
+      }
+    });
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(initialDone + 20, { timeout: 30_000 });
+    expect(await served()).toBe(before1 + 20);
+
+    // 阶段 2：分步 append 容器 + 超大纯文本 pre（24 个空行分隔的段落块）。
+    // flush#1 的 collect 同步 splitPre 切出 24 块并收集；切块插入产生的
+    // mutation 若再进 pending，flush#2 会把这些在飞块重复请求 —— 修复后
+    // 忽略 .pt-chunk 自身插入 → 24 单元 → 24 请求
+    const before2 = await served();
+    await page.evaluate(() => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const pre = document.createElement('pre');
+      const para = (i: number) =>
+        Array.from(
+          { length: 5 },
+          (_, j) =>
+            `Pre line ${i * 5 + j} of stepwise appended long plain text document paragraph.`,
+        ).join('\n');
+      pre.textContent = Array.from({ length: 24 }, (_, i) => para(i)).join('\n\n');
+      container.appendChild(pre);
+    });
+    const chunks = page.locator('[data-pt-chunk="1"]');
+    await expect(chunks).toHaveCount(24, { timeout: 30_000 });
+    await expect(chunks.first()).toHaveAttribute('data-pt', 'done');
+    expect(await served()).toBe(before2 + 24);
+  });
 });
 
 test.describe('Fixture: rtl', () => {
