@@ -58,9 +58,28 @@ describe('deepl HTTP 路径', () => {
       'Content-Type': 'application/x-www-form-urlencoded',
     });
     const body = new URLSearchParams((init as RequestInit).body as string);
-    expect(body.get('target_lang')).toBe('ZH-CN');
+    expect(body.get('target_lang')).toBe('ZH-HANS');
     expect(body.get('source_lang')).toBe('EN');
     expect(body.getAll('text')).toEqual(['Hello', 'World']);
+  });
+
+  test('zh-CN → ZH-HANS、zh-TW → ZH-HANT（#155：DeepL 不接受带国家后缀中文码）', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('k');
+    for (const [to, expected] of [
+      ['zh-CN', 'ZH-HANS'],
+      ['zh-TW', 'ZH-HANT'],
+    ] as const) {
+      vi.resetModules();
+      const fetchMock = vi.fn().mockResolvedValue(okResp(['你好']));
+      vi.stubGlobal('fetch', fetchMock);
+      const { deepl } = await import('~/src/engines/deepl');
+      await deepl.translate({ texts: ['Hello'], from: 'auto', to });
+      const body = new URLSearchParams(
+        (fetchMock.mock.calls[0]![1] as RequestInit).body as string,
+      );
+      expect(body.get('target_lang')).toBe(expected);
+    }
   });
 
   test('普通 key → api.deepl.com 端点', async () => {

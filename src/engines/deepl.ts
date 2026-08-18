@@ -66,6 +66,9 @@ export const deepl: TranslateEngine = {
     const normalizeLang = (code: string): string => {
       // 'auto' → null（让 DeepL 自动检测）
       if (code === 'auto') return '';
+      // DeepL API v2 不接受带国家后缀的中文码，官方只认 ZH / ZH-HANS / ZH-HANT（#155）
+      if (code === 'zh-CN') return 'ZH-HANS';
+      if (code === 'zh-TW') return 'ZH-HANT';
       return code.toUpperCase();
     };
 
