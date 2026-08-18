@@ -145,22 +145,33 @@ describe('translateViaBackground — 扩展上下文失效', () => {
     }
   });
 
-  test('chrome.runtime.sendMessage 抛 TypeError（上下文失效形态）→ 同样立即失败', async () => {
+  test('sendMessage 抛 TypeError 且上下文随后失效（传输中失效）→ 同样立即失败', async () => {
+    // #139：失效判定只认结构化状态（chrome.runtime.id 为 null），
+    // 不再匹配错误文案 —— 这里模拟传输中途上下文失效：
+    // 首次检查时上下文仍有效，sendMessage 抛错前把 chrome.runtime 置空。
     vi.useFakeTimers();
+    const savedChrome = (globalThis as { chrome?: unknown }).chrome;
+    const savedRuntime = (savedChrome as { runtime?: unknown }).runtime;
+    (globalThis as { chrome?: unknown }).chrome = { runtime: savedRuntime };
     sendMessage.mockImplementation(async () => {
+      (globalThis as { chrome?: unknown }).chrome = { runtime: undefined };
       throw new TypeError(
         "Cannot read properties of undefined (reading 'sendMessage')",
       );
     });
 
-    const pending = translateViaBackground(PAYLOAD);
-    await vi.advanceTimersByTimeAsync(0);
-    const result = await pending;
+    try {
+      const pending = translateViaBackground(PAYLOAD);
+      await vi.advanceTimersByTimeAsync(0);
+      const result = await pending;
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.invalidated).toBe(true);
-      expect(result.error).toContain('已失效');
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.invalidated).toBe(true);
+        expect(result.error).toContain('已失效');
+      }
+    } finally {
+      (globalThis as { chrome?: unknown }).chrome = savedChrome;
     }
   });
 });
