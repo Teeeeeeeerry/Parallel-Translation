@@ -1,0 +1,123 @@
+/**
+ * engines/openai.ts — 真实 HTTP 路径单元测试（#135）
+ *
+ * fetch stub 断言：端点 / 授权头 / 请求体、编号 prompt 与换行归一化、
+ * 401/403 key 无效、非 200 降级、响应解析。
+ */
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+
+vi.mock('~/src/storage/settings', () => ({
+  getSettings: vi.fn(() => ({ models: { openai: 'gpt-4o' } })),
+}));
+
+vi.mock('~/src/storage/keys', () => ({
+  getKey: vi.fn(),
+}));
+
+const okResp = (text: string) =>
+  new Response(JSON.stringify({ choices: [{ message: { content: text } }] }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+
+describe('openai HTTP 路径', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  test('未配置 key → EngineError（retryable=false）', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue(undefined);
+    const { openai } = await import('~/src/engines/openai');
+    await expect(
+      openai.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
+    ).rejects.toMatchObject({ engineId: 'openai', retryable: false, message: '未配置 API key' });
+    expect(getKey).toHaveBeenCalledWith('openai');
+  });
+
+  test('成功：端点 / 头 / 体断言 + 编号解析', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('sk-test');
+    const fetchMock = vi.fn().mockResolvedValue(okResp('1. 你好\n2. 世界'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { openai } = await import('~/src/engines/openai');
+    const resp = await openai.translate({ texts: ['Hello', 'World'], from: 'en', to: 'zh-CN' });
+
+    expect(resp.translations).toEqual(['你好', '世界']);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe('https://api.openai.com/v1/chat/completions');
+    expect((init as RequestInit).method).toBe('POST');
+    expect((init as RequestInit).headers).toMatchObject({
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer sk-test',
+    });
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.model).toBe('gpt-4o');
+    expect(body.temperature).toBe(0);
+    expect(body.messages[0].role).toBe('user');
+    expect(body.messages[0].content).toContain('1. Hello');
+    expect(body.messages[0].content).toContain('2. World');
+    expect(body.messages[0].content).toContain('源语言：en');
+  });
+
+  test('文本自带换行被归一化，不撑破编号结构', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('sk-test');
+    const fetchMock = vi.fn().mockResolvedValue(okResp('1. 你好'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { openai } = await import('~/src/engines/openai');
+    await openai.translate({ texts: ['line1\nline2'], from: 'auto', to: 'zh' });
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.messages[0].content).toContain('1. line1 line2');
+    expect(body.messages[0].content).not.toContain('\nline');
+  });
+
+  test('401 / 403 → EngineError（retryable=false，key 无效）', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('bad');
+    for (const status of [401, 403]) {
+      vi.resetModules();
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('err', { status })));
+      const { openai } = await import('~/src/engines/openai');
+      await expect(
+        openai.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
+      ).rejects.toMatchObject({ retryable: false, message: 'API key 无效' });
+    }
+  });
+
+  test('其他非 200 → EngineError（retryable）', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('k');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('err', { status: 429 })));
+    const { openai } = await import('~/src/engines/openai');
+    await expect(
+      openai.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
+    ).rejects.toMatchObject({ retryable: true, message: 'HTTP 429' });
+  });
+
+  test('空 choices → 长度一致的空白译文数组', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('k');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 })),
+    );
+    const { openai } = await import('~/src/engines/openai');
+    const resp = await openai.translate({ texts: ['a', 'b'], from: 'auto', to: 'zh' });
+    expect(resp.translations).toEqual(['', '']);
+  });
+
+  test('坏 JSON → 抛错', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('k');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('oops', { status: 200 })));
+    const { openai } = await import('~/src/engines/openai');
+    await expect(
+      openai.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
+    ).rejects.toThrow();
+  });
+});

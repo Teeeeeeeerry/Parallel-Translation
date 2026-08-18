@@ -31,8 +31,9 @@ export default defineConfig({
       ],
       // #134：门槛键必须是 glob（裸目录键不匹配任何文件，门槛从未生效）。
       // 值取当前实际覆盖率的现实下限（再低会无声失效，再高会立即红灯）。
+      // #135：真实引擎 HTTP 路径补测试后 engines 已达 95%+，门槛提到 85%。
       thresholds: {
-        'src/engines/**': { lines: 45 },
+        'src/engines/**': { lines: 85 },
         'src/dom/**': { lines: 77 },
         'src/storage/**': { lines: 97 },
         'src/hotkeys/**': { lines: 15 },
