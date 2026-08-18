@@ -75,6 +75,19 @@ describe('gemini HTTP 路径', () => {
     expect(body.contents[0].parts[0].text).not.toContain('源语言');
   });
 
+  test('pre 多行文本换行被归一化，不撑破编号结构（#160）', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('k');
+    const fetchMock = vi.fn().mockResolvedValue(okResp('1. 你好'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { gemini } = await import('~/src/engines/gemini');
+    await gemini.translate({ texts: ['line1\nline2'], from: 'auto', to: 'zh' });
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.contents[0].parts[0].text).toContain('1. line1 line2');
+    expect(body.contents[0].parts[0].text).not.toContain('\nline');
+  });
+
   test('400 / 403 → EngineError（retryable=false，key 无效）', async () => {
     const { getKey } = await import('~/src/storage/keys');
     vi.mocked(getKey).mockResolvedValue('bad');
