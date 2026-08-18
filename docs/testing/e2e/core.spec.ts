@@ -621,6 +621,138 @@ test.describe('Fixture: pre-blocks', () => {
   });
 });
 
+// ================================================================
+// #157：还原 vs 在飞翻译竞态
+// ================================================================
+
+test.describe('还原 vs 在飞翻译（#157）', () => {
+  // 等在飞/排队请求全部结算（并发闸门 6 路 × 800ms，30 条最多约 5s 排空）。
+  // 还原只能中止未发出的请求 —— 已入队请求仍会走完，须等其结算再断言。
+  const waitDrained = (page: import('@playwright/test').Page, served: () => Promise<number>) =>
+    expect
+      .poll(async () => {
+        const s1 = await served();
+        await page.waitForTimeout(1200);
+        return (await served()) === s1;
+      }, { timeout: 20_000 })
+      .toBe(true);
+
+  test('@core TC-E2E-51: 部分批次已渲染时还原 —— 球回 idle、无错误 toast、无自动补翻', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    // 800ms 慢引擎制造在飞窗口：首批渲染后、次批仍在飞时还原
+    await mockGoogle({ delayMs: 800 });
+    await gotoFixture('basic');
+
+    const ball = await waitForBall(page);
+    const served = () =>
+      serviceWorker.evaluate(() => (self as any).getE2EMockStats().totalServed);
+    const errorToast = page.locator('#pt-host-toast .pt-toast[data-kind="error"]');
+
+    // 追加 20 段 → 30 单元 → 2 批（15/批），批间天然错峰
+    await page.evaluate(() => {
+      for (let i = 1; i <= 20; i++) {
+        const p = document.createElement('p');
+        p.textContent = `In-flight paragraph ${i} for restore race.`;
+        document.body.appendChild(p);
+      }
+    });
+
+    await ball.click();
+    await expect(ball).toHaveAttribute('data-state', 'loading');
+
+    // 等首批渲染（hasTranslated=true），次批仍在飞
+    await expect(page.locator('[data-pt="done"]').first()).toBeVisible({ timeout: 10_000 });
+
+    // 快捷键还原（悬浮球 loading 屏蔽点击，快捷键不设防 —— #157 场景）
+    await page.keyboard.press(
+      process.platform === 'darwin' ? 'Meta+Shift+Y' : 'Control+Shift+Y',
+    );
+
+    // 球回 idle 而非 done/error；页面全部还原
+    await expect(ball).toHaveAttribute('data-state', 'idle', { timeout: 10_000 });
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0, { timeout: 10_000 });
+
+    // 等所有在飞批次结算，确认无“所有引擎均失败”错误 toast
+    await waitDrained(page, served);
+    await expect(errorToast).toHaveCount(0);
+
+    // 还原后不启动 observer：新增段落不被自动补翻（无新请求、无译文）
+    const before = await served();
+    await page.evaluate(() => {
+      const p = document.createElement('p');
+      p.textContent = 'Appended after restore — must not auto-translate.';
+      document.body.appendChild(p);
+    });
+    await page.waitForTimeout(2500);
+    expect(await served()).toBe(before);
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0);
+  });
+
+  test('@core TC-E2E-52: 增量补翻在飞时还原（全批中止）—— 不误报引擎失败', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('basic');
+
+    const ball = await waitForBall(page);
+    const errorToast = page.locator('#pt-host-toast .pt-toast[data-kind="error"]');
+    const served = () =>
+      serviceWorker.evaluate(() => (self as any).getE2EMockStats().totalServed);
+
+    // 完整翻译 → observer 已启动
+    await translateAndWait(page);
+    await expect(ball).toHaveAttribute('data-state', 'done');
+
+    // 换成慢引擎，追加 20 段 → 增量补翻在飞（约 300ms 防抖 + 800ms 响应）
+    await mockGoogle({ delayMs: 800 });
+    const baseline = await served();
+    await page.evaluate(() => {
+      for (let i = 1; i <= 20; i++) {
+        const p = document.createElement('p');
+        p.textContent = `Incremental paragraph ${i} for restore race.`;
+        document.body.appendChild(p);
+      }
+    });
+    // 等增量请求真正发出（在飞窗口），再触发还原
+    await expect
+      .poll(async () => await served(), { timeout: 10_000 })
+      .toBeGreaterThan(baseline);
+
+    // 增量批次在飞时还原（球 done 可点击）
+    await ball.click();
+    await expect(ball).toHaveAttribute('data-state', 'idle', { timeout: 10_000 });
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0, { timeout: 10_000 });
+
+    // 等在飞/排队批次结算（#157 前：全批中止 → 结算瞬间弹「所有引擎均失败」
+    // 并停留 3s —— toHaveCount(0) 会等 toast 自动过期而漏检，须持续采样）
+    await waitDrained(page, served);
+    let sawErrorToast = false;
+    const toastEnd = Date.now() + 3500;
+    while (Date.now() < toastEnd) {
+      if ((await errorToast.count()) > 0) {
+        sawErrorToast = true;
+        break;
+      }
+      await page.waitForTimeout(250);
+    }
+    expect(sawErrorToast).toBe(false);
+
+    // observer 已停：追加内容不再触发新请求
+    const settled = await served();
+    await page.evaluate(() => {
+      const p = document.createElement('p');
+      p.textContent = 'Appended after restore — must not auto-translate.';
+      document.body.appendChild(p);
+    });
+    await page.waitForTimeout(2500);
+    expect(await served()).toBe(settled);
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0);
+  });
+});
+
 test.describe('Fixture: rtl', () => {
   test('@core TC-E2E-28: RTL 页面正常加载', async ({
     page, mockGoogle, seedSettings, gotoFixture,

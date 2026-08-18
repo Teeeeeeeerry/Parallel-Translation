@@ -135,4 +135,25 @@ describe('attemptBatchWithRetry — 中止（还原 / 全局短路）', () => {
     if (!result.ok) expect(result.aborted).toBe(true);
     expect(send).toHaveBeenCalledTimes(1);
   });
+
+  test('重试预算耗尽后的最后一次失败也查中止（#157 边界）', async () => {
+    // 还原恰在「最后一次尝试失败」与「返回」之间发生：shouldAbort
+    // 前 BATCH_RETRY_LIMIT+1 次（每次尝试的前/后检查）都返回 false，
+    // 最后一次失败后才变 true —— 必须报 aborted 而不是 failed
+    const send = vi.fn(async () => ({ ok: false, error: '引擎失败' }));
+    let calls = 0;
+    const result = await attemptBatchWithRetry(send, {
+      sleep: noopSleep,
+      // 每次尝试有前/后两次检查：(LIMIT+1) 次尝试共 6 次检查全放行，
+      // 第 7 次（预算耗尽后的最终返回检查）才命中 —— 证明该边界
+      shouldAbort: () => ++calls > (BATCH_RETRY_LIMIT + 1) * 2,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.aborted).toBe(true);
+      expect(result.invalidated).toBe(false);
+    }
+    expect(send).toHaveBeenCalledTimes(BATCH_RETRY_LIMIT + 1);
+  });
 });
