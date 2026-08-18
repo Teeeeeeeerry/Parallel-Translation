@@ -27,6 +27,7 @@ import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
 import { translateViaBackground } from '~/src/runtime/messaging';
+import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import { detectOS } from '~/src/hotkeys/platform';
 import {
   settingsReady,
@@ -137,9 +138,7 @@ export default defineContentScript({
     // 用户在第一屏译文出现前不再需要等待全页最慢段。
     const FULL_PAGE_BATCH_SIZE = 15;
 
-    // #91: 批次级引擎失败有限重试（见 doTranslate 内 attemptBatch）。
-    const BATCH_RETRY_LIMIT = 2;
-    const BATCH_RETRY_DELAYS_MS = [1000, 3000];
+    // #91: 批次级引擎失败有限重试（见 src/runtime/batch-retry.ts）。
     /** 还原纪元：doRestore 递增，在飞翻译据此放弃重试与渲染。 */
     const translateEpoch = { value: 0 };
     const sleep = (ms: number) =>
@@ -212,68 +211,64 @@ export default defineContentScript({
       // 不可恢复的失败原因（如扩展上下文失效）—— 全失败时优先展示，
       // 而不是泛化的“所有引擎均失败”
       let fatalError: string | null = null;
-
-      // #91: 批次级引擎失败有限重试。传输层失败由 translateViaBackground
-      // 内部重试（重新 ping + 有界退避），这里只处理引擎级失败（{ok:false}）
-      // —— 修复前增量翻译是一次性的：瞬时故障（CI 中 SW 冷启动/实例替换）
-      // 后新内容永久漏翻，正是 #91 的失败签名。初始翻译与增量翻译共用此
-      // 路径，部分批次失败（多批并发）与全部失败（单批）统一自愈。
-      // 文本在批次切分时捕获一次，重试复用同一份 —— 不会因 DOM 已变
-      // 而重新采集到译文本身。
+      // #111: 上下文失效全局短路 —— 任一批判失效后，其余批次不再发起新尝试
+      let invalidated = false;
       const epochAtStart = translateEpoch.value;
+
       async function attemptBatch(
         batch: (typeof batches)[number],
       ): Promise<{ rendered: number; rejected: number; failed: boolean }> {
+        // 重试策略（#91 有界重试 / #111 失效立即失败）集中在
+        // batch-retry.ts，此处只负责渲染与全局短路标记。
+        const result = await attemptBatchWithRetry(
+          () =>
+            translateViaBackground({
+              texts: batch.texts,
+              from: ns.from,
+              to: ns.to,
+            }),
+          {
+            sleep,
+            // 还原（纪元递增）或他批已判失效 → 放弃本次尝试与重试
+            shouldAbort: () =>
+              invalidated || translateEpoch.value !== epochAtStart,
+          },
+        );
+        if (!result.ok) {
+          if (result.invalidated) {
+            // 扩展上下文失效（重载/更新）不可恢复 —— 记录给全失败
+            // 分支优先展示，并置全局短路，其余批次与重试全部跳过
+            invalidated = true;
+            fatalError = result.error;
+          }
+          if (!result.aborted) {
+            console.error('[PT] 批次翻译失败:', result.error);
+          }
+          return { rendered: 0, rejected: 0, failed: true };
+        }
         let rendered = 0;
         let rejected = 0;
-        let lastError = '未知错误';
-        for (let attempt = 0; ; attempt++) {
-          // #89: SW 未就绪时消息会被丢弃 —— 经 translateViaBackground
-          // 先 ping 确认通道就绪，传输层失败自动重试。
-          const resp = await translateViaBackground({
-            texts: batch.texts,
-            from: ns.from,
-            to: ns.to,
-          });
-          // 已还原（doRestore 递增纪元）—— 放弃渲染，不再重试
-          if (translateEpoch.value !== epochAtStart) {
-            return { rendered, rejected, failed: true };
-          }
-          if (resp?.ok) {
-            const translations: string[] = resp.data.translations;
-            for (let i = 0; i < batch.targets.length; i++) {
-              try {
-                // #58：将占位符替换回原文（用户名等标识符不翻译但保留）
-                const restored = restorePreserves(
-                  translations[i]!,
-                  batch.preserves[i]!,
-                  batch.rawTexts[i]!,
-                );
-                if (render(batch.targets[i]!, restored, 'page')) {
-                  rendered++;
-                } else {
-                  rejected++;
-                }
-              } catch (e) {
-                throw new Error(
-                  `[render idx=${i}] ${e instanceof Error ? e.message : String(e)}`,
-                );
-              }
+        const translations = result.data.translations;
+        for (let i = 0; i < batch.targets.length; i++) {
+          try {
+            // #58：将占位符替换回原文（用户名等标识符不翻译但保留）
+            const restored = restorePreserves(
+              translations[i]!,
+              batch.preserves[i]!,
+              batch.rawTexts[i]!,
+            );
+            if (render(batch.targets[i]!, restored, 'page')) {
+              rendered++;
+            } else {
+              rejected++;
             }
-            return { rendered, rejected, failed: false };
-          }
-          lastError = resp?.error ?? '未知错误';
-          if (attempt >= BATCH_RETRY_LIMIT) break;
-          await sleep(BATCH_RETRY_DELAYS_MS[attempt]!);
-          // 睡眠期间被还原 —— 放弃重试
-          if (translateEpoch.value !== epochAtStart) {
-            return { rendered, rejected, failed: true };
+          } catch (e) {
+            throw new Error(
+              `[render idx=${i}] ${e instanceof Error ? e.message : String(e)}`,
+            );
           }
         }
-        console.error('[PT] 批次翻译失败:', lastError);
-        // 扩展上下文失效（重载/更新）不可恢复 —— 记录给全失败分支展示
-        if (lastError.includes('已失效')) fatalError = lastError;
-        return { rendered, rejected, failed: true };
+        return { rendered, rejected, failed: false };
       }
 
       // 所有批次并发发送，每批返回即渲染。

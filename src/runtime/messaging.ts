@@ -30,7 +30,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const CONTEXT_INVALIDATED_MSG =
+/** 上下文失效错误文案。batch-retry.ts 据其短路批次重试（#111）。 */
+export const CONTEXT_INVALIDATED_MSG =
   '[PT] 扩展上下文已失效（扩展已更新或重载），请刷新页面后重试';
 
 /** 不可恢复的通道错误 —— 重试永远无意义，立即失败并提示用户 */
