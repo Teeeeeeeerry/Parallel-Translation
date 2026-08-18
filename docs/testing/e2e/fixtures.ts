@@ -78,7 +78,7 @@ export const test = base.extend<
 
       // 每次启动前清空 profile：testId 跨运行稳定，上次运行留下的
       // profile 里缓存着旧版 service worker 脚本 —— Chrome 会直接
-      // 复用旧脚本，扩展改动在本地迭代时「假失败」（SW 里查不到新
+      // 复用旧脚本，扩展改动在本地迭代时“假失败”（SW 里查不到新
       // 加的全局函数）。清空保证每个用例都从干净的扩展状态出发。
       fs.rmSync(userDataDir, { recursive: true, force: true });
 
@@ -117,7 +117,7 @@ export const test = base.extend<
   // ── Mock Google Translate ──
   // #89: 在 SW 内 stub fetch（引擎运行处），而不是 context.route ——
   // CDP 对 SW 发起的请求拦截不可靠：部分请求绕过时，本地恰好直连真实
-  // Google 而「假绿」，CI 无外网则必失败。SW 侧 stub 完全确定性。
+  // Google 而“假绿”，CI 无外网则必失败。SW 侧 stub 完全确定性。
   //
   // #90: 描述符经 applyE2EMock 写入 chrome.storage.local 并立即安装。
   // SW 实例一旦被 Chrome 替换，实例内存里的 stub 会消失 —— 翻译路由

@@ -5,7 +5,7 @@
 // 保留原始渲染逐字节不变，让现有 collect → translate → render 管道零改动复用。
 //
 // GitHub 对 RST README 的 .plain > pre 渲染会插入 autolink <a>。
-// 早退条件「pre.children.length > 0」把这类 pre 整棵拒切 —— 全文远超
+// 早退条件“pre.children.length > 0”把这类 pre 整棵拒切 —— 全文远超
 // MAX_TEXT / MAX_HTML，采集 0 单元（翻译静默失败）。改为仅当存在
 // 块级子元素才拒切，内联子元素随文本流切分保留。
 

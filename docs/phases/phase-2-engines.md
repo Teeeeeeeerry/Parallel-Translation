@@ -264,8 +264,8 @@ export function collectSimple(root: ParentNode = document): Element[] {
 
 ## DoD 验收标准
 
-- [ ] Wikipedia 英文页，popup 中点「翻译本页」，段落下方出现中文译文
-- [ ] 再次点击「翻译本页」，译文消失（还原原文）
+- [ ] Wikipedia 英文页，popup 中点“翻译本页”，段落下方出现中文译文
+- [ ] 再次点击“翻译本页”，译文消失（还原原文）
 - [ ] 引擎优先级设为 `['bing-edge', 'google-web']` 后重新翻译，走 Bing
 - [ ] 屏蔽 `translate.googleapis.com` 后翻译仍成功（自动切 Bing），用户侧无感知
 - [ ] 两个引擎均不可用时，界面给出可读的错误提示，而非静默失败
@@ -282,7 +282,7 @@ pnpm dev
 **基础链路**：打开 `https://en.wikipedia.org/wiki/Translation` → 点工具栏图标 → 段落下方应出现中文译文。
 
 **故障切换**：
-1. F12 → Network 面板 → 右键 `translate.googleapis.com` 的任一请求 → 「Block request domain」
+1. F12 → Network 面板 → 右键 `translate.googleapis.com` 的任一请求 → “Block request domain”
 2. 刷新页面，重新翻译
 3. 预期：翻译照常完成，Network 中出现 `edge.microsoft.com/translate/auth` 与 `api-edge.cognitive.microsofttranslator.com` 请求
 

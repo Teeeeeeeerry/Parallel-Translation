@@ -37,7 +37,7 @@
   "secEnginesDesc": { "message": "拖曳調整引擎優先順序（由上而下即故障切換順序），為 BYOK 引擎設定 API key。" },
   "cardPriority": { "message": "優先順序（拖曳排序）" },
   "cardDisabled": { "message": "未啟用的引擎" },
-  "cardDisabledDesc": { "message": "點「啟用」將其加入優先順序清單末端。BYOK 引擎需先填入 API key。" },
+  "cardDisabledDesc": { "message": "點“啟用”將其加入優先順序清單末端。BYOK 引擎需先填入 API key。" },
   "cardDisabledEmpty": { "message": "所有引擎均已啟用。" },
   "btnEnable": { "message": "啟用" },
   "btnDisable": { "message": "停用" },
@@ -98,7 +98,7 @@
   "actionToggleExtension": { "message": "擴充功能總開關" },
   "conflictReserved": { "message": "該組合被瀏覽器占用，擴充功能無法接收" },
   "conflictDuplicate": {
-    "message": "與「$ACTION$」重複",
+    "message": "與“$ACTION$”重複",
     "placeholders": { "action": { "content": "$1" } }
   },
   "needModifier": { "message": "請使用帶修飾鍵的組合（如 ⌘+Shift+Y）" },
@@ -170,11 +170,11 @@
   "welcomeTargetLangDesc": { "message": "翻譯結果將以此語言顯示，可依需求修改：" },
   "welcomeInteractions": { "message": "互動方式" },
   "welcomeBall": { "message": "浮動球" },
-  "welcomeBallDesc": { "message": "頁面右側的浮動按鈕「譯」，點擊即可翻譯整頁" },
+  "welcomeBallDesc": { "message": "頁面右側的浮動按鈕“譯”，點擊即可翻譯整頁" },
   "welcomeParaBtn": { "message": "逐段翻譯" },
-  "welcomeParaBtnDesc": { "message": "滑鼠停留在段落上時出現「譯」按鈕，點擊翻譯該段落" },
+  "welcomeParaBtnDesc": { "message": "滑鼠停留在段落上時出現“譯”按鈕，點擊翻譯該段落" },
   "welcomeSelection": { "message": "選取文字與右鍵翻譯" },
-  "welcomeSelectionDesc": { "message": "選取文字後按右鍵，點擊「翻譯所選文字」即可翻譯選取內容" },
+  "welcomeSelectionDesc": { "message": "選取文字後按右鍵，點擊“翻譯所選文字”即可翻譯選取內容" },
   "welcomeOpenSettings": { "message": "開啟完整設定" },
   "welcomeClose": { "message": "開始使用" }
 }

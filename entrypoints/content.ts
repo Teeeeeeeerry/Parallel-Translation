@@ -210,7 +210,7 @@ export default defineContentScript({
       let renderRejected = 0;
       let renderSucceeded = 0;
       // 不可恢复的失败原因（如扩展上下文失效）—— 全失败时优先展示，
-      // 而不是泛化的「所有引擎均失败」
+      // 而不是泛化的“所有引擎均失败”
       let fatalError: string | null = null;
 
       // #91: 批次级引擎失败有限重试。传输层失败由 translateViaBackground
@@ -305,7 +305,7 @@ export default defineContentScript({
       }
 
       // #49：引擎返回了结果，但全被 render() 拒绝（纵深防御命中），
-      // 状态不应是 'translated'，悬浮球不应点亮成「已翻译」
+      // 状态不应是 'translated'，悬浮球不应点亮成“已翻译”
       if (renderSucceeded === 0) {
         if (isMainFrame)
           toast(tf('toastAllRejected', '所有段落均含图片/按钮，无法翻译'), 'error');
@@ -357,7 +357,7 @@ export default defineContentScript({
      * 页面上是否存在已翻译段落（带 shadow 穿透，短路返回）。
      * 翻译态以真实 DOM 为准而不是布尔标志：单段翻译（translateOne）与
      * observer 增量补翻都会落 data-pt="done"，只有整页翻译会记布尔，
-     * 仅查标志会把「页面上已有译文」误判成「没翻过」，toggle 走错分支。
+     * 仅查标志会把“页面上已有译文”误判成“没翻过”，toggle 走错分支。
      */
     function hasTranslated(): boolean {
       const walk = (root: ParentNode): boolean => {
@@ -375,7 +375,7 @@ export default defineContentScript({
      * 翻译 / 还原的单一入口 —— 悬浮球、快捷键、popup 三条路径共用。
      *
      * 翻译态（DOM 上是否存在译文 + observer）是整个 frame 共享的一份
-     * 状态，任何入口各自记一份都会导致「按了没反应」或「重复翻一遍」。
+     * 状态，任何入口各自记一份都会导致“按了没反应”或“重复翻一遍”。
      * 悬浮球的视觉由这里通过 setBallState 单向推送。
      */
     async function togglePage(): Promise<string> {

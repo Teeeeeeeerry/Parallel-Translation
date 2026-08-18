@@ -128,7 +128,7 @@ function firstOutputDir(): string | null {
   const dirs = fs
     .readdirSync(OUTPUT_DIR)
     // 排除点目录：E2E 运行残留的 .playwright-profiles 不是浏览器构建产物，
-    // 且按字母序排在 chrome-mv3 之前，会劫持「第一个产物目录」
+    // 且按字母序排在 chrome-mv3 之前，会劫持“第一个产物目录”
     .filter(
       (d) =>
         !d.startsWith('.') &&
