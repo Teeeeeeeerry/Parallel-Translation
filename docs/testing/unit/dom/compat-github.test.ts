@@ -17,7 +17,7 @@
  * 整页采集 0 个翻译单元 —— 翻译静默失败（[data-pt="done"] 永不出现）。
  */
 import { describe, test, expect } from 'vitest';
-import { applyCompat } from '~/src/dom/compat';
+import { applyCompat, shouldPreserveText } from '~/src/dom/compat';
 
 function el(html: string): Element {
   const div = document.createElement('div');
@@ -63,5 +63,39 @@ describe('applyCompat（github.com，#93 回归）', () => {
     const p = el('<p>Run <code>pnpm build</code> first.</p>');
     expect(() => applyCompat(p)).not.toThrow();
     expect(applyCompat(p)).toBeNull();
+  });
+});
+
+// ---- shouldPreserveText（github.com，#114 补覆盖） ----
+
+describe('shouldPreserveText（github.com）', () => {
+  test('a.user-mention（评论 @mention）→ 保留用户名', () => {
+    const a = el('<a class="user-mention">@torvalds</a>');
+    expect(shouldPreserveText(a)).toBe('@torvalds');
+  });
+
+  test('[data-hovercard-url^="/users/"] → 保留用户名', () => {
+    const a = el('<a data-hovercard-url="/users/torvalds">torvalds</a>');
+    expect(shouldPreserveText(a)).toBe('torvalds');
+  });
+
+  test('[rel="author"] → 保留作者名', () => {
+    const a = el('<a rel="author">Linus Torvalds</a>');
+    expect(shouldPreserveText(a)).toBe('Linus Torvalds');
+  });
+
+  test('[itemprop="author"] → 保留作者名', () => {
+    const a = el('<a itemprop="author">octocat</a>');
+    expect(shouldPreserveText(a)).toBe('octocat');
+  });
+
+  test('普通链接 → null（不保留）', () => {
+    const a = el('<a href="https://github.com/foo/bar">foo/bar</a>');
+    expect(shouldPreserveText(a)).toBeNull();
+  });
+
+  test('空文本链接 → null', () => {
+    const a = el('<a class="user-mention">  </a>');
+    expect(shouldPreserveText(a)).toBeNull();
   });
 });
