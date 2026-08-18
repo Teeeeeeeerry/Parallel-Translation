@@ -9,15 +9,8 @@
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
-import { test, expect, fixtureFileUrl } from './fixtures';
+import { test, expect, fixtureFileUrl, waitForBall } from './fixtures';
 import type { Page, Worker } from '@playwright/test';
-
-// ── 辅助：等待扩展注入（悬浮球出现 = content script 已运行）──
-async function waitForBall(page: Page) {
-  const ball = page.locator('#pt-host-ball .pt-ball');
-  await expect(ball).toBeVisible({ timeout: 60_000 });
-  return ball;
-}
 
 // ── 辅助：在 SW 内 stub Bing 两个端点（与 core.spec.ts TC-E2E-16 同法）──
 async function stubBing(sw: Worker, prefix = '[BING] ') {

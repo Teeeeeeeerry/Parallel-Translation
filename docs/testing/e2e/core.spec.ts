@@ -6,14 +6,7 @@
  *
  * 翻译端点由 mockGoogle 拦截，完全确定性，不依赖外网。
  */
-import { test, expect } from './fixtures';
-
-// ── 辅助：等待扩展注入（悬浮球出现 = content script 已运行）──
-async function waitForBall(page: import('@playwright/test').Page) {
-  const ball = page.locator('#pt-host-ball .pt-ball');
-  await expect(ball).toBeVisible({ timeout: 60_000 });
-  return ball;
-}
+import { test, expect, waitForBall } from './fixtures';
 
 // ── 辅助：触发翻译并等待完成 ──
 async function translateAndWait(page: import('@playwright/test').Page) {

@@ -28,6 +28,7 @@ import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
 import { translateViaBackground } from '~/src/runtime/messaging';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
+import { sleep } from '~/src/runtime/sleep';
 import { detectOS } from '~/src/hotkeys/platform';
 import {
   settingsReady,
@@ -148,8 +149,6 @@ export default defineContentScript({
     // #91: 批次级引擎失败有限重试（见 src/runtime/batch-retry.ts）。
     /** 还原纪元：doRestore 递增，在飞翻译据此放弃重试与渲染。 */
     const translateEpoch = { value: 0 };
-    const sleep = (ms: number) =>
-      new Promise<void>((resolve) => self.setTimeout(resolve, ms));
 
     async function doTranslate(
       elements?: Element[],

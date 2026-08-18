@@ -52,6 +52,19 @@ export function fixtureFileUrl(name: FixtureName): string {
   return 'file://' + fileURLToPath(new URL(`./fixtures/${name}.html`, import.meta.url));
 }
 
+/** 悬浮球定位器（#136：与 #124 getBoundingClientRect 同思路收敛到夹具层）。 */
+export const BALL_LOCATOR = '#pt-host-ball .pt-ball';
+
+/** 等待扩展注入：悬浮球出现 = content script 已运行（core/extended/real-sites 共用）。 */
+export async function waitForBall(
+  page: Page,
+  timeout = 60_000,
+): Promise<import('@playwright/test').Locator> {
+  const ball = page.locator(BALL_LOCATOR);
+  await expect(ball).toBeVisible({ timeout });
+  return ball;
+}
+
 export const test = base.extend<
   {
     serviceWorker: Worker;
