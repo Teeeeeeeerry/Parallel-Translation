@@ -225,7 +225,12 @@ export default defineContentScript({
 
       async function attemptBatch(
         batch: (typeof batches)[number],
-      ): Promise<{ rendered: number; rejected: number; failed: boolean }> {
+      ): Promise<{
+        rendered: number;
+        rejected: number;
+        failed: boolean;
+        aborted: boolean;
+      }> {
         // 重试策略（#91 有界重试 / #111 失效立即失败）集中在
         // batch-retry.ts，此处只负责渲染与全局短路标记。
         const result = await attemptBatchWithRetry(
@@ -252,7 +257,18 @@ export default defineContentScript({
           if (!result.aborted) {
             console.error('[PT] 批次翻译失败:', result.error);
           }
-          return { rendered: 0, rejected: 0, failed: true };
+          return {
+            rendered: 0,
+            rejected: 0,
+            // #157: 中止（还原）与失败分开记账 —— 中止不算失败
+            failed: !result.aborted,
+            aborted: result.aborted,
+          };
+        }
+        // #157: 本批在飞期间用户已还原（纪元递增）—— 放弃渲染，
+        // 否则还原后会把内容翻回来（#91 的渲染侧补漏）
+        if (translateEpoch.value !== epochAtStart) {
+          return { rendered: 0, rejected: 0, failed: false, aborted: true };
         }
         let rendered = 0;
         let rejected = 0;
@@ -276,7 +292,7 @@ export default defineContentScript({
             );
           }
         }
-        return { rendered, rejected, failed: false };
+        return { rendered, rejected, failed: false, aborted: false };
       }
 
       // 所有批次并发发送，每批返回即渲染。
@@ -284,11 +300,18 @@ export default defineContentScript({
       await Promise.all(
         batches.map(async (batch) => {
           const r = await attemptBatch(batch);
+          // #157: 中止批次不参与成败统计 —— 还原不是引擎失败
+          if (r.aborted) return;
           renderSucceeded += r.rendered;
           renderRejected += r.rejected;
           if (!r.failed) allFailed = false;
         }),
       );
+
+      // #157: 还原发生在翻译进行中 —— 批次被 epoch 中止不是失败：
+      // 不弹“所有引擎均失败”、状态置 aborted（悬浮球回 idle、
+      // 不启动 observer、不置 done）
+      if (translateEpoch.value !== epochAtStart) return 'aborted';
 
       // #49：整页翻译结束后用一条 toast 汇总被拒数量，而不是逐条刷屏
       if (renderRejected > 0 && isMainFrame) {
@@ -415,6 +438,8 @@ export default defineContentScript({
       }
 
       if (isMainFrame) {
+        // #157: 'aborted'（翻译中还原）不置 'done'/'error' —— 页面已还原，
+        // 球回 idle，不弹任何错误 toast
         setBallState(
           status === 'translated'
             ? 'done'

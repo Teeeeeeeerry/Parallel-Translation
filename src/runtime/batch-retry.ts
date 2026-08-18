@@ -77,5 +77,13 @@ export async function attemptBatchWithRetry(
     if (attempt >= BATCH_RETRY_LIMIT) break;
     await sleep(BATCH_RETRY_DELAYS_MS[attempt]!);
   }
-  return { ok: false, invalidated: false, aborted: false, error: lastError };
+  // #157: 最后一次尝试失败后、返回前再查一次中止 —— 还原（纪元递增）
+  // 恰在最后失败与返回之间发生时，也必须报 aborted 而不是 failed，
+  // 否则调用方把它记成真失败（allFailed/错误 toast 误报）
+  return {
+    ok: false,
+    invalidated: false,
+    aborted: opts.shouldAbort?.() ?? false,
+    error: lastError,
+  };
 }
