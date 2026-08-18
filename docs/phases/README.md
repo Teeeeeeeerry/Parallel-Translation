@@ -11,7 +11,7 @@
 | 2 | [phase-2-engines.md](phase-2-engines.md) | 翻译引擎与最短闭环 | 引擎接口、两个免 key 引擎、故障切换、并发闸门 |
 | 3 | [phase-3-dom.md](phase-3-dom.md) | DOM 采集完备化 | shadow 穿透、节点分类、iframe、增量补翻 |
 | 4 | [phase-4-render.md](phase-4-render.md) | 显示模式与译文样式 | 三模式渲染、6 种样式预设、自定义 CSS |
-| 5 | [phase-5-inject-ui.md](phase-5-inject-ui.md) | 注入式 UI | shadow 隔离、悬浮球、段落悬停按钮、状态提示 |
+| 5 | [phase-5-inject-ui.md](phase-5-inject-ui.md) | 注入式 UI | shadow 隔离、悬浮球、逐段翻译、状态提示 |
 | 6 | [phase-6-hotkeys.md](phase-6-hotkeys.md) | 快捷键与划词交互 | 跨平台快捷键四件套、右键菜单、修饰键拖光标 |
 | 7 | [phase-7-options.md](phase-7-options.md) | 设置页完整化与 BYOK | options 全量 UI、三个 BYOK 引擎、i18n |
 | 8 | [phase-8-compat-release.md](phase-8-compat-release.md) | 兼容补丁、多浏览器与上架 | 域名补丁、Edge/Firefox 适配、上架材料 |
