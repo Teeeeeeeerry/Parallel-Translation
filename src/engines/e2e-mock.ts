@@ -46,13 +46,17 @@ let failServed = 0;
 /** 已触发的 failTexts 命中次数（测试断言用，防止 failTexts 失效导致假绿）。 */
 let failTextsServed = 0;
 
+/** 已服务的翻译请求总数（#158：断言增量补翻每单元只发一次请求）。 */
+let totalServed = 0;
+
 /** 测试探针：返回 mock 统计。 */
 export function getE2EMockStats(): {
   failOnceServed: number;
   failServed: number;
   failTextsServed: number;
+  totalServed: number;
 } {
-  return { failOnceServed, failServed, failTextsServed };
+  return { failOnceServed, failServed, failTextsServed, totalServed };
 }
 
 /** mock 包裹层函数：带标记字段以便幂等安装 */
@@ -79,6 +83,7 @@ function installStub(): void {
     }
     const q = new URL(url).searchParams.get('q') ?? '';
     const tl = new URL(url).searchParams.get('tl') ?? '';
+    totalServed++;
     if (cfg.failOnce) {
       // 一次性故障：只活在实例内存里（不持久化）。消费即清除 ——
       // 并发批次消息各自在路由前重读 storage 描述符，若 failOnce
