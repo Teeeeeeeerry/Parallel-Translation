@@ -122,9 +122,30 @@ export function startObserver(
     timer = undefined;
     const batch = pending;
     pending = [];
-    const found = batch.flatMap((n) =>
-      n.nodeType === Node.ELEMENT_NODE ? collect(n, registerHidden) : [],
-    );
+
+    // #158：同批 pending 里祖先+后代并存时只收集「没有祖先也在 pending 里」
+    // 的节点 —— collect 覆盖整棵子树，后代单独再 collect 会重复收集。
+    // parentNode 链跨 shadow 边界时经 host 继续上行，避免漏掉 host 在批内的情况。
+    const pendingSet = new Set(batch);
+    const roots = batch.filter((n) => {
+      if (n.nodeType !== Node.ELEMENT_NODE) return false;
+      let p: Node | null = n.parentNode;
+      while (p) {
+        if (pendingSet.has(p)) return false;
+        p =
+          p.nodeType === Node.DOCUMENT_FRAGMENT_NODE
+            ? (p as ShadowRoot).host ?? null
+            : p.parentNode;
+      }
+      return true;
+    });
+
+    // 兜底去重：compat take、shadow 边界等极端路径下保证每单元只回调一次
+    const found = [
+      ...new Set(
+        roots.flatMap((n) => collect(n as Element, registerHidden)),
+      ),
+    ];
 
     // 新增节点中可能出现新的 shadow host，为其 shadow root 补挂 observer
     for (const n of batch) {
@@ -146,6 +167,10 @@ export function startObserver(
         const el = n as HTMLElement;
         // 忽略自己插入的译文与自己的 UI，否则形成无限循环
         if (el.classList?.contains('pt-trans')) continue;
+        // #158：splitPre 切出的 .pt-chunk 是采集器自己插入的单元 —— 触发切分
+        // 的那次 collect 在同一遍遍历里就会收集到它们，mutation 记录再进
+        // pending 只会让每个块在翻译未完成时被二次请求（系统性翻倍）
+        if (el.classList?.contains('pt-chunk')) continue;
         if (el.dataset?.ptUi === '1') continue;
         pending.push(n);
       }
