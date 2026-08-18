@@ -145,7 +145,7 @@ test.describe('显示模式', () => {
 // ================================================================
 
 test.describe('入口：段落按钮', () => {
-  test('@core TC-E2E-05: 段落悬停 → 按钮浮出 → 点击翻译', async ({
+  test('@core TC-E2E-05: 逐段翻译 → 按钮浮出 → 点击翻译', async ({
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ showParagraphBtn: true });
