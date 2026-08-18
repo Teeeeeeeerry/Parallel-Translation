@@ -386,6 +386,9 @@ test('黑名单站点不发出请求', async ({ page, context }) => {
 });
 ```
 
+站点名单的落地测试已实现于 `e2e/security.spec.ts`（#153）：SEC-04 黑名单命中零请求、SEC-05 白名单未命中零请求（均断言 `getE2EMockStats().totalServed === 0`）、SEC-06 白名单命中正常翻译；域名归一（www./子域/主域）由 `unit/dom/site-filter.test.ts` 覆盖。
+```
+
 **隐私政策一致性**：`privacy-policy.md` 中列出的外发主机，必须与上面 `ALLOWED` 常量完全一致。加一个测试直接解析文档做比对，防止改了代码忘了改政策：
 
 ```typescript

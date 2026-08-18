@@ -20,6 +20,7 @@ import {
 import { startObserver, registerHidden } from '~/src/dom/observer';
 import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
 import { unsplitPre } from '~/src/dom/pre-split';
+import { isSiteBlocked } from '~/src/dom/site-filter';
 import { applyCustomCss } from '~/src/styles/custom';
 import { createBall, setBallState } from '~/src/ui/floating-ball';
 import { createParaBtn } from '~/src/ui/paragraph-btn';
@@ -155,6 +156,8 @@ export default defineContentScript({
     ): Promise<string> {
       const ns = getSettings();
       if (!ns.enabled) return 'disabled';
+      // #153: 站点黑白名单 —— 黑名单命中或白名单未命中 → 整页不发请求
+      if (isSiteBlocked(location.hostname, ns.siteList)) return 'blocked';
 
       let targets: Element[];
       try {
@@ -420,6 +423,9 @@ export default defineContentScript({
               : 'idle',
         );
       }
+      if (status === 'blocked' && isMainFrame) {
+        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
+      }
       return status;
     }
 
@@ -427,6 +433,11 @@ export default defineContentScript({
     async function translateOne(el: Element): Promise<void> {
       const ns = getSettings();
       if (!ns.enabled) return;
+      // #153: 站点名单拦截逐段翻译
+      if (isSiteBlocked(location.hostname, ns.siteList)) {
+        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
+        return;
+      }
 
       // 提级到最近的可翻单元：按钮路径传来的已是精判通过的单元（原样返回）；
       // 快捷键路径拿的是选区起点的 parentElement，可能是 span 等内联元素，
@@ -474,6 +485,11 @@ export default defineContentScript({
       text = normalizeText(text);
       const ns = getSettings();
       if (!ns.enabled) return;
+      // #153: 站点名单拦截划词翻译
+      if (isSiteBlocked(location.hostname, ns.siteList)) {
+        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
+        return;
+      }
 
       const resp = await translateViaBackground({
         texts: [text],
