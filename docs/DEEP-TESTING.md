@@ -467,7 +467,7 @@ describe('translateViaBackground — 失败语义', () => {
 ### 3.1 翻译管道端到端（content → background → router → engine）
 
 ```
-测试文件：src/__tests__/integration/translate-pipeline.test.ts
+测试文件：docs/testing/integration/translate-pipeline.test.ts
 
 场景 1：正常整页翻译
   准备：basic.html fixture，mock Google 返回正确译文
