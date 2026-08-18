@@ -4,6 +4,7 @@
 
 import { getSettings, onSettingsChanged } from '~/src/storage/settings';
 import { createGate } from '~/src/queue/concurrency';
+import { fetchWithTimeout } from './fetch-timeout';
 import { EngineError } from './types';
 import type { TranslateEngine } from './types';
 
@@ -24,7 +25,7 @@ async function fetchOne(
     q: text,
   });
 
-  const resp = await fetch(`${ENDPOINT}?${qs}`);
+  const resp = await fetchWithTimeout('google-web', `${ENDPOINT}?${qs}`);
   if (!resp.ok) {
     throw new EngineError('google-web', true, `HTTP ${resp.status}`);
   }

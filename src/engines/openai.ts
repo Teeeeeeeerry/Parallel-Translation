@@ -5,6 +5,7 @@
 import { getKey } from '~/src/storage/keys';
 import { getSettings } from '~/src/storage/settings';
 import { normalizeText } from '~/src/dom/normalize';
+import { fetchWithTimeout } from './fetch-timeout';
 import { EngineError } from './types';
 import type { TranslateEngine } from './types';
 
@@ -45,7 +46,7 @@ export const openai: TranslateEngine = {
       `将以下编号文本翻译成${to}${from === 'auto' ? '' : `（源语言：${from}）`}。` +
       `严格保持编号与行数一致，只输出译文，不要解释。\n\n${numbered}`;
 
-    const resp = await fetch(DEFAULT_ENDPOINT, {
+    const resp = await fetchWithTimeout('openai', DEFAULT_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

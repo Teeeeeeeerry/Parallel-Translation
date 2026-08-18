@@ -6,9 +6,14 @@
 // 要么 reject "Could not establish connection. Receiving end does not exist."。
 // 直接当作最终失败会让整页翻译静默失败（[data-pt="done"] 永不出现）。
 //
+// #154：sendMessage 在 SW 挂起时永不 settle（响应级超时前的原实现
+// 只 await 不设限），deadline 检查走不到，预算形同虚设。现在每次发送
+// 都套 withTimeout —— 单次最长等 MESSAGE_TIMEOUT_MS（与引擎 fetch
+// 超时对齐），超时视为一次传输层失败进入重试，预算真正封顶总耗时。
+//
 // translateViaBackground 是 content script 三个翻译入口共用的通道：
 // 1. 先 ping（pt:ping）确认 SW 消息通道就绪，有界重试
-// 2. 再发 pt:translate；传输层失败（无响应/连接被拒）有界重试
+// 2. 再发 pt:translate；传输层失败（无响应/连接被拒/超时）有界重试
 // 3. SW 已响应的 {ok:false} 是引擎级失败（router 已做过引擎降级），不重试
 // 4. 预算耗尽返回 {ok:false} + 错误说明，永不抛出 —— 调用方按原约定处理
 
@@ -21,8 +26,13 @@ export type TranslateResult =
 
 /** SW 就绪等待预算（ping 阶段）。覆盖 CI 中 SW 冷启动的常见耗时。 */
 const READY_BUDGET_MS = 10_000;
-/** 翻译消息传输层重试预算。 */
-const SEND_BUDGET_MS = 15_000;
+/**
+ * 翻译消息总预算（含重试）。须 ≥ MESSAGE_TIMEOUT_MS 让单次完整
+ * 引擎往返（30s fetch 超时 + SW 开销）能在预算内完成。
+ */
+const SEND_BUDGET_MS = 45_000;
+/** 单次 sendMessage 响应级超时 —— 与引擎 fetch 超时对齐（#154）。 */
+const MESSAGE_TIMEOUT_MS = 30_000;
 /** 退避起点（毫秒），每次翻倍，上限 2s。 */
 const BACKOFF_INITIAL_MS = 250;
 const BACKOFF_MAX_MS = 2000;
@@ -58,7 +68,30 @@ function isContextInvalidated(): boolean {
 }
 
 /**
- * 有界重试发送：只要收不到任何响应（undefined / 连接被拒），
+ * 响应级超时包装（#154）：ms 内未 settle 即拒绝。
+ * 放弃方（sendMessage）的后续 settle 由内部 then/catch 消化，无未处理拒绝。
+ */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`响应超时（${ms}ms）`)),
+      ms,
+    );
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
+/**
+ * 有界重试发送：只要收不到任何响应（undefined / 连接被拒 / 超时），
  * 就以指数退避重发，直到预算耗尽。收到响应（无论内容）即返回。
  * 预算耗尽时抛出最后一次失败原因。
  */
@@ -76,13 +109,21 @@ async function sendWithTransportRetry(
       throw new ContextInvalidatedError();
     }
 
+    // 单次最长等待 = 剩余预算与响应级超时的较小者（#154）
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    const attemptTimeout = Math.min(remaining, MESSAGE_TIMEOUT_MS);
+
     let resp: unknown;
     try {
-      resp = await chrome.runtime.sendMessage(msg);
+      resp = await withTimeout(
+        chrome.runtime.sendMessage(msg),
+        attemptTimeout,
+      );
     } catch (e) {
       // 类型化判定（#139）：sendMessage 抛错时再查一次上下文是否已失效 ——
       // 失效是结构化状态（chrome.runtime.id 为 null），不依赖错误文案。
-      // 上下文仍有效则视为可重试的传输层错误（如 SW 监听器未注册）。
+      // 上下文仍有效则视为可重试的传输层错误（如 SW 监听器未注册、响应超时）。
       if (isContextInvalidated()) {
         throw new ContextInvalidatedError();
       }

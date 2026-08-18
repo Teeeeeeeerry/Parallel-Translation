@@ -222,12 +222,35 @@ describe('translateViaBackground — 失败语义', () => {
     });
 
     const pending = translateViaBackground(PAYLOAD);
-    await vi.advanceTimersByTimeAsync(20_000);
+    await vi.advanceTimersByTimeAsync(46_000);
     const result = await pending;
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toContain('无响应');
+    }
+  });
+
+  test('translate 永不 settle（SW 挂起）→ 响应级超时中断，预算内有界失败（#154）', async () => {
+    vi.useFakeTimers();
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return { ok: true };
+      // 永不 settle —— 修复前这里会让 deadline 检查永远走不到
+      return new Promise(() => {});
+    });
+
+    const pending = translateViaBackground(PAYLOAD);
+    await vi.advanceTimersByTimeAsync(0);
+    // 首次 translate 在 30s 响应级超时中断（而非无限挂起）
+    await vi.advanceTimersByTimeAsync(30_000);
+    // 预算（45s）耗尽 → 有界返回失败
+    await vi.advanceTimersByTimeAsync(16_000);
+    const result = await pending;
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('响应超时');
     }
   });
 });
