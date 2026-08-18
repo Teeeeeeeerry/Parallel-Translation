@@ -14,6 +14,7 @@
  * 需设为 github.com 页面，@vitest-environment-options 是文件级选项。
  */
 import { describe, test, expect } from 'vitest';
+import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
 
 /**
@@ -55,21 +56,14 @@ describe('collect（github.com RST README 回归）', () => {
     document.body.innerHTML = buildReadmeFragment();
 
     // jsdom 里 getBoundingClientRect 默认全 0 → 全部判不可见。
-    // stub 为可见，模拟真实浏览器。
-    const proto = HTMLElement.prototype as any;
-    const orig = proto.getBoundingClientRect;
-    proto.getBoundingClientRect = function () {
-      return {
-        x: 0, y: 0, width: 100, height: 20,
-        top: 0, right: 100, bottom: 20, left: 0,
-      };
-    };
+    // stub 为可见，模拟真实浏览器（原型级：覆盖 splitPre 新建的 span）。
+    const restore = mockAllBoundingRects();
 
     let units: Element[] = [];
     try {
       units = collect();
     } finally {
-      proto.getBoundingClientRect = orig;
+      restore();
     }
 
     expect(units.length).toBeGreaterThan(0);
@@ -86,19 +80,11 @@ describe('collect（github.com RST README 回归）', () => {
   test('collect 后 autolink <a> 保留在切出的 chunk 内', () => {
     document.body.innerHTML = buildReadmeFragment();
 
-    const proto = HTMLElement.prototype as any;
-    const orig = proto.getBoundingClientRect;
-    proto.getBoundingClientRect = function () {
-      return {
-        x: 0, y: 0, width: 100, height: 20,
-        top: 0, right: 100, bottom: 20, left: 0,
-      };
-    };
-
+    const restore = mockAllBoundingRects();
     try {
       collect();
     } finally {
-      proto.getBoundingClientRect = orig;
+      restore();
     }
 
     const anchors = document.querySelectorAll('div.plain > pre a');
