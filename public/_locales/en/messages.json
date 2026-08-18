@@ -160,6 +160,7 @@
   "toastAllEnginesFail": { "message": "All engines failed" },
   "toastTranslateFail": { "message": "Translation failed" },
   "toastNotTranslatable": { "message": "This area cannot be translated individually" },
+  "toastSiteBlocked": { "message": "Translation is disabled on this site by the site list" },
 
   "welcomeTagline": { "message": "Bilingual web translation, ready out of the box" },
   "welcomeReady": { "message": "Ready to use" },

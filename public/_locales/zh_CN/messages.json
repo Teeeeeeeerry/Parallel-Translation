@@ -160,6 +160,7 @@
   "toastAllEnginesFail": { "message": "所有引擎均失败" },
   "toastTranslateFail": { "message": "翻译失败" },
   "toastNotTranslatable": { "message": "该区域无法单独翻译" },
+  "toastSiteBlocked": { "message": "该站点已在站点名单中被禁用翻译" },
 
   "welcomeTagline": { "message": "对照式网页翻译，开箱即用" },
   "welcomeReady": { "message": "现在就能用" },

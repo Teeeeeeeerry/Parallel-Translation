@@ -1,9 +1,9 @@
 /**
  * E2E 安全验证
  *
- * API key 隔离、导出不含 key、禁用后零请求、XSS 阻止
+ * API key 隔离、导出不含 key、禁用后零请求、XSS 阻止、站点名单零请求
  */
-import { test, expect, fixtureFileUrl } from './fixtures';
+import { test, expect, fixtureFileUrl, waitForBall } from './fixtures';
 
 test.describe('安全验证 @security', () => {
   test('SEC-01: 禁用扩展后零翻译请求', async ({ page }) => {
@@ -50,5 +50,53 @@ test.describe('安全验证 @security', () => {
 
   test('SEC-03: 导出设置不含 API key', async ({ page }) => {
     test.skip(true, '需要扩展环境');
+  });
+
+  test('SEC-04: 黑名单站点不发出翻译请求（#153）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ siteList: { mode: 'blacklist', list: ['localhost'] } });
+    await mockGoogle();
+    await gotoFixture('basic');
+
+    const ball = await waitForBall(page);
+    await ball.click();
+    await page.waitForTimeout(3000);
+
+    // 不渲染译文、悬浮球不点亮、mock 从未被调用
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0);
+    await expect(ball).toHaveAttribute('data-state', 'idle');
+    const stats = await serviceWorker.evaluate(() => (self as any).getE2EMockStats());
+    expect(stats.totalServed).toBe(0);
+  });
+
+  test('SEC-05: 白名单模式下非列表站点不发出翻译请求（#153）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ siteList: { mode: 'whitelist', list: ['example.com'] } });
+    await mockGoogle();
+    await gotoFixture('basic');
+
+    const ball = await waitForBall(page);
+    await ball.click();
+    await page.waitForTimeout(3000);
+
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0);
+    await expect(ball).toHaveAttribute('data-state', 'idle');
+    const stats = await serviceWorker.evaluate(() => (self as any).getE2EMockStats());
+    expect(stats.totalServed).toBe(0);
+  });
+
+  test('SEC-06: 白名单命中站点正常翻译（#153）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ siteList: { mode: 'whitelist', list: ['localhost'] } });
+    await mockGoogle();
+    await gotoFixture('basic');
+
+    const ball = await waitForBall(page);
+    await ball.click();
+    await expect(page.locator('[data-pt="done"]').first()).toBeVisible({ timeout: 30_000 });
+    await expect(ball).toHaveAttribute('data-state', 'done');
   });
 });
