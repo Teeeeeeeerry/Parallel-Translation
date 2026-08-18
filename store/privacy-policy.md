@@ -44,7 +44,7 @@ API 密钥以明文形式存储在 `chrome.storage.local` 中，仅用于向对�
 | 权限 | 用途 |
 |------|-----|
 | `storage` | 保存用户设置、翻译缓存与 API 密钥 |
-| `contextMenus` | 提供右键菜单中的「翻译选中文本」功能 |
+| `contextMenus` | 提供右键菜单中的“翻译选中文本”功能 |
 
 本扩展**不申请 `host_permissions`** —— 不对任何网站持有持续访问权限。
 

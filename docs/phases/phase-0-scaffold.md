@@ -159,12 +159,12 @@ pnpm install
 pnpm dev
 ```
 
-1. 打开 `chrome://extensions/`，开启右上角「开发者模式」
-2. 点「加载已解压的扩展程序」，选择 `.output/chrome-mv3/`（注意选构建产物目录，不是项目根目录；`.output` 是隐藏目录，在选择框内按 `Cmd+Shift+.` 显示）
+1. 打开 `chrome://extensions/`，开启右上角“开发者模式”
+2. 点“加载已解压的扩展程序”，选择 `.output/chrome-mv3/`（注意选构建产物目录，不是项目根目录；`.output` 是隐藏目录，在选择框内按 `Cmd+Shift+.` 显示）
 3. 确认扩展卡片无红色错误提示
 4. 点击工具栏中的扩展图标 → 应弹出设计稿外观的面板
-5. 点面板内「设置」→ 应在新标签页打开 options
-6. 回到 `chrome://extensions/`，点「Service Worker」链接 → DevTools Console 应看到 background 的启动日志
+5. 点面板内“设置”→ 应在新标签页打开 options
+6. 回到 `chrome://extensions/`，点“Service Worker”链接 → DevTools Console 应看到 background 的启动日志
 
 硬编码色值自查：
 

@@ -1,7 +1,7 @@
 // Phase 9 — 提取可翻译文本（跳过 .notranslate 与站点元数据子树）。
 //
 // 单元文本不能直接取 textContent：Google AI 概览的来源角标（chip）是
-// UI 元数据不是正文，混进译文就是「YouTube·Tech +2」这类噪声。规则分两层：
+// UI 元数据不是正文，混进译文就是“YouTube·Tech +2”这类噪声。规则分两层：
 // - .notranslate 类：HTML 标准约定（Google 翻译同样尊重），通用
 // - shouldOmitText()：域名补丁（compat.ts），站点的特定元数据
 // - shouldPreserveText()：#58 占位符机制，用户名等标识符不翻译但保留原文

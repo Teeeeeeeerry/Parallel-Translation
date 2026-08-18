@@ -1,7 +1,7 @@
 /* Phase 7 — Options 页完整样式（设置页 + 分区控件） */
 @import '../../src/styles/tokens.css';
 /* 预设样式必须真的进设置页 —— 预览区靠的就是这份规则，
-   缺了它「实时预览」六个选项长得一模一样。 */
+   缺了它“实时预览”六个选项长得一模一样。 */
 @import '../../src/styles/presets.css';
 
 *,
@@ -363,8 +363,8 @@ body {
   display: block;
 }
 
-/* 「弱化」预设平时 opacity: 0，正文里靠 [data-pt=done]:hover 淡入。
-   预览区没有那个宿主结构，补一条等效规则，否则选中「弱化」看到的是空白，
+/* “弱化”预设平时 opacity: 0，正文里靠 [data-pt=done]:hover 淡入。
+   预览区没有那个宿主结构，补一条等效规则，否则选中“弱化”看到的是空白，
    用户分不清是预设生效了还是预览坏了。 */
 .pt-style-preview.pt-style-dim:hover .pt-trans {
   opacity: 1;

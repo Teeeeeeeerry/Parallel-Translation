@@ -80,7 +80,7 @@ function isGenericInlineBadge(el: Element): boolean {
   const text = el.textContent?.trim() ?? '';
   if (text.length === 0 || text.length > MAX_BADGE_TEXT) return false;
 
-  // 信号 1：以「行首/空白 + +N」结尾（"+3"、" +12"）
+  // 信号 1：以“行首/空白 + +N”结尾（"+3"、" +12"）
   if (COUNTER_RE.test(text)) return true;
 
   // 信号 2：交互角色 + favicon 尺寸图片

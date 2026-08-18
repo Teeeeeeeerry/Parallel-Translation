@@ -40,7 +40,7 @@ const FATAL_CHANNEL_RE = /Extension context invalidated|Cannot read propert/i;
  * 扩展上下文是否已失效。重载 / 更新 / 禁用扩展后，已注入页面的
  * content script 里 chrome.runtime 变为 undefined 且永不恢复 ——
  * 当作 SW 冷启动重试只会空耗 ping + translate 两级预算（25 秒），
- * 最终报出误导性的「消息通道不可用」。
+ * 最终报出误导性的“消息通道不可用”。
  */
 function isContextInvalidated(): boolean {
   try {

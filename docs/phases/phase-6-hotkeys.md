@@ -164,7 +164,7 @@ export function checkConflict(
     return '该组合被浏览器占用，扩展无法接收';
   }
   for (const [action, bound] of Object.entries(hotkeys)) {
-    if (action !== self && bound === combo) return `与「${LABELS[action]}」重复`;
+    if (action !== self && bound === combo) return `与“${LABELS[action]}”重复`;
   }
   return null;
 }
@@ -250,7 +250,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 - [ ] 录制拒绝无修饰键的单键
 - [ ] 在 Mac 设置的快捷键，同步到 Windows 后显示为对应的 Windows 按键
 - [ ] 页面自身绑定了 keydown 的站点（如 Gmail、Notion）上快捷键仍能触发
-- [ ] 选中文本右键 → 出现「翻译所选文本」→ 点击后弹出译文
+- [ ] 选中文本右键 → 出现“翻译所选文本”→ 点击后弹出译文
 - [ ] 按住修饰键拖选文本，松开后自动翻译选区
 - [ ] 不按修饰键正常选中文本，**不会**触发翻译
 
@@ -288,9 +288,9 @@ console.log(fromEvent({ key: 'y', ctrlKey: true, shiftKey: true, metaKey: false,
 | 输入 | 预期 |
 |---|---|
 | `Mod+T` | 警告"该组合被浏览器占用" |
-| 已被其他动作占用的组合 | 警告"与「xxx」重复" |
+| 已被其他动作占用的组合 | 警告"与“xxx”重复" |
 | 单独按 `Y` | 不被接受 |
 
-**右键菜单**：选中一段英文 → 右键 → 应见「翻译所选文本」→ 点击 → 弹出译文。
+**右键菜单**：选中一段英文 → 右键 → 应见“翻译所选文本”→ 点击 → 弹出译文。
 
 **划词拖动**：按住设定的修饰键，拖动选中一段文本，松开 → 自动翻译。不按修饰键重复一次 → 不应触发。

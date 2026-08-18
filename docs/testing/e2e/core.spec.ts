@@ -278,7 +278,7 @@ test.describe('Fixture: infinite', () => {
     await expect(page.locator('[data-pt="done"]')).toHaveCount(initialDone + 3, { timeout: 15_000 });
 
     // 新段译文必须带 mock 前缀 —— 证明翻译路由前自动重装了 mock。
-    // 注：本测试验证「路由前重装」这条 seam（同实例内 stub 丢失即恢复）；
+    // 注：本测试验证“路由前重装”这条 seam（同实例内 stub 丢失即恢复）；
     // 跨实例的 storage 持久由 chrome.storage 保证（真实重启无法在
     // headless 测试中可靠触发，见 #90 调查记录）。
     const newPara = page.locator('#content p').nth(3);
@@ -318,7 +318,7 @@ test.describe('Fixture: spa', () => {
 
     // 武装一次性故障：下一次翻译请求必失败（等效 CI 中 SW 实例替换
     // 后的瞬时引擎故障）。修复前增量翻译是一次性的 —— 失败后
-    // 新内容永久漏翻，与 #91 的「Retry #1/#2」失败签名一致。
+    // 新内容永久漏翻，与 #91 的“Retry #1/#2”失败签名一致。
     await mockGoogle({ failOnce: true, prefix: '[MOCK] ' });
 
     await page.click('a[href="#page2"]');
@@ -476,7 +476,7 @@ test.describe('Fixture: pre-blocks', () => {
 
     await translateAndWait(page);
 
-    // 翻译并发乱序，不能取「第一个 trans」——定位标题 chunk（原文含
+    // 翻译并发乱序，不能取“第一个 trans”——定位标题 chunk（原文含
     // README Title）的译文，它与装饰行的位置关系才是本用例的断言对象。
     const titleChunk = page
       .locator('pre.plain > .pt-chunk')
@@ -504,8 +504,8 @@ test.describe('Fixture: pre-blocks', () => {
     expect(styles.afterContent).toContain('\\a ');
     expect(styles.afterWhiteSpace).toBe('pre');
 
-    // ── 行为：标题译文行与装饰行「============」必须视觉分行
-    // （::after 失效时会粘成同一行「【译】README Title============」）。
+    // ── 行为：标题译文行与装饰行“============”必须视觉分行
+    // （::after 失效时会粘成同一行“【译】README Title============”）。
     // 装饰行是 chunk 之外的 raw 文本节点，用 Range 定位取 y 坐标。
     const rects = await page.evaluate(() => {
       const pre = document.querySelector('pre.plain')!;

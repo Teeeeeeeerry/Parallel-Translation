@@ -4,12 +4,12 @@
 // background 的翻译路由在每次路由前调用 ensureE2EMock 从 storage 读取
 // 描述符并（重新）安装 fetch stub。
 //
-// 背景：若 mock 只做一次「在当前 SW 实例里替换 self.fetch」，实例一旦被
+// 背景：若 mock 只做一次“在当前 SW 实例里替换 self.fetch”，实例一旦被
 // Chrome 替换（崩溃、闲置回收、扩展更新），stub 随实例消失，后续翻译
 // 直连真实 Google —— 本地偶然通过、CI 无外网必失败。#90 的 TC-E2E-22
 // 无限滚动回归正是这一模式：初始翻译命中 mock，增量翻译绕过拦截直连。
 //
-// chrome.storage 是唯一跨实例持久的地方。mock 以「描述符 + 按需安装」
+// chrome.storage 是唯一跨实例持久的地方。mock 以“描述符 + 按需安装”
 // 的形式随 SW 生命周期自愈；线上环境从不写入该键，读取为空直接返回，
 // 无行为变化。
 
@@ -39,7 +39,7 @@ type MockFetch = ((input: any, init?: any) => Promise<Response>) & {
 };
 
 /**
- * 安装 mock 包裹层。以「当前 fetch 是否已是 mock 层」为幂等判据，
+ * 安装 mock 包裹层。以“当前 fetch 是否已是 mock 层”为幂等判据，
  * 而不是模块布尔标志：fetch 被外力还原（SW 实例替换、测试模拟丢失）
  * 之后，下一次 ensureE2EMock 能重新包裹。
  */

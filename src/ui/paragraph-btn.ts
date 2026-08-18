@@ -81,7 +81,7 @@ export function createParaBtn(handlers: ParaBtnHandlers): () => void {
     }
     target = el;
 
-    // 双向切换：已翻译段落浮出「还原」态按钮，否则是「翻译」态。
+    // 双向切换：已翻译段落浮出“还原”态按钮，否则是“翻译”态。
     // 文案与 aria-label 随态切换（走 i18n，不硬编码）。
     const done = el.getAttribute('data-pt') === 'done';
     btn.textContent = done
@@ -229,7 +229,7 @@ function textRects(el: Element): DOMRect[] {
  *
  * 改用文字实际占据的行盒而非元素边框盒定位：块级元素默认撑满容器宽度，
  * `getBoundingClientRect().right` 是容器右边缘，与文字实际排到哪里无关。
- * 列表这类「容器很宽、每行文字很短」的排版下，按钮和它所指的那行字之间
+ * 列表这类“容器很宽、每行文字很短”的排版下，按钮和它所指的那行字之间
  * 会被拉开一大段空白。
  *
  * 行盒取首行（竖直方向保持贴段落顶部的现有行为），单行条目紧贴文字末尾，
