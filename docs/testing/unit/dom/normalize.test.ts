@@ -70,8 +70,27 @@ describe('normalizePreText', () => {
     expect(normalizePreText('a\n\n\nb')).toBe('a\n\n\nb');
   });
 
-  test('行首行尾空白去除', () => {
-    expect(normalizePreText('  * item  \n  * item2  ')).toBe('* item\n* item2');
+  test('行首缩进保留、行尾空白去除（#141）', () => {
+    expect(normalizePreText('  * item  \n  * item2  ')).toBe('  * item\n  * item2');
+  });
+
+  test('嵌套列表缩进保留（#141 决策）', () => {
+    const input = [
+      '* Install the package:',
+      '',
+      '  - Use a virtual environment',
+      '  - Verify the version',
+      '',
+      '* Report a bug:',
+      '',
+      '  - Open an issue',
+      '  - Attach logs',
+    ].join('\n');
+    expect(normalizePreText(input)).toBe(input);
+  });
+
+  test('整块首行缩进同样保留、块尾换行去除（#141）', () => {
+    expect(normalizePreText('  first line\n  second line\n')).toBe('  first line\n  second line');
   });
 
   test('纯空白 → ""', () => {

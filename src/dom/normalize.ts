@@ -18,11 +18,20 @@ export function normalizeText(s: string): string {
  * 硬换行。列表逐行条目（RST 的 * item）是文档结构，normalizeText
  * 会把整个列表折叠成一行 —— 引擎收到无结构文本，译文也回不来行结构。
  * 逐行折叠后引擎按行切句，恰好是列表翻译期望的行为。
+ *
+ * #141：行首缩进必须保留 —— RST 嵌套列表靠缩进表达层级，逐行对照时
+ * 译文列若丢失缩进，行首与原文对不齐、嵌套结构消失。因此只折叠
+ * 行内（缩进之后）的连续空白、去除行尾空白，缩进原样保留；
+ * 整块只去除尾部空白/换行，首行缩进同样保留。
  */
 export function normalizePreText(s: string): string {
   return s
     .split('\n')
-    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .map((line) => {
+      if (line.trim() === '') return '';
+      const indent = /^[ \t]*/.exec(line)?.[0] ?? '';
+      return indent + line.slice(indent.length).replace(/[ \t]+/g, ' ').trimEnd();
+    })
     .join('\n')
-    .trim();
+    .trimEnd();
 }
