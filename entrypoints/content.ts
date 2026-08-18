@@ -38,6 +38,13 @@ import {
 import type { Settings } from '~/src/storage/schema';
 import { tf } from '~/src/i18n';
 
+// pre 判定统一收敛：#117。pre 内单元（.pt-chunk / 纯文本 pre）保留硬换行，
+// pre 外折叠空白；两处采集/渲染路径共用同一判定，避免只改一处导致行为分叉。
+function normalizeForUnit(el: Element, raw: string): string {
+  const normalize = el.closest('pre') ? normalizePreText : normalizeText;
+  return normalize(raw);
+}
+
 export default defineContentScript({
   matches: ['<all_urls>'],
   allFrames: true,
@@ -177,8 +184,7 @@ export default defineContentScript({
           : translatableTextEx(el);
         // pre 内单元（.pt-chunk / 纯文本 pre）保留硬换行：
         // 列表逐行条目是文档结构，折叠成一行后译文也回不来行结构
-        const normalize = el.closest('pre') ? normalizePreText : normalizeText;
-        const text = normalize(rawText);
+        const text = normalizeForUnit(el, rawText);
         return {
           text,
           preserves,
@@ -435,8 +441,7 @@ export default defineContentScript({
       }
 
       const { text: rawText, preserves } = translatableTextEx(unit);
-      const normalize = unit.closest('pre') ? normalizePreText : normalizeText;
-      const text = normalize(rawText);
+      const text = normalizeForUnit(unit, rawText);
       if (!text) return;
 
       const resp = await translateViaBackground({
