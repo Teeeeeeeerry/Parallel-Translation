@@ -3,6 +3,7 @@
 
 import { getKey } from '~/src/storage/keys';
 import { getSettings } from '~/src/storage/settings';
+import { normalizeText } from '~/src/dom/normalize';
 import { EngineError } from './types';
 import { parseNumbered } from './openai';
 import type { TranslateEngine } from './types';
@@ -24,7 +25,11 @@ export const gemini: TranslateEngine = {
     const endpoint =
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-    const numbered = texts.map((t, i) => `${i + 1}. ${t}`).join('\n');
+    // 与 openai 相同（#30）：编号结构靠 \n 分隔，文本自带换行会把编号撑破
+    // 导致 LLM 重编号、parseNumbered 回填错位，拼 prompt 前压一次（#160）。
+    const numbered = texts
+      .map((t, i) => `${i + 1}. ${normalizeText(t)}`)
+      .join('\n');
     const prompt =
       `将以下编号文本翻译成${to}${from === 'auto' ? '' : `（源语言：${from}）`}。` +
       `严格保持编号与行数一致，只输出译文，不要解释。\n\n${numbered}`;
