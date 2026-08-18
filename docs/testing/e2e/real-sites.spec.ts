@@ -7,14 +7,7 @@
  * 翻译端点使用 mockGoogle 拦截，只有站点 DOM 走真实网络。
  * 这些测试标记 @real，通过 --grep "@real" 控制运行时机。
  */
-import { test, expect } from './fixtures';
-
-// ── 辅助 ──
-async function waitForBall(page: import('@playwright/test').Page, timeout = 45_000) {
-  const ball = page.locator('#pt-host-ball .pt-ball');
-  await expect(ball).toBeVisible({ timeout });
-  return ball;
-}
+import { test, expect, waitForBall } from './fixtures';
 
 // ================================================================
 // GitHub

@@ -15,6 +15,7 @@
 // 不匹配错误文案 —— 文案改写不影响短路行为。
 
 import type { TranslateResponse } from '~/src/engines/types';
+import { sleep as defaultSleep } from '~/src/runtime/sleep';
 
 /** #91: 批次级引擎失败最大重试次数。 */
 export const BATCH_RETRY_LIMIT = 2;
@@ -33,7 +34,7 @@ export type BatchRetryResult =
     };
 
 export interface BatchRetryOptions {
-  /** 注入 sleep 以便测试推进虚拟时钟；默认 setTimeout。 */
+  /** 注入 sleep 以便测试推进虚拟时钟（#136）；默认 src/runtime/sleep 共享实现。 */
   sleep?: (ms: number) => Promise<void>;
   /** 每次尝试前后检查；返回 true 则立即中止剩余重试。 */
   shouldAbort?: () => boolean;
@@ -55,9 +56,7 @@ export async function attemptBatchWithRetry(
   }>,
   opts: BatchRetryOptions = {},
 ): Promise<BatchRetryResult> {
-  const sleep =
-    opts.sleep ??
-    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sleep = opts.sleep ?? defaultSleep;
   let lastError = '未知错误';
   for (let attempt = 0; ; attempt++) {
     if (opts.shouldAbort?.()) {

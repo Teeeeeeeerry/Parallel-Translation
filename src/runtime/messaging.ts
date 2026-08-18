@@ -13,6 +13,7 @@
 // 4. 预算耗尽返回 {ok:false} + 错误说明，永不抛出 —— 调用方按原约定处理
 
 import type { TranslateRequest, TranslateResponse } from '~/src/engines/types';
+import { sleep } from '~/src/runtime/sleep';
 
 export type TranslateResult =
   | { ok: true; data: TranslateResponse }
@@ -25,10 +26,6 @@ const SEND_BUDGET_MS = 15_000;
 /** 退避起点（毫秒），每次翻倍，上限 2s。 */
 const BACKOFF_INITIAL_MS = 250;
 const BACKOFF_MAX_MS = 2000;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /** 上下文失效错误文案。 */
 export const CONTEXT_INVALIDATED_MSG =

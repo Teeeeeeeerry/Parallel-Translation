@@ -49,6 +49,15 @@ export const INLINE_SET = new Set([
   'tt', 'big',
 ]);
 
+/**
+ * 代码语义内联标签 —— #136：pre-split 等模块的共享标签词汇。
+ * 这些标签既是 INLINE_SET 成员（行内），又表达代码语义：
+ * 含它们的 pre 被视为代码块而拒绝切分 / 翻译（#64）。
+ */
+export const CODE_SEMANTIC_SET = new Set([
+  'code', 'kbd', 'samp', 'var',
+]);
+
 /** 应被整体跳过的非正文区域选择器（导航、页脚、侧栏、参考文献等） */
 const NON_CONTENT =
   'nav,footer,aside,.reflist,.references,.refbegin,.mw-references-wrap,' +

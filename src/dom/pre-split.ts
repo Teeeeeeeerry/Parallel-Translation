@@ -9,7 +9,7 @@
 // MAX_TEXT / MAX_HTML，采集 0 单元（翻译静默失败）。改为仅当存在
 // 块级子元素才拒切，内联子元素随文本流切分保留。
 
-import { INLINE_SET, MAX_TEXT, isCodeBlockPre } from './classify';
+import { INLINE_SET, MAX_TEXT, CODE_SEMANTIC_SET, isCodeBlockPre } from './classify';
 
 /** 节点流 token：行内文本片段 / 行内元素 / 换行 */
 type Tok =
@@ -84,10 +84,10 @@ export function splitPre(pre: HTMLPreElement): HTMLSpanElement[] | null {
   // 仅纯行内文本子元素（GitHub .plain > pre 的 autolink <a>）可随文本流切分保留。
   // <pre><code> 是经典代码块结构，code 虽在 INLINE_SET（供段落判定用），
   // 但此处必须视为代码语义而拒切，避免纯代码 pre 被翻译。
-  const CODE_SEMANTIC = new Set(['code', 'kbd', 'samp', 'var']);
+  // #136：CODE_SEMANTIC_SET 与 classify 共享，不再局部重定义。
   for (const child of pre.children) {
     const tag = child.tagName.toLowerCase();
-    if (!INLINE_SET.has(tag) || CODE_SEMANTIC.has(tag)) return null;
+    if (!INLINE_SET.has(tag) || CODE_SEMANTIC_SET.has(tag)) return null;
   }
 
   const text = pre.textContent ?? '';
