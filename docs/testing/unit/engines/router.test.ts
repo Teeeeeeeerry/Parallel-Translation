@@ -303,4 +303,46 @@ describe('route', () => {
     const bingReq = mockBingTranslate.mock.calls[0]![0];
     expect(bingReq.texts).toEqual(['World']);
   });
+
+  test('useCache=false 部分失败 → 下一引擎只补失败槽位，不覆盖已成功译文（#120）', async () => {
+    vi.mocked(getSettings).mockReturnValue({
+      enginePriority: ['google-web', 'bing-edge'],
+      useCache: false,
+      enabled: true,
+      from: 'auto',
+      to: 'zh-CN',
+      displayMode: 'bilingual',
+      paraDisplayMode: 'follow',
+      style: 'default',
+      customCss: '',
+      hotkeys: {} as never,
+      siteList: { mode: 'blacklist', list: [] },
+      showFloatingBall: true,
+      showParagraphBtn: true,
+      maxConcurrency: 6,
+      models: {},
+    });
+    // 修复前：非缓存路径不跳过已填充槽位 —— 下一引擎重翻全部并
+    // 覆盖成功译文（TC-E2E-33 暴露）；修复后只补失败槽位
+    mockGoogleTranslate.mockResolvedValue({
+      translations: ['你好', '', '再见'],
+      failedIndices: [1],
+    });
+    mockBingTranslate.mockResolvedValue({
+      translations: ['世界'],
+    });
+
+    const resp = await route({
+      texts: ['Hello', 'World', 'Bye'],
+      from: 'auto',
+      to: 'zh-CN',
+    });
+
+    expect(resp.translations).toEqual(['你好', '世界', '再见']);
+    expect(mockGoogleTranslate).toHaveBeenCalledTimes(1);
+    expect(mockBingTranslate).toHaveBeenCalledTimes(1);
+    // Bing 只收到失败槽位，不得收到全部 3 条
+    const bingReq = mockBingTranslate.mock.calls[0]![0];
+    expect(bingReq.texts).toEqual(['World']);
+  });
 });

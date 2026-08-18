@@ -18,6 +18,18 @@ export interface E2EMockConfig {
   fail?: boolean;
   /** 一次性故障：下一次翻译请求返回 500，随后自动恢复（测试专用）。 */
   failOnce?: boolean;
+  /**
+   * 指定文本的翻译请求返回 500（精确匹配 URL 的 q 参数）。
+   * 用于部分失败用例：成功槽位走正常 mock，命中槽位交给下一引擎（#120）。
+   */
+  failTexts?: string[];
+  /**
+   * 响应中附带目标语言标记 `[tl=<to>]`，用于验证中途切换语言后
+   * 新旧结果不混用（#120 TC-E2E-42）。
+   */
+  echoTargetLang?: boolean;
+  /** 人工响应延迟（毫秒），制造在飞翻译窗口（#120 TC-E2E-42）。 */
+  delayMs?: number;
 }
 
 const STORAGE_KEY = 'pt-e2e-mock';
@@ -28,9 +40,19 @@ let activeCfg: E2EMockConfig | null = null;
 /** 已触发的一次性故障次数（测试断言用，防止 failOnce 失效导致假绿）。 */
 let failOnceServed = 0;
 
+/** 已触发的 fail:true 全量故障次数（测试断言用，防止 fail 失效导致假绿）。 */
+let failServed = 0;
+
+/** 已触发的 failTexts 命中次数（测试断言用，防止 failTexts 失效导致假绿）。 */
+let failTextsServed = 0;
+
 /** 测试探针：返回 mock 统计。 */
-export function getE2EMockStats(): { failOnceServed: number } {
-  return { failOnceServed };
+export function getE2EMockStats(): {
+  failOnceServed: number;
+  failServed: number;
+  failTextsServed: number;
+} {
+  return { failOnceServed, failServed, failTextsServed };
 }
 
 /** mock 包裹层函数：带标记字段以便幂等安装 */
@@ -48,13 +70,16 @@ function installStub(): void {
   if (cur?.__ptMockStubbed) return;
   const realFetch = (cur ?? self.fetch).bind(self);
   const wrapper = (async (input: any, init?: any): Promise<Response> => {
-    if (!activeCfg) return realFetch(input, init);
+    const cfg = activeCfg;
+    if (!cfg) return realFetch(input, init);
     const url =
       typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
     if (!url.startsWith('https://translate.googleapis.com/')) {
       return realFetch(input, init);
     }
-    if (activeCfg.failOnce) {
+    const q = new URL(url).searchParams.get('q') ?? '';
+    const tl = new URL(url).searchParams.get('tl') ?? '';
+    if (cfg.failOnce) {
       // 一次性故障：只活在实例内存里（不持久化）。消费即清除 ——
       // 并发批次消息各自在路由前重读 storage 描述符，若 failOnce
       // 走持久化通道，读到的旧值会重新武装，一个请求变成多个 500。
@@ -62,13 +87,22 @@ function installStub(): void {
       activeCfg = { ...activeCfg, failOnce: false };
       return new Response('Service Unavailable', { status: 500 });
     }
-    if (activeCfg.fail) {
+    if (cfg.fail) {
+      failServed++;
       return new Response('Service Unavailable', { status: 500 });
     }
-    const q = new URL(url).searchParams.get('q') ?? '';
+    // 部分失败：命中 failTexts 的文本请求返回 500，其余正常（#120 TC-E2E-33）
+    if (cfg.failTexts?.includes(q)) {
+      failTextsServed++;
+      return new Response('Service Unavailable', { status: 500 });
+    }
+    if (cfg.delayMs) {
+      await new Promise((resolve) => self.setTimeout(resolve, cfg.delayMs));
+    }
     // 与真实端点同形：data[0] 是分句数组，每项 [0] 为译文。
+    const suffix = cfg.echoTargetLang ? ` [tl=${tl}]` : '';
     const body = JSON.stringify([
-      [[(activeCfg.prefix ?? '【译】') + q, '', null, null, 1]],
+      [[(cfg.prefix ?? '【译】') + q + suffix, '', null, null, 1]],
       null,
       'en',
     ]);

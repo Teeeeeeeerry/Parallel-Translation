@@ -60,6 +60,12 @@ export const test = base.extend<
       prefix?: string;
       /** 一次性故障：下一次翻译请求 500，随后自动恢复（#91） */
       failOnce?: boolean;
+      /** 指定文本的请求 500（精确匹配 q 参数），用于部分失败（#120） */
+      failTexts?: string[];
+      /** 响应附带 [tl=<to>] 标记，验证语言切换（#120） */
+      echoTargetLang?: boolean;
+      /** 人工响应延迟毫秒，制造在飞窗口（#120） */
+      delayMs?: number;
     }) => Promise<void>;
     seedSettings: (patch: Record<string, unknown>) => Promise<void>;
     gotoFixture: (name: FixtureName) => Promise<Page>;
@@ -123,12 +129,32 @@ export const test = base.extend<
   // SW 实例一旦被 Chrome 替换，实例内存里的 stub 会消失 —— 翻译路由
   // 前的 ensureE2EMock 从 storage 自愈重装，增量翻译不再直连真实端点。
   mockGoogle: async ({ serviceWorker }, use) => {
-    await use(async (opts: { fail?: boolean; prefix?: string; failOnce?: boolean } = {}) => {
-      const { fail = false, prefix = '【译】', failOnce = false } = opts;
+    await use(async (opts: {
+      fail?: boolean;
+      prefix?: string;
+      failOnce?: boolean;
+      failTexts?: string[];
+      echoTargetLang?: boolean;
+      delayMs?: number;
+    } = {}) => {
+      const {
+        fail = false,
+        prefix = '【译】',
+        failOnce = false,
+        failTexts,
+        echoTargetLang,
+        delayMs,
+      } = opts;
       await serviceWorker.evaluate(
-        (cfg: { fail: boolean; prefix: string; failOnce: boolean }) =>
-          (self as any).applyE2EMock(cfg),
-        { fail, prefix, failOnce },
+        (cfg: {
+          fail: boolean;
+          prefix: string;
+          failOnce: boolean;
+          failTexts?: string[];
+          echoTargetLang?: boolean;
+          delayMs?: number;
+        }) => (self as any).applyE2EMock(cfg),
+        { fail, prefix, failOnce, failTexts, echoTargetLang, delayMs },
       );
     });
   },
