@@ -65,6 +65,9 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       }
     } else {
       for (let i = 0; i < req.texts.length; i++) {
+        // 必须跳过已填充槽位：上一引擎部分失败后，下一引擎只补
+        // 失败槽位，否则会重翻全部并覆盖已成功的译文（#120 TC-E2E-33）
+        if (translations[i] !== null) continue;
         uncached.push({ idx: i, text: req.texts[i]! });
       }
     }
