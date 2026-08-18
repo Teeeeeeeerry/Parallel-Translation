@@ -122,14 +122,15 @@ export function splitPre(pre: HTMLPreElement): HTMLSpanElement[] | null {
 
   // ── 按行 kind 聚合为块：空行 / 装饰行 → raw，其余 → chunk。
   //    列表条目行强制独立成块 —— 行级对照（一行原文一行译文）──
-  const parts: { kind: 'raw' | 'chunk'; lines: Line[] }[] = [];
+  //    强制独立块带 locked 标记，后续 chunk 行不得并入（#115）。
+  const parts: { kind: 'raw' | 'chunk'; lines: Line[]; locked?: boolean }[] = [];
   for (const line of lines) {
     const lt = lineText(line).trim();
     const kind = lt === '' || isDecorationLine(lt) ? 'raw' : 'chunk';
     const last = parts[parts.length - 1];
     if (kind === 'chunk' && isListLine(lt)) {
-      parts.push({ kind, lines: [line] });
-    } else if (last && last.kind === kind) {
+      parts.push({ kind, lines: [line], locked: true });
+    } else if (last && last.kind === kind && !last.locked) {
       last.lines.push(line);
     } else {
       parts.push({ kind, lines: [line] });

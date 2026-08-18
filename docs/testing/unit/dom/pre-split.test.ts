@@ -137,6 +137,40 @@ describe('splitPre', () => {
     }
   });
 
+  test('列表条目行后紧跟普通文本行 → 各自独立成块（不被并入条目块）', () => {
+    // #115：第 132 行「同 kind 合并」会把紧跟列表行的普通文本行并入条目块，
+    // 破坏「一行原文一行译文」的行级对照。
+    const para = 'Paragraph content. '.repeat(170);
+    const text = [
+      '* Feature: parallel translation of web pages',
+      'This plain line directly follows the list item.',
+      '',
+      `${para}`,
+    ].join('\n');
+
+    const pre = createPre(text);
+    const result = splitPre(pre);
+
+    expect(result).not.toBeNull();
+    if (result) {
+      // 列表行是独立 chunk，只含单行
+      const listSpan = result.find((s) =>
+        (s.textContent ?? '').trimStart().startsWith('* '),
+      );
+      expect(listSpan).toBeDefined();
+      expect((listSpan?.textContent ?? '').trim()).not.toContain('\n');
+      // 紧跟的普通文本行独立成块，未被并入列表块
+      const plainSpan = result.find((s) =>
+        (s.textContent ?? '').trim().startsWith('This plain line'),
+      );
+      expect(plainSpan).toBeDefined();
+      expect((plainSpan?.textContent ?? '').trim()).not.toContain('\n');
+      expect(listSpan).not.toBe(plainSpan);
+      // 切分后文本逐字节不变
+      expect(pre.textContent).toBe(text);
+    }
+  });
+
   test('已切分的 pre → 返回 null（幂等）', () => {
     const longText = 'a'.repeat(3100);
     const pre = createPre(longText);
