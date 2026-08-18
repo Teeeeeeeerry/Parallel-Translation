@@ -15,7 +15,7 @@ function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
   patchSettings(patch).catch((e) => console.error('[PT] 设置写入失败:', e));
 }
 
-/** 全部可用引擎，顺序即「未启用」区的展示顺序 */
+/** 全部可用引擎，顺序即“未启用”区的展示顺序 */
 const ALL_ENGINES: EngineId[] = [
   'google-web',
   'bing-edge',
@@ -293,7 +293,7 @@ export function initEngines(): void {
 
       if (!model) continue;
       const modelEl = document.getElementById(`pt-model-${id}`) as HTMLInputElement;
-      // 空值即「用默认模型」，写回 undefined 而不是空串 ——
+      // 空值即“用默认模型”，写回 undefined 而不是空串 ——
       // 空串会让 `models?.openai ?? 'gpt-4o-mini'` 的兜底失效，请求打到一个空 model。
       modelEl?.addEventListener('change', () => {
         const v = modelEl.value.trim();

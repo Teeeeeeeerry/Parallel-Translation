@@ -37,8 +37,8 @@ export const SKIP_SET = new Set([
  * 内联元素：自身不作为翻译单元，需向上找可翻父节点。
  *
  * code 同时属于 SKIP_SET 与 INLINE_SET —— 两个集合回答不同的问题：
- * SKIP_SET 告诉 walker「不要下沉进 code 子树」（行内代码内容不独立采集），
- * INLINE_SET 告诉 isTranslationUnit「code 子元素不阻断父段落判定」，
+ * SKIP_SET 告诉 walker“不要下沉进 code 子树”（行内代码内容不独立采集），
+ * INLINE_SET 告诉 isTranslationUnit“code 子元素不阻断父段落判定”，
  * 使含行内代码的段落仍能被识别为翻译单元（#41）。
  */
 export const INLINE_SET = new Set([
@@ -121,7 +121,7 @@ export const NON_TEXT_SELECTOR =
 /**
  * 元素子树中是否含有非文本内容（媒体 / 交互控件），若有则不应整体翻译。
  *
- * 判定从「存在性」改为「位置性」：#55 —— 只有当非文本节点不在本段的
+ * 判定从“存在性”改为“位置性”：#55 —— 只有当非文本节点不在本段的
  * 内联文本流中时才阻断。从匹配到的非文本节点沿祖先链上溯到目标元素，
  * 若路径上每一层都是 INLINE_SET 标签，说明是行内装饰（favicon 角标、
  * badge 等），不应阻止翻译；否则视为独立媒体块，仍然拒绝。
@@ -144,7 +144,7 @@ export function hasNonTextContent(el: Element): boolean {
  * 从含非文本内容的容器向下搜索，找到子树里真正持有文本的纯文本翻译单元。
  *
  * #50：命中非文本内容时，与其返回 null，不如继续向下找到那个叶子单元 ——
- * 这直接决定 PR 页那 5193 字符是「翻不了」还是「翻得了」。
+ * 这直接决定 PR 页那 5193 字符是“翻不了”还是“翻得了”。
  */
 function findTextOnlyDescendant(
   container: Element,

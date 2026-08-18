@@ -121,8 +121,8 @@ describe('translateViaBackground — 扩展上下文失效', () => {
   test('chrome.runtime 为 undefined → 立即失败并提示刷新页面，不空等重试预算', async () => {
     // 扩展重载 / 更新后，已注入页面的 content script 上下文失效：
     // chrome.runtime 变 undefined，且永不恢复。修复前此处被当作
-    // SW 冷启动重试 10+15 秒，最终报「消息通道不可用: Cannot read
-    // properties of undefined (reading 'sendMessage')」。
+    // SW 冷启动重试 10+15 秒，最终报“消息通道不可用: Cannot read
+    // properties of undefined (reading 'sendMessage')”。
     vi.useFakeTimers();
     // setup.ts 用 vi.stubGlobal 挂载 chrome —— 不能用 unstubAllGlobals
     // 恢复（会把 setup 的 mock 一并撤销），测试内手动保存 / 恢复

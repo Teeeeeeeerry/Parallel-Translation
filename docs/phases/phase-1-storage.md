@@ -201,7 +201,7 @@ export async function setKey(engine: EngineId, value: string): Promise<void> { /
 pnpm dev
 ```
 
-1. 加载扩展，打开 popup，切换目标语言为「日本語」
+1. 加载扩展，打开 popup，切换目标语言为“日本語”
 2. 关闭 popup 重开 → 语言仍是日本語
 3. 完全退出 Chrome 再启动 → 语言仍是日本語
 

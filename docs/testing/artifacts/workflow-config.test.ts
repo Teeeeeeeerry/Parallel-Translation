@@ -1,14 +1,14 @@
 /**
  * CI 工作流配置断言（#96 回归）
  *
- * test.yml 的触发条件就是 CI 的「公共接口」。#96 的教训：e2e-core
+ * test.yml 的触发条件就是 CI 的“公共接口”。#96 的教训：e2e-core
  * 只在 pull_request 触发，push 到 main 时被跳过 —— main 分支 CI 一直
  * 显示绿色，但从未真正执行过 e2e-core，翻译链路在 main 上静默断裂
  * 数日才被发现。
  *
  * 这些断言锁定触发矩阵：
  * - e2e-core / hotkeys-macos：push 与 pull_request 两条路径都必须跑
- *   （main 上的推送不再「带病绿色」）
+ *   （main 上的推送不再“带病绿色”）
  * - e2e-full / smoke-real-sites：保持 schedule / workflow_dispatch 专属，
  *   不与推送路径混用（避免定时冒烟与常规推送重复执行）
  */

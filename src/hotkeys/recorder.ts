@@ -54,7 +54,7 @@ export function checkConflict(
   for (const [action, bound] of Object.entries(hotkeys)) {
     if (action !== self && bound === combo) {
       const label = actionLabel(action as HotkeyAction);
-      return tf('conflictDuplicate', `与「${label}」重复`, label);
+      return tf('conflictDuplicate', `与“${label}”重复`, label);
     }
   }
   return null;

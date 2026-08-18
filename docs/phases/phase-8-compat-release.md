@@ -172,7 +172,7 @@ grep -c "host_permissions" .output/chrome-mv3/manifest.json    # 预期 0
 
 **Firefox 回归**：
 1. 打开 `about:debugging#/runtime/this-firefox`
-2. 点「临时载入附加组件」，选 `.output/firefox-mv2/manifest.json`（或 mv3 目录）
+2. 点“临时载入附加组件”，选 `.output/firefox-mv2/manifest.json`（或 mv3 目录）
 3. 回归：全页翻译、模式切换、悬浮球、快捷键、设置持久化
 
 **Edge 回归**：`edge://extensions/` 加载 `.output/chrome-mv3/`，跑同一组回归。

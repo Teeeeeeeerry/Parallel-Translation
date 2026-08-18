@@ -37,7 +37,7 @@
   "secEnginesDesc": { "message": "拖拽调整引擎优先级（从上到下即故障切换顺序），为 BYOK 引擎配置 API key。" },
   "cardPriority": { "message": "优先级（拖拽排序）" },
   "cardDisabled": { "message": "未启用的引擎" },
-  "cardDisabledDesc": { "message": "点「启用」将其加入优先级列表末尾。BYOK 引擎需先填入 API key。" },
+  "cardDisabledDesc": { "message": "点“启用”将其加入优先级列表末尾。BYOK 引擎需先填入 API key。" },
   "cardDisabledEmpty": { "message": "全部引擎均已启用。" },
   "btnEnable": { "message": "启用" },
   "btnDisable": { "message": "停用" },
@@ -98,7 +98,7 @@
   "actionToggleExtension": { "message": "扩展总开关" },
   "conflictReserved": { "message": "该组合被浏览器占用，扩展无法接收" },
   "conflictDuplicate": {
-    "message": "与「$ACTION$」重复",
+    "message": "与“$ACTION$”重复",
     "placeholders": { "action": { "content": "$1" } }
   },
   "needModifier": { "message": "请使用带修饰键的组合（如 ⌘+Shift+Y）" },
@@ -170,11 +170,11 @@
   "welcomeTargetLangDesc": { "message": "翻译结果将以此语言显示，可根据需要修改：" },
   "welcomeInteractions": { "message": "交互方式" },
   "welcomeBall": { "message": "悬浮球" },
-  "welcomeBallDesc": { "message": "页面右侧的悬浮按钮「译」，点击即可翻译整页" },
+  "welcomeBallDesc": { "message": "页面右侧的悬浮按钮“译”，点击即可翻译整页" },
   "welcomeParaBtn": { "message": "逐段翻译" },
-  "welcomeParaBtnDesc": { "message": "鼠标悬停在段落上时出现「译」按钮，点击翻译该段落" },
+  "welcomeParaBtnDesc": { "message": "鼠标悬停在段落上时出现“译”按钮，点击翻译该段落" },
   "welcomeSelection": { "message": "划词与右键翻译" },
-  "welcomeSelectionDesc": { "message": "选中文本后右键，点击「翻译所选文本」即可翻译选中内容" },
+  "welcomeSelectionDesc": { "message": "选中文本后右键，点击“翻译所选文本”即可翻译选中内容" },
   "welcomeOpenSettings": { "message": "打开完整设置" },
   "welcomeClose": { "message": "开始使用" }
 }
