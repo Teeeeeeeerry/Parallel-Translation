@@ -11,9 +11,10 @@
 // #111：扩展上下文失效（重载 / 更新）不可恢复 —— 重试永远无意义，
 // 检测到立即失败（0 次重试），由调用方置全局短路，其余批次
 // 不再发起新尝试，toast 立即出现而非等完 [1000, 3000]ms 重试序列。
+// #116：失效判定用 messaging 透出的类型化 invalidated 标志，
+// 不匹配错误文案 —— 文案改写不影响短路行为。
 
 import type { TranslateResponse } from '~/src/engines/types';
-import { CONTEXT_INVALIDATED_MSG } from './messaging';
 
 /** #91: 批次级引擎失败最大重试次数。 */
 export const BATCH_RETRY_LIMIT = 2;
@@ -49,6 +50,8 @@ export async function attemptBatchWithRetry(
     ok: boolean;
     data?: TranslateResponse;
     error?: string;
+    /** #116: messaging 透出的类型化上下文失效标志。 */
+    invalidated?: boolean;
   }>,
   opts: BatchRetryOptions = {},
 ): Promise<BatchRetryResult> {
@@ -68,8 +71,8 @@ export async function attemptBatchWithRetry(
       return { ok: true, data: resp.data };
     }
     lastError = resp?.error ?? '未知错误';
-    // #111: 上下文失效不可恢复 —— 立即失败，不进入重试序列
-    if (lastError.includes(CONTEXT_INVALIDATED_MSG)) {
+    // #111/#116: 上下文失效是类型化标志 —— 立即失败，不进入重试序列
+    if (resp?.invalidated) {
       return { ok: false, invalidated: true, aborted: false, error: lastError };
     }
     if (attempt >= BATCH_RETRY_LIMIT) break;

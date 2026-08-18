@@ -135,6 +135,8 @@ describe('translateViaBackground — 扩展上下文失效', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
+        // #116: 类型化失效标志透出，供 batch-retry 短路而不匹配文案
+        expect(result.invalidated).toBe(true);
         expect(result.error).toContain('已失效');
         expect(result.error).toContain('刷新');
       }
@@ -157,6 +159,7 @@ describe('translateViaBackground — 扩展上下文失效', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
+      expect(result.invalidated).toBe(true);
       expect(result.error).toContain('已失效');
     }
   });
@@ -172,7 +175,11 @@ describe('translateViaBackground — 失败语义', () => {
 
     const result = await translateViaBackground(PAYLOAD);
 
-    expect(result).toEqual({ ok: false, error: '所有引擎均失败' });
+    expect(result).toEqual({
+      ok: false,
+      error: '所有引擎均失败',
+      invalidated: false,
+    });
     // 1 ping + 1 translate，translate 没有重试
     expect(sendMessage).toHaveBeenCalledTimes(2);
   });
