@@ -21,8 +21,10 @@ import { collect } from '~/src/dom/walker';
  * 真实 README 片段的浓缩形态（2026-08 抓取自 github.com/torvalds/linux）：
  * 标题 + 装饰行 + 空行分隔的短段落 + RST 列表（URL 被 GitHub autolink 成 <a>）。
  * 单段均短于 MAX_TEXT（3072），全文超过 3072 才能触发 splitPre 切分路径。
+ *
+ * withAnchors=false 为 #104 的隔离对照：URL 保持纯文本、不 autolink 成 <a>。
  */
-function buildReadmeFragment(): string {
+function buildReadmeFragment(withAnchors = true): string {
   const para = (i: number) =>
     `Paragraph ${i}: The Linux kernel manages hardware, system resources, ` +
     `and provides the fundamental services for all other software running ` +
@@ -42,50 +44,69 @@ function buildReadmeFragment(): string {
     '-----------',
     '',
     '* Report a bug: See Documentation/admin-guide/reporting-issues.rst',
-    '* Get the latest kernel: <a href="https://kernel.org" rel="nofollow">https://kernel.org</a>',
+    withAnchors
+      ? '* Get the latest kernel: <a href="https://kernel.org" rel="nofollow">https://kernel.org</a>'
+      : '* Get the latest kernel: https://kernel.org',
     '* Build the kernel: See Documentation/admin-guide/quickly-build-trimmed-linux.rst',
-    '* Join the community: <a href="https://lore.kernel.org/" rel="nofollow">https://lore.kernel.org/</a>',
+    withAnchors
+      ? '* Join the community: <a href="https://lore.kernel.org/" rel="nofollow">https://lore.kernel.org/</a>'
+      : '* Join the community: https://lore.kernel.org/',
     '',
     '</pre></div>',
   );
   return lines.join('\n');
 }
 
+/** 采集结果：单元数 + 每单元文本（用于锁定切分边界不变）。 */
+function collectUnits(html: string): { count: number; texts: string[] } {
+  document.body.innerHTML = html;
+
+  // jsdom 里 getBoundingClientRect 默认全 0 → 全部判不可见。
+  // stub 为可见，模拟真实浏览器（原型级：覆盖 splitPre 新建的 span）。
+  const restore = mockAllBoundingRects();
+  let units: Element[] = [];
+  try {
+    units = collect();
+  } finally {
+    restore();
+  }
+  return {
+    count: units.length,
+    texts: units.map((u) => u.textContent ?? ''),
+  };
+}
+
 describe('collect（github.com RST README 回归）', () => {
-  test('README 正文被采集为翻译单元（修复前为 0 单元）', () => {
-    document.body.innerHTML = buildReadmeFragment();
+  test('README 正文被采集为固定 21 个翻译单元（修复前为 0 单元）', () => {
+    const { count, texts } = collectUnits(buildReadmeFragment());
 
-    // jsdom 里 getBoundingClientRect 默认全 0 → 全部判不可见。
-    // stub 为可见，模拟真实浏览器（原型级：覆盖 splitPre 新建的 span）。
-    const restore = mockAllBoundingRects();
+    // 精确锁定单元数：不再用 >0，防止「整页采集 0 单元」这类静默回归（#104）
+    expect(count).toBe(21);
 
-    let units: Element[] = [];
-    try {
-      units = collect();
-    } finally {
-      restore();
-    }
-
-    expect(units.length).toBeGreaterThan(0);
-
-    // 首段正文在采集结果里（段落级锚点，而非只断言数量 > 0）
-    const firstParaUnit = units.find((u) =>
-      (u.textContent ?? '').includes('Paragraph 0:'),
-    );
+    // 首段正文在采集结果里（段落级锚点）
+    const firstParaUnit = texts.find((t) => t.includes('Paragraph 0:'));
     expect(firstParaUnit).toBeDefined();
-    expect(firstParaUnit!.tagName).toBe('SPAN');
-    expect(firstParaUnit!.className).toBe('pt-chunk');
+    const el = [...document.querySelectorAll('span.pt-chunk')].find(
+      (u) => u.textContent === firstParaUnit,
+    );
+    expect(el).toBeDefined();
+    expect(el!.tagName).toBe('SPAN');
+    expect(el!.className).toBe('pt-chunk');
+  });
+
+  test('去掉 <a> 对照：单元数与切分边界不变（#104 隔离实验固化）', () => {
+    const withAnchors = collectUnits(buildReadmeFragment(true));
+    const withoutAnchors = collectUnits(buildReadmeFragment(false));
+
+    // 与含 autolink 的基线完全一致 → autolink 不是 0 单元的真凶
+    expect(withoutAnchors.count).toBe(withAnchors.count);
+    expect(withoutAnchors.count).toBe(21);
+    expect(withoutAnchors.texts).toEqual(withAnchors.texts);
   });
 
   test('collect 后 autolink <a> 保留在切出的 chunk 内', () => {
-    document.body.innerHTML = buildReadmeFragment();
-
-    const restore = mockAllBoundingRects();
-    try {
-      collect();
-    } finally {
-      restore();
-    }
+    const { count } = collectUnits(buildReadmeFragment());
+    expect(count).toBe(21);
 
     const anchors = document.querySelectorAll('div.plain > pre a');
     expect(anchors.length).toBe(2);
