@@ -16,7 +16,7 @@ import type { TranslateRequest, TranslateResponse } from '~/src/engines/types';
 
 export type TranslateResult =
   | { ok: true; data: TranslateResponse }
-  | { ok: false; error: string };
+  | { ok: false; error: string; invalidated: boolean };
 
 /** SW 就绪等待预算（ping 阶段）。覆盖 CI 中 SW 冷启动的常见耗时。 */
 const READY_BUDGET_MS = 10_000;
@@ -30,9 +30,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** 上下文失效错误文案。batch-retry.ts 据其短路批次重试（#111）。 */
+/** 上下文失效错误文案。 */
 export const CONTEXT_INVALIDATED_MSG =
   '[PT] 扩展上下文已失效（扩展已更新或重载），请刷新页面后重试';
+
+/**
+ * 上下文失效错误 —— 类型化错误类别（#116）。
+ * 调用方按 instanceof 判定而非匹配文案，messaging 层改写文案不影响判定。
+ */
+export class ContextInvalidatedError extends Error {
+  constructor(message: string = CONTEXT_INVALIDATED_MSG) {
+    super(message);
+    this.name = 'ContextInvalidatedError';
+  }
+}
 
 /** 不可恢复的通道错误 —— 重试永远无意义，立即失败并提示用户 */
 const FATAL_CHANNEL_RE = /Extension context invalidated|Cannot read propert/i;
@@ -68,7 +79,7 @@ async function sendWithTransportRetry(
   for (;;) {
     // 上下文失效不可恢复：立即失败并提示刷新页面，不空等重试预算
     if (isContextInvalidated()) {
-      throw new Error(CONTEXT_INVALIDATED_MSG);
+      throw new ContextInvalidatedError();
     }
 
     let resp: unknown;
@@ -78,7 +89,7 @@ async function sendWithTransportRetry(
       const msgText = e instanceof Error ? e.message : String(e);
       // 不可恢复错误（上下文失效的 TypeError / Chrome 标准错误）
       if (FATAL_CHANNEL_RE.test(msgText)) {
-        throw new Error(CONTEXT_INVALIDATED_MSG);
+        throw new ContextInvalidatedError();
       }
       lastError = msgText;
       resp = undefined;
@@ -114,8 +125,13 @@ export async function translateViaBackground(
     if (resp?.ok === true && resp.data) {
       return { ok: true, data: resp.data };
     }
-    return { ok: false, error: resp?.error ?? '未知错误' };
+    return { ok: false, error: resp?.error ?? '未知错误', invalidated: false };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    // #116: 上下文失效以类型化标志透出，调用方无需匹配文案
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+      invalidated: e instanceof ContextInvalidatedError,
+    };
   }
 }

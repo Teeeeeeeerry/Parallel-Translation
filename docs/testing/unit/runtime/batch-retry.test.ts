@@ -7,6 +7,9 @@
  * #111：扩展上下文失效不可恢复 —— 必须 0 次重试立即失败，
  * 否则 toast 仍延迟约 4 秒（重试序列 [1000, 3000]ms），
  * 与 #109「立即失败」的字面承诺不符。
+ *
+ * #116：失效判定基于 messaging 透出的类型化 invalidated 标志，
+ * 与错误文案解耦 —— 文案改写不影响短路行为。
  */
 import { describe, test, expect, vi } from 'vitest';
 import {
@@ -14,7 +17,6 @@ import {
   BATCH_RETRY_LIMIT,
   BATCH_RETRY_DELAYS_MS,
 } from '~/src/runtime/batch-retry';
-import { CONTEXT_INVALIDATED_MSG } from '~/src/runtime/messaging';
 
 const noopSleep = () => Promise.resolve();
 const TRANSLATED = { translations: ['你好'] };
@@ -69,11 +71,14 @@ describe('attemptBatchWithRetry — 重试预算（#91）', () => {
   });
 });
 
-describe('attemptBatchWithRetry — 上下文失效立即失败（#111）', () => {
-  test('失效错误 → 0 次重试，invalidated=true，仅发送 1 次', async () => {
+describe('attemptBatchWithRetry — 上下文失效立即失败（#111/#116）', () => {
+  test('invalidated 标志 → 0 次重试，仅发送 1 次', async () => {
+    // #116: 判定依据是类型化 invalidated 标志而非错误文案 ——
+    // 故意用与 CONTEXT_INVALIDATED_MSG 不同的文案证明解耦
     const send = vi.fn(async () => ({
       ok: false,
-      error: CONTEXT_INVALIDATED_MSG,
+      invalidated: true,
+      error: '扩展已重载，请刷新页面',
     }));
     const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
 
@@ -81,17 +86,18 @@ describe('attemptBatchWithRetry — 上下文失效立即失败（#111）', () =
     if (!result.ok) {
       expect(result.invalidated).toBe(true);
       expect(result.aborted).toBe(false);
-      expect(result.error).toContain('已失效');
+      expect(result.error).toBe('扩展已重载，请刷新页面');
     }
     // #111 关键断言：失效错误不得进入重试序列
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  test('失效错误路径不 sleep（不空等 [1000, 3000]ms）', async () => {
+  test('失效路径不 sleep（不空等 [1000, 3000]ms）', async () => {
     const sleep = vi.fn(async () => {});
     const send = vi.fn(async () => ({
       ok: false,
-      error: CONTEXT_INVALIDATED_MSG,
+      invalidated: true,
+      error: '上下文失效',
     }));
 
     await attemptBatchWithRetry(send, { sleep });

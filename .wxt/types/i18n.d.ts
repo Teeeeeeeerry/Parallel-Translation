@@ -353,7 +353,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "点「启用」将其加入优先级列表末尾。BYOK 引擎需先填入 API key。"
+     * "点“启用”将其加入优先级列表末尾。BYOK 引擎需先填入 API key。"
      */
     getMessage(
       messageName: "cardDisabledDesc",
@@ -721,7 +721,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "与「$ACTION$」重复"
+     * "与“$ACTION$”重复"
      */
     getMessage(
       messageName: "conflictDuplicate",
@@ -1209,7 +1209,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "页面右侧的悬浮按钮「译」，点击即可翻译整页"
+     * "页面右侧的悬浮按钮“译”，点击即可翻译整页"
      */
     getMessage(
       messageName: "welcomeBallDesc",
@@ -1225,7 +1225,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "鼠标悬停在段落上时出现「译」按钮，点击翻译该段落"
+     * "鼠标悬停在段落上时出现“译”按钮，点击翻译该段落"
      */
     getMessage(
       messageName: "welcomeParaBtnDesc",
@@ -1241,7 +1241,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "选中文本后右键，点击「翻译所选文本」即可翻译选中内容"
+     * "选中文本后右键，点击“翻译所选文本”即可翻译选中内容"
      */
     getMessage(
       messageName: "welcomeSelectionDesc",
