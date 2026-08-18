@@ -155,6 +155,44 @@ vi.stubGlobal('chrome', {
 
 // ---- 辅助函数 ----
 
+/** 默认可见几何（jsdom 默认全 0 → 全部判不可见） */
+const DEFAULT_VISIBLE_RECT: DOMRect = {
+  x: 0, y: 0, width: 100, height: 20,
+  top: 0, right: 100, bottom: 20, left: 0,
+  toJSON: () => ({}),
+} as DOMRect;
+
+/**
+ * 给元素 stub 一个可见的 getBoundingClientRect。
+ * 返回原元素，便于链式调用；rect 可覆盖个别字段（如 200×30、30×20）。
+ */
+export function mockBoundingRect(
+  el: Element,
+  rect: Partial<DOMRect> = {},
+): Element {
+  (el as HTMLElement).getBoundingClientRect = () =>
+    ({ ...DEFAULT_VISIBLE_RECT, ...rect }) as DOMRect;
+  return el;
+}
+
+/**
+ * 原型级 stub：全部元素（含运行中新建的，如 splitPre 切出的 span）
+ * 都返回可见几何。返回恢复函数。
+ */
+export function mockAllBoundingRects(
+  rect: Partial<DOMRect> = {},
+): () => void {
+  const proto = HTMLElement.prototype as unknown as {
+    getBoundingClientRect: () => DOMRect;
+  };
+  const orig = proto.getBoundingClientRect;
+  proto.getBoundingClientRect = () =>
+    ({ ...DEFAULT_VISIBLE_RECT, ...rect }) as DOMRect;
+  return () => {
+    proto.getBoundingClientRect = orig;
+  };
+}
+
 /** 清空内存中的 local + sync 存储，各测试文件的 beforeEach 中调用 */
 export function resetStorage(): void {
   localStore.clear();

@@ -5,6 +5,7 @@
  * shouldSkipNonVisual / isMainlyNumeric 判定逻辑穷举
  */
 import { describe, test, expect } from 'vitest';
+import { mockBoundingRect } from '../../setup';
 import {
   isTranslationUnit,
   hasNonTextContent,
@@ -24,9 +25,7 @@ function el(html: string): Element {
 function visible(el: Element): Element {
   // jsdom 中 getBoundingClientRect 默认返回全 0，
   // 设置一个合理的可见尺寸
-  (el as HTMLElement).getBoundingClientRect = () =>
-    ({ x: 0, y: 0, width: 100, height: 20, top: 0, right: 100, bottom: 20, left: 0 }) as DOMRect;
-  return el;
+  return mockBoundingRect(el);
 }
 
 // ---- isTranslationUnit ----
@@ -196,8 +195,7 @@ describe('closestUnit', () => {
   test('shouldSkip 命中 → 不返回（继续向上）', () => {
     // 文本 < 3 字符的元素被跳过
     const p = el('<p>Hi</p>');
-    (p as HTMLElement).getBoundingClientRect = () =>
-      ({ x: 0, y: 0, width: 100, height: 20, top: 0, right: 100, bottom: 20, left: 0 }) as DOMRect;
+    mockBoundingRect(p);
     document.body.appendChild(p);
     expect(closestUnit(p)).toBeNull(); // "Hi" 太短，被 shouldSkip
   });
@@ -208,8 +206,7 @@ describe('closestUnit', () => {
     document.body.appendChild(div);
     const inner = div.querySelector('#inner')!;
     // inner 自身需要可见（getBoundingClientRect 非零），否则 shouldSkip 拒绝
-    (inner as HTMLElement).getBoundingClientRect = () =>
-      ({ x: 0, y: 0, width: 100, height: 20, top: 0, right: 100, bottom: 20, left: 0 }) as DOMRect;
+    mockBoundingRect(inner);
     expect(closestUnit(inner)).toBe(inner); // 内嵌纯文本 p 被找到
   });
 });
@@ -330,15 +327,13 @@ describe('shouldSkip', () => {
 
   test('可见 + 正常文本 → false', () => {
     const p = el('<p>Normal visible paragraph text here.</p>');
-    (p as HTMLElement).getBoundingClientRect = () =>
-      ({ x: 0, y: 0, width: 200, height: 30, top: 0, right: 200, bottom: 30, left: 0 }) as DOMRect;
+    mockBoundingRect(p, { width: 200, right: 200, height: 30, bottom: 30 });
     expect(shouldSkip(p)).toBe(false);
   });
 
   test('可见但太短 → true', () => {
     const p = el('<p>No</p>');
-    (p as HTMLElement).getBoundingClientRect = () =>
-      ({ x: 0, y: 0, width: 30, height: 20, top: 0, right: 30, bottom: 20, left: 0 }) as DOMRect;
+    mockBoundingRect(p, { width: 30, right: 30 });
     expect(shouldSkip(p)).toBe(true);
   });
 });
