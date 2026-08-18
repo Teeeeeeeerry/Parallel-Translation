@@ -25,7 +25,10 @@ describe('google-web HTTP 路径', () => {
     vi.resetModules();
     vi.clearAllMocks();
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   test('成功：URL 参数正确 + 分句拼接为整段译文', async () => {
     const byQ: Record<string, string> = { Hello: '你好', World: '世界' };
@@ -155,5 +158,28 @@ describe('google-web HTTP 路径', () => {
     expect(resp.translations).toEqual(['t', 't', 't', 't', 't']);
     expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(peak).toBeLessThanOrEqual(2);
+  });
+
+  test('fetch 永不 settle → 30s 超时，全部失败抛 EngineError 让 router 降级（#154）', async () => {
+    vi.useFakeTimers();
+    // 网络黑洞：mock 的 fetch 永不 settle —— 修复前整批 route() 永不返回
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})));
+
+    const { googleWeb } = await import('~/src/engines/google-web');
+    const pending = googleWeb.translate({
+      texts: ['a', 'b'],
+      from: 'auto',
+      to: 'zh',
+    });
+    // 先挂兜底 handler：fake timer tick 内 reject 会被 Node 记为未处理
+    pending.catch(() => {});
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expect(pending).rejects.toMatchObject({
+      name: 'EngineError',
+      engineId: 'google-web',
+      retryable: true,
+      message: '全部 2 条翻译失败',
+    });
   });
 });

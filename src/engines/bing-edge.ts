@@ -3,6 +3,7 @@
 // 再调 cognitive.microsofttranslator.com 批量翻译。
 // JWT 缓存约 10 分钟，解析 exp 复用，401 清空重取。
 
+import { fetchWithTimeout } from './fetch-timeout';
 import { EngineError } from './types';
 import type { TranslateEngine } from './types';
 
@@ -25,7 +26,7 @@ function isExpired(jwt: string): boolean {
 async function getJwt(): Promise<string> {
   if (cachedJwt && !isExpired(cachedJwt)) return cachedJwt;
 
-  const resp = await fetch(AUTH_ENDPOINT);
+  const resp = await fetchWithTimeout('bing-edge', AUTH_ENDPOINT);
   if (!resp.ok) {
     throw new EngineError('bing-edge', true, `auth HTTP ${resp.status}`);
   }
@@ -52,7 +53,7 @@ export const bingEdge: TranslateEngine = {
       textType: 'html',
     });
 
-    const resp = await fetch(`${TRANS_ENDPOINT}?${qs}`, {
+    const resp = await fetchWithTimeout('bing-edge', `${TRANS_ENDPOINT}?${qs}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

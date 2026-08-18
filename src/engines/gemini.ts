@@ -4,6 +4,7 @@
 import { getKey } from '~/src/storage/keys';
 import { getSettings } from '~/src/storage/settings';
 import { normalizeText } from '~/src/dom/normalize';
+import { fetchWithTimeout } from './fetch-timeout';
 import { EngineError } from './types';
 import { parseNumbered } from './openai';
 import type { TranslateEngine } from './types';
@@ -34,7 +35,7 @@ export const gemini: TranslateEngine = {
       `将以下编号文本翻译成${to}${from === 'auto' ? '' : `（源语言：${from}）`}。` +
       `严格保持编号与行数一致，只输出译文，不要解释。\n\n${numbered}`;
 
-    const resp = await fetch(endpoint, {
+    const resp = await fetchWithTimeout('gemini', endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

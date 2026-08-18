@@ -3,6 +3,7 @@
 // DeepL 语言覆盖有限，supportedLangs 必须显式列举。
 
 import { getKey } from '~/src/storage/keys';
+import { fetchWithTimeout } from './fetch-timeout';
 import { EngineError } from './types';
 import type { TranslateEngine } from './types';
 
@@ -79,7 +80,7 @@ export const deepl: TranslateEngine = {
       body.append('text', text);
     }
 
-    const resp = await fetch(endpoint, {
+    const resp = await fetchWithTimeout('deepl', endpoint, {
       method: 'POST',
       headers: {
         Authorization: `DeepL-Auth-Key ${key}`,
