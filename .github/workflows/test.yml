@@ -26,6 +26,8 @@ jobs:
       - run: pnpm exec wxt prepare
       - run: pnpm typecheck
       - run: pnpm test
+      # #134：Level 1 强制执行覆盖率门槛（test 不带 --coverage，门槛不会生效）
+      - run: pnpm test:coverage
       - run: pnpm build
       - run: pnpm test:verify-build
       - run: pnpm test:artifacts
