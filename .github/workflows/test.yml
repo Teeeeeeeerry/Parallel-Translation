@@ -10,6 +10,17 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Level 0 — 提交信息约定校验（#138），仅 PR 触发
+  commit-conventions:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check commit conventions
+        run: bash .github/scripts/check-commit-conventions.sh "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+
   # Level 1 — 每次 push 必跑（< 30s）
   unit-and-build:
     runs-on: ubuntu-latest
