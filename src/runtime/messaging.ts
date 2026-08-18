@@ -42,9 +42,6 @@ export class ContextInvalidatedError extends Error {
   }
 }
 
-/** 不可恢复的通道错误 —— 重试永远无意义，立即失败并提示用户 */
-const FATAL_CHANNEL_RE = /Extension context invalidated|Cannot read propert/i;
-
 /**
  * 扩展上下文是否已失效。重载 / 更新 / 禁用扩展后，已注入页面的
  * content script 里 chrome.runtime 变为 undefined 且永不恢复 ——
@@ -83,12 +80,13 @@ async function sendWithTransportRetry(
     try {
       resp = await chrome.runtime.sendMessage(msg);
     } catch (e) {
-      const msgText = e instanceof Error ? e.message : String(e);
-      // 不可恢复错误（上下文失效的 TypeError / Chrome 标准错误）
-      if (FATAL_CHANNEL_RE.test(msgText)) {
+      // 类型化判定（#139）：sendMessage 抛错时再查一次上下文是否已失效 ——
+      // 失效是结构化状态（chrome.runtime.id 为 null），不依赖错误文案。
+      // 上下文仍有效则视为可重试的传输层错误（如 SW 监听器未注册）。
+      if (isContextInvalidated()) {
         throw new ContextInvalidatedError();
       }
-      lastError = msgText;
+      lastError = e instanceof Error ? e.message : String(e);
       resp = undefined;
     }
     if (resp !== undefined) return resp;
