@@ -66,10 +66,19 @@ export default defineBackground(() => {
 
   chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (info.menuItemId === 'pt-translate-selection' && tab?.id) {
-      chrome.tabs.sendMessage(tab.id, {
-        type: 'pt:translate-selection',
-        text: info.selectionText ?? '',
-      });
+      // #166: 无 content script 的页面（chrome://、PDF 查看器、扩展更新前
+      // 已打开的旧标签页）sendMessage 会以 "Receiving end does not exist"
+      // 拒绝 —— 不加 catch 会在 SW 内留下未处理 rejection，用户侧零反馈。
+      chrome.tabs
+        .sendMessage(tab.id, {
+          type: 'pt:translate-selection',
+          text: info.selectionText ?? '',
+        })
+        .catch(() => {
+          console.debug(
+            '[PT] 右键翻译：目标标签页无 content script，忽略（请刷新页面后使用）',
+          );
+        });
     }
   });
 
