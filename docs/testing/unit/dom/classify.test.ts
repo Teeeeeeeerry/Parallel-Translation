@@ -12,6 +12,8 @@ import {
   closestUnit,
   shouldSkipNonVisual,
   shouldSkip,
+  MAX_TEXT,
+  MAX_HTML,
 } from '~/src/dom/classify';
 
 // ---- 辅助 ----
@@ -350,5 +352,19 @@ describe('shouldSkip', () => {
     const p = el('<p>No</p>');
     mockBoundingRect(p, { width: 30, right: 30 });
     expect(shouldSkip(p)).toBe(true);
+  });
+
+  test('shouldSkipNonVisual > 含大量链接的 pre 切块 → false（#174）', () => {
+    // 80 个 GitHub 风格 autolink：文本 ≤ MAX_TEXT，但 outerHTML 远超 MAX_HTML
+    const links = Array.from(
+      { length: 80 },
+      (_, i) =>
+        `<a href="https://github.com/org/repo/blob/main/docs/guide-${i}.md">文档 ${i} 链接文本</a>`,
+    ).join(' ');
+    const span = el(`<span data-pt-chunk="1">${links}</span>`);
+    expect(span.textContent!.trim().length).toBeLessThanOrEqual(MAX_TEXT);
+    expect(span.outerHTML.length).toBeGreaterThan(MAX_HTML);
+    // 修复前：outerHTML > MAX_HTML → 跳过 → 整块静默漏翻
+    expect(shouldSkipNonVisual(span)).toBe(false);
   });
 });
