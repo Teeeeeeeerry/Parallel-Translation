@@ -2,7 +2,7 @@
 
 对照式网页翻译浏览器扩展。原文与译文并排呈现，让阅读外语内容不必在两个界面之间来回切换。
 
-Chrome / Edge / Firefox，Manifest V3，当前 v0.6.19。
+Chrome / Edge / Firefox，Manifest V3，当前 v0.6.93。
 
 ## 特性
 
@@ -24,7 +24,7 @@ Chrome / Edge / Firefox，Manifest V3，当前 v0.6.19。
 
 **三语界面** —— 简体中文、繁体中文、English，随浏览器界面语言自动切换。
 
-**最小权限** —— 只申请 `storage` 与 `contextMenus`，无 `host_permissions`。
+**最小权限** —— 只申请 `storage` 与 `contextMenus`；`host_permissions` 仅限七个翻译端点域名（Google/Bing 免 key 端点与 OpenAI/DeepL/Gemini BYOK 端点），不申请任意站点权限，页面数据读取仍由 <all_urls> 内容脚本按翻译功能所需注入。
 
 ## 安装与开发
 
