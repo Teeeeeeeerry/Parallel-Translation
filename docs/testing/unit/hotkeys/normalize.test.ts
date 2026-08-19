@@ -103,6 +103,18 @@ describe('fromEvent', () => {
     const e = makeKeyEvent('Shift');
     expect(fromEvent(e, os)).toBeNull();
   });
+
+  // ── #176：空格 / 加号显式映射 ──
+
+  test('Mac Meta+空格 → "Mod+Space"（#176）', () => {
+    const e = makeKeyEvent(' ', { metaKey: true });
+    expect(fromEvent(e, 'mac')).toBe('Mod+Space');
+  });
+
+  test('Win Ctrl+加号 → "Mod+Plus"（#176）', () => {
+    const e = makeKeyEvent('+', { ctrlKey: true });
+    expect(fromEvent(e, 'other')).toBe('Mod+Plus');
+  });
 });
 
 describe('isTypingContext', () => {

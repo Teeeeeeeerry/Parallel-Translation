@@ -57,11 +57,12 @@ const PC_ORDER = ['Ctrl', 'Mod', 'Alt', 'Shift'];
 export function formatHotkey(combo: string, os: OS): string {
   const parts = combo.split('+');
   const key = parts.pop()!;
+  // #176: 别名键的显示形式（与 fromEvent 的 KEY_ALIAS 对应）
+  const DISPLAY_KEY: Record<string, string> = { Space: 'Space', Plus: '+' };
+  const shown = DISPLAY_KEY[key] ?? key.toUpperCase();
   const order = os === 'mac' ? MAC_ORDER : PC_ORDER;
   const mods = order
     .filter((m) => parts.includes(m))
     .map((m) => SYMBOLS[os][m]!);
-  return os === 'mac'
-    ? mods.join('') + key.toUpperCase()
-    : [...mods, key.toUpperCase()].join('+');
+  return os === 'mac' ? mods.join('') + shown : [...mods, shown].join('+');
 }

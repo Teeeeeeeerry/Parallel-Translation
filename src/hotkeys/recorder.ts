@@ -69,10 +69,18 @@ export function startRecording(
   os: OS,
   onCapture: (combo: string) => void,
   onReject: (reason: string) => void,
+  onCancel?: () => void,
 ): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // #176: Esc 单独走取消回调 —— 修复前 fromEvent 返回 null 走 onReject，
+    // 误报「请使用带修饰键的组合」，用户以为录制出错
+    if (e.key === 'Escape') {
+      onCancel?.();
+      return;
+    }
 
     // 仅修饰键 -> 忽略
     if (['Control', 'Meta', 'Alt', 'Shift'].includes(e.key)) return;
