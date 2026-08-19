@@ -9,6 +9,7 @@
 
 import type { DisplayMode, StyleId } from '../storage/schema';
 import { hasNonTextContent } from './classify';
+import { injectShadowStyles } from '~/src/styles/shadow';
 
 /** 渲染来源：区分整页翻译与单段翻译，落成 data-pt-src 属性供 CSS 分流。 */
 export type RenderSource = 'page' | 'para';
@@ -25,6 +26,13 @@ export function render(
   src: RenderSource = 'page',
 ): boolean {
   if (el.getAttribute('data-pt') === 'done') return true;
+
+  // #163: 翻译单元位于 shadow root 内时补注入扩展样式 ——
+  // 单段翻译路径可能早于 observer 启动，此时 shadow 内尚无样式
+  const rootNode = el.getRootNode();
+  if (rootNode instanceof ShadowRoot) {
+    injectShadowStyles(rootNode);
+  }
 
   // 纵深防御：拒绝含非文本内容的容器，防止缩略图、按钮等被藏进
   // display:none 的 .pt-origin（#22）。

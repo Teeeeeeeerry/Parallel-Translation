@@ -18,6 +18,7 @@
 // - rootMargin 提前 300px 触发，让即将滚入视口的内容提前翻译。
 
 import { collect } from './walker';
+import { injectShadowStyles } from '~/src/styles/shadow';
 
 /**
  * 递归收集 root 下所有 shadowRoot，对每个挂载 observer。
@@ -34,6 +35,9 @@ function observeShadowRoots(
   const attach = (el: Element): boolean => {
     if (!el.shadowRoot || seen.has(el.shadowRoot)) return false;
     seen.add(el.shadowRoot);
+    // #163: 扩展样式不跨 shadow 边界 —— 先注入样式再挂 observer，
+    // 避免注入动作触发自身 mutation 记录
+    injectShadowStyles(el.shadowRoot);
     const mo = new MutationObserver(onMutation);
     mo.observe(el.shadowRoot, { childList: true, subtree: true });
     observers.push(mo);
