@@ -13,6 +13,46 @@ import type { TranslateEngine } from './types';
 // #159: 引擎级并发闸门 —— 整页翻译批次并发 → translate() 并发调用
 const getGate = engineGate();
 
+/**
+ * 按 Gemini 错误体区分错误类别 —— #161。
+ *
+ * Gemini 的 400 覆盖多种情况：key 无效、上下文过长（input too large）、
+ * 内容被安全拦截；403 也不只来自 key。此前一律判「key 无效」且
+ * retryable=false，router 直接抛错不尝试后续引擎，超长文本/模型名错误
+ * 会让整页翻译失败。这里只对确凿的认证错误置 non-retryable，
+ * 其余 400/404（超长、模型名、安全拦截）交给下一引擎降级。
+ */
+async function classifyError(resp: Response): Promise<EngineError> {
+  let status = '';
+  let message = '';
+  try {
+    // Gemini 错误体形如 { error: { code, message, status } }
+    const body = (await resp.json()) as {
+      error?: { status?: string; message?: string };
+    };
+    status = body.error?.status ?? '';
+    message = body.error?.message ?? '';
+  } catch {
+    // 非 JSON 错误体，按状态码兜底
+  }
+
+  // 确凿的认证错误 → 立即提示用户，不浪费后续引擎
+  const isAuth =
+    resp.status === 403 ||
+    status === 'UNAUTHENTICATED' ||
+    status === 'PERMISSION_DENIED' ||
+    /API key/i.test(message) ||
+    /API_KEY_INVALID/i.test(message);
+  if (isAuth) {
+    return new EngineError('gemini', false, 'API key 无效');
+  }
+
+  // 其余错误（上下文过长 / 模型名错误 / 安全拦截等）→ retryable，
+  // router 降级到下一引擎，页面翻译不中断
+  const detail = message ? `：${message}` : '';
+  return new EngineError('gemini', true, `HTTP ${resp.status}${detail}`);
+}
+
 export const gemini: TranslateEngine = {
   id: 'gemini',
   displayName: 'Gemini',
@@ -53,12 +93,8 @@ export const gemini: TranslateEngine = {
         }),
       });
 
-      if (resp.status === 400 || resp.status === 403) {
-        // 400 可能是无效 key（Gemini 把 auth 错误也打成 400）
-        throw new EngineError('gemini', false, 'API key 无效');
-      }
       if (!resp.ok) {
-        throw new EngineError('gemini', true, `HTTP ${resp.status}`);
+        throw await classifyError(resp);
       }
 
       const data = await resp.json();
