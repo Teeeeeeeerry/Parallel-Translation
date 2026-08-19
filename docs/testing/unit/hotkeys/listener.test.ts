@@ -25,6 +25,16 @@ function keydown(init: KeyboardEventInit): KeyboardEvent {
   });
 }
 
+/** handlers 需覆盖全部 HotkeyAction（类型约束） */
+function handlers(translate: () => void): Record<string, () => void> {
+  return {
+    'toggle-translate': translate,
+    'toggle-mode': () => {},
+    'translate-paragraph': () => {},
+    'toggle-extension': () => {},
+  };
+}
+
 describe('startHotkeys', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -32,7 +42,7 @@ describe('startHotkeys', () => {
 
   test('命中组合键 → 触发 handler', () => {
     const handler = vi.fn();
-    const stop = startHotkeys({ 'toggle-translate': handler });
+    const stop = startHotkeys(handlers(handler));
     document.dispatchEvent(
       keydown({ key: 'y', metaKey: true, shiftKey: true }),
     );
@@ -42,7 +52,7 @@ describe('startHotkeys', () => {
 
   test('repeat=true（按住连发）→ 不触发 handler（#164）', () => {
     const handler = vi.fn();
-    const stop = startHotkeys({ 'toggle-translate': handler });
+    const stop = startHotkeys(handlers(handler));
     document.dispatchEvent(
       keydown({ key: 'y', metaKey: true, shiftKey: true, repeat: true }),
     );
@@ -52,7 +62,7 @@ describe('startHotkeys', () => {
 
   test('未命中组合键 → 不触发 handler', () => {
     const handler = vi.fn();
-    const stop = startHotkeys({ 'toggle-translate': handler });
+    const stop = startHotkeys(handlers(handler));
     document.dispatchEvent(keydown({ key: 'y', metaKey: true }));
     expect(handler).not.toHaveBeenCalled();
     stop();

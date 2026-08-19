@@ -207,6 +207,35 @@ test.describe('入口：段落按钮', () => {
     // 该段标记 done
     await expect(firstP).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
   });
+
+  test('@core TC-E2E-55: 离开段落再回到同一段落 —— 按钮保持显示（#165 回归）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ showParagraphBtn: true });
+    await mockGoogle();
+    await gotoFixture('basic');
+
+    await waitForBall(page);
+
+    const firstP = page.locator('p').first();
+    const paraBtn = page.locator('.pt-para-btn');
+
+    // 悬停段落 → 按钮浮出
+    await firstP.hover();
+    await expect(paraBtn).toBeVisible({ timeout: 5_000 });
+
+    // 移到远离段落的空白处 → 触发 scheduleHide（1.5s 隐藏窗口）
+    await page.mouse.move(5, 710);
+
+    // 在隐藏窗口内移回同一段落
+    await page.waitForTimeout(200);
+    await firstP.hover();
+    await expect(paraBtn).toBeVisible({ timeout: 2_000 });
+
+    // 修复前：隐藏定时器继续倒数 → 按钮在鼠标停留期间自行消失
+    await page.waitForTimeout(1_800); // 超过 HIDE_DELAY(1.5s)
+    await expect(paraBtn).toBeVisible({ timeout: 1_000 });
+  });
 });
 
 // ================================================================
