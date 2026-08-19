@@ -89,20 +89,89 @@ describe('gemini HTTP 路径', () => {
     expect(body.contents[0].parts[0].text).not.toContain('\nline');
   });
 
-  test('400 / 403 → EngineError（retryable=false，key 无效）', async () => {
+  test('403 → EngineError（retryable=false，key 无效）', async () => {
     const { getKey } = await import('~/src/storage/keys');
     vi.mocked(getKey).mockResolvedValue('bad');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('err', { status: 400 })));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('err', { status: 403 })));
     const { gemini } = await import('~/src/engines/gemini');
     await expect(
       gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
     ).rejects.toMatchObject({ retryable: false, message: 'API key 无效' });
+  });
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('err', { status: 403 })));
-    const { gemini: gemini2 } = await import('~/src/engines/gemini');
+  test('400 带「API key not valid」错误体 → retryable=false，key 无效（#161）', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('bad');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 400,
+              message: 'API key not valid. Please pass a valid API key.',
+              status: 'INVALID_ARGUMENT',
+            },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        ),
+      ),
+    );
+    const { gemini } = await import('~/src/engines/gemini');
     await expect(
-      gemini2.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
+      gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
     ).rejects.toMatchObject({ retryable: false, message: 'API key 无效' });
+  });
+
+  test('400 带「input too large」错误体 → retryable，交给下一引擎降级（#161）', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('k');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 400,
+              message: 'The input token count (12345) exceeds the maximum token limit (1048576).',
+              status: 'INVALID_ARGUMENT',
+            },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        ),
+      ),
+    );
+    const { gemini } = await import('~/src/engines/gemini');
+    await expect(
+      gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
+    ).rejects.toMatchObject({
+      retryable: true,
+      message: /exceeds the maximum token limit/,
+    });
+  });
+
+  test('404（模型名错误）→ retryable（#161）', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('k');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 404,
+              message: 'models/gemini-typo is not found.',
+              status: 'NOT_FOUND',
+            },
+          }),
+          { status: 404, headers: { 'content-type': 'application/json' } },
+        ),
+      ),
+    );
+    const { gemini } = await import('~/src/engines/gemini');
+    await expect(
+      gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
+    ).rejects.toMatchObject({ retryable: true, message: /is not found/ });
   });
 
   test('其他非 200 → EngineError（retryable）', async () => {
