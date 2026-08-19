@@ -82,6 +82,16 @@ export default defineBackground(() => {
     }
   });
 
+  // #177: welcome 页「关闭」按钮 —— 页面脚本的 window.close() 会被
+  // 浏览器静默忽略（标签页由 background 打开），由这里移除标签页
+  chrome.runtime.onMessage.addListener((msg, sender) => {
+    if (msg?.type === 'pt:close-welcome' && sender.tab?.id) {
+      chrome.tabs.remove(sender.tab.id).catch(() => {
+        console.debug('[PT] 关闭 welcome 标签页失败或已关闭');
+      });
+    }
+  });
+
   // 健康检查（E2E 测试用于验证消息通道就绪）
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'pt:ping') {
