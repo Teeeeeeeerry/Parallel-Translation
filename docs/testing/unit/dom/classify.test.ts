@@ -12,6 +12,7 @@ import {
   closestUnit,
   shouldSkipNonVisual,
   shouldSkip,
+  isVisible,
   MAX_TEXT,
   MAX_HTML,
 } from '~/src/dom/classify';
@@ -267,11 +268,16 @@ describe('shouldSkipNonVisual', () => {
     document.body.removeChild(div);
   });
 
-  test('已在 data-pt="done" 内 → true', () => {
-    const outer = el('<div data-pt="done"><p id="inner">Already translated</p></div>');
+  test('已翻译原文内容（.pt-origin 内）→ true（#179）', () => {
+    // render 后的真实结构：原文子节点被包进 .pt-origin
+    const outer = el(
+      '<div data-pt="done"><span class="pt-origin"><p id="inner">Already translated</p></span></div>',
+    );
     document.body.appendChild(outer);
     const inner = outer.querySelector('#inner')!;
     expect(shouldSkipNonVisual(inner)).toBe(true);
+    // 已翻译单元自身同样跳过
+    expect(shouldSkipNonVisual(outer)).toBe(true);
   });
 
   test('PT UI 内 → true', () => {
@@ -352,6 +358,40 @@ describe('shouldSkip', () => {
     const p = el('<p>No</p>');
     mockBoundingRect(p, { width: 30, right: 30 });
     expect(shouldSkip(p)).toBe(true);
+  });
+
+  test('display:contents 元素 → 视为可见（#179）', () => {
+    const p = el('<p>display contents text</p>');
+    p.setAttribute('style', 'display: contents');
+    // rect 恒 0×0（无盒），但 display:contents 的文本真实渲染
+    expect(isVisible(p)).toBe(true);
+    mockBoundingRect(p, { width: 0, height: 0 });
+    expect(shouldSkip(p)).toBe(false);
+  });
+
+  test('已翻译容器内新增段落（.pt-origin 外）→ 可采集（#179）', () => {
+    const container = el('<div><p>origin text</p></div>');
+    document.body.appendChild(container);
+    // 模拟已翻译的容器：原文被包进 .pt-origin
+    const origin = document.createElement('span');
+    origin.className = 'pt-origin';
+    while (container.firstChild) origin.appendChild(container.firstChild);
+    container.appendChild(origin);
+    container.setAttribute('data-pt', 'done');
+    mockBoundingRect(container);
+
+    // 容器内新增的段落（.pt-origin 之外）
+    const fresh = document.createElement('p');
+    fresh.textContent = 'Appended after translation, should be collected.';
+    container.appendChild(fresh);
+    mockBoundingRect(fresh);
+
+    // 修复前：closest([data-pt=done]) → 跳过 → 永久漏翻
+    expect(shouldSkipNonVisual(fresh)).toBe(false);
+    // 原文内容（.pt-origin 内）仍被跳过，不重复翻译
+    expect(shouldSkipNonVisual(origin)).toBe(true);
+    // 已翻译单元自身仍被跳过
+    expect(shouldSkipNonVisual(container)).toBe(true);
   });
 
   test('shouldSkipNonVisual > 含大量链接的 pre 切块 → false（#174）', () => {

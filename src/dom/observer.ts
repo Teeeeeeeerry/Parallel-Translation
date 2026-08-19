@@ -18,7 +18,46 @@
 // - rootMargin 提前 300px 触发，让即将滚入视口的内容提前翻译。
 
 import { collect } from './walker';
+import { unrender } from './renderer';
 import { injectShadowStyles } from '~/src/styles/shadow';
+
+// #179: 延迟 attachShadow 漏翻 —— host 已入 DOM 后才建 shadow root 的
+// 组件（属性级操作，childList 捕不到、MutationObserver 不产生记录）。
+// 补丁 Element.prototype.attachShadow：创建 shadow root 时同步通知所有
+// 活跃 observer 挂载，shadow 内容不再永久漏翻。
+interface ObserverContext {
+  onMutationRecord: (records: MutationRecord[]) => void;
+  observedRoots: WeakSet<ShadowRoot>;
+  observers: MutationObserver[];
+}
+const observerContexts = new Set<ObserverContext>();
+
+const nativeAttachShadow = Element.prototype.attachShadow;
+if (
+  !(Element.prototype as unknown as { __ptShadowPatched?: boolean })
+    .__ptShadowPatched
+) {
+  (Element.prototype as unknown as { __ptShadowPatched: boolean })
+    .__ptShadowPatched = true;
+  Element.prototype.attachShadow = function (
+    this: Element,
+    init?: ShadowRootInit,
+  ): ShadowRoot {
+    // 原生实现允许省略 init，类型声明要求必填 —— 运行时原样透传
+    const root = nativeAttachShadow.call(this, init as ShadowRootInit);
+    for (const ctx of observerContexts) {
+      if (ctx.observedRoots.has(root)) continue;
+      ctx.observedRoots.add(root);
+      // 同步挂载：shadow 内容通常在 attachShadow 之后立即填充，
+      // 后续 childList 记录会被新 observer 捕获
+      injectShadowStyles(root);
+      const mo = new MutationObserver(ctx.onMutationRecord);
+      mo.observe(root, { childList: true, subtree: true });
+      ctx.observers.push(mo);
+    }
+    return root;
+  };
+}
 
 /**
  * 递归收集 root 下所有 shadowRoot，对每个挂载 observer。
@@ -164,7 +203,35 @@ export function startObserver(
 
   const onMutationRecord = (records: MutationRecord[]) => {
     for (const r of records) {
-      // 只看新增节点。属性变化、文本变化不触发重翻，
+      // #179: SPA 原地复用 DOM 仅改 textContent（React 式视图切换）——
+      // 只监 childList 会漏掉纯文本更新。characterData 的 target 是
+      // 文本节点，取父元素作候选；译文/UI/已翻译内容（.pt-origin 内）
+      // 的变更不补翻，不会与自身渲染互相激发。
+      if (r.type === 'characterData') {
+        const target = r.target;
+        const el = target instanceof Text ? target.parentElement : null;
+        if (!el) continue;
+        if (el.closest('[data-pt-ui="1"]')) continue;
+        if (el.closest('.pt-trans')) continue;
+        // #179: 页面更新了**已翻译单元**的原文文本（React 复用 DOM
+        // 原地改 nodeValue）—— 先还原该单元再重新采集翻译；否则
+        // 新文本永远显示旧译文。自己的渲染/还原只产生 childList，
+        // 不会经此路径自激。
+        const origin = el.closest('.pt-origin');
+        if (origin) {
+          const unit = origin.parentElement;
+          if (unit?.getAttribute('data-pt') === 'done') {
+            unrender(unit);
+            // unrender 已把 .pt-origin 移除 —— 采集目标是还原后的单元
+            pending.push(unit);
+            continue;
+          }
+        }
+        pending.push(el);
+        continue;
+      }
+
+      // 只看新增节点。属性变化不触发重翻，
       // 否则会与自身渲染互相激发
       for (const n of r.addedNodes) {
         if (n.nodeType !== Node.ELEMENT_NODE) continue;
@@ -186,18 +253,30 @@ export function startObserver(
   };
 
   // 主文档 observer
+  // #179: 监听 characterData —— SPA 原地更新文本（React nodeValue 更新）
+  // 产生 characterData 记录；译文/UI 变更已在上层过滤，不会自激
   const mainMo = new MutationObserver(onMutationRecord);
-  mainMo.observe(document.body, { childList: true, subtree: true });
+  mainMo.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
   observers.push(mainMo);
 
   // 初始扫描：为文档中已存在的 shadow root 各挂 observer
   const initial = observeShadowRoots(document.body, onMutationRecord, observedRoots);
   observers.push(...initial);
 
+  // #179: 注册到 attachShadow 补丁的通知集合 —— 延迟建 shadow root 的
+  // 组件也能被增量补翻
+  const ctx: ObserverContext = { onMutationRecord, observedRoots, observers };
+  observerContexts.add(ctx);
+
   // #23：启动 IntersectionObserver，监听初次采集时因 display:none 被跳过的元素
   startWatching(onNewNodes);
 
   return () => {
+    observerContexts.delete(ctx);
     for (const mo of observers) mo.disconnect();
     if (timer) clearTimeout(timer);
     if (io) {

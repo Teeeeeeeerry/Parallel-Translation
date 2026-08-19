@@ -402,6 +402,54 @@ test.describe('Fixture: spa', () => {
     await expect(page.locator('#view [data-pt="done"]')).toHaveCount(3, { timeout: 15_000 });
   });
 
+  test('@core TC-E2E-56: SPA 纯文本更新（textContent 原地改）→ 自动补翻（#179）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('spa');
+
+    await translateAndWait(page);
+
+    // React 式原地更新：复用同一 DOM 元素，只改原文文本节点数据 ——
+    // 修复前 observer 只监 childList，新文本永不补翻
+    await page.evaluate(() => {
+      const view = document.getElementById('view')!;
+      const h1 = view.querySelector('h1')!;
+      // 已翻译单元的原文在 .pt-origin 内
+      h1.querySelector('.pt-origin')!.firstChild!.nodeValue = 'In-place updated heading text';
+    });
+
+    // 单元被还原并重新翻译 —— .pt-trans 携带新文本的译文（mock 前缀 + 原文）
+    await expect(page.locator('#view h1 .pt-trans')).toContainText(
+      'In-place updated heading text',
+      { timeout: 15_000 },
+    );
+  });
+
+  test('@core TC-E2E-57: 延迟 attachShadow 的组件内容 → 自动补翻（#179）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('spa');
+
+    await translateAndWait(page);
+    const initialDone = await page.locator('[data-pt="done"]').count();
+
+    // host 已入 DOM 后才建 shadow root（childList 捕不到 attachShadow）
+    await page.evaluate(() => {
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      const root = host.attachShadow({ mode: 'open' });
+      const p = document.createElement('p');
+      p.textContent = 'Late shadow root paragraph content.';
+      root.appendChild(p);
+    });
+
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(initialDone + 1, { timeout: 15_000 });
+  });
+
   test('@core TC-E2E-47: 增量翻译瞬时失败后自动重试（#91 回归）', async ({
     page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
   }) => {
