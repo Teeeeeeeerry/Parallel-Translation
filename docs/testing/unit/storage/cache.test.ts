@@ -1,7 +1,7 @@
 /**
  * storage/cache.ts — 缓存 + LRU 淘汰 + 并发安全 单元测试
  */
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { resetStorage, localStoreSnapshot } from '~/docs/testing/setup';
 import { cacheGet, cacheSet, cacheKey, cacheClear } from '~/src/storage/cache';
 
@@ -112,6 +112,77 @@ describe('cacheGet / cacheSet', () => {
 
     const value = await cacheGet(key);
     expect(value).toBe('旧格式译文');
+  });
+
+  test('JSON 但缺 v/t 字段（异常形状）→ 按原字符串读取', async () => {
+    const key = await cacheKey('google-web', 'auto', 'zh-CN', 'OddJson');
+    // 合法 JSON 但不是本扩展的包装格式
+    await chrome.storage.local.set({ [key]: '{"x": 1}' });
+
+    const value = await cacheGet(key);
+    expect(value).toBe('{"x": 1}');
+  });
+
+  test('读取失败（storage 异常）→ 返回 null 并告警，不抛错', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const key = await cacheKey('google-web', 'auto', 'zh-CN', 'ReadFail');
+      vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(
+        new Error('storage broken'),
+      );
+
+      const value = await cacheGet(key);
+      expect(value).toBeNull();
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test('写入失败（配额满）→ 不抛错并告警', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const key = await cacheKey('google-web', 'auto', 'zh-CN', 'WriteFail');
+      vi.mocked(chrome.storage.local.set).mockRejectedValueOnce(
+        new Error('QUOTA_BYTES exceeded'),
+      );
+
+      await expect(cacheSet(key, '值')).resolves.toBeUndefined();
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
+describe('LRU 淘汰（MAX_ENTRIES）', () => {
+  beforeEach(() => {
+    resetStorage();
+  });
+
+  test('index 溢出 MAX_ENTRIES → 最旧条目被移除，新条目保留', async () => {
+    // 预填接近上限的 index（不真写条目，只验证淘汰逻辑）
+    const MAX = 5000;
+    const staleKeys = Array.from(
+      { length: MAX },
+      (_, i) => `pt-c:stale:${i}`,
+    );
+    await chrome.storage.local.set({ 'pt-cache-index': staleKeys });
+
+    const key = await cacheKey('google-web', 'auto', 'zh-CN', 'NewEntry');
+    await cacheSet(key, '新值');
+
+    const idx = (await chrome.storage.local.get('pt-cache-index'))[
+      'pt-cache-index'
+    ] as string[];
+    expect(idx).toHaveLength(MAX);
+    // 最旧的一条被淘汰
+    expect(idx).not.toContain('pt-c:stale:0');
+    // 新条目保留在末尾
+    expect(idx[idx.length - 1]).toBe(key);
+    // 被淘汰的条目从 storage 移除
+    const removed = await chrome.storage.local.get('pt-c:stale:0');
+    expect(removed['pt-c:stale:0']).toBeUndefined();
   });
 });
 
