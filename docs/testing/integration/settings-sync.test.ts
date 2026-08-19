@@ -18,6 +18,28 @@ describe('设置跨上下文同步', () => {
     expect(p1).toBe(p2);
   });
 
+  test('陈旧内存副本 patch → 写前重读存储，不覆盖其他上下文写入（#167）', async () => {
+    const { settingsReady, patchSettings } = await import('~/src/storage/settings');
+    await settingsReady();
+
+    // 模拟上下文 A 写入 displayMode（直接写存储；本实例不触发
+    // onChanged，内存副本保持陈旧 —— 等价于另一个标签页的修改）
+    await chrome.storage.sync.set({
+      'pt-settings': { ...DEFAULT_SETTINGS, displayMode: 'translation-only' },
+    });
+
+    // 本上下文用陈旧内存副本 patch style —— 修复前整对象覆盖，
+    // displayMode 被静默回滚（lost update）；修复后写前重读存储，
+    // 基于最新值合并，两个修改都保留
+    await patchSettings({ style: 'bold' });
+
+    const stored = ((await chrome.storage.sync.get('pt-settings'))[
+      'pt-settings'
+    ] ?? {}) as Record<string, unknown>;
+    expect(stored.displayMode).toBe('translation-only');
+    expect(stored.style).toBe('bold');
+  });
+
   test('onSettingsChanged 接收 patchSettings 触发的变更', async () => {
     const { settingsReady, patchSettings, onSettingsChanged } =
       await import('~/src/storage/settings');

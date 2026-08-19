@@ -70,7 +70,14 @@ export function getSettings(): Settings {
 
 /** 部分更新设置并写回 sync。嵌套对象递归合并，不会丢兄弟键。 */
 export async function patchSettings(patch: DeepPartial<Settings>): Promise<void> {
-  current = mergeInto(current, patch);
+  // #167: 跨上下文并发写保护 —— 写前重读存储，基于最新值合并再写回
+  // （compare-and-swap 风格）。每个上下文（popup/options/content）都有
+  // 自己的内存副本，直接拿内存值整对象覆盖会静默回滚另一个上下文刚
+  // 写入的修改（lost update）。
+  const stored = ((await chrome.storage.sync.get(KEY))[KEY] as
+    | Partial<Settings>
+    | undefined);
+  current = mergeInto(merge(stored), patch);
   await chrome.storage.sync.set({ [KEY]: current });
 }
 
