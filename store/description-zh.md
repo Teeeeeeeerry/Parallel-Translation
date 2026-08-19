@@ -35,4 +35,4 @@ Chrome · Edge · Firefox（Manifest V3）
 
 https://github.com/Teeeeeeeerry/Parallel-Translation
 
-MIT License
+（许可证待定）
