@@ -45,7 +45,7 @@ export default defineBackground(() => {
 
   // 右键菜单 + 首次安装引导
   chrome.runtime.onInstalled.addListener((details) => {
-    initContextMenu();
+    initContextMenu().catch(() => {});
 
     if (details.reason === 'install') {
       // 根据浏览器 UI 语言推导默认目标语言
