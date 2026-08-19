@@ -3,6 +3,7 @@
 
 import { getKey } from '~/src/storage/keys';
 import { getSettings } from '~/src/storage/settings';
+import { DEFAULT_MODELS } from '~/src/storage/schema';
 import { normalizeText } from '~/src/dom/normalize';
 import { fetchWithTimeout } from './fetch-timeout';
 import { engineGate } from './engine-gate';
@@ -65,7 +66,7 @@ export const gemini: TranslateEngine = {
       const key = await getKey('gemini');
       if (!key) throw new EngineError('gemini', false, '未配置 API key');
 
-      const model = getSettings().models?.gemini ?? 'gemini-2.0-flash';
+      const model = getSettings().models?.gemini ?? DEFAULT_MODELS.gemini!;
       // key 走 x-goog-api-key 请求头而非 ?key= query。
       // URL 会进浏览器网络日志、DevTools 记录与任何中间层的访问日志，请求头不会；
       // 另两个引擎也都是走头，保持一致。

@@ -3,6 +3,7 @@
 // 集成翻译缓存：先查后写，二次请求不碰网络。
 
 import { getSettings } from '~/src/storage/settings';
+import { DEFAULT_MODELS } from '~/src/storage/schema';
 import { cacheGet, cacheSet, cacheKey } from '~/src/storage/cache';
 import { googleWeb } from './google-web';
 import { bingEdge } from './bing-edge';
@@ -33,6 +34,9 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
     const engine = REGISTRY[id];
     if (!engine) continue;
 
+    // #175: BYOK 引擎的模型名参与缓存 key —— 切换模型后不命中旧译文
+    const model = getSettings().models?.[id] ?? DEFAULT_MODELS[id] ?? '';
+
     if (
       engine.supportedLangs !== 'all' &&
       !engine.supportedLangs.includes(req.to)
@@ -49,7 +53,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       const cacheChecks = await Promise.all(
         req.texts.map(async (text, i) => {
           if (translations[i] !== null) return { i, cached: null, text };
-          const k = await cacheKey(id, req.from, req.to, text);
+          const k = await cacheKey(id, req.from, req.to, text, model);
           const cached = await cacheGet(k);
           return { i, cached, text };
         }),
@@ -111,7 +115,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
           if (succeeded.length > 0) {
             await Promise.all(
               succeeded.map(async (u) => {
-                const k = await cacheKey(id, req.from, req.to, u.text);
+                const k = await cacheKey(id, req.from, req.to, u.text, model);
                 const idx = uncached.indexOf(u);
                 const val = resp.translations[idx];
                 // #171: 短数组下成功槽位必然有值，这里再做一次防御
@@ -137,7 +141,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       if (useCache) {
         await Promise.all(
           uncached.map(async (u) => {
-            const k = await cacheKey(id, req.from, req.to, u.text);
+            const k = await cacheKey(id, req.from, req.to, u.text, model);
             const idx = uncached.indexOf(u);
             await cacheSet(k, resp.translations[idx]!);
           }),

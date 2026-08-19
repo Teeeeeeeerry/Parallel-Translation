@@ -113,6 +113,12 @@ export const LANG_LIST: { code: string; label: string }[] = [
 export const CONCURRENCY_MIN = 1;
 export const CONCURRENCY_MAX = 10;
 
+/** BYOK 引擎的默认模型名（缓存 key 的模型维度用，单一来源，#175）。 */
+export const DEFAULT_MODELS: Partial<Record<EngineId, string>> = {
+  openai: 'gpt-4o-mini',
+  gemini: 'gemini-2.0-flash',
+};
+
 /** 钳制并发数到合法范围 —— 导入/存储/写入口共用，防 0 或负数饿死闸门。 */
 export function clampConcurrency(n: unknown): number {
   const v = typeof n === 'number' && Number.isFinite(n) ? Math.floor(n) : CONCURRENCY_MIN;
