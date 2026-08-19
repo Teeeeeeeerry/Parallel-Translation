@@ -82,6 +82,17 @@ export async function patchSettings(patch: DeepPartial<Settings>): Promise<void>
 }
 
 /**
+ * 整对象替换设置（恢复默认专用）—— #169。
+ * patchSettings 对嵌套对象（models/hotkeys/siteList）是合并语义，
+ * DEFAULT_SETTINGS.models = {} 合并不掉用户自定义的模型名 —— 恢复
+ * 默认必须整体替换而不是合并。替换本身就是有意的全量覆盖。
+ */
+export async function replaceSettings(next: Settings): Promise<void> {
+  current = next;
+  await chrome.storage.sync.set({ [KEY]: current });
+}
+
+/**
  * 跨上下文变更订阅。
  * popup 改设置 → 所有已打开标签页的 content script 立即收到回调。
  *
