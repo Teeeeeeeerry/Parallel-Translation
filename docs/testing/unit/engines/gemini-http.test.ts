@@ -7,7 +7,8 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('~/src/storage/settings', () => ({
-  getSettings: vi.fn(() => ({ models: { gemini: 'gemini-2.5-flash' } })),
+  getSettings: vi.fn(() => ({ maxConcurrency: 6, models: { gemini: 'gemini-2.5-flash' } })),
+  onSettingsChanged: vi.fn(() => () => {}),
 }));
 
 vi.mock('~/src/storage/keys', () => ({
@@ -134,5 +135,34 @@ describe('gemini HTTP 路径', () => {
     await expect(
       gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
     ).rejects.toThrow();
+  });
+
+  test('并发闸门：并发 translate() 调用在飞请求不超过 maxConcurrency（#159）', async () => {
+    const { getSettings } = await import('~/src/storage/settings');
+    vi.mocked(getSettings).mockReturnValue({ maxConcurrency: 2, models: { gemini: 'gemini-2.5-flash' } } as never);
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('k');
+
+    let inFlight = 0;
+    let peak = 0;
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 10));
+      inFlight--;
+      return okResp('1. 你好');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { gemini } = await import('~/src/engines/gemini');
+    const resps = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        gemini.translate({ texts: ['Hello'], from: 'en', to: 'zh-CN' }),
+      ),
+    );
+
+    expect(resps.every((r) => r.translations[0] === '你好')).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(8);
+    expect(peak).toBeLessThanOrEqual(2);
   });
 });

@@ -6,6 +6,11 @@
  */
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
+vi.mock('~/src/storage/settings', () => ({
+  getSettings: vi.fn(() => ({ maxConcurrency: 6 })),
+  onSettingsChanged: vi.fn(() => () => {}),
+}));
+
 vi.mock('~/src/storage/keys', () => ({
   getKey: vi.fn(),
 }));
@@ -137,5 +142,34 @@ describe('deepl HTTP 路径', () => {
     await expect(
       deepl.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
     ).rejects.toThrow();
+  });
+
+  test('并发闸门：并发 translate() 调用在飞请求不超过 maxConcurrency（#159）', async () => {
+    const { getSettings } = await import('~/src/storage/settings');
+    vi.mocked(getSettings).mockReturnValue({ maxConcurrency: 2 } as never);
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('k');
+
+    let inFlight = 0;
+    let peak = 0;
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 10));
+      inFlight--;
+      return okResp(['你好']);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { deepl } = await import('~/src/engines/deepl');
+    const resps = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        deepl.translate({ texts: ['Hello'], from: 'en', to: 'zh-CN' }),
+      ),
+    );
+
+    expect(resps.every((r) => r.translations[0] === '你好')).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(8);
+    expect(peak).toBeLessThanOrEqual(2);
   });
 });

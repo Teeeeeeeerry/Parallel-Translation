@@ -6,6 +6,11 @@
  */
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
+vi.mock('~/src/storage/settings', () => ({
+  getSettings: vi.fn(() => ({ maxConcurrency: 6 })),
+  onSettingsChanged: vi.fn(() => () => {}),
+}));
+
 const AUTH_URL = 'https://edge.microsoft.com/translate/auth';
 const TRANS_URL = 'https://api-edge.cognitive.microsofttranslator.com/translate';
 
@@ -48,6 +53,37 @@ describe('bing-edge HTTP 路径', () => {
     vi.clearAllMocks();
   });
   afterEach(() => vi.unstubAllGlobals());
+
+  test('并发闸门：并发 translate() 调用在飞请求不超过 maxConcurrency（#159）', async () => {
+    const { getSettings } = await import('~/src/storage/settings');
+    vi.mocked(getSettings).mockReturnValue({ maxConcurrency: 2 } as never);
+
+    let inFlight = 0;
+    let peak = 0;
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 10));
+      inFlight--;
+      // auth 请求返回 JWT，翻译请求返回译文（URL 分流）
+      return String(url) === AUTH_URL
+        ? new Response(futureJwt, { status: 200 })
+        : okTrans(['你好']);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { bingEdge } = await import('~/src/engines/bing-edge');
+    const resps = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        bingEdge.translate({ texts: ['Hello'], from: 'en', to: 'zh-CN' }),
+      ),
+    );
+
+    // 全部成功（JWT 首取后缓存 → 1 次 auth + 8 次翻译 POST）
+    expect(resps.every((r) => r.translations[0] === '你好')).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(9);
+    expect(peak).toBeLessThanOrEqual(2);
+  });
 
   test('成功：先取 JWT，再 POST 翻译（URL / 头 / 体断言）', async () => {
     const fetchMock = scriptedFetch([
