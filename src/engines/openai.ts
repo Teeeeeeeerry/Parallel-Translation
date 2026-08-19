@@ -6,10 +6,14 @@ import { getKey } from '~/src/storage/keys';
 import { getSettings } from '~/src/storage/settings';
 import { normalizeText } from '~/src/dom/normalize';
 import { fetchWithTimeout } from './fetch-timeout';
+import { engineGate } from './engine-gate';
 import { EngineError } from './types';
 import type { TranslateEngine } from './types';
 
 const DEFAULT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+
+// #159: 引擎级并发闸门 —— 整页翻译批次并发 → translate() 并发调用
+const getGate = engineGate();
 
 /**
  * 解析 LLM 编号输出为译文数组。
@@ -32,43 +36,46 @@ export const openai: TranslateEngine = {
   supportedLangs: 'all',
 
   async translate({ texts, from, to }) {
-    const key = await getKey('openai');
-    if (!key) throw new EngineError('openai', false, '未配置 API key');
+    // #159: 整个请求体过闸门，限制并发在飞请求数
+    return getGate()(async () => {
+      const key = await getKey('openai');
+      if (!key) throw new EngineError('openai', false, '未配置 API key');
 
-    const model = getSettings().models?.openai ?? 'gpt-4o-mini';
+      const model = getSettings().models?.openai ?? 'gpt-4o-mini';
 
-    // 纵深防御：编号结构靠 \n 分隔，文本自带的换行会把编号撑破导致错位。
-    // 即便入口采集漏了归一化，这里也必须兜住，拼 prompt 前再压一次。
-    const numbered = texts
-      .map((t, i) => `${i + 1}. ${normalizeText(t)}`)
-      .join('\n');
-    const prompt =
-      `将以下编号文本翻译成${to}${from === 'auto' ? '' : `（源语言：${from}）`}。` +
-      `严格保持编号与行数一致，只输出译文，不要解释。\n\n${numbered}`;
+      // 纵深防御：编号结构靠 \n 分隔，文本自带的换行会把编号撑破导致错位。
+      // 即便入口采集漏了归一化，这里也必须兜住，拼 prompt 前再压一次。
+      const numbered = texts
+        .map((t, i) => `${i + 1}. ${normalizeText(t)}`)
+        .join('\n');
+      const prompt =
+        `将以下编号文本翻译成${to}${from === 'auto' ? '' : `（源语言：${from}）`}。` +
+        `严格保持编号与行数一致，只输出译文，不要解释。\n\n${numbered}`;
 
-    const resp = await fetchWithTimeout('openai', DEFAULT_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0,
-      }),
+      const resp = await fetchWithTimeout('openai', DEFAULT_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0,
+        }),
+      });
+
+      if (resp.status === 401 || resp.status === 403) {
+        throw new EngineError('openai', false, 'API key 无效');
+      }
+      if (!resp.ok) {
+        throw new EngineError('openai', true, `HTTP ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      const raw = data.choices?.[0]?.message?.content ?? '';
+      const out = parseNumbered(raw, texts.length);
+      return { translations: out };
     });
-
-    if (resp.status === 401 || resp.status === 403) {
-      throw new EngineError('openai', false, 'API key 无效');
-    }
-    if (!resp.ok) {
-      throw new EngineError('openai', true, `HTTP ${resp.status}`);
-    }
-
-    const data = await resp.json();
-    const raw = data.choices?.[0]?.message?.content ?? '';
-    const out = parseNumbered(raw, texts.length);
-    return { translations: out };
   },
 };
