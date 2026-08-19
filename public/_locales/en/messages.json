@@ -159,6 +159,11 @@
   "toastExtOff": { "message": "Extension disabled" },
   "toastAllEnginesFail": { "message": "All engines failed" },
   "toastTranslateFail": { "message": "Translation failed" },
+  "toastRenderRejected": {
+    "message": "$count$ paragraphs not translated (contain images or buttons)",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "toastAllRejected": { "message": "All paragraphs contain images or buttons and cannot be translated" },
   "toastNotTranslatable": { "message": "This area cannot be translated individually" },
   "toastSiteBlocked": { "message": "Translation is disabled on this site by the site list" },
 

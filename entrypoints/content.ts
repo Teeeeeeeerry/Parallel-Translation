@@ -324,7 +324,11 @@ export default defineContentScript({
       // #49：整页翻译结束后用一条 toast 汇总被拒数量，而不是逐条刷屏
       if (renderRejected > 0 && isMainFrame) {
         toast(
-          tf('toastRenderRejected', `${renderRejected} 段因含图片/按钮未翻译`),
+          tf(
+            'toastRenderRejected',
+            `${renderRejected} 段因含图片/按钮未翻译`,
+            String(renderRejected),
+          ),
           'info',
         );
       }
