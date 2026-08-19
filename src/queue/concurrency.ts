@@ -3,6 +3,9 @@
 // 浏览器对单域名并发连接数的常见上限为 6，与默认值对齐。
 
 export function createGate(max: number) {
+  // #172: 防御 max <= 0 —— 0 会让 pump 永不放行，在飞任务全部挂死。
+  // 正常路径已有设置侧钳制（clampConcurrency），这里兜住所有调用方。
+  max = Math.max(1, Math.floor(max) || 1);
   let active = 0;
   const waiting: (() => void)[] = [];
 
@@ -34,7 +37,7 @@ export function createGate(max: number) {
 
   /** 动态调整上限，保留当前 active 计数与等待队列。 */
   run.setMax = (n: number) => {
-    max = n;
+    max = Math.max(1, Math.floor(n) || 1);
     pump();
   };
 

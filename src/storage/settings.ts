@@ -1,5 +1,5 @@
 import type { DeepPartial, Settings } from './schema';
-import { DEFAULT_SETTINGS } from './schema';
+import { DEFAULT_SETTINGS, clampConcurrency } from './schema';
 
 const KEY = 'pt-settings';
 
@@ -16,6 +16,12 @@ function mergeInto(base: Settings, patch: DeepPartial<Settings>): Settings {
   return {
     ...base,
     ...patch,
+    // #172: 任何写入口（导入/跨上下文 patch）都可能绕过 UI 下拉 ——
+    // maxConcurrency <= 0 会让并发闸门永久饿死，统一钳制到合法范围
+    maxConcurrency:
+      patch.maxConcurrency === undefined
+        ? base.maxConcurrency
+        : clampConcurrency(patch.maxConcurrency),
     hotkeys: patch.hotkeys
       ? { ...base.hotkeys, ...patch.hotkeys }
       : base.hotkeys,

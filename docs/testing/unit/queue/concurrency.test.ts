@@ -127,6 +127,22 @@ describe('Gate', () => {
     expect(result).toBe('success');
   });
 
+  test('createGate(0) 不挂死 —— 防御钳制为 1（#172）', async () => {
+    const gate = createGate(0);
+    const result = await gate(async () => 'ok');
+    expect(result).toBe('ok');
+  });
+
+  test('setMax(0) 不挂死 —— 防御钳制为 1（#172）', async () => {
+    const gate = createGate(1);
+    const pending = gate(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+      return 'ok';
+    });
+    gate.setMax(0);
+    await expect(pending).resolves.toBe('ok');
+  });
+
   test('active 计数全程正确', async () => {
     const gate = createGate(2);
     let running = 0;
