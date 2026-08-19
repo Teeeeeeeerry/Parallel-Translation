@@ -140,8 +140,14 @@ export function createParaBtn(handlers: ParaBtnHandlers): () => void {
       }
       if (!el) return;
 
-      // 已经停在这一段上了 —— 段落内部换子元素不重定位，省掉无谓的强制布局
-      if (el === target && isVisible()) return;
+      // 已经停在这一段上了 —— 段落内部换子元素不重定位，省掉无谓的强制布局。
+      // #165: 必须先清隐藏定时器 —— 离开段落再回来（<1.5s）的路径上
+      // scheduleHide 挂起的计时器还在倒数，不清的话按钮在鼠标停留期间
+      // 自行消失，用户必须再挪一下鼠标才重新浮出。
+      if (el === target && isVisible()) {
+        clearTimeout(hideTimer);
+        return;
+      }
 
       clearTimeout(hideTimer);
       show(el);
