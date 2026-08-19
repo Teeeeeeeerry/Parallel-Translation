@@ -54,6 +54,46 @@ test.describe('入口：悬浮球', () => {
     await expect(page.locator('[data-pt="done"]')).toHaveCount(0, { timeout: 10_000 });
     await expect(ball).toHaveAttribute('data-state', 'idle');
   });
+
+  test('@core TC-E2E-53: 在飞期间重复触发 —— 只发一次请求、不立即还原（#156 回归）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    // 慢引擎制造在飞窗口。走快捷键路径而非点击悬浮球：悬浮球自身有
+    // loading 守卫，而 popup/快捷键路径没有 —— 修复前第二次触发并发
+    // 整页请求（请求翻倍），或首轮刚完成时触发还原（刚翻好的页面被
+    // 立即还原）。快捷键与 popup 都直接调 togglePage，互斥守卫相同。
+    await mockGoogle({ delayMs: 800 });
+    await gotoFixture('basic');
+    await waitForBall(page);
+
+    const served = () =>
+      serviceWorker.evaluate(() => (self as any).getE2EMockStats().totalServed);
+    const toggleKey = process.platform === 'darwin' ? 'Meta+Shift+Y' : 'Control+Shift+Y';
+
+    // 基线：单次触发的请求数
+    await page.keyboard.press(toggleKey);
+    await expect(page.locator('[data-pt="done"]').first()).toBeVisible({ timeout: 30_000 });
+    const baseline = await served();
+
+    // 还原，回到未翻译态
+    await page.keyboard.press(toggleKey);
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0, { timeout: 10_000 });
+
+    // 在飞窗口内连按两次（两次按键间隔远小于 800ms 延迟）
+    const before = await served();
+    await page.keyboard.press(toggleKey);
+    await page.keyboard.press(toggleKey);
+
+    // 最终页面处于已翻译态（第二次触发未被还原）
+    await expect(page.locator('[data-pt="done"]').first()).toBeVisible({ timeout: 30_000 });
+
+    // 第二次触发未产生整页翻译的请求量（未并发翻倍）。用上界而非精确
+    // 增量：SW 实例可能被 Chrome 替换（totalServed 清零、mock 自愈，
+    // #90）—— 修复前并发第二次翻译会让增量达到 2×baseline。
+    const after = await served();
+    expect(after - before).toBeLessThanOrEqual(baseline);
+  });
 });
 
 test.describe('入口：快捷键', () => {

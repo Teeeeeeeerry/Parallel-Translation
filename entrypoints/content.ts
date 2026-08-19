@@ -151,6 +151,12 @@ export default defineContentScript({
     /** 还原纪元：doRestore 递增，在飞翻译据此放弃重试与渲染。 */
     const translateEpoch = { value: 0 };
 
+    // #156: 整页翻译在飞互斥。悬浮球自身的 loading 守卫挡不住 popup 与
+    // 快捷键路径 —— 它们直接调 togglePage。在飞期间忽略新的 toggle：
+    // 否则连点会并发整页请求（双倍引擎额度/缓存写入、双 toast），或
+    // 首轮刚完成时第二次触发把刚翻好的页面立即还原。
+    let pageToggleInFlight = false;
+
     async function doTranslate(
       elements?: Element[],
     ): Promise<string> {
@@ -404,7 +410,7 @@ export default defineContentScript({
      * 状态，任何入口各自记一份都会导致“按了没反应”或“重复翻一遍”。
      * 悬浮球的视觉由这里通过 setBallState 单向推送。
      */
-    async function togglePage(): Promise<string> {
+    async function togglePageImpl(): Promise<string> {
       if (hasTranslated()) {
         doRestore();
         if (isMainFrame) setBallState('idle');
@@ -452,6 +458,21 @@ export default defineContentScript({
         toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
       }
       return status;
+    }
+
+    // #156: 在飞互斥包裹层 —— 真正的实现见 togglePageImpl。
+    // 在飞期间：页面上尚无译文（首批未渲染）时忽略新 toggle，防止并发
+    // 整页请求（双倍额度/缓存写入）；已有译文则放行还原 —— #157 的
+    // 取消语义：doRestore 递增 epoch，在飞批次中止，页面被还原。
+    // popup 收到 'busy' 不把它当错误。
+    async function togglePage(): Promise<string> {
+      if (pageToggleInFlight && !hasTranslated()) return 'busy';
+      pageToggleInFlight = true;
+      try {
+        return await togglePageImpl();
+      } finally {
+        pageToggleInFlight = false;
+      }
     }
 
     // ── 翻译单段 ──
