@@ -304,6 +304,33 @@ describe('route', () => {
     expect(bingReq.texts).toEqual(['World']);
   });
 
+  test('引擎返回短数组 → 不足槽位置 null 交给下一引擎补齐（#171）', async () => {
+    // 请求 3 条，引擎只返回 1 条 —— 短出的槽位不能是 undefined
+    mockGoogleTranslate.mockResolvedValue({
+      translations: ['你好'],
+    });
+    mockBingTranslate.mockResolvedValue({
+      translations: ['世界', '再见'],
+    });
+
+    const resp = await route({
+      texts: ['Hello', 'World', 'Bye'],
+      from: 'auto',
+      to: 'zh-CN',
+    });
+
+    // 全部补齐，无 undefined
+    expect(resp.translations).toEqual(['你好', '世界', '再见']);
+    expect(mockGoogleTranslate).toHaveBeenCalledTimes(1);
+    expect(mockBingTranslate).toHaveBeenCalledTimes(1);
+    // Bing 只收到短出的 2 条
+    const bingReq = mockBingTranslate.mock.calls[0]![0];
+    expect(bingReq.texts).toEqual(['World', 'Bye']);
+    // 短数组槽位不得写入缓存
+    const cacheWrites = vi.mocked(cacheSet).mock.calls.map((c) => c[1]);
+    expect(cacheWrites).not.toContain(undefined);
+  });
+
   test('useCache=false 部分失败 → 下一引擎只补失败槽位，不覆盖已成功译文（#120）', async () => {
     vi.mocked(getSettings).mockReturnValue({
       enginePriority: ['google-web', 'bing-edge'],
