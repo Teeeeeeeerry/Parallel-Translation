@@ -84,7 +84,11 @@ export function shouldSkipNonVisual(el: Element): boolean {
 
   if (el.classList.contains('notranslate')) return true;
   if ((el as HTMLElement).isContentEditable) return true;
-  if (el.closest('[data-pt="done"]')) return true;
+  // #179: 已翻译单元自身与其原文内容（.pt-origin 内）不重复翻译；
+  // 但页面在已翻译容器内**新增**的段落（.pt-origin 之外）仍需采集补翻
+  // —— 旧的 closest('[data-pt="done"]') 会把新内容一并拦掉，永久漏翻
+  if (el.getAttribute('data-pt') === 'done') return true;
+  if (el.closest('.pt-origin')) return true;
 
   // 扩展自身注入的 UI —— 绝不能翻译自己的按钮文字
   if (el.closest('[data-pt-ui="1"]')) return true;
@@ -111,7 +115,13 @@ export function shouldSkipNonVisual(el: Element): boolean {
 /** 元素是否可见（非 display:none 且祖先均可见）。 */
 export function isVisible(el: Element): boolean {
   const rect = (el as HTMLElement).getBoundingClientRect?.();
-  if (rect && rect.width === 0 && rect.height === 0) return false;
+  if (rect && rect.width === 0 && rect.height === 0) {
+    // #179: display:contents 元素无盒（rect 恒 0×0），但其文本真实渲染
+    // 在页面上 —— 现代 grid/flex 布局骨架常见。按不可见处理会注册进
+    // IntersectionObserver 却永远等不到可见事件，内容永久漏翻。
+    if (getComputedStyle(el).display === 'contents') return true;
+    return false;
+  }
   return true;
 }
 

@@ -58,6 +58,112 @@ describe('startObserver 采集去重（#158）', () => {
     }
   });
 
+  test('characterData 变更（SPA 文本更新）→ 父元素被采集（#179）', async () => {
+    const restore = mockAllBoundingRects();
+    try {
+      const seen: Element[] = [];
+      const stop = startObserver((els) => seen.push(...els));
+
+      const p = document.createElement('p');
+      p.textContent = 'original text';
+      document.body.appendChild(p);
+
+      // React 式原地更新：直接改文本节点数据（无 DOM 增删）
+      p.firstChild!.nodeValue = 'updated by SPA';
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      expect(seen).toContain(p);
+      stop();
+    } finally {
+      restore();
+    }
+  });
+
+  test('译文文本（.pt-trans 内）的变更 → 不触发采集（#179）', async () => {
+    const restore = mockAllBoundingRects();
+    try {
+      const seen: Element[] = [];
+      const stop = startObserver((els) => seen.push(...els));
+
+      const p = document.createElement('p');
+      p.textContent = '原文';
+      document.body.appendChild(p);
+      p.setAttribute('data-pt', 'done');
+      const origin = document.createElement('span');
+      origin.className = 'pt-origin';
+      origin.textContent = '原文';
+      const trans = document.createElement('span');
+      trans.className = 'pt-trans';
+      trans.textContent = '译文';
+      p.append(origin, trans);
+
+      // 页面 JS 改了译文文本 —— 不应再次采集（避免自激）
+      trans.firstChild!.nodeValue = '新译文';
+      await vi.advanceTimersByTimeAsync(300);
+      expect(seen).toHaveLength(0);
+
+      stop();
+    } finally {
+      restore();
+    }
+  });
+
+  test('已翻译单元的原文文本被更新（React 原地改）→ 还原并重新采集（#179）', async () => {
+    const restore = mockAllBoundingRects();
+    try {
+      const seen: Element[] = [];
+      const stop = startObserver((els) => seen.push(...els));
+
+      const p = document.createElement('p');
+      p.textContent = '旧原文';
+      document.body.appendChild(p);
+      p.setAttribute('data-pt', 'done');
+      const origin = document.createElement('span');
+      origin.className = 'pt-origin';
+      origin.textContent = '旧原文';
+      const trans = document.createElement('span');
+      trans.className = 'pt-trans';
+      trans.textContent = '旧译文';
+      p.append(origin, trans);
+
+      // React 式：更新原文文本节点数据（.pt-origin 内）
+      origin.firstChild!.nodeValue = '新原文';
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      // 单元被还原（data-pt 清除）并重新采集
+      expect(p.getAttribute('data-pt')).toBeNull();
+      expect(seen).toContain(p);
+      stop();
+    } finally {
+      restore();
+    }
+  });
+
+  test('延迟 attachShadow（host 已在 DOM 后建 shadow）→ shadow 内容被采集（#179）', async () => {
+    const restore = mockAllBoundingRects();
+    try {
+      const seen: Element[] = [];
+      const stop = startObserver((els) => seen.push(...els));
+
+      // host 先入 DOM，随后才 attachShadow（模拟延迟初始化的 Web Component）
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      const root = host.attachShadow({ mode: 'open' });
+      const p = document.createElement('p');
+      p.textContent = 'late shadow content';
+      root.appendChild(p);
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      expect(seen).toContain(p);
+      stop();
+    } finally {
+      restore();
+    }
+  });
+
   test('pre 切块产生的 mutation 不进 pending：不二次收集未完成翻译的块', async () => {
     const restore = mockAllBoundingRects();
     try {
