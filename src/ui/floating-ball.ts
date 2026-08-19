@@ -99,6 +99,16 @@ export function createBall(callbacks: BallCallbacks): () => void {
     origY = rect.top;
     ballW = rect.width;
     ballH = rect.height;
+    // #180: 指针捕获 —— 窗口外松开时 mouseup 仍派发到球上，
+    // 否则 dragging/dragged 卡在 true，期间键盘 Enter 的 click 被吞
+    const pointerId = (e as MouseEvent & { pointerId?: number }).pointerId;
+    try {
+      if ('setPointerCapture' in ball && typeof pointerId === 'number') {
+        ball.setPointerCapture(pointerId);
+      }
+    } catch {
+      // 捕获失败（jsdom/极旧引擎）→ 依赖下方 blur/pointercancel 兜底
+    }
     e.preventDefault();
   };
 
@@ -136,6 +146,15 @@ export function createBall(callbacks: BallCallbacks): () => void {
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mouseup', onMouseUp);
 
+  // #180: 窗口外松开 / 拖拽中失焦（alt-tab 等）→ 立即复位拖动状态，
+  // 防止 dragged 卡 true 吞掉后续点击
+  const onDragReset = () => {
+    dragging = false;
+    dragged = false;
+  };
+  window.addEventListener('blur', onDragReset);
+  ball.addEventListener('pointercancel', onDragReset);
+
   // --- 点击 ---
   // 翻译还是还原由 content script 决定，球只转发点击。
   ball.addEventListener('click', () => {
@@ -167,6 +186,8 @@ export function createBall(callbacks: BallCallbacks): () => void {
 
   return () => {
     window.removeEventListener('resize', onResize);
+    window.removeEventListener('blur', onDragReset);
+    ball.removeEventListener('pointercancel', onDragReset);
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
     clearTimeout(errorTimer);

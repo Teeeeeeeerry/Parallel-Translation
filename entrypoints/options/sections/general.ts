@@ -82,8 +82,10 @@ export function initGeneral(): void {
 
   async function loadBallPosSites(): Promise<void> {
     const all = await chrome.storage.local.get(null);
-    const ballKeys = Object.keys(all).filter(
-      (k) => k === 'pt-ball-pos' || k.startsWith('pt-ball-pos:'),
+    // #180: 悬浮球位置只写 pt-ball-pos:<hostname>，全局键 pt-ball-pos
+    // 是死概念（从未被写入）—— 列表/删除/重置都不再处理它
+    const ballKeys = Object.keys(all).filter((k) =>
+      k.startsWith('pt-ball-pos:'),
     );
     if (ballKeys.length === 0) {
       ballPosEmpty.style.display = 'block';
@@ -95,7 +97,7 @@ export function initGeneral(): void {
 
     const rows: string[] = [];
     for (const key of ballKeys) {
-      const hostname = key === 'pt-ball-pos' ? '(全局)' : key.slice('pt-ball-pos:'.length);
+      const hostname = key.slice('pt-ball-pos:'.length);
       const pos = all[key] as { x: number; y: number } | undefined;
       const posText = pos
         ? `(${Math.round(pos.x)}, ${Math.round(pos.y)})`
@@ -117,7 +119,7 @@ export function initGeneral(): void {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const hostname = (btn as HTMLElement).dataset.key!;
-        const storageKey = hostname === '(全局)' ? 'pt-ball-pos' : `pt-ball-pos:${hostname}`;
+        const storageKey = `pt-ball-pos:${hostname}`;
         await chrome.storage.local.remove(storageKey).catch(() => {});
         await loadBallPosSites();
       });
@@ -126,8 +128,8 @@ export function initGeneral(): void {
 
   async function resetAllBallPos(): Promise<void> {
     const all = await chrome.storage.local.get(null);
-    const ballKeys = Object.keys(all).filter(
-      (k) => k === 'pt-ball-pos' || k.startsWith('pt-ball-pos:'),
+    const ballKeys = Object.keys(all).filter((k) =>
+      k.startsWith('pt-ball-pos:'),
     );
     if (ballKeys.length > 0) {
       await chrome.storage.local.remove(ballKeys).catch(() => {});
@@ -141,8 +143,8 @@ export function initGeneral(): void {
 
   resetBallPosBtn.addEventListener('click', async () => {
     const all = await chrome.storage.local.get(null);
-    const ballKeys = Object.keys(all).filter(
-      (k) => k === 'pt-ball-pos' || k.startsWith('pt-ball-pos:'),
+    const ballKeys = Object.keys(all).filter((k) =>
+      k.startsWith('pt-ball-pos:'),
     );
     if (ballKeys.length === 0) {
       resetBallPosBtn.textContent = tf('toastBallPosReset', '已重置');

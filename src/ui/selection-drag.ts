@@ -18,12 +18,16 @@ export function startSelectionDrag(
   stopSelectionDrag();
 
   let armed = false;
+  let preSelection = '';
 
   const isModKey = (e: MouseEvent): boolean =>
     e.altKey || e.ctrlKey || e.metaKey;
 
   const onDown = (e: MouseEvent) => {
     armed = isModKey(e);
+    // #180: 记录按下前的选区 —— 点击非文本区域（悬浮球/空白处）不会
+    // 折叠旧选区，mouseup 时若不对比就会翻译之前残留的选中文本
+    preSelection = window.getSelection()?.toString() ?? '';
   };
 
   const onUp = (e: MouseEvent) => {
@@ -31,7 +35,8 @@ export function startSelectionDrag(
     armed = false;
     if (!isModKey(e)) return; // 中途松开修饰键则取消
     const text = window.getSelection()?.toString().trim();
-    if (text && text.length >= 2) onTranslate(text);
+    // #180: 本次拖动没有产生新选区（文本未变化）→ 不翻译残留旧选区
+    if (text && text.length >= 2 && text !== preSelection) onTranslate(text);
   };
 
   document.addEventListener('mousedown', onDown, true);

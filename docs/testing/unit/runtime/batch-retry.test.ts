@@ -44,6 +44,31 @@ describe('attemptBatchWithRetry — 成功路径', () => {
   });
 });
 
+describe('attemptBatchWithRetry — 不可恢复错误（#180）', () => {
+  test('retryable=false（key 无效等）→ 立即失败，0 次重试', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      error: 'API key 无效',
+      retryable: false,
+    }));
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('API key 无效');
+      expect(result.invalidated).toBe(false);
+      expect(result.aborted).toBe(false);
+    }
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  test('缺省 retryable → 按可重试处理（默认行为不变）', async () => {
+    const send = vi.fn(async () => ({ ok: false, error: '瞬时故障' }));
+    await attemptBatchWithRetry(send, { sleep: noopSleep });
+    expect(send).toHaveBeenCalledTimes(BATCH_RETRY_LIMIT + 1);
+  });
+});
+
 describe('attemptBatchWithRetry — 重试预算（#91）', () => {
   test(`持续引擎级失败 → 共发送 ${BATCH_RETRY_LIMIT + 1} 次后失败，invalidated=false`, async () => {
     const send = vi.fn(async () => ({ ok: false, error: '所有引擎均失败' }));

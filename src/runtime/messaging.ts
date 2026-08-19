@@ -22,7 +22,13 @@ import { sleep } from '~/src/runtime/sleep';
 
 export type TranslateResult =
   | { ok: true; data: TranslateResponse }
-  | { ok: false; error: string; invalidated: boolean };
+  | {
+      ok: false;
+      error: string;
+      invalidated: boolean;
+      /** #180: 引擎不可恢复错误（key 无效等）—— 批次重试层不重试。 */
+      retryable: boolean;
+    };
 
 /** SW 就绪等待预算（ping 阶段）。覆盖 CI 中 SW 冷启动的常见耗时。 */
 const READY_BUDGET_MS = 10_000;
@@ -156,18 +162,29 @@ export async function translateViaBackground(
     const resp = (await sendWithTransportRetry(
       { type: 'pt:translate', payload },
       SEND_BUDGET_MS,
-    )) as { ok?: boolean; data?: TranslateResponse; error?: string };
+    )) as {
+      ok?: boolean;
+      data?: TranslateResponse;
+      error?: string;
+      retryable?: boolean;
+    };
 
     if (resp?.ok === true && resp.data) {
       return { ok: true, data: resp.data };
     }
-    return { ok: false, error: resp?.error ?? '未知错误', invalidated: false };
+    return {
+      ok: false,
+      error: resp?.error ?? '未知错误',
+      invalidated: false,
+      retryable: resp?.retryable ?? true,
+    };
   } catch (e) {
     // #116: 上下文失效以类型化标志透出，调用方无需匹配文案
     return {
       ok: false,
       error: e instanceof Error ? e.message : String(e),
       invalidated: e instanceof ContextInvalidatedError,
+      retryable: true,
     };
   }
 }
