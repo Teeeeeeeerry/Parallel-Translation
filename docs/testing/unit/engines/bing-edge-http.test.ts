@@ -52,7 +52,27 @@ describe('bing-edge HTTP 路径', () => {
     vi.resetModules();
     vi.clearAllMocks();
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  test('fetch 永不 settle → 有界超时抛 retryable EngineError（#181/#154）', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})));
+    const { FETCH_TIMEOUT_MS } = await import('~/src/engines/fetch-timeout');
+    const { bingEdge } = await import('~/src/engines/bing-edge');
+    const pending = bingEdge.translate({ texts: ['a'], from: 'en', to: 'zh-CN' });
+    pending.catch(() => {});
+
+    await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS);
+    await expect(pending).rejects.toMatchObject({
+      name: 'EngineError',
+      engineId: 'bing-edge',
+      retryable: true,
+      message: expect.stringContaining('请求超时'),
+    });
+  });
 
   test('并发闸门：并发 translate() 调用在飞请求不超过 maxConcurrency（#159）', async () => {
     const { getSettings } = await import('~/src/storage/settings');
