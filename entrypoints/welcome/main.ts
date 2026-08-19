@@ -59,7 +59,13 @@ function bindButtons(): void {
   });
 
   document.getElementById('pt-welcome-close')?.addEventListener('click', () => {
-    window.close();
+    // #177: window.close() 只对脚本自己打开的窗口生效 —— welcome 标签页
+    // 由 background 的 chrome.tabs.create 打开，浏览器会静默忽略 close()。
+    // 改为通知 background 用 chrome.tabs.remove 关闭当前标签页。
+    chrome.runtime.sendMessage({ type: 'pt:close-welcome' }).catch(() => {
+      // background 不可达（理论上不会发生）时兜底尝试直接关闭
+      window.close();
+    });
   });
 }
 
