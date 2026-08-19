@@ -239,6 +239,39 @@ test.describe('Fixture: shadow', () => {
     // walker 穿透 shadow 后会翻译其中的内容
     expect(hasTranslated).toBe(true);
   });
+
+  test('@core TC-E2E-54: shadow 内译文受仅译文模式控制 —— 原文被隐藏（#163 回归）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('shadow');
+
+    await translateAndWait(page);
+
+    // 切到仅译文模式（快捷键）
+    await page.keyboard.press(
+      process.platform === 'darwin' ? 'Meta+Shift+M' : 'Control+Shift+M',
+    );
+    await expect(page.locator('html')).toHaveClass(/pt-only-trans-page/, { timeout: 5_000 });
+
+    // 对照组：文档侧 .pt-origin 被隐藏
+    const docOriginDisplay = await page.evaluate(() => {
+      const origin = document.querySelector('[data-pt="done"] .pt-origin') as HTMLElement | null;
+      return origin ? getComputedStyle(origin).display : null;
+    });
+    expect(docOriginDisplay).toBe('none');
+
+    // #163 主体：shadow 内 .pt-origin 也被隐藏（样式注入生效）
+    const shadowOriginDisplay = await page.evaluate(() => {
+      const host = document.getElementById('host1');
+      const origin = host?.shadowRoot?.querySelector(
+        '[data-pt="done"] .pt-origin',
+      ) as HTMLElement | null;
+      return origin ? getComputedStyle(origin).display : null;
+    });
+    expect(shadowOriginDisplay).toBe('none');
+  });
 });
 
 test.describe('Fixture: nested', () => {
