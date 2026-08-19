@@ -206,7 +206,10 @@ export function restorePreserves(
   // 全部匹配 → 安全替换
   let result = translation;
   for (const [ph, orig] of preserves) {
-    result = result.replace(ph, orig);
+    // #173: 必须用函数替换器 —— orig 含 $& / $' / $` / $1 等序列时，
+    // 字符串替换参数会被 String.replace 当作替换模式展开，产生与原文
+    // 不同的字符。函数返回值不做任何模式解释。
+    result = result.replace(ph, () => orig);
   }
   return result;
 }
@@ -218,7 +221,8 @@ function restoreFallback(
 ): string {
   let result = placeholderText;
   for (const [ph, orig] of preserves) {
-    result = result.replace(ph, orig);
+    // #173: 函数替换器，避免 orig 中的 $ 序列被当作替换模式展开
+    result = result.replace(ph, () => orig);
   }
   return result;
 }
