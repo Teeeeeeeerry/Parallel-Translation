@@ -61,6 +61,18 @@ export default defineConfig({
     name: '__MSG_extName__',
     description: '__MSG_extDesc__',
     permissions: ['storage', 'contextMenus'],
+    // #180: 引擎端点显式声明 host 权限 —— 不依赖各端点 ACAO 头
+    // （Google/Bing 免 key 端点与 BYOK 端点均支持，声明后 options 页
+    // testConnection 对 CORS 异常端点的探测也不再静默失败）
+    host_permissions: [
+      'https://translate.googleapis.com/*',
+      'https://api-edge.cognitive.microsofttranslator.com/*',
+      'https://edge.microsoft.com/translate/auth',
+      'https://api.openai.com/*',
+      'https://generativelanguage.googleapis.com/*',
+      'https://api.deepl.com/*',
+      'https://api-free.deepl.com/*',
+    ],
     action: { default_title: '__MSG_extName__' },
     options_ui: { open_in_tab: true },
     icons: {

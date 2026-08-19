@@ -190,6 +190,8 @@ describe('translateViaBackground — 失败语义', () => {
       ok: false,
       error: '所有引擎均失败',
       invalidated: false,
+      // #180: 未携带 retryable 的响应按可重试处理
+      retryable: true,
     });
     // 1 ping + 1 translate，translate 没有重试
     expect(sendMessage).toHaveBeenCalledTimes(2);

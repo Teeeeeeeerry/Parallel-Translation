@@ -53,6 +53,8 @@ export async function attemptBatchWithRetry(
     error?: string;
     /** #116: messaging 透出的类型化上下文失效标志。 */
     invalidated?: boolean;
+    /** #180: 引擎不可恢复错误（key 无效等）—— 不重试。 */
+    retryable?: boolean;
   }>,
   opts: BatchRetryOptions = {},
 ): Promise<BatchRetryResult> {
@@ -73,6 +75,11 @@ export async function attemptBatchWithRetry(
     // #111/#116: 上下文失效是类型化标志 —— 立即失败，不进入重试序列
     if (resp?.invalidated) {
       return { ok: false, invalidated: true, aborted: false, error: lastError };
+    }
+    // #180: 不可恢复错误（key 无效等）重试只会白等退避序列后仍失败 ——
+    // 立即返回，错误 toast 马上出现
+    if (resp?.retryable === false) {
+      return { ok: false, invalidated: false, aborted: false, error: lastError };
     }
     if (attempt >= BATCH_RETRY_LIMIT) break;
     await sleep(BATCH_RETRY_DELAYS_MS[attempt]!);

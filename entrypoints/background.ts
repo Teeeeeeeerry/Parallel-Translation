@@ -5,6 +5,7 @@ import { cacheSet, cacheKey, cacheGet, cacheClear } from '~/src/storage/cache';
 import { getKey, setKey, removeKey } from '~/src/storage/keys';
 import { settingsReady, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import { route } from '~/src/engines/router';
+import { EngineError } from '~/src/engines/types';
 import { ensureE2EMock, applyE2EMock, getE2EMockStats } from '~/src/engines/e2e-mock';
 import { initContextMenu } from '~/src/ui/context-menu';
 
@@ -111,9 +112,25 @@ export default defineBackground(() => {
         .then(() => ensureE2EMock())
         .then(() => route(msg.payload))
         .then((r) => sendResponse({ ok: true, data: r }))
-        .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        .catch((e) => {
+          // #180: 透出 retryable 标志 —— 仅引擎直接抛出的 retryable=false
+          // （key 无效等）不可恢复，批次重试层不再白等退避序列；router
+          // 的「所有引擎均失败」是普通 Error，按可重试处理（瞬时故障
+          // 重试后自愈，TC-E2E-47 依赖此路径）
+          const nonRetryable = e instanceof EngineError && e.retryable === false;
+          sendResponse({
+            ok: false,
+            error: e instanceof Error ? e.message : String(e),
+            retryable: !nonRetryable,
+          });
+        });
     } catch (e) {
-      sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
+      const nonRetryable = e instanceof EngineError && e.retryable === false;
+      sendResponse({
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+        retryable: !nonRetryable,
+      });
     }
 
     return true;

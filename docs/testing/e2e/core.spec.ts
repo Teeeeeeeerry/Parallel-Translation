@@ -975,6 +975,41 @@ test.describe('Fixture: iframe', () => {
     // 验证 iframe 内容可访问
     await expect(frame.locator('body')).toBeVisible();
   });
+
+  test('@core TC-E2E-58: popup 广播到多 frame —— 响应必是主 frame 的结果（#180 验证）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('iframe');
+
+    // 与 popup 同路径：SW 端 tabs.sendMessage 不带 frameId 广播到全部 frame。
+    // 若子 frame 的 undefined 返回抢先决议，status 会是 undefined。
+    // 遍历标签页：无 content script 的标签页 sendMessage 会拒绝，跳过。
+    const resp = await serviceWorker.evaluate(async () => {
+      const tabs = await chrome.tabs.query({});
+      for (const tab of tabs) {
+        if (tab.id == null) continue;
+        try {
+          const r = (await chrome.tabs.sendMessage(tab.id, {
+            type: 'pt:toggle-translate',
+          })) as { ok?: boolean; status?: string };
+          if (r && typeof r === 'object') {
+            return { ok: r.ok ?? false, status: r.status };
+          }
+        } catch {
+          // 无 content script 的标签页
+        }
+      }
+      return { error: '所有标签页均无 content script 响应' };
+    });
+
+    expect(resp.error).toBeUndefined();
+    // 主 frame 的响应（ok:true + 翻译态），而非子 frame 的 undefined
+    expect(resp.ok).toBe(true);
+    expect(resp.status).toBe('translated');
+    await expect(page.locator('[data-pt="done"]').first()).toBeVisible({ timeout: 30_000 });
+  });
 });
 
 // ================================================================
