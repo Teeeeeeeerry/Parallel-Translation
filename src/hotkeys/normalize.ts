@@ -10,8 +10,11 @@ import type { OS } from './platform';
  * 拒绝无修饰键的单键 → 避免与页面输入冲突。
  */
 export function fromEvent(e: KeyboardEvent, os: OS): string | null {
-  const key = e.key;
-  if (['Control', 'Meta', 'Alt', 'Shift'].includes(key)) return null;
+  // #176: 空格/加号等会破坏 '+' 分隔符语义的键显式映射 ——
+  // 原样保留会生成 'Mod+ ' / 'Mod++'，解析与显示双双损坏
+  const KEY_ALIAS: Record<string, string> = { ' ': 'Space', '+': 'Plus' };
+  const key = KEY_ALIAS[e.key] ?? e.key;
+  if (['Control', 'Meta', 'Alt', 'Shift'].includes(e.key)) return null;
 
   const mods: string[] = [];
   if (os === 'mac') {
