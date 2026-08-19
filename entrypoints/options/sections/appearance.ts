@@ -7,21 +7,10 @@ import {
   onSettingsChanged,
 } from '~/src/storage/settings';
 import { tf } from '~/src/i18n';
+import { validateCustomCss } from '~/src/styles/custom';
 
 function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
   patchSettings(patch).catch((e) => console.error('[PT] 设置写入失败:', e));
-}
-
-/**
- * 校验 CSS 声明块的语法安全性。
- * 不允许选择器、不允许 url()（防隐私泄漏）。
- */
-function validateCss(css: string): string | null {
-  if (!css.trim()) return null;
-  if (/[{}\\]/.test(css))
-    return tf('cssNoSelector', '只需填写 CSS 属性，无需选择器与花括号');
-  if (/url\s*\(/i.test(css)) return tf('cssNoUrl', '不允许使用 url()');
-  return null;
 }
 
 export function initAppearance(): void {
@@ -50,11 +39,12 @@ export function initAppearance(): void {
     clearTimeout(cssTimer);
     cssTimer = setTimeout(() => {
       const css = cssTextarea.value;
-      const err = validateCss(css);
-      if (err) {
+      // #168: 与运行时/导入共用同一校验器，行为不再分叉
+      const result = validateCustomCss(css);
+      if (!result.ok) {
         cssTextarea.classList.add('pt-error');
         cssErrorEl.classList.add('pt-visible');
-        cssErrorEl.textContent = err;
+        cssErrorEl.textContent = result.msg;
       } else {
         cssTextarea.classList.remove('pt-error');
         cssErrorEl.classList.remove('pt-visible');

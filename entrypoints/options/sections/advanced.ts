@@ -1,6 +1,7 @@
 // Phase 7 — 高级分区：并发数、缓存管理、设置导入/导出。
 
 import { DEFAULT_SETTINGS, clampConcurrency } from '~/src/storage/schema';
+import { validateCustomCss } from '~/src/styles/custom';
 import {
   getSettings,
   patchSettings,
@@ -44,6 +45,15 @@ async function importSettings(json: string): Promise<void> {
     // 否则 0/负数会让 Google 闸门永久饿死、全部翻译挂起
     if (typeof sanitized.maxConcurrency === 'number') {
       sanitized.maxConcurrency = clampConcurrency(sanitized.maxConcurrency);
+    }
+    // #168: 导入同样走统一校验器 —— 否则 @import/url() 等可通过导入
+    // 绕过表单校验，运行时注入被拒后旧样式还被清掉
+    if (typeof sanitized.customCss === 'string') {
+      const cssResult = validateCustomCss(sanitized.customCss);
+      if (!cssResult.ok) {
+        showToast(tf('toastImportFail', `导入失败：${cssResult.msg}`));
+        return;
+      }
     }
     // 显式移除任何密钥相关字段
     delete sanitized.apiKeys;

@@ -34,8 +34,20 @@ describe('validateCustomCss', () => {
     if (!result.ok) expect(result.msg).toContain('花括号');
   });
 
+  test('含 url() → 拒绝（#168）', () => {
+    const result = validateCustomCss('background: url("https://track.example/x.gif")');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.msg).toContain('url()');
+  });
+
+  test('含反斜杠 → 拒绝（#168）', () => {
+    const result = validateCustomCss('color: red\\; } .evil {');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.msg).toContain('花括号');
+  });
+
   test('含 javascript: → 拒绝', () => {
-    const result = validateCustomCss('background: url("javascript:alert(1)")');
+    const result = validateCustomCss('color: javascript:alert(1)');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.msg).toContain('javascript:');
   });
@@ -54,14 +66,28 @@ describe('applyCustomCss', () => {
     if (existing) existing.remove();
   });
 
-  test('合法输入 → 注入 <style> 到 <head>，内容被 .pt-trans {} 包裹', () => {
+  test('合法输入 → 注入 <style> 到 <head>，选择器为 .pt-trans.pt-trans（#168 特异性）', () => {
     applyCustomCss('color: #555');
 
     const styleEl = document.getElementById('pt-custom-style');
     expect(styleEl).not.toBeNull();
     expect(styleEl!.tagName).toBe('STYLE');
-    expect(styleEl!.textContent).toContain('.pt-trans');
+    // #168: 双类选择器（0,2,0）与预设 .pt-style-fade .pt-trans 同级，
+    // 自定义 opacity 等属性才能覆盖预设
+    expect(styleEl!.textContent).toContain('.pt-trans.pt-trans');
     expect(styleEl!.textContent).toContain('color: #555');
+  });
+
+  test('非法输入 → 不注入，且保留已有旧样式（#168）', () => {
+    applyCustomCss('color: red');
+    const old = document.getElementById('pt-custom-style');
+    expect(old).not.toBeNull();
+
+    applyCustomCss('@import url("evil.css");');
+    // 旧样式未被清掉（修复前先删后校验，用户样式被无声清除）
+    const still = document.getElementById('pt-custom-style');
+    expect(still).not.toBeNull();
+    expect(still!.textContent).toContain('color: red');
   });
 
   test('非法输入 → 不注入', () => {
