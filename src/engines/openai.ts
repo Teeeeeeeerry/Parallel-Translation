@@ -4,6 +4,7 @@
 
 import { getKey } from '~/src/storage/keys';
 import { getSettings } from '~/src/storage/settings';
+import { DEFAULT_MODELS } from '~/src/storage/schema';
 import { normalizeText } from '~/src/dom/normalize';
 import { fetchWithTimeout } from './fetch-timeout';
 import { engineGate } from './engine-gate';
@@ -41,7 +42,7 @@ export const openai: TranslateEngine = {
       const key = await getKey('openai');
       if (!key) throw new EngineError('openai', false, '未配置 API key');
 
-      const model = getSettings().models?.openai ?? 'gpt-4o-mini';
+      const model = getSettings().models?.openai ?? DEFAULT_MODELS.openai!;
 
       // 纵深防御：编号结构靠 \n 分隔，文本自带的换行会把编号撑破导致错位。
       // 即便入口采集漏了归一化，这里也必须兜住，拼 prompt 前再压一次。

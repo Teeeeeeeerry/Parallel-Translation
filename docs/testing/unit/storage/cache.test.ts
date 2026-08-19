@@ -31,6 +31,25 @@ describe('cacheKey', () => {
     const k2 = await cacheKey('google-web', 'auto', 'zh-CN', 'World');
     expect(k1).not.toBe(k2);
   });
+
+  test('不同模型 → 不同 key（#175）', async () => {
+    const k1 = await cacheKey('openai', 'auto', 'zh-CN', 'Hello', 'gpt-4o-mini');
+    const k2 = await cacheKey('openai', 'auto', 'zh-CN', 'Hello', 'gpt-5');
+    expect(k1).not.toBe(k2);
+    expect(k1).toContain('gpt-4o-mini');
+  });
+
+  test('同模型 → 相同 key（#175）', async () => {
+    const k1 = await cacheKey('openai', 'auto', 'zh-CN', 'Hello', 'gpt-4o-mini');
+    const k2 = await cacheKey('openai', 'auto', 'zh-CN', 'Hello', 'gpt-4o-mini');
+    expect(k1).toBe(k2);
+  });
+
+  test('无模型引擎 → key 不含模型段', async () => {
+    const k = await cacheKey('google-web', 'auto', 'zh-CN', 'Hello');
+    expect(k).not.toContain(':model');
+    expect(k).toMatch(/^pt-c:google-web:auto:zh-CN:[0-9a-f]{40}$/);
+  });
 });
 
 describe('cacheGet / cacheSet', () => {
@@ -60,6 +79,39 @@ describe('cacheGet / cacheSet', () => {
     const val = await cacheGet(key);
     expect(val).toBe('第一');
     // 不抛异常即通过
+  });
+
+  test('过期条目 → 未命中且被移除（#175）', async () => {
+    const key = await cacheKey('google-web', 'auto', 'zh-CN', 'Stale');
+    await cacheSet(key, '旧译文');
+
+    // 把条目的时间戳改为超期（31 天前）
+    await chrome.storage.local.set({
+      [key]: JSON.stringify({ v: '旧译文', t: Date.now() - 31 * 24 * 60 * 60 * 1000 }),
+    });
+
+    const value = await cacheGet(key);
+    expect(value).toBeNull();
+    // 条目被移除
+    const stored = await chrome.storage.local.get(key);
+    expect(stored[key]).toBeUndefined();
+  });
+
+  test('未过期条目 → 命中', async () => {
+    const key = await cacheKey('google-web', 'auto', 'zh-CN', 'Fresh');
+    await cacheSet(key, '新译文');
+
+    const value = await cacheGet(key);
+    expect(value).toBe('新译文');
+  });
+
+  test('旧版纯字符串条目（无时间戳）→ 兼容读取', async () => {
+    const key = await cacheKey('google-web', 'auto', 'zh-CN', 'Legacy');
+    // 直接写入旧格式（升级前 cacheSet 的存储格式）
+    await chrome.storage.local.set({ [key]: '旧格式译文' });
+
+    const value = await cacheGet(key);
+    expect(value).toBe('旧格式译文');
   });
 });
 
