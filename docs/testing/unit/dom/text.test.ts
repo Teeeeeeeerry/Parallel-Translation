@@ -210,6 +210,21 @@ describe('restorePreserves', () => {
     expect(result).toBe('@user says hi');
   });
 
+  test('保留文本含 $& 与 $1 → 回填结果与原文一致（#173）', () => {
+    // 修复前 String.replace 把 orig 当作替换模式展开：
+    // $& 会被替换为整个匹配串，$1 引用分组（无分组时为 ''）
+    const preserves = makePreserves(
+      ['⟦PT0⟧', 'price: $& and $1'],
+      ['⟦PT1⟧', '@user'],
+    );
+    const result = restorePreserves(
+      '⟦PT0⟧ paid ⟦PT1⟧',
+      preserves,
+      '⟦PT0⟧ paid ⟦PT1⟧',
+    );
+    expect(result).toBe('price: $& and $1 paid @user');
+  });
+
   test('降级结果不含任何 ⟦PT 残留', () => {
     const preserves = makePreserves(['⟦PT0⟧', '@test']);
     const originalText = '⟦PT0⟧ wrote';
