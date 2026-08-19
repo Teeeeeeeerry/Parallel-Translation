@@ -65,7 +65,7 @@ const NON_CONTENT =
   '.vector-menu-content-list,#catlinks,#mw-hidden-catlinks,#mw-normal-catlinks';
 
 export const MAX_TEXT = 3072;
-const MAX_HTML = 4096;
+export const MAX_HTML = 4096;
 const MIN_TEXT = 3;
 
 /** pre 是否处于代码块上下文（.highlight / .notranslate 祖先）—— #64/#65 站点相关判定 */
@@ -94,7 +94,15 @@ export function shouldSkipNonVisual(el: Element): boolean {
 
   const text = el.textContent?.trim() ?? '';
   if (text.length < MIN_TEXT || text.length > MAX_TEXT) return true;
-  if ((el as HTMLElement).outerHTML.length > MAX_HTML) return true;
+  // #174: pre 切块（.pt-chunk）的文本长度已由 splitPre 保证 ≤ MAX_TEXT，
+  // 但行内标记开销（GitHub autolink <a> 每个 48+ 字符）会让 outerHTML
+  // 远超 MAX_HTML —— 对切块放宽 HTML 上限，否则含大量链接的块被
+  // 静默漏翻。普通元素仍按 outerHTML 上限拒绝。
+  if (
+    (el as HTMLElement).dataset?.ptChunk !== '1' &&
+    (el as HTMLElement).outerHTML.length > MAX_HTML
+  )
+    return true;
   if (isMainlyNumeric(text)) return true;
 
   return false;
