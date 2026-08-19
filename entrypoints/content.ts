@@ -53,7 +53,9 @@ export default defineContentScript({
   runAt: 'document_end',
   async main() {
     await settingsReady();
-    detectOS(); // 预热平台缓存
+    // #164: 必须等平台缓存就绪再注册快捷键 —— 否则首次按键按 'other'
+    // 匹配（忽略 metaKey），Mac 用户加载后的第一次 ⌘⇧Y 静默无响应
+    await detectOS();
     const s = getSettings();
 
     let stopObserving: (() => void) | null = null;

@@ -10,6 +10,10 @@ export function startHotkeys(
   handlers: Record<HotkeyAction, () => void>,
 ): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
+    // #164: 按住按键时浏览器按 ~30Hz 重复派发 keydown —— 不过滤会
+    // 连续触发 toggle/翻页，翻译进行中重复发起、译文落地后又还原。
+    // 录制器 startRecording 首次捕获即移除监听，天然免疫此问题。
+    if (e.repeat) return;
     if (isTypingContext()) return;
     const os = getOSSync();
     const combo = fromEvent(e, os);
