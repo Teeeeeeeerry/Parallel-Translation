@@ -159,6 +159,11 @@
   "toastExtOff": { "message": "扩展已关闭" },
   "toastAllEnginesFail": { "message": "所有引擎均失败" },
   "toastTranslateFail": { "message": "翻译失败" },
+  "toastRenderRejected": {
+    "message": "$count$ 段因含图片/按钮未翻译",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "toastAllRejected": { "message": "所有段落均含图片/按钮，无法翻译" },
   "toastNotTranslatable": { "message": "该区域无法单独翻译" },
   "toastSiteBlocked": { "message": "该站点已在站点名单中被禁用翻译" },
 

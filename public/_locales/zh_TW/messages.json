@@ -159,6 +159,11 @@
   "toastExtOff": { "message": "擴充功能已關閉" },
   "toastAllEnginesFail": { "message": "所有引擎均失敗" },
   "toastTranslateFail": { "message": "翻譯失敗" },
+  "toastRenderRejected": {
+    "message": "$count$ 段因含圖片/按鈕未翻譯",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "toastAllRejected": { "message": "所有段落均含圖片/按鈕，無法翻譯" },
   "toastNotTranslatable": { "message": "此區域無法單獨翻譯" },
   "toastSiteBlocked": { "message": "該網站已在網站名單中被停用翻譯" },
 
