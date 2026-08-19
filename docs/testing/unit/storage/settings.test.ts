@@ -42,6 +42,21 @@ describe('merge / patchSettings', () => {
     expect(s.enabled).toBe(DEFAULT_SETTINGS.enabled);
   });
 
+  test('replaceSettings 整体替换 —— 自定义 models 被清空（#169）', async () => {
+    const { patchSettings, replaceSettings } = await import('~/src/storage/settings');
+    const { settingsReady, getSettings } = await import('~/src/storage/settings');
+
+    await settingsReady();
+    await patchSettings({ models: { openai: 'gpt-custom' } });
+    expect(getSettings().models.openai).toBe('gpt-custom');
+
+    // 恢复默认：patch 语义下 DEFAULT_SETTINGS.models={} 合并不掉
+    // 自定义模型名，replaceSettings 整体替换才能清空
+    await replaceSettings(DEFAULT_SETTINGS);
+    expect(getSettings().models).toEqual({});
+    expect(getSettings().style).toBe(DEFAULT_SETTINGS.style);
+  });
+
   test('maxConcurrency: 0 → 钳制为 1（#172）', async () => {
     const { patchSettings } = await import('~/src/storage/settings');
     const { settingsReady, getSettings } = await import('~/src/storage/settings');

@@ -5,6 +5,7 @@ import { validateCustomCss } from '~/src/styles/custom';
 import {
   getSettings,
   patchSettings,
+  replaceSettings,
   onSettingsChanged,
 } from '~/src/storage/settings';
 import { cacheClear } from '~/src/storage/cache';
@@ -71,8 +72,10 @@ async function resetSettings(): Promise<void> {
   await removeKey('openai');
   await removeKey('deepl');
   await removeKey('gemini');
-  // 重置设置为默认值
-  await patchSettings(DEFAULT_SETTINGS);
+  // #169: 整体替换而非 patch —— patch 对 models 是合并语义，
+  // DEFAULT_SETTINGS.models = {} 合并不掉自定义模型名，恢复默认后
+  // openai/gemini 自定义模型会残留
+  await replaceSettings(DEFAULT_SETTINGS);
   showToast(tf('toastReset', '已恢复默认设置'));
 }
 
