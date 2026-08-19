@@ -85,28 +85,39 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       };
       const resp = await engine.translate(subReq);
 
-      // 将译文放回正确槽位
+      // #171: 引擎可能返回短于请求长度的译文数组（第三方 API 异常形状）。
+      // 短出的槽位若填 undefined，content 侧 restorePreserves 会抛
+      // TypeError —— 一律置 null 并记入失败，交给下一个引擎补齐。
+      const failed = [...(resp.failedIndices ?? [])];
       for (let j = 0; j < uncached.length; j++) {
-        translations[uncached[j]!.idx] = resp.translations[j]!;
+        const text = resp.translations[j];
+        if (text === undefined || text === null) {
+          translations[uncached[j]!.idx] = null;
+          failed.push(j);
+        } else {
+          translations[uncached[j]!.idx] = text;
+        }
       }
 
       // 处理部分失败：将失败槽位重置为 null，交给下一个引擎重试
-      if (resp.failedIndices && resp.failedIndices.length > 0) {
-        for (const j of resp.failedIndices) {
+      if (failed.length > 0) {
+        for (const j of resp.failedIndices ?? []) {
           translations[uncached[j]!.idx] = null;
         }
 
         // 并行写缓存（仅成功的条目）
         if (useCache) {
-          const succeeded = uncached.filter(
-            (_, j) => !resp.failedIndices!.includes(j),
-          );
+          const succeeded = uncached.filter((_, j) => !failed.includes(j));
           if (succeeded.length > 0) {
             await Promise.all(
               succeeded.map(async (u) => {
                 const k = await cacheKey(id, req.from, req.to, u.text);
                 const idx = uncached.indexOf(u);
-                await cacheSet(k, resp.translations[idx]!);
+                const val = resp.translations[idx];
+                // #171: 短数组下成功槽位必然有值，这里再做一次防御
+                if (val !== undefined && val !== null) {
+                  await cacheSet(k, val);
+                }
               }),
             );
           }
@@ -116,7 +127,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
           new EngineError(
             id,
             true,
-            `${resp.failedIndices.length}/${uncached.length} 条失败，尝试下一个引擎`,
+            `${failed.length}/${uncached.length} 条失败，尝试下一个引擎`,
           ),
         );
         continue; // 下一个引擎自动拾取 translations[i] === null 的槽位
