@@ -159,6 +159,21 @@ describe('hasNonTextContent', () => {
     expect(hasNonTextContent(div)).toBe(true);
   });
 
+  test('自身是 role=button 的元素 → true（#162）', () => {
+    const div = el('<div role="button">点我</div>');
+    expect(hasNonTextContent(div)).toBe(true);
+  });
+
+  test('自身是 summary 的元素 → true（#162）', () => {
+    const s = el('<summary>更多</summary>');
+    expect(hasNonTextContent(s)).toBe(true);
+  });
+
+  test('自身是普通 div 含 role=button 后代 → true（回归）', () => {
+    const div = el('<div><div role="button">点我</div></div>');
+    expect(hasNonTextContent(div)).toBe(true);
+  });
+
   test('空元素 → false', () => {
     const p = el('<p></p>');
     expect(hasNonTextContent(p)).toBe(false);

@@ -124,7 +124,7 @@ export function shouldSkip(el: Element): boolean {
  */
 export const NON_TEXT_SELECTOR =
   'img, picture, video, audio, iframe, canvas, object, embed,' +
-  ' button, input, select, textarea,' +
+  ' button, input, select, textarea, summary,' +
   ' [role="button"], [role="tab"], [role="menuitem"], [role="switch"], [role="checkbox"]';
 
 /**
@@ -136,6 +136,10 @@ export const NON_TEXT_SELECTOR =
  * badge 等），不应阻止翻译；否则视为独立媒体块，仍然拒绝。
  */
 export function hasNonTextContent(el: Element): boolean {
+  // #162: 元素自身就是交互控件（div[role=button]、summary 等）时同样
+  // 视为含非文本内容 —— 只查后代会漏掉自身，导致 role 型控件与
+  // summary 被当普通文本段采集、渲染。
+  if (el.matches(NON_TEXT_SELECTOR)) return true;
   const matches = el.querySelectorAll(NON_TEXT_SELECTOR);
   for (const match of matches) {
     let cur: Element | null = match;
