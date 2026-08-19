@@ -1,6 +1,6 @@
 // Phase 7 — 高级分区：并发数、缓存管理、设置导入/导出。
 
-import { DEFAULT_SETTINGS } from '~/src/storage/schema';
+import { DEFAULT_SETTINGS, clampConcurrency } from '~/src/storage/schema';
 import {
   getSettings,
   patchSettings,
@@ -39,6 +39,11 @@ async function importSettings(json: string): Promise<void> {
     const sanitized: Record<string, unknown> = {};
     for (const key of allowed) {
       if (key in data) sanitized[key] = data[key];
+    }
+    // #172: 值校验 —— 导入文件可绕过 UI 下拉，maxConcurrency 必须钳制，
+    // 否则 0/负数会让 Google 闸门永久饿死、全部翻译挂起
+    if (typeof sanitized.maxConcurrency === 'number') {
+      sanitized.maxConcurrency = clampConcurrency(sanitized.maxConcurrency);
     }
     // 显式移除任何密钥相关字段
     delete sanitized.apiKeys;

@@ -109,6 +109,16 @@ export const LANG_LIST: { code: string; label: string }[] = [
   { code: 'it', label: 'Italiano' },
 ];
 
+/** maxConcurrency 合法范围（UI 下拉允许 2-10，#172）。 */
+export const CONCURRENCY_MIN = 1;
+export const CONCURRENCY_MAX = 10;
+
+/** 钳制并发数到合法范围 —— 导入/存储/写入口共用，防 0 或负数饿死闸门。 */
+export function clampConcurrency(n: unknown): number {
+  const v = typeof n === 'number' && Number.isFinite(n) ? Math.floor(n) : CONCURRENCY_MIN;
+  return Math.min(CONCURRENCY_MAX, Math.max(CONCURRENCY_MIN, v));
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   enginePriority: ['google-web', 'bing-edge'],

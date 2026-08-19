@@ -42,6 +42,21 @@ describe('merge / patchSettings', () => {
     expect(s.enabled).toBe(DEFAULT_SETTINGS.enabled);
   });
 
+  test('maxConcurrency: 0 → 钳制为 1（#172）', async () => {
+    const { patchSettings } = await import('~/src/storage/settings');
+    const { settingsReady, getSettings } = await import('~/src/storage/settings');
+
+    await settingsReady();
+    await patchSettings({ maxConcurrency: 0 });
+    expect(getSettings().maxConcurrency).toBe(1);
+
+    // 负数与超大值同样钳制
+    await patchSettings({ maxConcurrency: -5 });
+    expect(getSettings().maxConcurrency).toBe(1);
+    await patchSettings({ maxConcurrency: 999 });
+    expect(getSettings().maxConcurrency).toBe(10);
+  });
+
   test('hotkeys 部分覆盖 → 兄弟键不丢失', async () => {
     const { patchSettings } = await import('~/src/storage/settings');
     const { settingsReady, getSettings } = await import('~/src/storage/settings');
