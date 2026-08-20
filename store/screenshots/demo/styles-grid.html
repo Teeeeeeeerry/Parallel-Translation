@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Styles Grid</title>
+  <style>
+    /* 03-styles.png 的拼图模板。
+       capture.mjs 先对同一段落逐个样式截 6 张小图，再调用 window.renderGrid()
+       把它们以 data: URI 注入这里，最后整页截成一张 1280x800。
+       走这条路是为了不引入任何图像处理依赖 —— 拼图由浏览器完成。
+
+       两列三行而不是三列两行：三列时每格只有 393px 宽，正文被压到原尺寸的
+       一半，缩略图状态下译文样式的差别根本看不出来。 */
+    :root {
+      --pt-paper:   #f5f0e6;
+      --pt-forest:  #1f3a2e;
+      --pt-brass:   #b89968;
+      --pt-surface: #ffffff;
+      --pt-forest-09: rgba(31, 58, 46, .09);
+      --pt-forest-55: rgba(31, 58, 46, .55);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 1280px;
+      height: 800px;
+      overflow: hidden;
+      background: var(--pt-paper);
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      color: var(--pt-forest);
+      -webkit-font-smoothing: antialiased;
+    }
+    .page { padding: 24px 32px 30px; height: 100%; display: flex; flex-direction: column; }
+    header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 18px; }
+    h1 { font-size: 23px; font-weight: 700; letter-spacing: -0.01em; }
+    .hint { font-size: 14px; color: var(--pt-forest-55); }
+
+    .grid {
+      flex: 1;
+      /* flex 子项默认 min-height:auto，内容会把网格顶出 800px 画布 —— 
+         这一行和下面的 minmax(0, ...) 缺一不可 */
+      min-height: 0;
+      display: grid;
+      /* minmax(0, ...) 不可省：1fr 的最小值是 auto，图片会把行撑出画布 */
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: repeat(3, minmax(0, 1fr));
+      gap: 14px 18px;
+    }
+    .cell { display: flex; flex-direction: column; min-height: 0; }
+    .label {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: baseline;
+      gap: 7px;
+    }
+    .label .id {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      font-weight: 400;
+      letter-spacing: 0.06em;
+      color: var(--pt-brass);
+    }
+    .label .note {
+      font-size: 12.5px;
+      font-weight: 400;
+      color: var(--pt-forest-55);
+      margin-left: auto;
+    }
+    .shot {
+      flex: 1;
+      min-height: 0;
+      background: var(--pt-surface);
+      border: 1px solid var(--pt-forest-09);
+      border-radius: 9px;
+      overflow: hidden;
+      box-shadow: 0 3px 12px rgba(31, 58, 46, .07);
+    }
+    .shot img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1 id="title"></h1>
+      <span class="hint" id="hint"></span>
+    </header>
+    <!-- 六个空格子预先建好，capture.mjs 才能在填图之前量出 .shot 的宽高比，
+         据此决定截图的 clip 比例 —— 两边比例一致，object-fit 就不会裁掉内容 -->
+    <div class="grid" id="grid">
+      <div class="cell"><div class="label"><span class="name"></span><span class="id"></span><span class="note"></span></div><div class="shot"></div></div>
+      <div class="cell"><div class="label"><span class="name"></span><span class="id"></span><span class="note"></span></div><div class="shot"></div></div>
+      <div class="cell"><div class="label"><span class="name"></span><span class="id"></span><span class="note"></span></div><div class="shot"></div></div>
+      <div class="cell"><div class="label"><span class="name"></span><span class="id"></span><span class="note"></span></div><div class="shot"></div></div>
+      <div class="cell"><div class="label"><span class="name"></span><span class="id"></span><span class="note"></span></div><div class="shot"></div></div>
+      <div class="cell"><div class="label"><span class="name"></span><span class="id"></span><span class="note"></span></div><div class="shot"></div></div>
+    </div>
+  </div>
+
+  <script>
+    /** 单元格图片区的宽高比，capture.mjs 用它决定 clip 的高度。 */
+    window.shotRatio = function () {
+      const r = document.querySelector('.shot').getBoundingClientRect();
+      return r.width / r.height;
+    };
+
+    /**
+     * @param {{id: string, label: string, note?: string, dataUri: string}[]} items 六个样式的小图
+     * @param {{title: string, hint: string}} copy 标题栏文案
+     */
+    window.renderGrid = function (items, copy) {
+      document.getElementById('title').textContent = copy.title;
+      document.getElementById('hint').textContent = copy.hint;
+      const cells = [...document.querySelectorAll('.cell')];
+      items.forEach((item, i) => {
+        const cell = cells[i];
+        cell.querySelector('.name').textContent = item.label;
+        cell.querySelector('.id').textContent = item.id;
+        cell.querySelector('.note').textContent = item.note ?? '';
+        const img = document.createElement('img');
+        img.src = item.dataUri;
+        cell.querySelector('.shot').appendChild(img);
+      });
+      // 等图片解码完成，capture.mjs 据此判断可以截图了
+      return Promise.all(
+        [...document.querySelectorAll('.shot img')].map((img) =>
+          img.decode().catch(() => {}),
+        ),
+      ).then(() => true);
+    };
+  </script>
+</body>
+</html>
