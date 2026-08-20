@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Promo Tile</title>
+  <style>
+    /* 配色直接取自 src/styles/tokens.css —— 宣传图与扩展 UI 同源，
+       避免商店页面上的品牌观感与安装后的实际界面对不上。 */
+    :root {
+      --pt-paper:   #f5f0e6;
+      --pt-forest:  #1f3a2e;
+      --pt-brass:   #b89968;
+      --pt-surface: #ffffff;
+      --pt-forest-55: rgba(31, 58, 46, .55);
+      --pt-forest-09: rgba(31, 58, 46, .09);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--pt-paper);
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      color: var(--pt-forest);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .tile {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+    }
+    /* 顶部黄铜金细线 —— 与扩展内注入 UI 的强调色呼应 */
+    .tile::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+      background: var(--pt-brass);
+    }
+
+    .brand { display: flex; flex-direction: column; justify-content: center; }
+    /* 与 src/styles/popup.css 的 .pt-logo 同形 —— 宣传图上的标识
+       与用户点开 popup 后看到的头部标识是同一个 */
+    .icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--pt-forest);
+      color: var(--pt-paper);
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      flex-shrink: 0;
+    }
+    .name { font-weight: 700; letter-spacing: -0.02em; }
+    .tagline { font-weight: 600; line-height: 1.3; }
+    .sub { color: var(--pt-forest-55); line-height: 1.45; }
+
+    /* ── 小图 440×280：单栏居中 ───────────────────── */
+    body[data-size='small'] .tile {
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 30px 34px;
+    }
+    body[data-size='small'] .icon { width: 58px; height: 58px; border-radius: 14px; font-size: 29px; margin: 0 auto 16px; }
+    body[data-size='small'] .name { font-size: 16px; color: var(--pt-forest-55); margin-bottom: 12px; }
+    body[data-size='small'] .tagline { font-size: 24px; margin-bottom: 10px; }
+    body[data-size='small'] .sub { font-size: 14.5px; }
+    body[data-size='small'] .demo { display: none; }
+
+    /* ── 大横幅 1400×560：左文案 + 右对照示例 ─────── */
+    body[data-size='large'] .tile { flex-direction: row; align-items: center; }
+    body[data-size='large'] .brand {
+      width: 46%;
+      padding: 0 0 0 88px;
+    }
+    body[data-size='large'] .icon { width: 80px; height: 80px; border-radius: 19px; font-size: 40px; margin-bottom: 26px; }
+    body[data-size='large'] .name { font-size: 30px; margin-bottom: 26px; }
+    body[data-size='large'] .tagline { font-size: 44px; line-height: 1.22; margin-bottom: 18px; }
+    body[data-size='large'] .sub { font-size: 19px; }
+
+    .demo {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 76px 0 48px;
+    }
+    .card {
+      width: 100%;
+      background: var(--pt-surface);
+      border: 1px solid var(--pt-forest-09);
+      border-radius: 13px;
+      padding: 40px 42px;
+      box-shadow: 0 18px 44px rgba(31, 58, 46, .10);
+    }
+    .card-label {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--pt-brass);
+      margin-bottom: 22px;
+    }
+    .origin {
+      font-size: 22px;
+      line-height: 1.55;
+      margin-bottom: 10px;
+    }
+    /* 与 src/styles/presets.css 的 default 预设同形：
+       黄铜金左边框 + 0.6 透明度 */
+    .trans {
+      font-size: 22px;
+      line-height: 1.55;
+      border-left: 2px solid var(--pt-brass);
+      padding-left: 0.5em;
+      opacity: 0.6;
+    }
+    .origin + .trans { margin-bottom: 30px; }
+    .trans:last-child { margin-bottom: 0; }
+  </style>
+</head>
+<body>
+  <div class="tile">
+    <div class="brand">
+      <div class="icon">P</div>
+      <div class="name">Parallel-Translation</div>
+      <div class="tagline" id="tagline"></div>
+      <div class="sub" id="sub"></div>
+    </div>
+    <div class="demo">
+      <div class="card">
+        <div class="card-label" id="card-label"></div>
+        <div class="origin" id="o1"></div>
+        <div class="trans" id="t1"></div>
+        <div class="origin" id="o2"></div>
+        <div class="trans" id="t2"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 文案取自 store/description-zh.md / description-en.md，保持商店页一致。
+    const COPY = {
+      zh: {
+        tagline: '原文译文并排显示',
+        sub: '再也不用来回切换',
+        cardLabel: '对照模式 · English → 中文',
+        o1: 'Sunlight is one energy source for life, not the only one.',
+        t1: '阳光是生命的一种能量来源，而不是唯一的一种。',
+        o2: 'The discovery did not add a new branch. It added a second root.',
+        t2: '这个发现添加的不是一根新枝，而是第二条根。',
+      },
+      en: {
+        tagline: 'See original and translation side by side',
+        sub: 'No more toggling back and forth',
+        cardLabel: 'Bilingual mode · Español → English',
+        o1: 'No construyeron campos en la montaña.',
+        t1: 'They did not build fields on the mountain.',
+        o2: 'Construyeron la montaña en forma de campo.',
+        t2: 'They built the mountain into the shape of a field.',
+      },
+    };
+
+    const params = new URLSearchParams(location.search);
+    const lang = params.get('lang') === 'en' ? 'en' : 'zh';
+    const size = params.get('size') === 'large' ? 'large' : 'small';
+    const c = COPY[lang];
+
+    document.body.dataset.size = size;
+    document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+    document.getElementById('tagline').textContent = c.tagline;
+    document.getElementById('sub').textContent = c.sub;
+    document.getElementById('card-label').textContent = c.cardLabel;
+    document.getElementById('o1').textContent = c.o1;
+    document.getElementById('t1').textContent = c.t1;
+    document.getElementById('o2').textContent = c.o2;
+    document.getElementById('t2').textContent = c.t2;
+  </script>
+</body>
+</html>

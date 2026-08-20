@@ -32,7 +32,8 @@
     "test:report": "npx tsx docs/testing/generate-test-report.ts",
     "test:report:ci": "npx tsx docs/testing/generate-test-report.ts --no-e2e",
     "test:logs": "cat docs/testing/logs/test-report.md",
-    "test:verify-build": "bash docs/testing/verify-build.sh"
+    "test:verify-build": "bash docs/testing/verify-build.sh",
+    "store:shots": "node store/screenshots/capture.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

@@ -1,0 +1,118 @@
+/* 商店截图演示页样式 —— 模仿常见的长文阅读站点排版。
+   刻意保持中性：不使用扩展自身的品牌色，避免截图里演示页与扩展 UI
+   撞色，让 .pt-trans 的译文层次成为画面里唯一的视觉重点。 */
+
+* { box-sizing: border-box; }
+
+/* headless 窗口失焦时 Chrome 会把选区画成灰色 —— 显式指定，
+   让划词截图里的高亮与用户实际看到的一致 */
+::selection { background: #b7d5f5; color: inherit; }
+
+html { -webkit-font-smoothing: antialiased; }
+
+body {
+  margin: 0;
+  background: #ffffff;
+  color: #1a1a1a;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.75;
+}
+
+/* ── 顶栏 ───────────────────────────────────────────── */
+.site-header {
+  border-bottom: 1px solid #e6e6e6;
+  padding: 0 32px;
+}
+.site-header-inner {
+  max-width: 900px;
+  margin: 0 auto;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+.site-name {
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+  color: #111;
+}
+.site-nav {
+  display: flex;
+  gap: 20px;
+  font-size: 14px;
+  color: #666;
+}
+
+/* ── 文章 ───────────────────────────────────────────── */
+.article {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 44px 32px 96px;
+}
+
+.kicker {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #8a7048;
+  margin: 0 0 14px;
+}
+
+h1 {
+  font-size: 38px;
+  line-height: 1.22;
+  letter-spacing: -0.02em;
+  margin: 0 0 16px;
+  font-weight: 700;
+}
+
+.standfirst {
+  font-size: 20px;
+  line-height: 1.55;
+  color: #555;
+  margin: 0 0 24px;
+}
+
+.byline {
+  font-size: 14px;
+  color: #777;
+  padding-bottom: 24px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid #ececec;
+}
+
+h2 {
+  font-size: 25px;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin: 44px 0 14px;
+  font-weight: 700;
+}
+
+p { margin: 0 0 22px; }
+
+ul {
+  margin: 0 0 22px;
+  padding-left: 24px;
+}
+li { margin-bottom: 10px; }
+
+blockquote {
+  margin: 32px 0;
+  padding: 4px 0 4px 22px;
+  border-left: 3px solid #d8cbb2;
+  color: #444;
+  font-size: 19px;
+  line-height: 1.65;
+}
+
+.figure-note {
+  font-size: 14px;
+  color: #888;
+  border-top: 1px solid #ececec;
+  padding-top: 18px;
+  margin-top: 40px;
+}
