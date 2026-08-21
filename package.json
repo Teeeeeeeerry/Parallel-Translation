@@ -1,6 +1,6 @@
 {
   "name": "parallel-translation",
-  "version": "2.0",
+  "version": "2.0.1",
   "description": "对照式网页翻译浏览器扩展",
   "private": true,
   "type": "module",
@@ -33,6 +33,7 @@
     "test:report:ci": "npx tsx docs/testing/generate-test-report.ts --no-e2e",
     "test:logs": "cat docs/testing/logs/test-report.md",
     "test:verify-build": "bash docs/testing/verify-build.sh",
+    "icon:build": "npx tsx design/icon/generate.ts",
     "store:shots": "node store/screenshots/capture.mjs"
   },
   "devDependencies": {

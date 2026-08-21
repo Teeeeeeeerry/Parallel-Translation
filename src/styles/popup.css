@@ -35,15 +35,17 @@ body {
   height: 32px;
   border-radius: var(--pt-r-md);
   background: var(--pt-forest);
-  color: var(--pt-paper);
-  font-family: var(--pt-font-mono);
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -.02em;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+/* 标识由 popup/main.ts 注入，自带颜色，方块只负责底色与圆角 */
+.pt-logo svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .pt-hdr-name {

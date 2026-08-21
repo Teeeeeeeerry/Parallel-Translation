@@ -5,6 +5,7 @@ import {
   LANG_LIST,
 } from '~/src/storage/schema';
 import { applyI18n, tf } from '~/src/i18n';
+import { logoMarkSvg } from '~/src/ui/logo';
 import {
   settingsReady,
   getSettings,
@@ -21,6 +22,10 @@ const toSelect = document.getElementById('pt-to-select') as HTMLSelectElement;
 const modeSelect = document.getElementById('pt-mode-select') as HTMLSelectElement;
 const styleSelect = document.getElementById('pt-style-select') as HTMLSelectElement;
 const settingsBtn = document.getElementById('pt-settings-btn')!;
+
+// 头部标识与扩展图标、悬浮球同源（src/ui/logo.ts）。标记框 32px，
+// 走 compact 字形 —— regular 在这个尺寸下笔画会糊在一起。
+document.getElementById('pt-logo')!.innerHTML = logoMarkSvg(32, { compact: true });
 
 // ---- Lang / engine option lists ----
 
