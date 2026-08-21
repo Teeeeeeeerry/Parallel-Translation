@@ -34,6 +34,7 @@ const EXTENSION_SRC = resolve('.output/chrome-mv3');
 const EXT_STAGING = resolve('.output/.screenshot-ext');
 const PROFILE_DIR = resolve('.output/.screenshot-profiles');
 const DEMO_DIR = resolve('store/screenshots/demo');
+const MARK_SVG = resolve('design/icon/icon-mark.svg');
 const OUT_ROOT = resolve('store/screenshots');
 
 // 4173 是 E2E fixtures-server 的端口，错开以便两者可同时跑
@@ -608,12 +609,22 @@ async function shotPromos(context, sw, locale, outDir) {
     { name: 'promo-440x280.png', size: 'small', w: 440, h: 280 },
     { name: 'promo-1400x560.png', size: 'large', w: 1400, h: 560 },
   ];
+  // 标识从图标的矢量源注入，而不是在 promo.html 里另画一份 ——
+  // 字形只在 src/ui/logo.ts 定义一次，这里拿的是它生成的产物
+  if (!existsSync(MARK_SVG)) {
+    throw new Error(`缺少标识矢量源: ${MARK_SVG}\n  请先运行 pnpm icon:build。`);
+  }
+  const markSvg = readFileSync(MARK_SVG, 'utf8');
+
   const page = await context.newPage();
   for (const s of sizes) {
     await page.setViewportSize({ width: s.w, height: s.h });
     await page.goto(`${BASE}/promo.html?lang=${locale}&size=${s.size}`, {
       waitUntil: 'load',
     });
+    await page.evaluate((svg) => {
+      document.getElementById('icon').innerHTML = svg;
+    }, markSvg);
     await page.waitForTimeout(500);
     const p = join(outDir, s.name);
     await page.screenshot({ path: p });

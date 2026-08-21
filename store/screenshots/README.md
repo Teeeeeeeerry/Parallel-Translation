@@ -66,3 +66,6 @@ node store/screenshots/capture.mjs --headed      # 显示浏览器窗口，排�
 - 拼图模板的 `.grid` 必须同时有 `min-height: 0` 和 `minmax(0, 1fr)`，
   少一个第三行就会被顶出 800px 画布
 - 划词的选区起点必须在视口内，否则浏览器会把页面拽去跟随选区
+- 宣传图上的标识不在 `promo.html` 里另画，而是由脚本读 `design/icon/icon-mark.svg`
+  注入 —— 字形只在 `src/ui/logo.ts` 定义一次。改过标识要先 `pnpm icon:build`，
+  再重拍宣传图
