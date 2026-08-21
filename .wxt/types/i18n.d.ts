@@ -1060,6 +1060,14 @@ declare module "wxt/browser" {
      * "译"
      */
     getMessage(
+      messageName: "ballGlyph",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "译"
+     */
+    getMessage(
       messageName: "paraBtnGlyph",
       substitutions?: string | string[],
       options?: GetMessageOptions,
@@ -1225,7 +1233,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "页面右侧的悬浮按钮，点击即可翻译整页"
+     * "页面右侧的悬浮按钮“译”，点击即可翻译整页"
      */
     getMessage(
       messageName: "welcomeBallDesc",
@@ -1281,7 +1289,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     getMessage(
-      messageName: "@@extension_id" | "@@ui_locale" | "@@bidi_dir" | "@@bidi_reversed_dir" | "@@bidi_start_edge" | "@@bidi_end_edge" | "extName" | "extDesc" | "translate" | "settings" | "navGeneral" | "navEngines" | "navAppearance" | "navHotkeys" | "navSites" | "navAdvanced" | "secGeneralDesc" | "cardSwitch" | "rowEnabled" | "cardLangs" | "rowFrom" | "rowTo" | "cardDefaultMode" | "rowDisplayMode" | "rowParaDisplayMode" | "modeBilingual" | "modeTranslationOnly" | "modeFollow" | "cardFloatingUi" | "rowFloatingBall" | "rowParagraphBtn" | "btnResetBallPos" | "toastBallPosReset" | "ballPosColHostname" | "ballPosColPosition" | "btnDelete" | "ballPosListEmpty" | "ballPosDefaultTag" | "secEnginesDesc" | "cardPriority" | "cardDisabled" | "cardDisabledDesc" | "cardDisabledEmpty" | "btnEnable" | "btnDisable" | "badgePrimary" | "engineLastOne" | "keyLabelSuffix" | "keyPlaceholder" | "modelLabel" | "btnTest" | "btnClear" | "testing" | "testOk" | "testOkUsage" | "keyInvalid" | "keyRequired" | "keyCleared" | "keySaved" | "keyClearedToast" | "netError" | "descOpenai" | "descDeepl" | "descGemini" | "secAppearanceDesc" | "cardStylePreset" | "rowPreset" | "styleDefault" | "styleDim" | "styleUnderline" | "styleBold" | "styleItalic" | "styleFade" | "previewOrigin" | "previewTrans" | "cardCustomCss" | "cssNoSelector" | "cssNoUrl" | "secHotkeysDesc" | "cardBindings" | "recordTitle" | "recording" | "actionToggleTranslate" | "actionToggleMode" | "actionTranslateParagraph" | "actionToggleExtension" | "conflictReserved" | "conflictDuplicate" | "needModifier" | "secSitesDesc" | "cardListMode" | "rowMode" | "siteBlacklist" | "siteWhitelist" | "cardDomains" | "btnAdd" | "secAdvancedDesc" | "cardPerf" | "rowConcurrency" | "rowUseCache" | "cacheEntries" | "cacheUnknown" | "btnClearCache" | "cardConfig" | "configDesc" | "btnExport" | "btnImport" | "btnReset" | "toastCacheCleared" | "toastExported" | "toastImported" | "toastImportFail" | "toastReset" | "confirmReset" | "optionsLoadFail" | "popupStatus" | "popupMaster" | "popupTranslateThis" | "btnTranslate" | "popupEngine" | "popupLangs" | "popupDisplayMode" | "popupStyle" | "hintDisabled" | "hintNoElements" | "hintCantTranslate" | "hintSaveFail" | "hintInitFail" | "ctxTranslateSelection" | "paraBtnGlyph" | "paraBtnLabel" | "paraBtnRestoreGlyph" | "paraBtnRestoreLabel" | "toastExtOn" | "toastExtOff" | "toastAllEnginesFail" | "toastTranslateFail" | "toastRenderRejected" | "toastAllRejected" | "toastNotTranslatable" | "toastSiteBlocked" | "welcomeTagline" | "welcomeReady" | "welcomeReadyDesc" | "welcomeHotkeys" | "welcomeHotkeysDesc" | "welcomeTargetLang" | "welcomeTargetLangDesc" | "welcomeInteractions" | "welcomeBall" | "welcomeBallDesc" | "welcomeParaBtn" | "welcomeParaBtnDesc" | "welcomeSelection" | "welcomeSelectionDesc" | "welcomeOpenSettings" | "welcomeClose",
+      messageName: "@@extension_id" | "@@ui_locale" | "@@bidi_dir" | "@@bidi_reversed_dir" | "@@bidi_start_edge" | "@@bidi_end_edge" | "extName" | "extDesc" | "translate" | "settings" | "navGeneral" | "navEngines" | "navAppearance" | "navHotkeys" | "navSites" | "navAdvanced" | "secGeneralDesc" | "cardSwitch" | "rowEnabled" | "cardLangs" | "rowFrom" | "rowTo" | "cardDefaultMode" | "rowDisplayMode" | "rowParaDisplayMode" | "modeBilingual" | "modeTranslationOnly" | "modeFollow" | "cardFloatingUi" | "rowFloatingBall" | "rowParagraphBtn" | "btnResetBallPos" | "toastBallPosReset" | "ballPosColHostname" | "ballPosColPosition" | "btnDelete" | "ballPosListEmpty" | "ballPosDefaultTag" | "secEnginesDesc" | "cardPriority" | "cardDisabled" | "cardDisabledDesc" | "cardDisabledEmpty" | "btnEnable" | "btnDisable" | "badgePrimary" | "engineLastOne" | "keyLabelSuffix" | "keyPlaceholder" | "modelLabel" | "btnTest" | "btnClear" | "testing" | "testOk" | "testOkUsage" | "keyInvalid" | "keyRequired" | "keyCleared" | "keySaved" | "keyClearedToast" | "netError" | "descOpenai" | "descDeepl" | "descGemini" | "secAppearanceDesc" | "cardStylePreset" | "rowPreset" | "styleDefault" | "styleDim" | "styleUnderline" | "styleBold" | "styleItalic" | "styleFade" | "previewOrigin" | "previewTrans" | "cardCustomCss" | "cssNoSelector" | "cssNoUrl" | "secHotkeysDesc" | "cardBindings" | "recordTitle" | "recording" | "actionToggleTranslate" | "actionToggleMode" | "actionTranslateParagraph" | "actionToggleExtension" | "conflictReserved" | "conflictDuplicate" | "needModifier" | "secSitesDesc" | "cardListMode" | "rowMode" | "siteBlacklist" | "siteWhitelist" | "cardDomains" | "btnAdd" | "secAdvancedDesc" | "cardPerf" | "rowConcurrency" | "rowUseCache" | "cacheEntries" | "cacheUnknown" | "btnClearCache" | "cardConfig" | "configDesc" | "btnExport" | "btnImport" | "btnReset" | "toastCacheCleared" | "toastExported" | "toastImported" | "toastImportFail" | "toastReset" | "confirmReset" | "optionsLoadFail" | "popupStatus" | "popupMaster" | "popupTranslateThis" | "btnTranslate" | "popupEngine" | "popupLangs" | "popupDisplayMode" | "popupStyle" | "hintDisabled" | "hintNoElements" | "hintCantTranslate" | "hintSaveFail" | "hintInitFail" | "ctxTranslateSelection" | "ballGlyph" | "paraBtnGlyph" | "paraBtnLabel" | "paraBtnRestoreGlyph" | "paraBtnRestoreLabel" | "toastExtOn" | "toastExtOff" | "toastAllEnginesFail" | "toastTranslateFail" | "toastRenderRejected" | "toastAllRejected" | "toastNotTranslatable" | "toastSiteBlocked" | "welcomeTagline" | "welcomeReady" | "welcomeReadyDesc" | "welcomeHotkeys" | "welcomeHotkeysDesc" | "welcomeTargetLang" | "welcomeTargetLangDesc" | "welcomeInteractions" | "welcomeBall" | "welcomeBallDesc" | "welcomeParaBtn" | "welcomeParaBtnDesc" | "welcomeSelection" | "welcomeSelectionDesc" | "welcomeOpenSettings" | "welcomeClose",
       substitutions?: string | string[],
       options?: GetMessageOptions,
     ): string;

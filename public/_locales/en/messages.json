@@ -150,6 +150,7 @@
   "hintInitFail": { "message": "Initialization failed — please reopen" },
   "ctxTranslateSelection": { "message": "Translate selected text" },
 
+  "ballGlyph": { "message": "T" },
   "paraBtnGlyph": { "message": "T" },
   "paraBtnLabel": { "message": "Translate this paragraph" },
   "paraBtnRestoreGlyph": { "message": "R" },
@@ -175,7 +176,7 @@
   "welcomeTargetLangDesc": { "message": "Translations will be shown in this language. Change it here or in Settings anytime:" },
   "welcomeInteractions": { "message": "Ways to interact" },
   "welcomeBall": { "message": "Floating ball" },
-  "welcomeBallDesc": { "message": "The floating button on the right side of the page — click to translate the entire page" },
+  "welcomeBallDesc": { "message": "The \"T\" button on the right side of the page — click to translate the entire page" },
   "welcomeParaBtn": { "message": "Translate on hover" },
   "welcomeParaBtnDesc": { "message": "A \"T\" button appears when you hover over a paragraph — click to translate just that paragraph" },
   "welcomeSelection": { "message": "Selection & context menu" },
