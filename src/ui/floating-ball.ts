@@ -3,6 +3,7 @@
 // 位置可拖动并持久化到 storage.local。
 
 import { mountIsolated, unmountIsolated } from './mount';
+import { logoMarkSvg } from './logo';
 import { tf } from '../i18n';
 
 function ballPosKey(): string {
@@ -195,12 +196,26 @@ export function createBall(callbacks: BallCallbacks): () => void {
   };
 }
 
-const GLYPH: Record<BallState, string> = {
-  get idle() { return tf('ballGlyph', '译'); },
+/**
+ * 三个瞬时态用字符，idle 用品牌标识（见下方 setBallState）。
+ *
+ * idle 之外不画标识是有意的：done 态的底色会变成黄铜金，而标识里的「文」
+ * 正是黄铜金，画上去会直接消失在背景里。这三个态各自的字符本来也比图形好认。
+ */
+const GLYPH: Record<Exclude<BallState, 'idle'>, string> = {
   loading: '…',
   done: '✓',
   error: '!',
 };
+
+/**
+ * idle 态的品牌标识。
+ *
+ * 用 micro 形态而不是完整字形：球直径只有 44px，「文」的四笔在这个尺寸下
+ * 会糊成一团，而且方形字形放进圆形容器还会上下顶边。micro 的「A + 横条」
+ * 同样是「上原文、下译文」，在圆里更清楚 —— 与 16px 图标同一套取舍。
+ */
+const IDLE_MARK = logoMarkSvg(28, { micro: true });
 
 /**
  * 状态切换的唯一入口。content script 在翻译的各个节点上调用，
@@ -215,7 +230,12 @@ export function setBallState(s: BallState): void {
     ?.shadowRoot?.querySelector('.pt-ball') as HTMLElement | null;
   if (ball) {
     ball.dataset.state = s;
-    ball.textContent = GLYPH[s];
+    if (s === 'idle') {
+      // 常量 SVG，不含任何外部输入
+      ball.innerHTML = IDLE_MARK;
+    } else {
+      ball.textContent = GLYPH[s];
+    }
   }
 
   // error 是瞬时态：停留 3 秒让用户看见，然后回到可再次点击的 idle

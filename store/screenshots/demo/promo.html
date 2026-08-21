@@ -44,19 +44,16 @@
     }
 
     .brand { display: flex; flex-direction: column; justify-content: center; }
-    /* 与 src/styles/popup.css 的 .pt-logo 同形 —— 宣传图上的标识
-       与用户点开 popup 后看到的头部标识是同一个 */
+    /* 标识由 capture.mjs 从 design/icon/icon-mark.svg 注入 —— 与扩展图标、
+       popup 头部、悬浮球同一份字形，宣传图上不会出现另一套视觉 */
     .icon {
       display: flex;
       align-items: center;
       justify-content: center;
       background: var(--pt-forest);
-      color: var(--pt-paper);
-      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-weight: 700;
-      letter-spacing: -0.02em;
       flex-shrink: 0;
     }
+    .icon svg { display: block; width: 100%; height: 100%; }
     .name { font-weight: 700; letter-spacing: -0.02em; }
     .tagline { font-weight: 600; line-height: 1.3; }
     .sub { color: var(--pt-forest-55); line-height: 1.45; }
@@ -69,7 +66,7 @@
       text-align: center;
       padding: 30px 34px;
     }
-    body[data-size='small'] .icon { width: 58px; height: 58px; border-radius: 14px; font-size: 29px; margin: 0 auto 16px; }
+    body[data-size='small'] .icon { width: 58px; height: 58px; border-radius: 14px; margin: 0 auto 16px; }
     body[data-size='small'] .name { font-size: 16px; color: var(--pt-forest-55); margin-bottom: 12px; }
     body[data-size='small'] .tagline { font-size: 24px; margin-bottom: 10px; }
     body[data-size='small'] .sub { font-size: 14.5px; }
@@ -81,7 +78,7 @@
       width: 46%;
       padding: 0 0 0 88px;
     }
-    body[data-size='large'] .icon { width: 80px; height: 80px; border-radius: 19px; font-size: 40px; margin-bottom: 26px; }
+    body[data-size='large'] .icon { width: 80px; height: 80px; border-radius: 19px; margin-bottom: 26px; }
     body[data-size='large'] .name { font-size: 30px; margin-bottom: 26px; }
     body[data-size='large'] .tagline { font-size: 44px; line-height: 1.22; margin-bottom: 18px; }
     body[data-size='large'] .sub { font-size: 19px; }
@@ -130,7 +127,7 @@
 <body>
   <div class="tile">
     <div class="brand">
-      <div class="icon">P</div>
+      <div class="icon" id="icon"></div>
       <div class="name">Parallel-Translation</div>
       <div class="tagline" id="tagline"></div>
       <div class="sub" id="sub"></div>
