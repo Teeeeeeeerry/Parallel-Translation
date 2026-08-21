@@ -150,6 +150,7 @@
   "hintInitFail": { "message": "初始化失敗，請重新開啟" },
   "ctxTranslateSelection": { "message": "翻譯所選文字" },
 
+  "ballGlyph": { "message": "譯" },
   "paraBtnGlyph": { "message": "譯" },
   "paraBtnLabel": { "message": "翻譯此段" },
   "paraBtnRestoreGlyph": { "message": "原" },
@@ -175,7 +176,7 @@
   "welcomeTargetLangDesc": { "message": "翻譯結果將以此語言顯示，可依需求修改：" },
   "welcomeInteractions": { "message": "互動方式" },
   "welcomeBall": { "message": "浮動球" },
-  "welcomeBallDesc": { "message": "頁面右側的浮動按鈕，點擊即可翻譯整頁" },
+  "welcomeBallDesc": { "message": "頁面右側的浮動按鈕“譯”，點擊即可翻譯整頁" },
   "welcomeParaBtn": { "message": "逐段翻譯" },
   "welcomeParaBtnDesc": { "message": "滑鼠停留在段落上時出現“譯”按鈕，點擊翻譯該段落" },
   "welcomeSelection": { "message": "選取文字與右鍵翻譯" },

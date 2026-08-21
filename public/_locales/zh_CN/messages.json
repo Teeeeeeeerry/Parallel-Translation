@@ -150,6 +150,7 @@
   "hintInitFail": { "message": "初始化失败，请重新打开" },
   "ctxTranslateSelection": { "message": "翻译所选文本" },
 
+  "ballGlyph": { "message": "译" },
   "paraBtnGlyph": { "message": "译" },
   "paraBtnLabel": { "message": "翻译此段" },
   "paraBtnRestoreGlyph": { "message": "原" },
@@ -175,7 +176,7 @@
   "welcomeTargetLangDesc": { "message": "翻译结果将以此语言显示，可根据需要修改：" },
   "welcomeInteractions": { "message": "交互方式" },
   "welcomeBall": { "message": "悬浮球" },
-  "welcomeBallDesc": { "message": "页面右侧的悬浮按钮，点击即可翻译整页" },
+  "welcomeBallDesc": { "message": "页面右侧的悬浮按钮“译”，点击即可翻译整页" },
   "welcomeParaBtn": { "message": "逐段翻译" },
   "welcomeParaBtnDesc": { "message": "鼠标悬停在段落上时出现“译”按钮，点击翻译该段落" },
   "welcomeSelection": { "message": "划词与右键翻译" },
