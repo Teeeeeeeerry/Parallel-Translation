@@ -244,3 +244,41 @@ describe('epoch 中止语义（#262）', () => {
     expect(order).toEqual([1, 0, 1]);
   });
 });
+
+describe('设置变更订阅（#265）', () => {
+  test('start 订阅设置变更、stop 退订；回调转发 onSettingsChange', async () => {
+    let handler: ((s: unknown) => void) | null = null;
+    let unsubscribed = false;
+    const seen: unknown[] = [];
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+
+    const orch = createOrchestrator({
+      send,
+      subscribeSettings: (fn) => {
+        handler = fn;
+        return () => {
+          unsubscribed = true;
+        };
+      },
+      onSettingsChange: (s) => seen.push(s),
+    });
+
+    orch.start();
+    expect(handler).not.toBeNull();
+
+    handler!({ style: 'bold' });
+    expect(seen).toEqual([{ style: 'bold' }]);
+
+    orch.stop();
+    expect(unsubscribed).toBe(true);
+  });
+
+  test('未注入订阅 → start/stop 为空操作', async () => {
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+    const orch = createOrchestrator({ send });
+    expect(() => {
+      orch.start();
+      orch.stop();
+    }).not.toThrow();
+  });
+});

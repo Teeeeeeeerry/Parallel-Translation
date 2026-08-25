@@ -67,11 +67,6 @@ export default defineContentScript({
 
     const isMainFrame = window.top === window;
 
-    // ── 初始模式/样式 ──
-    applyMode(s.displayMode, s.paraDisplayMode);
-    applyStyle(s.style);
-    if (s.customCss) applyCustomCss(s.customCss);
-
     // ── 注入 UI（仅主文档）──
     if (isMainFrame) {
       // #242: 悬浮球经注册表启停；showFloatingBall 决定是否启动
@@ -79,7 +74,6 @@ export default defineContentScript({
         create: () => createBall({ onToggle: () => void togglePage() }),
         stop: (stopBall) => stopBall(),
       });
-      registry.ensure('ball', s.showFloatingBall);
 
       // #243: 段落按钮经注册表启停；showParagraphBtn 决定是否启动
       registry.register('para-btn', {
@@ -90,7 +84,6 @@ export default defineContentScript({
           }),
         stop: (stopParaBtn) => stopParaBtn(),
       });
-      registry.ensure('para-btn', s.showParagraphBtn);
     }
 
     // ── 快捷键（仅主文档，避免与 iframe 内输入冲突）──
@@ -148,20 +141,22 @@ export default defineContentScript({
       stop: (stopObserving) => stopObserving(),
     });
 
-    // ── 设置变更监听 ──
-    onSettingsChanged((ns: Settings) => {
+    // ── 设置变更统一入口（#265）──
+    // 初始化与设置变更共用：样式应用 + UI 启停（经注册表 ensure）。
+    // 订阅由编排模块持有（start 订阅 / stop 退订），此处只有一份
+    // 响应代码，无重复的创建 / 变更处理块。
+    function applySettings(ns: Settings): void {
       applyMode(ns.displayMode, ns.paraDisplayMode);
       applyStyle(ns.style);
       applyCustomCss(ns.customCss);
 
       if (isMainFrame) {
-        // #242: 悬浮球开关经注册表 ensure —— 启停幂等、即时生效
+        // #242/#243: 悬浮球 / 段落按钮开关经注册表 ensure —— 启停幂等、即时生效
         registry.ensure('ball', ns.showFloatingBall);
-
-        // #243: 段落按钮开关经注册表 ensure —— 启停幂等、即时生效
         registry.ensure('para-btn', ns.showParagraphBtn);
       }
-    });
+    }
+    applySettings(s);
 
     // ── 翻译全页 ──
     // #261/#262: 批次拆分 / 有界重试 / epoch 中止 / 渐进渲染全部收敛
@@ -188,6 +183,10 @@ export default defineContentScript({
     // 渲染回调按批触发（#256 渐进渲染，首屏不等最慢段）
     const orchestrator = createOrchestrator({
       send: translateViaBackground,
+      // #265: 设置变更订阅由模块持有（start 订阅 / stop 退订），
+      // 响应走统一入口 applySettings（初始化与变更共用）
+      subscribeSettings: onSettingsChanged,
+      onSettingsChange: (ns) => applySettings(ns as Settings),
       onBatchResult: (_i, batch, result) => {
         if (!result.ok || !result.data) return;
         const translations = result.data.translations;
@@ -213,7 +212,8 @@ export default defineContentScript({
         }
       },
     });
-    // #261: 启动编排 —— 未启动时翻译入口拒绝执行
+    // #261/#265: 启动编排 —— 未启动时翻译入口拒绝执行；设置变更
+    // 订阅随 start 建立
     orchestrator.start();
 
     async function doTranslate(
