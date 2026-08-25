@@ -55,11 +55,9 @@ export async function attemptBatchWithRetry(
     error?: string;
     /** #116: messaging 透出的类型化上下文失效标志。 */
     invalidated?: boolean;
-    /** #180: 引擎不可恢复错误（key 无效等）—— 不重试。 */
-    retryable?: boolean;
-    /** #236/#246: 类型化失败类别（新字段，存在时优先于 retryable）。 */
+    /** #236/#246: 类型化失败类别 —— 不可重试语义的唯一来源。 */
     category?: FailureCategory;
-    /** #236/#246: 已中止（新字段）。 */
+    /** #236/#246: 已中止。 */
     aborted?: boolean;
   }>,
   opts: BatchRetryOptions = {},
@@ -88,17 +86,13 @@ export async function attemptBatchWithRetry(
         category: resp.category,
       };
     }
-    // #246: 新字段 aborted（用户中止）→ 立即停止，不记成失败
+    // #246: aborted（用户中止）→ 立即停止，不记成失败
     if (resp?.aborted) {
       return { ok: false, invalidated: false, aborted: true, error: lastError };
     }
-    // #246: 新字段类别优先 —— invalid-key / quota 不可恢复，立即失败；
-    // 旧字段 retryable=false 在兼容期同样生效（#180）
-    if (
-      resp?.category === 'invalid-key' ||
-      resp?.category === 'quota' ||
-      resp?.retryable === false
-    ) {
+    // #246/#263: 类型化类别 —— invalid-key / quota 不可恢复，立即失败
+    // （旧字段 retryable 已清理，#180 语义由类别承载）
+    if (resp?.category === 'invalid-key' || resp?.category === 'quota') {
       return {
         ok: false,
         invalidated: false,

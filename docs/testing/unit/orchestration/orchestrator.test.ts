@@ -137,7 +137,7 @@ describe('渐进渲染回调注入（#256）', () => {
       .mockImplementationOnce(async () => ({
         ok: false,
         error: '批0失败',
-        retryable: false,
+        category: 'invalid-key' as const,
       }))
       .mockImplementationOnce(async () => ({ ok: true, data: { translations: ['批1'] } }));
 

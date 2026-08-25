@@ -44,12 +44,12 @@ describe('attemptBatchWithRetry — 成功路径', () => {
   });
 });
 
-describe('attemptBatchWithRetry — 不可恢复错误（#180）', () => {
-  test('retryable=false（key 无效等）→ 立即失败，0 次重试', async () => {
+describe('attemptBatchWithRetry — 不可恢复错误（#180 → #263）', () => {
+  test('category=invalid-key → 立即失败，0 次重试', async () => {
     const send = vi.fn(async () => ({
       ok: false,
       error: 'API key 无效',
-      retryable: false,
+      category: 'invalid-key' as const,
     }));
     const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
 
@@ -62,8 +62,19 @@ describe('attemptBatchWithRetry — 不可恢复错误（#180）', () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  test('缺省 retryable → 按可重试处理（默认行为不变）', async () => {
+  test('缺省类别 → 按可重试处理（默认行为不变）', async () => {
     const send = vi.fn(async () => ({ ok: false, error: '瞬时故障' }));
+    await attemptBatchWithRetry(send, { sleep: noopSleep });
+    expect(send).toHaveBeenCalledTimes(BATCH_RETRY_LIMIT + 1);
+  });
+
+  test('旧字段 retryable=false 已清理：无类别时不再短路（#263）', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      error: 'API key 无效',
+      retryable: false,
+    }));
+    // 旧形态不再生效 —— 按可重试处理进入重试序列
     await attemptBatchWithRetry(send, { sleep: noopSleep });
     expect(send).toHaveBeenCalledTimes(BATCH_RETRY_LIMIT + 1);
   });
@@ -256,17 +267,6 @@ describe('attemptBatchWithRetry — 新字段优先（#246）', () => {
     expect(send).toHaveBeenCalledTimes(2);
   });
 
-  test('旧字段路径兼容：仅 retryable=false（无 category）→ 立即失败', async () => {
-    const send = vi.fn(async () => ({
-      ok: false,
-      error: 'API key 无效',
-      retryable: false,
-    }));
-    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
-
-    expect(result.ok).toBe(false);
-    expect(send).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('BatchRetryResult 类别透传（#247）', () => {

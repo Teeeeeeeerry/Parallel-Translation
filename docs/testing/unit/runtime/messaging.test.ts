@@ -190,9 +190,7 @@ describe('translateViaBackground — 失败语义', () => {
       ok: false,
       error: '所有引擎均失败',
       invalidated: false,
-      // #180: 未携带 retryable 的响应按可重试处理
-      retryable: true,
-      // #236: 未携带类型化字段 → 按瞬时处理（旧路径兼容）
+      // #263: 未携带类型化字段 → 按瞬时处理；不再转述 retryable
       category: 'transient',
       aborted: false,
     });
@@ -219,7 +217,6 @@ describe('translateViaBackground — 失败语义', () => {
     expect(result).toEqual({
       ok: false,
       error: 'API key 无效',
-      retryable: false,
       invalidated: false,
       category: 'invalid-key',
       aborted: false,
