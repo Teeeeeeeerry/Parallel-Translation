@@ -62,9 +62,8 @@ export default defineContentScript({
     let stopObserving: (() => void) | null = null;
     let stopHotkeys: (() => void) | null = null;
     let stopDrag: (() => void) | null = null;
-    let stopParaBtn: (() => void) | null = null;
 
-    // #242: UI 生命周期注册表 —— 悬浮球等经注册表启停，
+    // #242/#243: UI 生命周期注册表 —— 悬浮球、段落按钮等经注册表启停，
     // 设置变更由 ensure() 驱动，启停成对、重复注册幂等
     const registry = createLifecycleRegistry();
 
@@ -84,12 +83,16 @@ export default defineContentScript({
       });
       registry.ensure('ball', s.showFloatingBall);
 
-      if (s.showParagraphBtn) {
-        stopParaBtn = createParaBtn({
-          translate: (el) => translateOne(el),
-          restore: (el) => unrender(el),
-        });
-      }
+      // #243: 段落按钮经注册表启停；showParagraphBtn 决定是否启动
+      registry.register('para-btn', {
+        create: () =>
+          createParaBtn({
+            translate: (el) => translateOne(el),
+            restore: (el) => unrender(el),
+          }),
+        stop: (stopParaBtn) => stopParaBtn(),
+      });
+      registry.ensure('para-btn', s.showParagraphBtn);
     }
 
     // ── 快捷键（仅主文档，避免与 iframe 内输入冲突）──
@@ -133,16 +136,8 @@ export default defineContentScript({
         // #242: 悬浮球开关经注册表 ensure —— 启停幂等、即时生效
         registry.ensure('ball', ns.showFloatingBall);
 
-        // 段落按钮开关
-        if (ns.showParagraphBtn && !stopParaBtn) {
-          stopParaBtn = createParaBtn({
-          translate: (el) => translateOne(el),
-          restore: (el) => unrender(el),
-        });
-        } else if (!ns.showParagraphBtn && stopParaBtn) {
-          stopParaBtn();
-          stopParaBtn = null;
-        }
+        // #243: 段落按钮开关经注册表 ensure —— 启停幂等、即时生效
+        registry.ensure('para-btn', ns.showParagraphBtn);
       }
     });
 
