@@ -18,6 +18,7 @@ const FIXTURES_BASE = 'http://localhost:4173';
 /** 所有 fixture 页面的文件名 */
 export const FIXTURES = [
   'basic',
+  'auto-mutate',
   'shadow',
   'custom-elements',
   'iframe',

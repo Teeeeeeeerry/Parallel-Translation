@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Auto Mutate</title></head>
+<body>
+  <h1>Static heading that should NOT be translated without user action.</h1>
+  <p>Static paragraph one. This page must show no translations unless the user toggles.</p>
+  <script>
+    // 模拟 SPA：加载后 500ms 自动插入新段落（无任何用户操作）
+    setTimeout(() => {
+      const p = document.createElement('p');
+      p.id = 'late-paragraph';
+      p.textContent = 'Late appended paragraph — SPA mutation without user action.';
+      document.body.appendChild(p);
+    }, 500);
+  </script>
+</body>
+</html>

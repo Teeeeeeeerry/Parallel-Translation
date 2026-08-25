@@ -381,6 +381,23 @@ test.describe('Fixture: infinite', () => {
   });
 });
 
+test.describe('Fixture: auto-mutate', () => {
+  test('@core 无用户操作时不出现译文 —— 内容脚本启动时不得自动启动 observer', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('auto-mutate');
+
+    // 页面自身在 500ms 后自动插入段落（模拟 SPA 变更），
+    // 等待其落地 + observer 防抖窗口（300ms）+ 传输余量
+    await page.waitForTimeout(2500);
+
+    // 未点击任何翻译入口 —— 页面任何位置都不应出现译文标记
+    expect(await page.locator('[data-pt="done"]').count()).toBe(0);
+  });
+});
+
 test.describe('Fixture: spa', () => {
   test('@core TC-E2E-23: 路由切换后新内容可被发现', async ({
     page, mockGoogle, seedSettings, gotoFixture,

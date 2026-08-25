@@ -51,10 +51,13 @@ export function createLifecycleRegistry(): LifecycleRegistry {
 
   const registry: LifecycleRegistry = {
     register<T>(id: string, lifecycle: RegistryLifecycle<T>): () => void {
-      // 重复注册幂等：旧实例先停止，同一 id 至多一个实例在跑
+      // 重复注册幂等：同一 id 至多一个实例在跑（旧实例先停止）
       stopInstance(id);
       decls.set(id, lifecycle as RegistryLifecycle<unknown>);
-      instances.set(id, lifecycle.create());
+      // 声明与实例化分离：实例由首次 ensure(true) 驱动创建 ——
+      // register 不立即 create。副作用类生命周期（如增量补翻 observer
+      // 挂 MutationObserver）若「声明即启动」，会在内容脚本初始化时
+      // 误启动，SPA 页面自身变更即触发自动翻译（在线直播页复现）。
       return () => registry.unregister(id);
     },
 
