@@ -129,12 +129,17 @@ describe('渐进渲染回调注入（#256）', () => {
     const seen: Array<[number, string]> = [];
     const send = vi
       .fn()
-      .mockImplementationOnce(async () => ({ ok: false, error: '批0失败', retryable: true }))
+      .mockImplementationOnce(async () => ({
+        ok: false,
+        error: '批0失败',
+        retryable: false,
+      }))
       .mockImplementationOnce(async () => ({ ok: true, data: { translations: ['批1'] } }));
 
     const orch = createOrchestrator({
       send,
-      onBatchResult: (i, result) => {
+      sleep: () => Promise.resolve(),
+      onBatchResult: (i, _batch, result) => {
         seen.push([i, result.ok ? 'ok' : result.error!]);
       },
     });
@@ -151,7 +156,10 @@ describe('渐进渲染回调注入（#256）', () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
     const orch = createOrchestrator({ send });
     orch.start();
-    await expect(orch.translatePage(items(16), 'en', 'zh')).resolves.toBeUndefined();
+    await expect(orch.translatePage(items(16), 'en', 'zh')).resolves.toMatchObject({
+      allFailed: false,
+      aborted: false,
+    });
     expect(send).toHaveBeenCalledTimes(2);
   });
 });
