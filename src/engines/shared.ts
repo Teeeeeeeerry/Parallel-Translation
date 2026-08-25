@@ -9,6 +9,7 @@
 // 401 会话失效清 JWT 等）留在适配器内显式处理，不再各自发明分类规则。
 
 import type { FailureCategory } from './types';
+import { normalizeText } from '~/src/dom/normalize';
 
 /** 自带 key 的引擎 —— 401/403 才可能意味着「key 无效」。 */
 const KEYED_ENGINES: ReadonlySet<string> = new Set(['openai', 'deepl', 'gemini']);
@@ -38,4 +39,28 @@ export function classifyStatus(
   if (resp.status === 401 || resp.status === 403) return 'invalid-key';
   if (resp.status === 429) return 'quota';
   return 'transient';
+}
+
+/**
+ * 编号提示词模板唯一来源（#240）。
+ *
+ * 产出格式与 openai / gemini 现有的逐字实现完全一致：
+ *   - 每条文本归一化（折叠换行）后按「序号. 文本」编号，\n 分隔
+ *   - 头部指令固定：翻译成 {to}、可选源语言、严格保持编号与行数
+ *
+ * 编号结构靠 \n 分隔，文本自带换行会把编号撑破导致 LLM 重编号、
+ * parseNumbered 回填错位，因此拼 prompt 前必须压一次（#160）。
+ */
+export function buildNumberedPrompt(
+  to: string,
+  from: string | 'auto',
+  texts: string[],
+): string {
+  const numbered = texts
+    .map((t, i) => `${i + 1}. ${normalizeText(t)}`)
+    .join('\n');
+  return (
+    `将以下编号文本翻译成${to}${from === 'auto' ? '' : `（源语言：${from}）`}。` +
+    `严格保持编号与行数一致，只输出译文，不要解释。\n\n${numbered}`
+  );
 }
