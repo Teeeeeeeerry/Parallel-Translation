@@ -56,7 +56,12 @@ describe('gemini HTTP 路径', () => {
     const { gemini } = await import('~/src/engines/gemini');
     await expect(
       gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ engineId: 'gemini', retryable: false, message: '未配置 API key' });
+    ).rejects.toMatchObject({
+      engineId: 'gemini',
+      retryable: false,
+      category: 'invalid-key',
+      message: '未配置 API key',
+    });
     expect(getKey).toHaveBeenCalledWith('gemini');
   });
 
@@ -118,7 +123,32 @@ describe('gemini HTTP 路径', () => {
     const { gemini } = await import('~/src/engines/gemini');
     await expect(
       gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ retryable: false, message: 'API key 无效' });
+    ).rejects.toMatchObject({ retryable: false, category: 'invalid-key', message: 'API key 无效' });
+  });
+
+  test('401 → invalid-key（#236 新增类别）', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('bad');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('err', { status: 401 })));
+    const { gemini } = await import('~/src/engines/gemini');
+    await expect(
+      gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
+    ).rejects.toMatchObject({ retryable: false, category: 'invalid-key', message: 'API key 无效' });
+  });
+
+  test('429 → quota + invalidated（#236 新增类别）', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('k');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('err', { status: 429 })));
+    const { gemini } = await import('~/src/engines/gemini');
+    await expect(
+      gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
+    ).rejects.toMatchObject({
+      retryable: false,
+      category: 'quota',
+      invalidated: true,
+      aborted: false,
+    });
   });
 
   test('400 带「API key not valid」错误体 → retryable=false，key 无效（#161）', async () => {
@@ -142,7 +172,7 @@ describe('gemini HTTP 路径', () => {
     const { gemini } = await import('~/src/engines/gemini');
     await expect(
       gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ retryable: false, message: 'API key 无效' });
+    ).rejects.toMatchObject({ retryable: false, category: 'invalid-key', message: 'API key 无效' });
   });
 
   test('400 带「input too large」错误体 → retryable，交给下一引擎降级（#161）', async () => {
@@ -168,6 +198,7 @@ describe('gemini HTTP 路径', () => {
       gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
     ).rejects.toMatchObject({
       retryable: true,
+      category: 'transient',
       message: /exceeds the maximum token limit/,
     });
   });
@@ -193,7 +224,7 @@ describe('gemini HTTP 路径', () => {
     const { gemini } = await import('~/src/engines/gemini');
     await expect(
       gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ retryable: true, message: /is not found/ });
+    ).rejects.toMatchObject({ retryable: true, category: 'transient', message: /is not found/ });
   });
 
   test('其他非 200 → EngineError（retryable）', async () => {
@@ -203,7 +234,7 @@ describe('gemini HTTP 路径', () => {
     const { gemini } = await import('~/src/engines/gemini');
     await expect(
       gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ retryable: true, message: 'HTTP 503' });
+    ).rejects.toMatchObject({ retryable: true, category: 'transient', message: 'HTTP 503' });
   });
 
   test('空 candidates → 长度一致的空白译文数组', async () => {

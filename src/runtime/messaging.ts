@@ -17,7 +17,11 @@
 // 3. SW 已响应的 {ok:false} 是引擎级失败（router 已做过引擎降级），不重试
 // 4. 预算耗尽返回 {ok:false} + 错误说明，永不抛出 —— 调用方按原约定处理
 
-import type { TranslateRequest, TranslateResponse } from '~/src/engines/types';
+import type {
+  TranslateRequest,
+  TranslateResponse,
+  FailureCategory,
+} from '~/src/engines/types';
 import { sleep } from '~/src/runtime/sleep';
 
 export type TranslateResult =
@@ -28,6 +32,10 @@ export type TranslateResult =
       invalidated: boolean;
       /** #180: 引擎不可恢复错误（key 无效等）—— 批次重试层不重试。 */
       retryable: boolean;
+      /** #236: 类型化失败类别（新字段，扩张阶段与旧字段并存）。 */
+      category: FailureCategory;
+      /** #236: 已中止（新字段）。 */
+      aborted: boolean;
     };
 
 /** SW 就绪等待预算（ping 阶段）。覆盖 CI 中 SW 冷启动的常见耗时。 */
@@ -167,6 +175,9 @@ export async function translateViaBackground(
       data?: TranslateResponse;
       error?: string;
       retryable?: boolean;
+      category?: FailureCategory;
+      invalidated?: boolean;
+      aborted?: boolean;
     };
 
     if (resp?.ok === true && resp.data) {
@@ -175,8 +186,11 @@ export async function translateViaBackground(
     return {
       ok: false,
       error: resp?.error ?? '未知错误',
-      invalidated: false,
+      invalidated: resp?.invalidated ?? false,
       retryable: resp?.retryable ?? true,
+      // #236: 类型化字段原样透传，缺省按瞬时处理（旧路径兼容）
+      category: resp?.category ?? 'transient',
+      aborted: resp?.aborted ?? false,
     };
   } catch (e) {
     // #116: 上下文失效以类型化标志透出，调用方无需匹配文案
@@ -185,6 +199,8 @@ export async function translateViaBackground(
       error: e instanceof Error ? e.message : String(e),
       invalidated: e instanceof ContextInvalidatedError,
       retryable: true,
+      category: 'transient',
+      aborted: false,
     };
   }
 }
