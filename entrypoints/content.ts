@@ -61,7 +61,6 @@ export default defineContentScript({
 
     let stopObserving: (() => void) | null = null;
     let stopHotkeys: (() => void) | null = null;
-    let stopDrag: (() => void) | null = null;
 
     // #242/#243: UI 生命周期注册表 —— 悬浮球、段落按钮等经注册表启停，
     // 设置变更由 ensure() 驱动，启停成对、重复注册幂等
@@ -124,7 +123,12 @@ export default defineContentScript({
     }
 
     // ── 划词拖动 ──
-    stopDrag = startSelectionDrag((text) => translateSelection(text));
+    // #244: 划词拖拽经注册表启停（无设置开关，恒启用）
+    registry.register('drag', {
+      create: () => startSelectionDrag((text) => translateSelection(text)),
+      stop: (stopDrag) => stopDrag(),
+    });
+    registry.ensure('drag', true);
 
     // ── 设置变更监听 ──
     onSettingsChanged((ns: Settings) => {
