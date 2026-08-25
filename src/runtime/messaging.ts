@@ -30,11 +30,9 @@ export type TranslateResult =
       ok: false;
       error: string;
       invalidated: boolean;
-      /** #180: 引擎不可恢复错误（key 无效等）—— 批次重试层不重试。 */
-      retryable: boolean;
-      /** #236: 类型化失败类别（新字段，扩张阶段与旧字段并存）。 */
+      /** #236: 类型化失败类别 —— 语义判定只在引擎处做一次，原样透传。 */
       category: FailureCategory;
-      /** #236: 已中止（新字段）。 */
+      /** #236: 已中止。 */
       aborted: boolean;
     };
 
@@ -174,7 +172,6 @@ export async function translateViaBackground(
       ok?: boolean;
       data?: TranslateResponse;
       error?: string;
-      retryable?: boolean;
       category?: FailureCategory;
       invalidated?: boolean;
       aborted?: boolean;
@@ -187,8 +184,7 @@ export async function translateViaBackground(
       ok: false,
       error: resp?.error ?? '未知错误',
       invalidated: resp?.invalidated ?? false,
-      retryable: resp?.retryable ?? true,
-      // #236: 类型化字段原样透传，缺省按瞬时处理（旧路径兼容）
+      // #263: 类型化字段原样透传，缺省按瞬时处理；不再转述 retryable
       category: resp?.category ?? 'transient',
       aborted: resp?.aborted ?? false,
     };
@@ -198,7 +194,6 @@ export async function translateViaBackground(
       ok: false,
       error: e instanceof Error ? e.message : String(e),
       invalidated: e instanceof ContextInvalidatedError,
-      retryable: true,
       category: 'transient',
       aborted: false,
     };

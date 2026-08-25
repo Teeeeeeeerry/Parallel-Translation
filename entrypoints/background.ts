@@ -113,28 +113,23 @@ export default defineBackground(() => {
         .then(() => route(msg.payload))
         .then((r) => sendResponse({ ok: true, data: r }))
         .catch((e) => {
-          // #180: 透出 retryable 标志 —— 仅引擎直接抛出的 retryable=false
-          // （key 无效等）不可恢复，批次重试层不再白等退避序列；router
-          // 的「所有引擎均失败」是普通 Error，按可重试处理（瞬时故障
-          // 重试后自愈，TC-E2E-47 依赖此路径）
-          const nonRetryable = e instanceof EngineError && e.retryable === false;
+          // #263: 纯透传 —— background 不再重算可重试性；引擎产出的
+          // 类型化字段（category / retryable / invalidated / aborted）
+          // 原样透出，语义判定只在错误发生的唯一地点做一次
           sendResponse({
             ok: false,
             error: e instanceof Error ? e.message : String(e),
-            retryable: !nonRetryable,
-            // #236: 新形态端到端 —— 引擎产出的类型化字段原样透传，
-            // 扩张阶段与旧字段并存（旧字段清理在收尾票 #263）
+            retryable: e instanceof EngineError ? e.retryable : true,
             category: e instanceof EngineError ? e.category : 'transient',
             invalidated: e instanceof EngineError ? e.invalidated : false,
             aborted: e instanceof EngineError ? e.aborted : false,
           });
         });
     } catch (e) {
-      const nonRetryable = e instanceof EngineError && e.retryable === false;
       sendResponse({
         ok: false,
         error: e instanceof Error ? e.message : String(e),
-        retryable: !nonRetryable,
+        retryable: e instanceof EngineError ? e.retryable : true,
         category: e instanceof EngineError ? e.category : 'transient',
         invalidated: e instanceof EngineError ? e.invalidated : false,
         aborted: e instanceof EngineError ? e.aborted : false,
