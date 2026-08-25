@@ -15,13 +15,18 @@ import type { TranslateEngine } from './types';
 const getGate = engineGate();
 
 /**
- * 按 Gemini 错误体区分错误类别 —— #161。
+ * 按 Gemini 错误响应区分失败类别 —— #161 / #236。
  *
  * Gemini 的 400 覆盖多种情况：key 无效、上下文过长（input too large）、
  * 内容被安全拦截；403 也不只来自 key。此前一律判「key 无效」且
  * retryable=false，router 直接抛错不尝试后续引擎，超长文本/模型名错误
- * 会让整页翻译失败。这里只对确凿的认证错误置 non-retryable，
- * 其余 400/404（超长、模型名、安全拦截）交给下一引擎降级。
+ * 会让整页翻译失败。这里只对确凿的认证错误置 invalid-key（不重试），
+ * 其余 400/404（超长、模型名、安全拦截）与 5xx 归为瞬时，交给下一
+ * 引擎降级或批次重试。
+ *
+ * 类别口径（#236）：401/403 → invalid-key；429 → quota；其余非 2xx
+ * → transient；错误体明示认证失败（#161 的 400 + API key 文案）仍按
+ * invalid-key 处理，现有单测行为保持。
  */
 async function classifyError(resp: Response): Promise<EngineError> {
   let status = '';
@@ -37,21 +42,27 @@ async function classifyError(resp: Response): Promise<EngineError> {
     // 非 JSON 错误体，按状态码兜底
   }
 
-  // 确凿的认证错误 → 立即提示用户，不浪费后续引擎
+  // 确凿的认证错误 → key 无效：立即提示用户，不浪费后续引擎与退避序列
   const isAuth =
+    resp.status === 401 ||
     resp.status === 403 ||
     status === 'UNAUTHENTICATED' ||
     status === 'PERMISSION_DENIED' ||
     /API key/i.test(message) ||
     /API_KEY_INVALID/i.test(message);
   if (isAuth) {
-    return new EngineError('gemini', false, 'API key 无效');
+    return new EngineError('gemini', false, 'API key 无效', 'invalid-key');
   }
 
-  // 其余错误（上下文过长 / 模型名错误 / 安全拦截等）→ retryable，
+  // 429 → 配额失效：不重试（批次层不再白等退避序列），提示配额问题
+  if (resp.status === 429) {
+    return new EngineError('gemini', false, '配额已用尽', 'quota', true);
+  }
+
+  // 其余错误（上下文过长 / 模型名错误 / 安全拦截 / 5xx 等）→ 瞬时，
   // router 降级到下一引擎，页面翻译不中断
   const detail = message ? `：${message}` : '';
-  return new EngineError('gemini', true, `HTTP ${resp.status}${detail}`);
+  return new EngineError('gemini', true, `HTTP ${resp.status}${detail}`, 'transient');
 }
 
 export const gemini: TranslateEngine = {
@@ -64,7 +75,8 @@ export const gemini: TranslateEngine = {
     // #159: 整个请求体过闸门，限制并发在飞请求数
     return getGate()(async () => {
       const key = await getKey('gemini');
-      if (!key) throw new EngineError('gemini', false, '未配置 API key');
+      if (!key)
+        throw new EngineError('gemini', false, '未配置 API key', 'invalid-key');
 
       const model = getSettings().models?.gemini ?? DEFAULT_MODELS.gemini!;
       // key 走 x-goog-api-key 请求头而非 ?key= query。

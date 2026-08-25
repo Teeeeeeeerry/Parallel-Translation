@@ -192,9 +192,38 @@ describe('translateViaBackground — 失败语义', () => {
       invalidated: false,
       // #180: 未携带 retryable 的响应按可重试处理
       retryable: true,
+      // #236: 未携带类型化字段 → 按瞬时处理（旧路径兼容）
+      category: 'transient',
+      aborted: false,
     });
     // 1 ping + 1 translate，translate 没有重试
     expect(sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  test('SW 响应携带类型化类别 → 原样透传（#236 新形态端到端）', async () => {
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return { ok: true };
+      return {
+        ok: false,
+        error: 'API key 无效',
+        retryable: false,
+        category: 'invalid-key',
+        invalidated: false,
+        aborted: false,
+      };
+    });
+
+    const result = await translateViaBackground(PAYLOAD);
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'API key 无效',
+      retryable: false,
+      invalidated: false,
+      category: 'invalid-key',
+      aborted: false,
+    });
   });
 
   test('SW 始终无响应：ping 预算耗尽 → {ok:false}，不发送 translate', async () => {

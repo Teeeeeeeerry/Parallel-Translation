@@ -122,6 +122,11 @@ export default defineBackground(() => {
             ok: false,
             error: e instanceof Error ? e.message : String(e),
             retryable: !nonRetryable,
+            // #236: 新形态端到端 —— 引擎产出的类型化字段原样透传，
+            // 扩张阶段与旧字段并存（旧字段清理在收尾票 #263）
+            category: e instanceof EngineError ? e.category : 'transient',
+            invalidated: e instanceof EngineError ? e.invalidated : false,
+            aborted: e instanceof EngineError ? e.aborted : false,
           });
         });
     } catch (e) {
@@ -130,6 +135,9 @@ export default defineBackground(() => {
         ok: false,
         error: e instanceof Error ? e.message : String(e),
         retryable: !nonRetryable,
+        category: e instanceof EngineError ? e.category : 'transient',
+        invalidated: e instanceof EngineError ? e.invalidated : false,
+        aborted: e instanceof EngineError ? e.aborted : false,
       });
     }
 
