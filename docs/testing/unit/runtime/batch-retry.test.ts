@@ -182,3 +182,89 @@ describe('attemptBatchWithRetry — 中止（还原 / 全局短路）', () => {
     expect(send).toHaveBeenCalledTimes(BATCH_RETRY_LIMIT + 1);
   });
 });
+
+describe('attemptBatchWithRetry — 新字段优先（#246）', () => {
+  test('category=invalid-key（新字段）→ 立即失败，0 次重试', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      error: 'API key 无效',
+      retryable: false,
+      category: 'invalid-key' as const,
+      invalidated: false,
+      aborted: false,
+    }));
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('API key 无效');
+      expect(result.invalidated).toBe(false);
+      expect(result.aborted).toBe(false);
+    }
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  test('category=quota（新字段）→ 立即失败，0 次重试', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      error: '配额已用尽',
+      retryable: false,
+      category: 'quota' as const,
+      invalidated: true,
+      aborted: false,
+    }));
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
+    expect(result.ok).toBe(false);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  test('aborted=true（新字段）→ 立即停止，报 aborted 不记失败', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      error: '已中止',
+      retryable: true,
+      category: 'transient' as const,
+      invalidated: false,
+      aborted: true,
+    }));
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.aborted).toBe(true);
+      expect(result.invalidated).toBe(false);
+    }
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  test('category=transient（新字段）→ 照常进入重试序列', async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        error: '瞬时故障',
+        retryable: true,
+        category: 'transient' as const,
+        invalidated: false,
+        aborted: false,
+      })
+      .mockResolvedValueOnce({ ok: true, data: TRANSLATED });
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
+    expect(result.ok).toBe(true);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  test('旧字段路径兼容：仅 retryable=false（无 category）→ 立即失败', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      error: 'API key 无效',
+      retryable: false,
+    }));
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
+    expect(result.ok).toBe(false);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+});
