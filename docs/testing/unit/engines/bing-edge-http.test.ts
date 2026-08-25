@@ -205,7 +205,7 @@ describe('bing-edge HTTP 路径', () => {
     const { bingEdge } = await import('~/src/engines/bing-edge');
     await expect(
       bingEdge.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ retryable: true, message: 'HTTP 401' });
+    ).rejects.toMatchObject({ retryable: true, category: 'transient', message: 'HTTP 401' });
     const resp = await bingEdge.translate({ texts: ['a'], from: 'auto', to: 'zh' });
     expect(resp.translations).toEqual(['你好']);
 
@@ -225,7 +225,7 @@ describe('bing-edge HTTP 路径', () => {
     const { bingEdge } = await import('~/src/engines/bing-edge');
     await expect(
       bingEdge.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ name: 'EngineError', retryable: true, message: 'HTTP 401' });
+    ).rejects.toMatchObject({ name: 'EngineError', retryable: true, category: 'transient', message: 'HTTP 401' });
     // 缓存已清 → 第二次翻译重新取 auth
     const resp = await bingEdge.translate({ texts: ['a'], from: 'auto', to: 'zh' });
     expect(resp.translations).toEqual(['你好']);
@@ -239,7 +239,12 @@ describe('bing-edge HTTP 路径', () => {
     const { bingEdge } = await import('~/src/engines/bing-edge');
     await expect(
       bingEdge.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ engineId: 'bing-edge', retryable: true, message: 'auth HTTP 500' });
+    ).rejects.toMatchObject({
+      engineId: 'bing-edge',
+      retryable: true,
+      category: 'transient',
+      message: 'auth HTTP 500',
+    });
   });
 
   test('翻译非 200 → EngineError（retryable）', async () => {
@@ -252,7 +257,7 @@ describe('bing-edge HTTP 路径', () => {
     const { bingEdge } = await import('~/src/engines/bing-edge');
     await expect(
       bingEdge.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ retryable: true, message: 'HTTP 429' });
+    ).rejects.toMatchObject({ retryable: true, category: 'transient', message: 'HTTP 429' });
   });
 
   test('坏 JSON → 抛错', async () => {

@@ -36,7 +36,8 @@ async function getJwt(): Promise<string> {
     jwtPromise = (async () => {
       const resp = await fetchWithTimeout('bing-edge', AUTH_ENDPOINT);
       if (!resp.ok) {
-        throw new EngineError('bing-edge', true, `auth HTTP ${resp.status}`);
+        // #250: 类型化类别 —— 免 key 引擎一律瞬时（可重试）
+        throw new EngineError('bing-edge', true, `auth HTTP ${resp.status}`, 'transient');
       }
       cachedJwt = await resp.text(); // 返回纯文本 JWT，非 JSON
       return cachedJwt!;
@@ -79,8 +80,10 @@ export const bingEdge: TranslateEngine = {
       });
 
       if (!resp.ok) {
+        // #250: 401 会话失效仍判瞬时（可重试）—— 清 JWT 逻辑保留在
+        // 适配器内，不参与错误分类；其余非 2xx 同样瞬时
         if (resp.status === 401) cachedJwt = null;
-        throw new EngineError('bing-edge', true, `HTTP ${resp.status}`);
+        throw new EngineError('bing-edge', true, `HTTP ${resp.status}`, 'transient');
       }
 
       const data = await resp.json();
