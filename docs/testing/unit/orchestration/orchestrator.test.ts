@@ -13,6 +13,11 @@ import {
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import type { TranslateRequest } from '~/src/engines/types';
 
+/** 冲刷微任务 + 一个宏任务，让异步链（send → retry → 回调）完整推进。 */
+async function flush(): Promise<void> {
+  await new Promise((r) => setTimeout(r, 0));
+}
+
 function items(n: number): TranslateItem<number>[] {
   return Array.from({ length: n }, (_, i) => ({ text: `text-${i}`, ctx: i }));
 }
@@ -161,5 +166,81 @@ describe('渐进渲染回调注入（#256）', () => {
       aborted: false,
     });
     expect(send).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('epoch 中止语义（#262）', () => {
+  test('abort 后：在飞批次完成也不触发渲染回调，汇总报 aborted', async () => {
+    const order: number[] = [];
+    let resolveSlow!: () => void;
+    const send = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            resolveSlow = () => r({ ok: true, data: { translations: ['慢批'] } });
+          }),
+      )
+      .mockImplementation(async () => ({ ok: true, data: { translations: ['快批'] } }));
+
+    const orch = createOrchestrator({
+      send,
+      sleep: () => Promise.resolve(),
+      onBatchResult: (i) => order.push(i),
+    });
+    orch.start();
+
+    const pending = orch.translatePage(items(20), 'en', 'zh');
+    await flush();
+    // 快批已返回并渲染
+    expect(order).toEqual([1]);
+
+    // 还原：中止在途翻译
+    orch.abort();
+    resolveSlow();
+
+    const summary = await pending;
+    expect(summary.aborted).toBe(true);
+    // 中止后回调不再触发 —— 慢批完成但不渲染（过期译文丢弃）
+    expect(order).toEqual([1]);
+  });
+
+  test('abort 后新翻译不被旧批次干扰：新翻译正常完成', async () => {
+    const order: number[] = [];
+    let resolveOld!: () => void;
+    const send = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            resolveOld = () => r({ ok: true, data: { translations: ['旧批'] } });
+          }),
+      )
+      .mockImplementation(async () => ({ ok: true, data: { translations: ['新批'] } }));
+
+    const orch = createOrchestrator({
+      send,
+      sleep: () => Promise.resolve(),
+      onBatchResult: (i) => order.push(i),
+    });
+    orch.start();
+
+    // 旧翻译在飞
+    const oldPending = orch.translatePage(items(20), 'en', 'zh');
+    await flush();
+    orch.abort();
+
+    // 新翻译开始 —— 不受旧批次干扰
+    const newSummary = await orch.translatePage(items(16), 'en', 'zh');
+    expect(newSummary.aborted).toBe(false);
+    expect(newSummary.allFailed).toBe(false);
+    // 新翻译的批次全部渲染
+    expect(order).toEqual([1, 0, 1]);
+
+    // 旧翻译收尾：aborted，不渲染
+    resolveOld();
+    const oldSummary = await oldPending;
+    expect(oldSummary.aborted).toBe(true);
+    expect(order).toEqual([1, 0, 1]);
   });
 });

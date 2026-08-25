@@ -60,23 +60,20 @@ export interface TranslationOrchestrator {
   /** 停止编排（清理订阅与在飞状态）。 */
   stop(): void;
   /**
+   * 中止在途翻译（#262）—— 递增还原纪元：在飞批次的尝试、重试与
+   * 渲染回调全部放弃，过期译文不落 DOM；新翻译不受旧批次干扰。
+   */
+  abort(): void;
+  /**
    * 全页翻译入口：按批次拆分发送，每批返回即触发渲染回调（#256）；
-   * 批次级失败有界重试、失效全局短路、中止判定都在模块内（#261）。
+   * 批次级失败有界重试、失效全局短路、epoch 中止判定都在模块内
+   * （#261 / #262）。
    */
   translatePage(
     items: TranslateItem<unknown>[],
     from: string,
     to: string,
-    opts?: PageTranslateOptions,
   ): Promise<PageTranslateSummary>;
-}
-
-export interface PageTranslateOptions {
-  /**
-   * 中止谓词（#261 由调用方注入还原/导航状态；#262 迁入模块内部）。
-   * 每次尝试前后与渲染前检查，返回 true 则放弃该批与剩余重试。
-   */
-  shouldAbort?: () => boolean;
 }
 
 export interface OrchestratorOptions {
@@ -114,6 +111,9 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   const sleepFn = opts.sleep ?? defaultSleep;
   const onBatchResult = opts.onBatchResult;
   let started = false;
+  // #262: 还原纪元在模块内 —— abort() 递增，在飞翻译据此放弃
+  // 尝试、重试与渲染；新翻译快照新纪元，不受旧批次干扰
+  let epoch = 0;
 
   return {
     start(): void {
@@ -124,9 +124,13 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       started = false;
     },
 
-    async translatePage(items, from, to, pageOpts = {}): Promise<PageTranslateSummary> {
+    abort(): void {
+      epoch++;
+    },
+
+    async translatePage(items, from, to): Promise<PageTranslateSummary> {
       if (!started) throw new Error('[PT] 编排未启动');
-      const shouldAbort = pageOpts.shouldAbort;
+      const epochAtStart = epoch;
       // 批次拆分（#245）：与现状一致，每批独立发送
       const batches = splitBatches(items, batchSize);
 
@@ -136,10 +140,14 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       let invalidated = false;
       let fatalError: string | null = null;
 
+      // #262: 中止谓词 —— 还原（abort 递增纪元）或他批已判失效
+      const isAborted = (): boolean =>
+        invalidated || epoch !== epochAtStart;
+
       await Promise.all(
         batches.map(async (batch, i) => {
           // 批次级失败有界重试（#91 语义由 batch-retry 承接）：
-          // 失效全局短路 + 调用方中止谓词在每次尝试前后检查
+          // 失效全局短路 + epoch 中止在每次尝试前后检查
           const result = await attemptBatchWithRetry(
             () =>
               opts.send({
@@ -149,14 +157,14 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
               }) as Promise<TranslateBatchResult>,
             {
               sleep: sleepFn,
-              shouldAbort: () => invalidated || (shouldAbort?.() ?? false),
+              shouldAbort: isAborted,
             },
           );
 
           if (result.ok) {
-            // #157: 本批在飞期间用户已还原（中止谓词命中）—— 放弃
-            // 渲染，否则还原后会把内容翻回来（#91 的渲染侧补漏）
-            if (shouldAbort?.()) {
+            // #157: 本批在飞期间用户已还原（纪元递增）—— 放弃渲染，
+            // 否则还原后会把内容翻回来（#91 的渲染侧补漏）
+            if (isAborted()) {
               aborted = true;
               return;
             }
@@ -190,7 +198,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       );
 
       // #157: 还原恰在最后一批与返回之间发生 —— 也报 aborted
-      if (shouldAbort?.()) aborted = true;
+      if (isAborted()) aborted = true;
 
       return { allFailed, aborted, invalidated, fatalError };
     },
