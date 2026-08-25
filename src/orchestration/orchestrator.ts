@@ -89,6 +89,13 @@ export interface OrchestratorOptions {
     batch: TranslateItem<unknown>[],
     result: TranslateBatchResult,
   ) => void;
+  /**
+   * 设置变更订阅注入（#265）：content 传 storage 的 onSettingsChanged；
+   * 模块在 start 时订阅、stop 时退订。
+   */
+  subscribeSettings?: (fn: (s: unknown) => void) => () => void;
+  /** 设置变更响应（#265）：样式应用与 UI 启停由调用方实现（经注册表）。 */
+  onSettingsChange?: (s: unknown) => void;
 }
 
 /**
@@ -114,14 +121,25 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   // #262: 还原纪元在模块内 —— abort() 递增，在飞翻译据此放弃
   // 尝试、重试与渲染；新翻译快照新纪元，不受旧批次干扰
   let epoch = 0;
+  // #265: 设置变更订阅（start 订阅 / stop 退订）
+  let unsubscribeSettings: (() => void) | null = null;
 
   return {
     start(): void {
       started = true;
+      // #265: 设置变更订阅由模块持有 —— content 不再各自订阅，
+      // 初始化与变更共用同一响应路径
+      if (!unsubscribeSettings && opts.subscribeSettings) {
+        unsubscribeSettings = opts.subscribeSettings((s) => {
+          opts.onSettingsChange?.(s);
+        });
+      }
     },
 
     stop(): void {
       started = false;
+      unsubscribeSettings?.();
+      unsubscribeSettings = null;
     },
 
     abort(): void {
