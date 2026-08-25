@@ -32,16 +32,52 @@ export interface TranslateEngine {
 }
 
 /**
+ * 失败类别（显式枚举）—— #219 架构评审候选 2 的类型化结果核心。
+ * 失败在发生的唯一地点分类一次，后续各层只读透传，不再各自重推导。
+ */
+export type FailureCategory =
+  /** key 无效（401/403 等认证失败）—— 不重试，提示用户检查 key。 */
+  | 'invalid-key'
+  /** 配额失效（429 配额耗尽等）—— 不重试，提示配额问题。 */
+  | 'quota'
+  /** 瞬时故障（5xx / 超时 / 网络）—— 默认可重试。 */
+  | 'transient'
+  /** 已中止（用户还原 / 页面切换）—— 调用方不应记成失败。 */
+  | 'aborted';
+
+/**
+ * 每次翻译尝试的类型化结果（#232）。
+ * 失败类别 + 可重试 + 配额失效 + 已中止 在错误发生的唯一地点构造一次。
+ */
+export interface AttemptOutcome {
+  /** 失败类别（显式枚举）。 */
+  category: FailureCategory;
+  /** 是否可重试：不可重试仅由引擎显式判定，默认瞬时故障可重试。 */
+  retryable: boolean;
+  /** 配额失效（免费额度耗尽等）—— 不可恢复，无需等待退避序列。 */
+  invalidated: boolean;
+  /** 已中止（还原 / 导航）—— 不应记成真失败。 */
+  aborted: boolean;
+}
+
+/**
  * 翻译引擎错误。
  * router 依 retryable 决定是否尝试下一个引擎：
  * - true  = 换个引擎可能成功（网络/限流/端点变更）
  * - false = 换了也没用（语言不支持等永久失败）
+ *
+ * 扩张阶段（#232）：新增 category / invalidated / aborted 字段，
+ * 旧构造签名（engineId, retryable, message）在兼容期保持可用，
+ * 旧调用方不破坏。
  */
-export class EngineError extends Error {
+export class EngineError extends Error implements AttemptOutcome {
   constructor(
     public engineId: string,
     public retryable: boolean,
     message: string,
+    public category: FailureCategory = 'transient',
+    public invalidated = false,
+    public aborted = false,
   ) {
     super(message);
     this.name = 'EngineError';
