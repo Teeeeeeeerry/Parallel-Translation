@@ -20,7 +20,7 @@
 import { collect } from './walker';
 import { unrender } from './renderer';
 import { injectShadowStyles } from '~/src/styles/shadow';
-import { watchShadowRoots } from './shadow-walk';
+import { watchShadowRoots, walkShadowTree } from './shadow-walk';
 
 // #179: 延迟 attachShadow 漏翻 —— host 已入 DOM 后才建 shadow root 的
 // 组件（属性级操作，childList 捕不到、MutationObserver 不产生记录）。
@@ -46,8 +46,11 @@ function mountShadowRoot(
 }
 
 /**
- * 递归收集 root 下所有 shadowRoot，对每个挂载 observer。
- * 已观察的 shadowRoot 不会重复挂载。
+ * 递归收集 root 下所有 shadowRoot，对每个挂载 observer（#252）。
+ * 遍历走统一模块 walkShadowTree —— 观察范围与翻译范围共用同一套
+ * 跳过规则（UI 自身子树等），不再各写一遍递归。
+ * 已观察的 shadowRoot 不会重复挂载（seen 集合与 attachShadow 补丁
+ * 共享，动态创建的 root 也不会重复）。
  * 返回本次新增的 observer 数组。
  */
 function observeShadowRoots(
@@ -57,30 +60,14 @@ function observeShadowRoots(
 ): MutationObserver[] {
   const observers: MutationObserver[] = [];
 
-  const attach = (el: Element): boolean => {
-    if (!el.shadowRoot || seen.has(el.shadowRoot)) return false;
-    mountShadowRoot(el.shadowRoot, seen, onMutation, observers);
-    return true;
-  };
+  // 统一遍历：visit 命中每个元素（含 shadow 边界递归），对 shadow
+  // host 挂载 observer；根元素自身也是 host 的情况由遍历覆盖
+  walkShadowTree(root as ParentNode, (el) => {
+    if (el.shadowRoot && !seen.has(el.shadowRoot)) {
+      mountShadowRoot(el.shadowRoot, seen, onMutation, observers);
+    }
+  });
 
-  // querySelectorAll('*') 返回的已经是整棵子树，因此每个 scope 只扫一遍即可。
-  // 若再对其中每个后代重复调用，深度 k 的节点会沿 2^(k-1) 条祖先路径被反复
-  // 访问 —— 代价随嵌套深度指数增长，真实页面上会直接冻结主线程。
-  // 递归只发生在 shadow 边界，因为 querySelectorAll 不穿透 shadow root。
-  const walk = (scope: ParentNode) => {
-    scope.querySelectorAll('*').forEach((el) => {
-      if (attach(el)) walk(el.shadowRoot!);
-    });
-  };
-
-  if (root.nodeType === Node.ELEMENT_NODE) {
-    // root 自身也可能是 shadow host —— querySelectorAll 不包含根节点
-    const el = root as Element;
-    if (attach(el)) walk(el.shadowRoot!);
-    walk(el);
-  } else if (root.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
-    walk(root as ParentNode);
-  }
   return observers;
 }
 
