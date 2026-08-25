@@ -117,14 +117,29 @@ describe('openai HTTP 路径', () => {
     }
   });
 
-  test('其他非 200 → EngineError（retryable，transient）', async () => {
+  test('429 → quota（公共判定口径，#258）', async () => {
     const { getKey } = await import('~/src/storage/keys');
     vi.mocked(getKey).mockResolvedValue('k');
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('err', { status: 429 })));
     const { openai } = await import('~/src/engines/openai');
     await expect(
       openai.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ retryable: true, category: 'transient', message: 'HTTP 429' });
+    ).rejects.toMatchObject({
+      retryable: false,
+      category: 'quota',
+      invalidated: true,
+      aborted: false,
+    });
+  });
+
+  test('500 → EngineError（retryable，transient）', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('k');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('err', { status: 500 })));
+    const { openai } = await import('~/src/engines/openai');
+    await expect(
+      openai.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
+    ).rejects.toMatchObject({ retryable: true, category: 'transient', message: 'HTTP 500' });
   });
 
   test('空 choices → 长度一致的空白译文数组', async () => {

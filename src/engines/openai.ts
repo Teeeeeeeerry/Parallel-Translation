@@ -5,10 +5,10 @@
 import { getKey } from '~/src/storage/keys';
 import { getSettings } from '~/src/storage/settings';
 import { DEFAULT_MODELS } from '~/src/storage/schema';
-import { normalizeText } from '~/src/dom/normalize';
 import { fetchWithTimeout } from './fetch-timeout';
 import { engineGate } from './engine-gate';
 import { EngineError } from './types';
+import { classifyStatus, buildNumberedPrompt } from './shared';
 import type { TranslateEngine } from './types';
 
 const DEFAULT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
@@ -45,14 +45,8 @@ export const openai: TranslateEngine = {
 
       const model = getSettings().models?.openai ?? DEFAULT_MODELS.openai!;
 
-      // 纵深防御：编号结构靠 \n 分隔，文本自带的换行会把编号撑破导致错位。
-      // 即便入口采集漏了归一化，这里也必须兜住，拼 prompt 前再压一次。
-      const numbered = texts
-        .map((t, i) => `${i + 1}. ${normalizeText(t)}`)
-        .join('\n');
-      const prompt =
-        `将以下编号文本翻译成${to}${from === 'auto' ? '' : `（源语言：${from}）`}。` +
-        `严格保持编号与行数一致，只输出译文，不要解释。\n\n${numbered}`;
+      // #258: 编号提示词走公共模板（模板唯一来源）—— 格式与现状逐字一致
+      const prompt = buildNumberedPrompt(to, from, texts);
 
       const resp = await fetchWithTimeout('openai', DEFAULT_ENDPOINT, {
         method: 'POST',
@@ -67,10 +61,14 @@ export const openai: TranslateEngine = {
         }),
       });
 
-      // #248: 类型化类别 —— 401/403 → key 无效（不重试）；其余非 2xx
-      // → 瞬时（可重试，路由降级下一引擎）
-      if (resp.status === 401 || resp.status === 403) {
+      // #258: 状态分类走公共判定（口径：#239）—— 401/403 → key 无效、
+      // 429 → 配额、其余非 2xx → 瞬时
+      const category = classifyStatus('openai', resp, true);
+      if (category === 'invalid-key') {
         throw new EngineError('openai', false, 'API key 无效', 'invalid-key');
+      }
+      if (category === 'quota') {
+        throw new EngineError('openai', false, '配额已用尽', 'quota', true);
       }
       if (!resp.ok) {
         throw new EngineError('openai', true, `HTTP ${resp.status}`, 'transient');
