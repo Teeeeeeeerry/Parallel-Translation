@@ -10,7 +10,7 @@ import { bingEdge } from './bing-edge';
 import { openai } from './openai';
 import { deepl } from './deepl';
 import { gemini } from './gemini';
-import { EngineError } from './types';
+import { EngineError, AllEnginesFailedError } from './types';
 import type { TranslateEngine, TranslateRequest, TranslateResponse } from './types';
 
 const REGISTRY: Record<string, TranslateEngine> = {
@@ -161,7 +161,10 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
     }
   }
 
-  throw new Error(
-    `所有引擎均失败: ${errors.map((e) => `${e.engineId}(${e.message})`).join(', ')}`,
+  // #237: 聚合失败显式构造类型化结果（瞬时、可重试）—— 不再抛裸普通
+  // Error，消除「普通 Error 即隐式可重试」的启发式
+  throw new AllEnginesFailedError(
+    errors.map((e) => `${e.engineId}(${e.message})`).join(', '),
+    errors,
   );
 }

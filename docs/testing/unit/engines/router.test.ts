@@ -80,7 +80,7 @@ vi.mock('~/src/engines/gemini', () => ({
 import { route } from '~/src/engines/router';
 import { getSettings } from '~/src/storage/settings';
 import { cacheGet, cacheSet } from '~/src/storage/cache';
-import { EngineError } from '~/src/engines/types';
+import { EngineError, AllEnginesFailedError } from '~/src/engines/types';
 
 describe('route', () => {
   beforeEach(() => {
@@ -222,6 +222,57 @@ describe('route', () => {
         to: 'zh-CN',
       }),
     ).rejects.toThrow(/所有引擎均失败/);
+  });
+
+  test('全部引擎失败 → 显式类型化结果：瞬时、可重试（#237）', async () => {
+    mockGoogleTranslate.mockRejectedValue(new Error('Google fail'));
+    mockBingTranslate.mockRejectedValue(new Error('Bing fail'));
+
+    try {
+      await route({
+        texts: ['Hello'],
+        from: 'auto',
+        to: 'zh-CN',
+      });
+      expect.unreachable('应抛出 AllEnginesFailedError');
+    } catch (e) {
+      const err = e as AllEnginesFailedError;
+      expect(e).toBeInstanceOf(AllEnginesFailedError);
+      expect(e).toBeInstanceOf(EngineError);
+      expect(err.category).toBe('transient');
+      expect(err.retryable).toBe(true);
+      expect(err.invalidated).toBe(false);
+      expect(err.aborted).toBe(false);
+      // 携带各引擎原始失败
+      expect(err.engineErrors.map((x) => x.engineId)).toEqual([
+        'google-web',
+        'bing-edge',
+      ]);
+    }
+  });
+
+  test('单引擎 non-retryable 失败 → 原样抛出不改写类别（#237）', async () => {
+    vi.mocked(getSettings).mockReturnValue({
+      ...vi.mocked(getSettings)(),
+      enginePriority: ['openai', 'google-web'],
+    });
+
+    const { openai } = await import('~/src/engines/openai');
+    vi.mocked(openai.translate).mockRejectedValue(
+      new EngineError('openai', false, 'API key 无效', 'invalid-key'),
+    );
+    mockGoogleTranslate.mockResolvedValue({ translations: ['你好'] });
+
+    try {
+      await route({ texts: ['Hello'], from: 'auto', to: 'zh-CN' });
+      expect.unreachable('应抛出 EngineError');
+    } catch (e) {
+      expect(e).toBeInstanceOf(EngineError);
+      expect((e as EngineError).category).toBe('invalid-key');
+      expect((e as EngineError).retryable).toBe(false);
+      // non-retryable 不尝试后续引擎
+      expect(mockGoogleTranslate).not.toHaveBeenCalled();
+    }
   });
 
   test('useCache=false → 跳过缓存查询', async () => {

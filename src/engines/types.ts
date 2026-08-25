@@ -83,3 +83,20 @@ export class EngineError extends Error implements AttemptOutcome {
     this.name = 'EngineError';
   }
 }
+
+/**
+ * router 的「所有引擎均失败」聚合错误 —— #237。
+ * 显式构造类型化结果（瞬时、可重试），不再抛裸普通 Error ——
+ * 消除「普通 Error 即隐式可重试」的启发式：聚合失败的可重试性
+ * 由这里显式声明，各消费层无需再自行推断。
+ */
+export class AllEnginesFailedError extends EngineError {
+  /** 各引擎的原始失败（调试与透传用）。 */
+  public readonly engineErrors: readonly EngineError[];
+
+  constructor(detail: string, engineErrors: readonly EngineError[] = []) {
+    super('router', true, `所有引擎均失败: ${detail}`, 'transient');
+    this.name = 'AllEnginesFailedError';
+    this.engineErrors = engineErrors;
+  }
+}
