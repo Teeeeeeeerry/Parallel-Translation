@@ -68,13 +68,20 @@ function mergeInto(base: Settings, patch: SettingsPatch): Settings {
     (merged as Record<NestedSettingsKey, unknown>)[key] = mergedValue;
   }
 
-  // #172: 任何写入口（导入/跨上下文 patch）都可能绕过 UI 下拉 ——
-  // maxConcurrency <= 0 会让并发闸门永久饿死，统一钳制到合法范围
-  merged.maxConcurrency =
-    patch.maxConcurrency === undefined
-      ? base.maxConcurrency
-      : clampConcurrency(patch.maxConcurrency);
+  // 显式 undefined 的 maxConcurrency 视同未携带（保持 base 原值）
+  if (patch.maxConcurrency === undefined) {
+    merged.maxConcurrency = base.maxConcurrency;
+  }
+
   return merged;
+}
+
+/**
+ * 写入口钳制（#254）—— 并发钳制唯一生效点，定义只在 schema 一处。
+ * 合并函数不再负责语义钳制（纯合并）；并发闸门只保留结构性防御。
+ */
+function clampWriteEntry(s: Settings): Settings {
+  return { ...s, maxConcurrency: clampConcurrency(s.maxConcurrency) };
 }
 
 /**
@@ -120,7 +127,8 @@ export async function patchSettings(patch: SettingsPatch): Promise<void> {
   const stored = ((await chrome.storage.sync.get(KEY))[KEY] as
     | Partial<Settings>
     | undefined);
-  current = mergeInto(merge(stored), patch);
+  // #254: 写入口单点钳制 —— 导入/跨上下文写入的并发数恒在合法范围
+  current = clampWriteEntry(mergeInto(merge(stored), patch));
   await chrome.storage.sync.set({ [KEY]: current });
 }
 
@@ -138,7 +146,8 @@ export async function replaceSettings(next: Settings): Promise<void> {
   for (const key of Object.keys(NESTED_KEYS) as NestedSettingsKey[]) {
     (merged as Record<NestedSettingsKey, unknown>)[key] = next[key];
   }
-  current = merged;
+  // #254: 恢复默认同样走写入口钳制 —— 并发数恒在合法范围
+  current = clampWriteEntry(merged);
   await chrome.storage.sync.set({ [KEY]: current });
 }
 
