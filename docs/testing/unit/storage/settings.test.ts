@@ -8,6 +8,7 @@ import {
   getSettings,
   patchSettings,
   onSettingsChanged,
+  CLEAR_NESTED,
 } from '~/src/storage/settings';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 
@@ -227,5 +228,50 @@ describe('嵌套键声明表（#234 数据驱动）', () => {
     // 显式 undefined 不冲掉已有合并结果（与不带该键等价）
     await patchSettings({ models: undefined });
     expect(getSettings().models.openai).toBe('gpt-custom');
+  });
+});
+
+describe('清空语义与整体替换（#241）', () => {
+  beforeEach(async () => {
+    resetStorage();
+    vi.resetModules();
+  });
+
+  test('CLEAR_NESTED 显式置空 models → 自定义模型名不残留', async () => {
+    const { patchSettings } = await import('~/src/storage/settings');
+    const { settingsReady, getSettings } = await import('~/src/storage/settings');
+
+    await settingsReady();
+    await patchSettings({ models: { openai: 'gpt-custom', gemini: 'gemini-x' } });
+    expect(getSettings().models).toEqual({ openai: 'gpt-custom', gemini: 'gemini-x' });
+
+    await patchSettings({ models: CLEAR_NESTED });
+    expect(getSettings().models).toEqual({});
+  });
+
+  test('CLEAR_NESTED 显式置空 hotkeys → 恢复默认快捷键', async () => {
+    const { patchSettings } = await import('~/src/storage/settings');
+    const { settingsReady, getSettings } = await import('~/src/storage/settings');
+
+    await settingsReady();
+    await patchSettings({ hotkeys: { 'toggle-translate': 'Mod+Shift+T' } });
+    expect(getSettings().hotkeys['toggle-translate']).toBe('Mod+Shift+T');
+
+    await patchSettings({ hotkeys: CLEAR_NESTED });
+    expect(getSettings().hotkeys).toEqual(DEFAULT_SETTINGS.hotkeys);
+  });
+
+  test('replaceSettings 走声明表机制 → 自定义模型名不残留（#169 场景）', async () => {
+    const { patchSettings, replaceSettings } = await import('~/src/storage/settings');
+    const { settingsReady, getSettings } = await import('~/src/storage/settings');
+
+    await settingsReady();
+    await patchSettings({ models: { openai: 'gpt-custom' } });
+    expect(getSettings().models.openai).toBe('gpt-custom');
+
+    // 恢复默认：整体替换（非合并），自定义模型名不残留
+    await replaceSettings(DEFAULT_SETTINGS);
+    expect(getSettings().models).toEqual({});
+    expect(getSettings().style).toBe(DEFAULT_SETTINGS.style);
   });
 });
