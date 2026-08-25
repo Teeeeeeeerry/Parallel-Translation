@@ -4,10 +4,10 @@
 import { getKey } from '~/src/storage/keys';
 import { getSettings } from '~/src/storage/settings';
 import { DEFAULT_MODELS } from '~/src/storage/schema';
-import { normalizeText } from '~/src/dom/normalize';
 import { fetchWithTimeout } from './fetch-timeout';
 import { engineGate } from './engine-gate';
 import { EngineError } from './types';
+import { classifyStatus, buildNumberedPrompt } from './shared';
 import { parseNumbered } from './openai';
 import type { TranslateEngine } from './types';
 
@@ -15,7 +15,7 @@ import type { TranslateEngine } from './types';
 const getGate = engineGate();
 
 /**
- * 按 Gemini 错误响应区分失败类别 —— #161 / #236。
+ * 按 Gemini 错误响应区分失败类别 —— #161 / #236 / #257。
  *
  * Gemini 的 400 覆盖多种情况：key 无效、上下文过长（input too large）、
  * 内容被安全拦截；403 也不只来自 key。此前一律判「key 无效」且
@@ -24,9 +24,8 @@ const getGate = engineGate();
  * 其余 400/404（超长、模型名、安全拦截）与 5xx 归为瞬时，交给下一
  * 引擎降级或批次重试。
  *
- * 类别口径（#236）：401/403 → invalid-key；429 → quota；其余非 2xx
- * → transient；错误体明示认证失败（#161 的 400 + API key 文案）仍按
- * invalid-key 处理，现有单测行为保持。
+ * 状态码维度走公共判定 classifyStatus（#257）；错误体明示认证失败
+ * （#161 的 400 + API key 文案）是 gemini 特有特例，保留在适配器内。
  */
 async function classifyError(resp: Response): Promise<EngineError> {
   let status = '';
@@ -42,23 +41,23 @@ async function classifyError(resp: Response): Promise<EngineError> {
     // 非 JSON 错误体，按状态码兜底
   }
 
-  // 确凿的认证错误 → key 无效：立即提示用户，不浪费后续引擎与退避序列
-  const isAuth =
-    resp.status === 401 ||
-    resp.status === 403 ||
+  // 引擎特例（#257 保留在适配器内）：错误体明示认证失败 → key 无效
+  const isAuthByBody =
     status === 'UNAUTHENTICATED' ||
     status === 'PERMISSION_DENIED' ||
     /API key/i.test(message) ||
     /API_KEY_INVALID/i.test(message);
-  if (isAuth) {
+
+  // 状态码维度走公共判定（#257）：401/403 → invalid-key；429 → quota；
+  // 其余非 2xx → transient
+  const category = classifyStatus('gemini', resp, true);
+
+  if (isAuthByBody || category === 'invalid-key') {
     return new EngineError('gemini', false, 'API key 无效', 'invalid-key');
   }
-
-  // 429 → 配额失效：不重试（批次层不再白等退避序列），提示配额问题
-  if (resp.status === 429) {
+  if (category === 'quota') {
     return new EngineError('gemini', false, '配额已用尽', 'quota', true);
   }
-
   // 其余错误（上下文过长 / 模型名错误 / 安全拦截 / 5xx 等）→ 瞬时，
   // router 降级到下一引擎，页面翻译不中断
   const detail = message ? `：${message}` : '';
@@ -85,14 +84,8 @@ export const gemini: TranslateEngine = {
       const endpoint =
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-      // 与 openai 相同（#30）：编号结构靠 \n 分隔，文本自带换行会把编号撑破
-      // 导致 LLM 重编号、parseNumbered 回填错位，拼 prompt 前压一次（#160）。
-      const numbered = texts
-        .map((t, i) => `${i + 1}. ${normalizeText(t)}`)
-        .join('\n');
-      const prompt =
-        `将以下编号文本翻译成${to}${from === 'auto' ? '' : `（源语言：${from}）`}。` +
-        `严格保持编号与行数一致，只输出译文，不要解释。\n\n${numbered}`;
+      // #257: 编号提示词走公共模板（模板唯一来源）—— 格式与现状逐字一致
+      const prompt = buildNumberedPrompt(to, from, texts);
 
       const resp = await fetchWithTimeout('gemini', endpoint, {
         method: 'POST',
