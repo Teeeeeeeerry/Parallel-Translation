@@ -20,43 +20,29 @@
 import { collect } from './walker';
 import { unrender } from './renderer';
 import { injectShadowStyles } from '~/src/styles/shadow';
+import { watchShadowRoots } from './shadow-walk';
 
 // #179: 延迟 attachShadow 漏翻 —— host 已入 DOM 后才建 shadow root 的
 // 组件（属性级操作，childList 捕不到、MutationObserver 不产生记录）。
-// 补丁 Element.prototype.attachShadow：创建 shadow root 时同步通知所有
-// 活跃 observer 挂载，shadow 内容不再永久漏翻。
-interface ObserverContext {
-  onMutationRecord: (records: MutationRecord[]) => void;
-  observedRoots: WeakSet<ShadowRoot>;
-  observers: MutationObserver[];
-}
-const observerContexts = new Set<ObserverContext>();
+// attachShadow 补丁与遍历共享状态，由统一遍历模块持有（#238）——
+// 观察器只注册消费方，创建 shadow root 时同步挂载 observer，
+// shadow 内容不再永久漏翻。
 
-const nativeAttachShadow = Element.prototype.attachShadow;
-if (
-  !(Element.prototype as unknown as { __ptShadowPatched?: boolean })
-    .__ptShadowPatched
-) {
-  (Element.prototype as unknown as { __ptShadowPatched: boolean })
-    .__ptShadowPatched = true;
-  Element.prototype.attachShadow = function (
-    this: Element,
-    init?: ShadowRootInit,
-  ): ShadowRoot {
-    // 原生实现允许省略 init，类型声明要求必填 —— 运行时原样透传
-    const root = nativeAttachShadow.call(this, init as ShadowRootInit);
-    for (const ctx of observerContexts) {
-      if (ctx.observedRoots.has(root)) continue;
-      ctx.observedRoots.add(root);
-      // 同步挂载：shadow 内容通常在 attachShadow 之后立即填充，
-      // 后续 childList 记录会被新 observer 捕获
-      injectShadowStyles(root);
-      const mo = new MutationObserver(ctx.onMutationRecord);
-      mo.observe(root, { childList: true, subtree: true });
-      ctx.observers.push(mo);
-    }
-    return root;
-  };
+/** 新增 shadowRoot 的挂载动作：注入样式 + 挂 MutationObserver（#163/#238）。 */
+function mountShadowRoot(
+  root: ShadowRoot,
+  seen: WeakSet<ShadowRoot>,
+  onMutation: (records: MutationRecord[]) => void,
+  observers: MutationObserver[],
+): void {
+  if (seen.has(root)) return;
+  seen.add(root);
+  // 同步挂载：shadow 内容通常在 attachShadow 之后立即填充，
+  // 后续 childList 记录会被新 observer 捕获
+  injectShadowStyles(root);
+  const mo = new MutationObserver(onMutation);
+  mo.observe(root, { childList: true, subtree: true });
+  observers.push(mo);
 }
 
 /**
@@ -73,13 +59,7 @@ function observeShadowRoots(
 
   const attach = (el: Element): boolean => {
     if (!el.shadowRoot || seen.has(el.shadowRoot)) return false;
-    seen.add(el.shadowRoot);
-    // #163: 扩展样式不跨 shadow 边界 —— 先注入样式再挂 observer，
-    // 避免注入动作触发自身 mutation 记录
-    injectShadowStyles(el.shadowRoot);
-    const mo = new MutationObserver(onMutation);
-    mo.observe(el.shadowRoot, { childList: true, subtree: true });
-    observers.push(mo);
+    mountShadowRoot(el.shadowRoot, seen, onMutation, observers);
     return true;
   };
 
@@ -267,16 +247,21 @@ export function startObserver(
   const initial = observeShadowRoots(document.body, onMutationRecord, observedRoots);
   observers.push(...initial);
 
-  // #179: 注册到 attachShadow 补丁的通知集合 —— 延迟建 shadow root 的
-  // 组件也能被增量补翻
-  const ctx: ObserverContext = { onMutationRecord, observedRoots, observers };
-  observerContexts.add(ctx);
+  // #179: 注册到 attachShadow 补丁的通知集合（#238：补丁在统一遍历
+  // 模块持有，这里只注册消费方）—— 延迟建 shadow root 的组件也能
+  // 被增量补翻
+  const unwatch = watchShadowRoots({
+    seen: observedRoots,
+    onShadowRoot: (root) => {
+      mountShadowRoot(root, observedRoots, onMutationRecord, observers);
+    },
+  });
 
   // #23：启动 IntersectionObserver，监听初次采集时因 display:none 被跳过的元素
   startWatching(onNewNodes);
 
   return () => {
-    observerContexts.delete(ctx);
+    unwatch();
     for (const mo of observers) mo.disconnect();
     if (timer) clearTimeout(timer);
     if (io) {

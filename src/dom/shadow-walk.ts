@@ -70,3 +70,54 @@ export function walkShadowTree(
 
   walk(root);
 }
+
+// ── 延迟 attachShadow 补丁（#238）──
+//
+// host 已入 DOM 后才建 shadow root 的组件（属性级操作，childList 捕不到、
+// MutationObserver 不产生记录）此前由观察器自行补丁监听。补丁与遍历
+// 同处本模块，共享已见集合等状态：shadowRoot 创建时同步通知已注册的
+// 消费方（观察器等），补丁后遍历能发现后建的 shadowRoot，且已见过的
+// root 不会重复通知。
+
+/** shadowRoot 创建通知的消费方（观察器等需同步挂载的上下文）。 */
+export interface ShadowRootSink {
+  /** 已见集合 —— 与遍历共享：已见过的 root 不再重复通知。 */
+  seen: WeakSet<ShadowRoot>;
+  /** root 创建时同步回调（shadow 内容通常在 attachShadow 之后立即填充）。 */
+  onShadowRoot: (root: ShadowRoot) => void;
+}
+
+const sinks = new Set<ShadowRootSink>();
+
+/**
+ * 注册 shadowRoot 创建通知（attachShadow 补丁驱动）。
+ * 返回取消注册函数。
+ */
+export function watchShadowRoots(sink: ShadowRootSink): () => void {
+  sinks.add(sink);
+  return () => {
+    sinks.delete(sink);
+  };
+}
+
+const nativeAttachShadow = Element.prototype.attachShadow;
+if (
+  !(Element.prototype as unknown as { __ptShadowPatched?: boolean })
+    .__ptShadowPatched
+) {
+  (Element.prototype as unknown as { __ptShadowPatched: boolean })
+    .__ptShadowPatched = true;
+  Element.prototype.attachShadow = function (
+    this: Element,
+    init?: ShadowRootInit,
+  ): ShadowRoot {
+    // 原生实现允许省略 init，类型声明要求必填 —— 运行时原样透传
+    const root = nativeAttachShadow.call(this, init as ShadowRootInit);
+    for (const sink of sinks) {
+      if (sink.seen.has(root)) continue;
+      sink.seen.add(root);
+      sink.onShadowRoot(root);
+    }
+    return root;
+  };
+}
