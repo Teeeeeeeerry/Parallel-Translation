@@ -7,31 +7,56 @@ const KEY = 'pt-settings';
 let current: Settings = DEFAULT_SETTINGS;
 let ready: Promise<Settings> | null = null;
 
+/** 嵌套键合并策略（#234 数据驱动）：'merge' 逐键合并，'replace' 整体替换。 */
+export type NestedMergeStrategy = 'merge' | 'replace';
+
+/** 声明表能覆盖的嵌套键（Settings 中的对象类型键）。 */
+export type NestedSettingsKey = 'hotkeys' | 'siteList' | 'models';
+
+/**
+ * 嵌套键声明表（#234）—— 每个嵌套对象键声明合并策略。
+ * 合并函数按此表驱动，替代硬编码的三键分支；日后新增嵌套对象
+ * 只改此处一处。
+ */
+export const NESTED_KEYS: Record<NestedSettingsKey, NestedMergeStrategy> = {
+  hotkeys: 'merge',
+  siteList: 'merge',
+  models: 'merge',
+};
+
 /**
  * 将 patch 深度合并到 base。
- * 嵌套对象（hotkeys / siteList / models）递归到叶子，
- * 其余字段浅覆盖。嵌套键单一定义，日后加第四个嵌套对象只改此处。
+ * 嵌套对象（hotkeys / siteList / models）按 NESTED_KEYS 声明表逐键合并，
+ * 其余字段浅覆盖。'replace' 策略下保持浅覆盖结果（patch 值整体替换）。
  */
 function mergeInto(base: Settings, patch: DeepPartial<Settings>): Settings {
-  return {
-    ...base,
-    ...patch,
-    // #172: 任何写入口（导入/跨上下文 patch）都可能绕过 UI 下拉 ——
-    // maxConcurrency <= 0 会让并发闸门永久饿死，统一钳制到合法范围
-    maxConcurrency:
-      patch.maxConcurrency === undefined
-        ? base.maxConcurrency
-        : clampConcurrency(patch.maxConcurrency),
-    hotkeys: patch.hotkeys
-      ? { ...base.hotkeys, ...patch.hotkeys }
-      : base.hotkeys,
-    siteList: patch.siteList
-      ? { ...base.siteList, ...patch.siteList }
-      : base.siteList,
-    models: patch.models
-      ? { ...base.models, ...patch.models }
-      : base.models,
-  };
+  // 浅覆盖。patch 的嵌套键为可选类型，展开后类型带 | undefined ——
+  // 此处统一经声明表循环修正（下方对全部嵌套键重新赋值），
+  // 与旧实现显式重写三个键的语义一致
+  const merged = { ...base, ...patch } as Settings;
+
+  for (const key of Object.keys(NESTED_KEYS) as NestedSettingsKey[]) {
+    const pv = patch[key];
+    const mergedValue: unknown =
+      pv === undefined
+        ? // patch 未携带该键（或显式 undefined）→ 保持 base 原值，
+          // 浅覆盖阶段可能已把它冲掉，这里补回
+          base[key]
+        : NESTED_KEYS[key] === 'merge'
+          ? // 逐键合并：patch 只覆盖提供的键，兄弟键保留
+            { ...base[key], ...pv }
+          : // 'replace'：整体替换，浅覆盖结果（patch 值）即为最终值
+            pv;
+    (merged as Record<NestedSettingsKey, unknown>)[key] = mergedValue;
+  }
+
+  // #172: 任何写入口（导入/跨上下文 patch）都可能绕过 UI 下拉 ——
+  // maxConcurrency <= 0 会让并发闸门永久饿死，统一钳制到合法范围
+  merged.maxConcurrency =
+    patch.maxConcurrency === undefined
+      ? base.maxConcurrency
+      : clampConcurrency(patch.maxConcurrency);
+  return merged;
 }
 
 /**

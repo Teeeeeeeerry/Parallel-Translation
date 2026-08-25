@@ -202,3 +202,30 @@ describe('onSettingsChanged', () => {
     expect(fn).not.toHaveBeenCalled();
   });
 });
+
+describe('嵌套键声明表（#234 数据驱动）', () => {
+  beforeEach(async () => {
+    resetStorage();
+    vi.resetModules();
+  });
+
+  test('声明表覆盖全部嵌套键，策略为 merge', async () => {
+    const { NESTED_KEYS } = await import('~/src/storage/settings');
+    expect(NESTED_KEYS).toEqual({
+      hotkeys: 'merge',
+      siteList: 'merge',
+      models: 'merge',
+    });
+  });
+
+  test('patch 显式携带 undefined 的嵌套键 → 保持 base 原值', async () => {
+    const { patchSettings } = await import('~/src/storage/settings');
+    const { settingsReady, getSettings } = await import('~/src/storage/settings');
+
+    await settingsReady();
+    await patchSettings({ models: { openai: 'gpt-custom' } });
+    // 显式 undefined 不冲掉已有合并结果（与不带该键等价）
+    await patchSettings({ models: undefined });
+    expect(getSettings().models.openai).toBe('gpt-custom');
+  });
+});
