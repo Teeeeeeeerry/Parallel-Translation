@@ -1,11 +1,13 @@
 /**
- * dom/shadow-walk.ts — 统一 shadow 子树遍历模块 单元测试（#233）
+ * dom/shadow-walk.ts — 统一 shadow 子树遍历模块 单元测试（#233 / #238）
  *
  * 覆盖：普通 DOM 先序遍历、嵌套 shadow 递归、集中式跳过规则
- * （UI 自身子树 / 已翻译标记）命中与不命中、skip-subtree 与 stop 决策。
+ * （UI 自身子树 / 已翻译标记）命中与不命中、skip-subtree 与 stop 决策；
+ * 延迟 attachShadow 补丁（#238）：补丁与遍历同处本模块、共享已见集合，
+ * 动态建 shadow root 的宿主能被遍历命中且不重复通知。
  */
 import { describe, test, expect, beforeEach } from 'vitest';
-import { walkShadowTree } from '~/src/dom/shadow-walk';
+import { walkShadowTree, watchShadowRoots } from '~/src/dom/shadow-walk';
 
 function seenIds(root: ParentNode = document.body): string[] {
   const seen: string[] = [];
@@ -131,5 +133,90 @@ describe('walkShadowTree — visit 决策', () => {
       if (el.id) seen.push(el.id);
     });
     expect(seen).toEqual(['h1']);
+  });
+});
+
+describe('延迟 attachShadow 补丁（#238）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  test('补丁后动态 attachShadow 的宿主被遍历命中', () => {
+    const host = document.createElement('div');
+    host.id = 'late-host';
+    document.body.appendChild(host);
+    // host 已入 DOM 后才建 shadow root —— 遍历仍能发现
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = '<p id="late-content">late shadow content</p>';
+
+    expect(seenIds()).toEqual(['late-host', 'late-content']);
+  });
+
+  test('watchShadowRoots：动态创建的 root 被同步通知，且不重复', () => {
+    const seen = new WeakSet<ShadowRoot>();
+    const notified: string[] = [];
+    const unwatch = watchShadowRoots({
+      seen,
+      onShadowRoot: (root) => notified.push(root.host.id),
+    });
+    try {
+      const h1 = document.createElement('div');
+      h1.id = 'h1';
+      document.body.appendChild(h1);
+      h1.attachShadow({ mode: 'open' });
+
+      const h2 = document.createElement('div');
+      h2.id = 'h2';
+      document.body.appendChild(h2);
+      h2.attachShadow({ mode: 'open' });
+
+      // 每个新 root 各通知一次
+      expect(notified).toEqual(['h1', 'h2']);
+    } finally {
+      unwatch();
+    }
+  });
+
+  test('已见集合共享：注册前创建的 root 不再通知（防重复挂载）', () => {
+    const h1 = document.createElement('div');
+    h1.id = 'h1';
+    document.body.appendChild(h1);
+    const existing = h1.attachShadow({ mode: 'open' });
+
+    const seen = new WeakSet<ShadowRoot>();
+    const notified: string[] = [];
+    const unwatch = watchShadowRoots({
+      seen,
+      onShadowRoot: (root) => notified.push(root.host.id),
+    });
+    try {
+      // 注册前已存在的 root：seen 未含它，但不再有创建事件 —— 不通知
+      expect(notified).toEqual([]);
+      // 新创建的 root 正常通知
+      const h2 = document.createElement('div');
+      h2.id = 'h2';
+      document.body.appendChild(h2);
+      h2.attachShadow({ mode: 'open' });
+      expect(notified).toEqual(['h2']);
+    } finally {
+      unwatch();
+    }
+  });
+
+  test('取消注册后不再收到通知', () => {
+    const seen = new WeakSet<ShadowRoot>();
+    const notified: string[] = [];
+    const unwatch = watchShadowRoots({
+      seen,
+      onShadowRoot: (root) => notified.push(root.host.id),
+    });
+    unwatch();
+
+    const h1 = document.createElement('div');
+    h1.id = 'h1';
+    document.body.appendChild(h1);
+    h1.attachShadow({ mode: 'open' });
+
+    expect(notified).toEqual([]);
   });
 });
