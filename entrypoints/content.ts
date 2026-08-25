@@ -18,6 +18,7 @@ import {
   restorePreserves,
 } from '~/src/dom/text';
 import { startObserver, registerHidden } from '~/src/dom/observer';
+import { walkShadowTree } from '~/src/dom/shadow-walk';
 import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
 import { unsplitPre } from '~/src/dom/pre-split';
 import { isSiteBlocked } from '~/src/dom/site-filter';
@@ -373,23 +374,20 @@ export default defineContentScript({
       // 渲染，避免还原后把内容翻回来（#91）
       translateEpoch.value++;
 
-      // allTranslated() 已支持 shadow 穿透（Phase 3 P3-3 修复）
+      // #253: 还原收集走统一遍历模块（shadow 穿透 + 集中式跳过规则）。
+      // skipTranslated: false —— 嵌套在已翻译单元内的已翻译单元
+      // （.pt-origin 搬移的既有译文）也要一并收集还原
       const els: Element[] = [];
       const splitPres: Element[] = [];
-      const collectFrom = (root: ParentNode) => {
-        root.querySelectorAll<Element>('[data-pt="done"]').forEach((el) =>
-          els.push(el),
-        );
-        // #65：收集被切分的 pre，在 unrender 后还原 DOM
-        root.querySelectorAll<Element>('[data-pt-split="1"]').forEach((el) =>
-          splitPres.push(el),
-        );
-        root.querySelectorAll('*').forEach((el) => {
-          if ((el as Element).shadowRoot)
-            collectFrom((el as Element).shadowRoot!);
-        });
-      };
-      collectFrom(document);
+      walkShadowTree(
+        document,
+        (el) => {
+          if (el.getAttribute('data-pt') === 'done') els.push(el);
+          // #65：收集被切分的 pre，在 unrender 后还原 DOM
+          if (el.getAttribute('data-pt-split') === '1') splitPres.push(el);
+        },
+        { skipTranslated: false },
+      );
 
       for (const el of els) {
         unrender(el);
@@ -407,15 +405,15 @@ export default defineContentScript({
      * 仅查标志会把“页面上已有译文”误判成“没翻过”，toggle 走错分支。
      */
     function hasTranslated(): boolean {
-      const walk = (root: ParentNode): boolean => {
-        if (root.querySelector('[data-pt="done"]')) return true;
-        for (const el of root.querySelectorAll('*')) {
-          const sr = (el as Element).shadowRoot;
-          if (sr && walk(sr)) return true;
+      // #253: 判定走统一遍历模块（shadow 穿透，命中即短路终止）
+      let found = false;
+      walkShadowTree(document, (el) => {
+        if (el.getAttribute('data-pt') === 'done') {
+          found = true;
+          return 'stop';
         }
-        return false;
-      };
-      return walk(document);
+      });
+      return found;
     }
 
     /**
