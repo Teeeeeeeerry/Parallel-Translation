@@ -6,6 +6,7 @@ import { getKey } from '~/src/storage/keys';
 import { fetchWithTimeout } from './fetch-timeout';
 import { engineGate } from './engine-gate';
 import { EngineError } from './types';
+import { classifyStatus } from './shared';
 import type { TranslateEngine } from './types';
 
 // #159: 引擎级并发闸门 —— 整页翻译批次并发 → translate() 并发调用
@@ -96,12 +97,13 @@ export const deepl: TranslateEngine = {
         body: body.toString(),
       });
 
-      // #249: 类型化类别 —— 401/403 → key 无效；429 → 配额（免费额度
-      // 耗尽，不重试）；其余非 2xx → 瞬时（可重试，降级下一引擎）
-      if (resp.status === 403 || resp.status === 401) {
+      // #260: 状态分类走公共判定（口径：#239）—— 401/403 → key 无效、
+      // 429 → 配额（免费额度耗尽，不重试）、其余非 2xx → 瞬时
+      const category = classifyStatus('deepl', resp, true);
+      if (category === 'invalid-key') {
         throw new EngineError('deepl', false, 'API key 无效', 'invalid-key');
       }
-      if (resp.status === 429) {
+      if (category === 'quota') {
         throw new EngineError('deepl', false, '配额已用尽', 'quota', true);
       }
       if (!resp.ok) {
