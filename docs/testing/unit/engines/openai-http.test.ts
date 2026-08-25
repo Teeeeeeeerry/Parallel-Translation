@@ -56,7 +56,12 @@ describe('openai HTTP 路径', () => {
     const { openai } = await import('~/src/engines/openai');
     await expect(
       openai.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ engineId: 'openai', retryable: false, message: '未配置 API key' });
+    ).rejects.toMatchObject({
+      engineId: 'openai',
+      retryable: false,
+      category: 'invalid-key',
+      message: '未配置 API key',
+    });
     expect(getKey).toHaveBeenCalledWith('openai');
   });
 
@@ -108,18 +113,18 @@ describe('openai HTTP 路径', () => {
       const { openai } = await import('~/src/engines/openai');
       await expect(
         openai.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-      ).rejects.toMatchObject({ retryable: false, message: 'API key 无效' });
+      ).rejects.toMatchObject({ retryable: false, category: 'invalid-key', message: 'API key 无效' });
     }
   });
 
-  test('其他非 200 → EngineError（retryable）', async () => {
+  test('其他非 200 → EngineError（retryable，transient）', async () => {
     const { getKey } = await import('~/src/storage/keys');
     vi.mocked(getKey).mockResolvedValue('k');
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('err', { status: 429 })));
     const { openai } = await import('~/src/engines/openai');
     await expect(
       openai.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ retryable: true, message: 'HTTP 429' });
+    ).rejects.toMatchObject({ retryable: true, category: 'transient', message: 'HTTP 429' });
   });
 
   test('空 choices → 长度一致的空白译文数组', async () => {
