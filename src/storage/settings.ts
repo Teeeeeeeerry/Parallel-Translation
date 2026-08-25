@@ -14,9 +14,21 @@ export type NestedMergeStrategy = 'merge' | 'replace';
 export type NestedSettingsKey = 'hotkeys' | 'siteList' | 'models';
 
 /**
- * 嵌套键声明表（#234）—— 每个嵌套对象键声明合并策略。
- * 合并函数按此表驱动，替代硬编码的三键分支；日后新增嵌套对象
- * 只改此处一处。
+ * 显式清空嵌套键的哨兵（#241）—— patchSettings({ models: CLEAR_NESTED })
+ * 把该键重置为其默认值（models → {}，自定义模型名不残留）。
+ */
+export const CLEAR_NESTED: unique symbol = Symbol('pt-clear-nested');
+export type ClearNested = typeof CLEAR_NESTED;
+
+/** patchSettings 可接受的 patch 形状：嵌套键额外允许清空哨兵（#241）。 */
+export type SettingsPatch = Omit<DeepPartial<Settings>, NestedSettingsKey> & {
+  [K in NestedSettingsKey]?: DeepPartial<Settings>[K] | ClearNested;
+};
+
+/**
+ * 嵌套键声明表（#234 / #241）—— 每个嵌套对象键声明合并策略。
+ * 合并函数按此表驱动，替代硬编码的三键分支；整体替换（replaceSettings）
+ * 同样走此表；日后新增嵌套对象只改此处一处。
  */
 export const NESTED_KEYS: Record<NestedSettingsKey, NestedMergeStrategy> = {
   hotkeys: 'merge',
@@ -27,9 +39,10 @@ export const NESTED_KEYS: Record<NestedSettingsKey, NestedMergeStrategy> = {
 /**
  * 将 patch 深度合并到 base。
  * 嵌套对象（hotkeys / siteList / models）按 NESTED_KEYS 声明表逐键合并，
- * 其余字段浅覆盖。'replace' 策略下保持浅覆盖结果（patch 值整体替换）。
+ * 其余字段浅覆盖。'replace' 策略下保持浅覆盖结果（patch 值整体替换）；
+ * CLEAR_NESTED 哨兵把该键重置为其默认值（#241 显式置空）。
  */
-function mergeInto(base: Settings, patch: DeepPartial<Settings>): Settings {
+function mergeInto(base: Settings, patch: SettingsPatch): Settings {
   // 浅覆盖。patch 的嵌套键为可选类型，展开后类型带 | undefined ——
   // 此处统一经声明表循环修正（下方对全部嵌套键重新赋值），
   // 与旧实现显式重写三个键的语义一致
@@ -38,15 +51,20 @@ function mergeInto(base: Settings, patch: DeepPartial<Settings>): Settings {
   for (const key of Object.keys(NESTED_KEYS) as NestedSettingsKey[]) {
     const pv = patch[key];
     const mergedValue: unknown =
-      pv === undefined
-        ? // patch 未携带该键（或显式 undefined）→ 保持 base 原值，
-          // 浅覆盖阶段可能已把它冲掉，这里补回
-          base[key]
-        : NESTED_KEYS[key] === 'merge'
-          ? // 逐键合并：patch 只覆盖提供的键，兄弟键保留
-            { ...base[key], ...pv }
-          : // 'replace'：整体替换，浅覆盖结果（patch 值）即为最终值
-            pv;
+      // #241 显式置空：哨兵按类型判定（跨模块实例同一语义 ——
+      // resetModules 等场景下不同实例的 CLEAR_NESTED 不是同一
+      // Symbol 对象，但都是 symbol 类型；设置值不可能为 symbol）
+      typeof pv === 'symbol'
+        ? DEFAULT_SETTINGS[key] // 重置为该键默认值（models → {}，自定义模型名不残留）
+        : pv === undefined
+          ? // patch 未携带该键（或显式 undefined）→ 保持 base 原值，
+            // 浅覆盖阶段可能已把它冲掉，这里补回
+            base[key]
+          : NESTED_KEYS[key] === 'merge'
+            ? // 逐键合并：patch 只覆盖提供的键，兄弟键保留
+              { ...base[key], ...(pv as object) }
+            : // 'replace'：整体替换，浅覆盖结果（patch 值）即为最终值
+              pv;
     (merged as Record<NestedSettingsKey, unknown>)[key] = mergedValue;
   }
 
@@ -94,7 +112,7 @@ export function getSettings(): Settings {
 }
 
 /** 部分更新设置并写回 sync。嵌套对象递归合并，不会丢兄弟键。 */
-export async function patchSettings(patch: DeepPartial<Settings>): Promise<void> {
+export async function patchSettings(patch: SettingsPatch): Promise<void> {
   // #167: 跨上下文并发写保护 —— 写前重读存储，基于最新值合并再写回
   // （compare-and-swap 风格）。每个上下文（popup/options/content）都有
   // 自己的内存副本，直接拿内存值整对象覆盖会静默回滚另一个上下文刚
@@ -107,13 +125,20 @@ export async function patchSettings(patch: DeepPartial<Settings>): Promise<void>
 }
 
 /**
- * 整对象替换设置（恢复默认专用）—— #169。
- * patchSettings 对嵌套对象（models/hotkeys/siteList）是合并语义，
- * DEFAULT_SETTINGS.models = {} 合并不掉用户自定义的模型名 —— 恢复
- * 默认必须整体替换而不是合并。替换本身就是有意的全量覆盖。
+ * 整对象替换设置（恢复默认专用）—— #169 → #241。
+ * 替换语义由声明表机制驱动：整体替换时嵌套键按 replace 策略整体覆盖，
+ * DEFAULT_SETTINGS.models = {} 替换掉用户自定义的模型名 —— 恢复默认
+ * 后自定义模型名不残留。替代旧的「特例函数直接赋值」：嵌套键的策略
+ * 只声明在 NESTED_KEYS 一处，新增嵌套对象无需再改这里。
  */
 export async function replaceSettings(next: Settings): Promise<void> {
-  current = next;
+  // 经声明表循环的整体替换：每个嵌套键取 patch（=next）值作为最终值，
+  // 与逐键合并语义区分开（#241）
+  const merged = { ...next } as Settings;
+  for (const key of Object.keys(NESTED_KEYS) as NestedSettingsKey[]) {
+    (merged as Record<NestedSettingsKey, unknown>)[key] = next[key];
+  }
+  current = merged;
   await chrome.storage.sync.set({ [KEY]: current });
 }
 
