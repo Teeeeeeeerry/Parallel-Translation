@@ -40,7 +40,8 @@ export const openai: TranslateEngine = {
     // #159: 整个请求体过闸门，限制并发在飞请求数
     return getGate()(async () => {
       const key = await getKey('openai');
-      if (!key) throw new EngineError('openai', false, '未配置 API key');
+      if (!key)
+        throw new EngineError('openai', false, '未配置 API key', 'invalid-key');
 
       const model = getSettings().models?.openai ?? DEFAULT_MODELS.openai!;
 
@@ -66,11 +67,13 @@ export const openai: TranslateEngine = {
         }),
       });
 
+      // #248: 类型化类别 —— 401/403 → key 无效（不重试）；其余非 2xx
+      // → 瞬时（可重试，路由降级下一引擎）
       if (resp.status === 401 || resp.status === 403) {
-        throw new EngineError('openai', false, 'API key 无效');
+        throw new EngineError('openai', false, 'API key 无效', 'invalid-key');
       }
       if (!resp.ok) {
-        throw new EngineError('openai', true, `HTTP ${resp.status}`);
+        throw new EngineError('openai', true, `HTTP ${resp.status}`, 'transient');
       }
 
       const data = await resp.json();
