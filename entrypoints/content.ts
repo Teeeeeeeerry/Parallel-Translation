@@ -263,6 +263,14 @@ export default defineContentScript({
             invalidated = true;
             fatalError = result.error;
           }
+          // #247: 按类型化类别给出提示分支 —— key 无效 / 配额失效
+          // 记录为致命原因（全失败时展示真实原因），不再落到泛化文案
+          if (
+            result.category === 'invalid-key' ||
+            result.category === 'quota'
+          ) {
+            fatalError = result.error;
+          }
           if (!result.aborted) {
             console.error('[PT] 批次翻译失败:', result.error);
           }
@@ -514,7 +522,13 @@ export default defineContentScript({
       });
 
       if (!resp?.ok) {
-        toast(tf('toastTranslateFail', '翻译失败'), 'error');
+        // #247: 按类型化类别给出提示分支 —— key 无效 / 配额失效展示
+        // 真实原因；瞬时故障保持现有泛化文案
+        if (resp.category === 'invalid-key' || resp.category === 'quota') {
+          toast(resp.error, 'error');
+        } else {
+          toast(tf('toastTranslateFail', '翻译失败'), 'error');
+        }
         return;
       }
 
@@ -551,7 +565,13 @@ export default defineContentScript({
       });
 
       if (!resp?.ok) {
-        toast(tf('toastTranslateFail', '翻译失败'), 'error');
+        // #247: 按类型化类别给出提示分支 —— key 无效 / 配额失效展示
+        // 真实原因；瞬时故障保持现有泛化文案
+        if (resp.category === 'invalid-key' || resp.category === 'quota') {
+          toast(resp.error, 'error');
+        } else {
+          toast(tf('toastTranslateFail', '翻译失败'), 'error');
+        }
         return;
       }
 

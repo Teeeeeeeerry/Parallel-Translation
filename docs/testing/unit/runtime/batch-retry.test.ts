@@ -268,3 +268,41 @@ describe('attemptBatchWithRetry — 新字段优先（#246）', () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('BatchRetryResult 类别透传（#247）', () => {
+  test('invalid-key 失败 → 结果携带 category，供渲染层分支提示', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      error: 'API key 无效',
+      retryable: false,
+      category: 'invalid-key' as const,
+      invalidated: false,
+      aborted: false,
+    }));
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.category).toBe('invalid-key');
+      expect(result.error).toBe('API key 无效');
+    }
+  });
+
+  test('quota 失败 → 结果携带 category（invalidated 短路分支）', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      error: '配额已用尽',
+      retryable: false,
+      category: 'quota' as const,
+      invalidated: true,
+      aborted: false,
+    }));
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.invalidated).toBe(true);
+      expect(result.category).toBe('quota');
+    }
+  });
+});
