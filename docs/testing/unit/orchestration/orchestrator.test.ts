@@ -89,3 +89,69 @@ describe('createOrchestrator — 假消息层', () => {
     expect(send).not.toHaveBeenCalled();
   });
 });
+
+describe('渐进渲染回调注入（#256）', () => {
+  test('每批返回即触发回调，不等待最慢段（批次节奏）', async () => {
+    const order: number[] = [];
+    let resolveSlow!: () => void;
+    const slowResult = { ok: true, data: { translations: ['慢批'] } };
+    const fastResult = { ok: true, data: { translations: ['快批'] } };
+    const send = vi
+      .fn()
+      // 第 0 批（慢）：手动控制完成时机
+      .mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            resolveSlow = () => r(slowResult);
+          }),
+      )
+      // 第 1 批（快）：立即完成
+      .mockImplementation(async () => fastResult);
+
+    const orch = createOrchestrator({
+      send,
+      onBatchResult: (i) => order.push(i),
+    });
+    orch.start();
+
+    const pending = orch.translatePage(items(20), 'en', 'zh');
+    await Promise.resolve();
+    await Promise.resolve();
+    // 快批先返回并触发渲染回调 —— 首屏不等最慢段
+    expect(order).toEqual([1]);
+
+    resolveSlow();
+    await pending;
+    expect(order).toEqual([1, 0]);
+  });
+
+  test('渲染顺序 = 完成顺序，回调携带批次下标与结果', async () => {
+    const seen: Array<[number, string]> = [];
+    const send = vi
+      .fn()
+      .mockImplementationOnce(async () => ({ ok: false, error: '批0失败', retryable: true }))
+      .mockImplementationOnce(async () => ({ ok: true, data: { translations: ['批1'] } }));
+
+    const orch = createOrchestrator({
+      send,
+      onBatchResult: (i, result) => {
+        seen.push([i, result.ok ? 'ok' : result.error!]);
+      },
+    });
+    orch.start();
+
+    await orch.translatePage(items(20), 'en', 'zh');
+    expect(seen).toEqual([
+      [0, '批0失败'],
+      [1, 'ok'],
+    ]);
+  });
+
+  test('未提供渲染回调 → 仅发送（兼容无渲染场景）', async () => {
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+    const orch = createOrchestrator({ send });
+    orch.start();
+    await expect(orch.translatePage(items(16), 'en', 'zh')).resolves.toBeUndefined();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+});
