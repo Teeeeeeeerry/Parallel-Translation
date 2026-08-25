@@ -31,6 +31,8 @@ export type BatchRetryResult =
       /** 中止（还原 / 其他批次已判失效）—— 未完成。 */
       aborted: boolean;
       error: string;
+      /** #247: 类型化失败类别（供渲染层按类别分支提示）。 */
+      category?: FailureCategory;
     };
 
 export interface BatchRetryOptions {
@@ -78,7 +80,13 @@ export async function attemptBatchWithRetry(
     lastError = resp?.error ?? '未知错误';
     // #111/#116: 上下文失效是类型化标志 —— 立即失败，不进入重试序列
     if (resp?.invalidated) {
-      return { ok: false, invalidated: true, aborted: false, error: lastError };
+      return {
+        ok: false,
+        invalidated: true,
+        aborted: false,
+        error: lastError,
+        category: resp.category,
+      };
     }
     // #246: 新字段 aborted（用户中止）→ 立即停止，不记成失败
     if (resp?.aborted) {
@@ -91,7 +99,13 @@ export async function attemptBatchWithRetry(
       resp?.category === 'quota' ||
       resp?.retryable === false
     ) {
-      return { ok: false, invalidated: false, aborted: false, error: lastError };
+      return {
+        ok: false,
+        invalidated: false,
+        aborted: false,
+        error: lastError,
+        category: resp.category,
+      };
     }
     if (attempt >= BATCH_RETRY_LIMIT) break;
     await sleep(BATCH_RETRY_DELAYS_MS[attempt]!);
