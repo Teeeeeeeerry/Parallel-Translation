@@ -26,7 +26,8 @@ async function fetchOne(
 
   const resp = await fetchWithTimeout('google-web', `${ENDPOINT}?${qs}`);
   if (!resp.ok) {
-    throw new EngineError('google-web', true, `HTTP ${resp.status}`);
+    // #251: 类型化类别 —— 免 key 引擎一律瞬时（可重试）
+    throw new EngineError('google-web', true, `HTTP ${resp.status}`, 'transient');
   }
 
   const data = await resp.json();
@@ -68,7 +69,7 @@ export const googleWeb: TranslateEngine = {
 
     // 全部失败 → 抛出让 router 整体切换到下一个引擎
     if (failedIndices.length === texts.length) {
-      throw new EngineError('google-web', true, `全部 ${texts.length} 条翻译失败`);
+      throw new EngineError('google-web', true, `全部 ${texts.length} 条翻译失败`, 'transient');
     }
 
     return {

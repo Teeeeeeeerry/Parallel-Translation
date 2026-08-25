@@ -96,7 +96,7 @@ describe('google-web HTTP 路径', () => {
     const { googleWeb } = await import('~/src/engines/google-web');
     await expect(
       googleWeb.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ name: 'EngineError', engineId: 'google-web', retryable: true });
+    ).rejects.toMatchObject({ name: 'EngineError', engineId: 'google-web', retryable: true, category: 'transient' });
   });
 
   test('坏 JSON → 全部失败抛 EngineError', async () => {
@@ -104,7 +104,7 @@ describe('google-web HTTP 路径', () => {
     const { googleWeb } = await import('~/src/engines/google-web');
     await expect(
       googleWeb.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ name: 'EngineError', retryable: true });
+    ).rejects.toMatchObject({ name: 'EngineError', retryable: true, category: 'transient' });
   });
 
   test('部分失败：失败槽位进 failedIndices，成功槽位保留', async () => {
@@ -130,7 +130,7 @@ describe('google-web HTTP 路径', () => {
     const { googleWeb } = await import('~/src/engines/google-web');
     await expect(
       googleWeb.translate({ texts: ['a', 'b'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ retryable: true, message: '全部 2 条翻译失败' });
+    ).rejects.toMatchObject({ retryable: true, category: 'transient', message: '全部 2 条翻译失败' });
   });
 
   test('并发闸门：maxConcurrency 生效（设置读取于首次翻译）', async () => {
