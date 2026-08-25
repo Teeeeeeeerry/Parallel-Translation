@@ -5,6 +5,7 @@
 import { fetchWithTimeout } from './fetch-timeout';
 import { engineGate } from './engine-gate';
 import { EngineError } from './types';
+import { classifyStatus } from './shared';
 import type { TranslateEngine } from './types';
 
 const ENDPOINT = 'https://translate.googleapis.com/translate_a/single';
@@ -26,8 +27,9 @@ async function fetchOne(
 
   const resp = await fetchWithTimeout('google-web', `${ENDPOINT}?${qs}`);
   if (!resp.ok) {
-    // #251: 类型化类别 —— 免 key 引擎一律瞬时（可重试）
-    throw new EngineError('google-web', true, `HTTP ${resp.status}`, 'transient');
+    // #266: 分类走公共判定 —— 免 key 引擎一律瞬时（可重试）
+    const category = classifyStatus('google-web', resp, true);
+    throw new EngineError('google-web', true, `HTTP ${resp.status}`, category);
   }
 
   const data = await resp.json();
@@ -69,7 +71,8 @@ export const googleWeb: TranslateEngine = {
 
     // 全部失败 → 抛出让 router 整体切换到下一个引擎
     if (failedIndices.length === texts.length) {
-      throw new EngineError('google-web', true, `全部 ${texts.length} 条翻译失败`, 'transient');
+      const category = classifyStatus('google-web', { status: 500 }, true);
+      throw new EngineError('google-web', true, `全部 ${texts.length} 条翻译失败`, category);
     }
 
     return {
