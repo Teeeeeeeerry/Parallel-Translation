@@ -29,9 +29,9 @@ import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
 import { createLifecycleRegistry } from '~/src/ui/lifecycle-registry';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import { translateViaBackground } from '~/src/runtime/messaging';
-import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
-import { sleep } from '~/src/runtime/sleep';
 import { detectOS } from '~/src/hotkeys/platform';
 import {
   settingsReady,
@@ -164,12 +164,10 @@ export default defineContentScript({
     });
 
     // ── 翻译全页 ──
-    // #25: 分批发送 + 渐进渲染。每批独立 sendMessage，返回即渲染，
-    // 用户在第一屏译文出现前不再需要等待全页最慢段。
-    const FULL_PAGE_BATCH_SIZE = 15;
+    // #261: 批次拆分 / 有界重试 / 中止 / 渐进渲染收敛到编排模块，
+    // 这里只装配：消息发送（translateViaBackground）与渲染回调注入。
 
-    // #91: 批次级引擎失败有限重试（见 src/runtime/batch-retry.ts）。
-    /** 还原纪元：doRestore 递增，在飞翻译据此放弃重试与渲染。 */
+    /** 还原纪元：doRestore 递增，在飞翻译据此放弃重试与渲染（#91）。 */
     const translateEpoch = { value: 0 };
 
     // #156: 整页翻译在飞互斥。悬浮球自身的 loading 守卫挡不住 popup 与
@@ -177,6 +175,48 @@ export default defineContentScript({
     // 否则连点会并发整页请求（双倍引擎额度/缓存写入、双 toast），或
     // 首轮刚完成时第二次触发把刚翻好的页面立即还原。
     let pageToggleInFlight = false;
+
+    /** 翻译项的渲染上下文（#261）：目标元素 + preserves + 原文。 */
+    interface PageItemCtx {
+      target: Element;
+      preserves: Map<string, string>;
+      rawText: string;
+    }
+
+    /** 渲染统计（每次整页翻译开始时清零）。 */
+    const renderStats = { succeeded: 0, rejected: 0 };
+
+    // #261: 编排模块 —— 全页翻译的批次流水线在模块内，
+    // 渲染回调按批触发（#256 渐进渲染，首屏不等最慢段）
+    const orchestrator = createOrchestrator({
+      send: translateViaBackground,
+      onBatchResult: (_i, batch, result) => {
+        if (!result.ok || !result.data) return;
+        const translations = result.data.translations;
+        for (let j = 0; j < batch.length; j++) {
+          const ctx = batch[j]!.ctx as PageItemCtx;
+          try {
+            // #58：将占位符替换回原文（用户名等标识符不翻译但保留）
+            const restored = restorePreserves(
+              translations[j]!,
+              ctx.preserves,
+              ctx.rawText,
+            );
+            if (render(ctx.target, restored, 'page')) {
+              renderStats.succeeded++;
+            } else {
+              renderStats.rejected++;
+            }
+          } catch (e) {
+            throw new Error(
+              `[render idx=${j}] ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+        }
+      },
+    });
+    // #261: 启动编排 —— 未启动时翻译入口拒绝执行
+    orchestrator.start();
 
     async function doTranslate(
       elements?: Element[],
@@ -206,164 +246,51 @@ export default defineContentScript({
       // 只提取直接文本，嵌套块级子元素由各自的翻译单元独立翻译。
       // #58：translatableTextEx 同时返回 preserves 映射表（占位符 → 原文），
       // 译文回填时替换占位符，使 GitHub 用户名等标识符保持原样。
-      const textData = targets.map((el) => {
+      // pre 内单元（.pt-chunk / 纯文本 pre）保留硬换行（#117 判定）。
+      const items: TranslateItem<PageItemCtx>[] = targets.map((el, i) => {
         const useShallow = hasBlockTextChildren(el);
         const { text: rawText, preserves } = useShallow
           ? shallowTranslatableTextEx(el)
           : translatableTextEx(el);
-        // pre 内单元（.pt-chunk / 纯文本 pre）保留硬换行：
-        // 列表逐行条目是文档结构，折叠成一行后译文也回不来行结构
         const text = normalizeForUnit(el, rawText);
         return {
           text,
-          preserves,
-          rawText: text,
+          ctx: { target: targets[i]!, preserves, rawText: text },
         };
       });
-      const texts = textData.map((d) => d.text);
 
-      // 切分为批次。每批同时携带 preserves 映射表与原文，
-      // 供译文回填时 restorePreserves 校验与替换。
-      const batches: {
-        texts: string[];
-        targets: Element[];
-        preserves: Map<string, string>[];
-        rawTexts: string[];
-      }[] = [];
-      for (let i = 0; i < targets.length; i += FULL_PAGE_BATCH_SIZE) {
-        const slice = textData.slice(i, i + FULL_PAGE_BATCH_SIZE);
-        batches.push({
-          texts: slice.map((d) => d.text),
-          targets: targets.slice(i, i + FULL_PAGE_BATCH_SIZE),
-          preserves: slice.map((d) => d.preserves),
-          rawTexts: slice.map((d) => d.rawText),
-        });
-      }
-
-      let allFailed = true;
-      let renderRejected = 0;
-      let renderSucceeded = 0;
-      // 不可恢复的失败原因（如扩展上下文失效）—— 全失败时优先展示，
-      // 而不是泛化的“所有引擎均失败”
-      let fatalError: string | null = null;
-      // #111: 上下文失效全局短路 —— 任一批判失效后，其余批次不再发起新尝试
-      let invalidated = false;
+      renderStats.succeeded = 0;
+      renderStats.rejected = 0;
       const epochAtStart = translateEpoch.value;
 
-      async function attemptBatch(
-        batch: (typeof batches)[number],
-      ): Promise<{
-        rendered: number;
-        rejected: number;
-        failed: boolean;
-        aborted: boolean;
-      }> {
-        // 重试策略（#91 有界重试 / #111 失效立即失败）集中在
-        // batch-retry.ts，此处只负责渲染与全局短路标记。
-        const result = await attemptBatchWithRetry(
-          () =>
-            translateViaBackground({
-              texts: batch.texts,
-              from: ns.from,
-              to: ns.to,
-            }),
-          {
-            sleep,
-            // 还原（纪元递增）或他批已判失效 → 放弃本次尝试与重试
-            shouldAbort: () =>
-              invalidated || translateEpoch.value !== epochAtStart,
-          },
-        );
-        if (!result.ok) {
-          if (result.invalidated) {
-            // 扩展上下文失效（重载/更新）不可恢复 —— 记录给全失败
-            // 分支优先展示，并置全局短路，其余批次与重试全部跳过
-            invalidated = true;
-            fatalError = result.error;
-          }
-          // #247: 按类型化类别给出提示分支 —— key 无效 / 配额失效
-          // 记录为致命原因（全失败时展示真实原因），不再落到泛化文案
-          if (
-            result.category === 'invalid-key' ||
-            result.category === 'quota'
-          ) {
-            fatalError = result.error;
-          }
-          if (!result.aborted) {
-            console.error('[PT] 批次翻译失败:', result.error);
-          }
-          return {
-            rendered: 0,
-            rejected: 0,
-            // #157: 中止（还原）与失败分开记账 —— 中止不算失败
-            failed: !result.aborted,
-            aborted: result.aborted,
-          };
-        }
-        // #157: 本批在飞期间用户已还原（纪元递增）—— 放弃渲染，
-        // 否则还原后会把内容翻回来（#91 的渲染侧补漏）
-        if (translateEpoch.value !== epochAtStart) {
-          return { rendered: 0, rejected: 0, failed: false, aborted: true };
-        }
-        let rendered = 0;
-        let rejected = 0;
-        const translations = result.data.translations;
-        for (let i = 0; i < batch.targets.length; i++) {
-          try {
-            // #58：将占位符替换回原文（用户名等标识符不翻译但保留）
-            const restored = restorePreserves(
-              translations[i]!,
-              batch.preserves[i]!,
-              batch.rawTexts[i]!,
-            );
-            if (render(batch.targets[i]!, restored, 'page')) {
-              rendered++;
-            } else {
-              rejected++;
-            }
-          } catch (e) {
-            throw new Error(
-              `[render idx=${i}] ${e instanceof Error ? e.message : String(e)}`,
-            );
-          }
-        }
-        return { rendered, rejected, failed: false, aborted: false };
-      }
+      // #261: 全页翻译经编排模块执行 —— 批次拆分（15/批）、有界重试、
+      // 失效全局短路、渐进渲染回调都在模块内；此处只注入中止谓词
+      // （还原纪元）与渲染回调
+      const summary = await orchestrator.translatePage(items, ns.from, ns.to, {
+        shouldAbort: () => translateEpoch.value !== epochAtStart,
+      });
 
-      // 所有批次并发发送，每批返回即渲染。
-      // Google Web 的并发闸门是惰性单例，所有批次共享，自然排队。
-      await Promise.all(
-        batches.map(async (batch) => {
-          const r = await attemptBatch(batch);
-          // #157: 中止批次不参与成败统计 —— 还原不是引擎失败
-          if (r.aborted) return;
-          renderSucceeded += r.rendered;
-          renderRejected += r.rejected;
-          if (!r.failed) allFailed = false;
-        }),
-      );
-
-      // #157: 还原发生在翻译进行中 —— 批次被 epoch 中止不是失败：
+      // #157: 还原发生在翻译进行中 —— 批次被中止不是失败：
       // 不弹“所有引擎均失败”、状态置 aborted（悬浮球回 idle、
       // 不启动 observer、不置 done）
-      if (translateEpoch.value !== epochAtStart) return 'aborted';
+      if (summary.aborted) return 'aborted';
 
       // #49：整页翻译结束后用一条 toast 汇总被拒数量，而不是逐条刷屏
-      if (renderRejected > 0 && isMainFrame) {
+      if (renderStats.rejected > 0 && isMainFrame) {
         toast(
           tf(
             'toastRenderRejected',
-            `${renderRejected} 段因含图片/按钮未翻译`,
-            String(renderRejected),
+            `${renderStats.rejected} 段因含图片/按钮未翻译`,
+            String(renderStats.rejected),
           ),
           'info',
         );
       }
 
-      if (allFailed) {
+      if (summary.allFailed) {
         if (isMainFrame)
           toast(
-            fatalError ?? tf('toastAllEnginesFail', '所有引擎均失败'),
+            summary.fatalError ?? tf('toastAllEnginesFail', '所有引擎均失败'),
             'error',
           );
         return 'error';
@@ -371,7 +298,7 @@ export default defineContentScript({
 
       // #49：引擎返回了结果，但全被 render() 拒绝（纵深防御命中），
       // 状态不应是 'translated'，悬浮球不应点亮成“已翻译”
-      if (renderSucceeded === 0) {
+      if (renderStats.succeeded === 0) {
         if (isMainFrame)
           toast(tf('toastAllRejected', '所有段落均含图片/按钮，无法翻译'), 'error');
         return 'error';
