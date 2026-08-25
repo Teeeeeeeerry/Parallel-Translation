@@ -9,7 +9,11 @@
 // 本票落地骨架与批次拆分（#245）；渐进渲染回调注入与 epoch 中止
 // 语义由后续票承接（#256 / #262），尚无生产调用方。
 
-import type { TranslateRequest } from '~/src/engines/types';
+import type {
+  TranslateRequest,
+  TranslateResponse,
+  FailureCategory,
+} from '~/src/engines/types';
 
 /** 全页翻译的批次大小 —— 与 content 现有 FULL_PAGE_BATCH_SIZE 一致（#25）。 */
 export const FULL_PAGE_BATCH_SIZE = 15;
@@ -42,6 +46,19 @@ export interface OrchestratorOptions {
   send: SendTranslate;
   /** 批次大小，缺省与现状一致（15）。 */
   batchSize?: number;
+  /** 渲染回调（#256 渐进渲染）：每批返回即触发，首屏不等待最慢段。 */
+  onBatchResult?: (batchIndex: number, result: TranslateBatchResult) => void;
+}
+
+/** 单批发送结果（#256）：渲染层按批消费，批次间不互相等待。 */
+export interface TranslateBatchResult {
+  ok: boolean;
+  data?: TranslateResponse;
+  error?: string;
+  invalidated?: boolean;
+  retryable?: boolean;
+  category?: FailureCategory;
+  aborted?: boolean;
 }
 
 /**
@@ -76,14 +93,17 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       if (!started) throw new Error('[PT] 编排未启动');
       // 批次拆分（#245）：与现状一致，每批独立发送
       const batches = splitBatches(items, batchSize);
+      // #256 渐进渲染：每批返回即触发渲染回调，互不等待 ——
+      // 首屏译文不必等全页最慢段（#25 行为保持）
       await Promise.all(
-        batches.map((batch) =>
-          opts.send({
+        batches.map(async (batch, i) => {
+          const result = (await opts.send({
             texts: batch.map((item) => item.text),
             from,
             to,
-          }),
-        ),
+          })) as TranslateBatchResult;
+          opts.onBatchResult?.(i, result);
+        }),
       );
     },
   };
