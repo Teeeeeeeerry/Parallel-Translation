@@ -164,11 +164,9 @@ export default defineContentScript({
     });
 
     // ── 翻译全页 ──
-    // #261: 批次拆分 / 有界重试 / 中止 / 渐进渲染收敛到编排模块，
-    // 这里只装配：消息发送（translateViaBackground）与渲染回调注入。
-
-    /** 还原纪元：doRestore 递增，在飞翻译据此放弃重试与渲染（#91）。 */
-    const translateEpoch = { value: 0 };
+    // #261/#262: 批次拆分 / 有界重试 / epoch 中止 / 渐进渲染全部收敛
+    // 到编排模块（还原纪元在模块内，abort() 递增）；这里只装配：
+    // 消息发送（translateViaBackground）与渲染回调注入。
 
     // #156: 整页翻译在飞互斥。悬浮球自身的 loading 守卫挡不住 popup 与
     // 快捷键路径 —— 它们直接调 togglePage。在飞期间忽略新的 toggle：
@@ -261,14 +259,11 @@ export default defineContentScript({
 
       renderStats.succeeded = 0;
       renderStats.rejected = 0;
-      const epochAtStart = translateEpoch.value;
 
-      // #261: 全页翻译经编排模块执行 —— 批次拆分（15/批）、有界重试、
-      // 失效全局短路、渐进渲染回调都在模块内；此处只注入中止谓词
-      // （还原纪元）与渲染回调
-      const summary = await orchestrator.translatePage(items, ns.from, ns.to, {
-        shouldAbort: () => translateEpoch.value !== epochAtStart,
-      });
+      // #261/#262: 全页翻译经编排模块执行 —— 批次拆分（15/批）、有界
+      // 重试、失效全局短路、epoch 中止、渐进渲染回调都在模块内；
+      // 还原（doRestore → orchestrator.abort()）自动中止在途批次
+      const summary = await orchestrator.translatePage(items, ns.from, ns.to);
 
       // #157: 还原发生在翻译进行中 —— 批次被中止不是失败：
       // 不弹“所有引擎均失败”、状态置 aborted（悬浮球回 idle、
@@ -312,9 +307,9 @@ export default defineContentScript({
       // #255: observer 经注册表停止（幂等，未启动为空操作）
       registry.ensure('observer', false);
 
-      // 递增还原纪元 —— 在飞翻译的批次重试检测到变化后放弃重试与
-      // 渲染，避免还原后把内容翻回来（#91）
-      translateEpoch.value++;
+      // #262: 还原纪元在编排模块内 —— abort() 递增，在飞翻译的批次
+      // 重试检测到变化后放弃重试与渲染，避免还原后把内容翻回来（#91）
+      orchestrator.abort();
 
       // #253: 还原收集走统一遍历模块（shadow 穿透 + 集中式跳过规则）。
       // skipTranslated: false —— 嵌套在已翻译单元内的已翻译单元
