@@ -61,7 +61,12 @@ describe('deepl HTTP 路径', () => {
     const { deepl } = await import('~/src/engines/deepl');
     await expect(
       deepl.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ engineId: 'deepl', retryable: false, message: '未配置 API key' });
+    ).rejects.toMatchObject({
+      engineId: 'deepl',
+      retryable: false,
+      category: 'invalid-key',
+      message: '未配置 API key',
+    });
     expect(getKey).toHaveBeenCalledWith('deepl');
   });
 
@@ -142,8 +147,23 @@ describe('deepl HTTP 路径', () => {
       const { deepl } = await import('~/src/engines/deepl');
       await expect(
         deepl.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-      ).rejects.toMatchObject({ retryable: false, message: 'API key 无效' });
+      ).rejects.toMatchObject({ retryable: false, category: 'invalid-key', message: 'API key 无效' });
     }
+  });
+
+  test('429 → quota + invalidated（#249 新增类别）', async () => {
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('k');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('err', { status: 429 })));
+    const { deepl } = await import('~/src/engines/deepl');
+    await expect(
+      deepl.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
+    ).rejects.toMatchObject({
+      retryable: false,
+      category: 'quota',
+      invalidated: true,
+      aborted: false,
+    });
   });
 
   test('其他非 200 → EngineError（retryable）', async () => {
@@ -153,7 +173,7 @@ describe('deepl HTTP 路径', () => {
     const { deepl } = await import('~/src/engines/deepl');
     await expect(
       deepl.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
-    ).rejects.toMatchObject({ retryable: true, message: 'HTTP 456' });
+    ).rejects.toMatchObject({ retryable: true, category: 'transient', message: 'HTTP 456' });
   });
 
   test('坏 JSON → 抛错', async () => {
