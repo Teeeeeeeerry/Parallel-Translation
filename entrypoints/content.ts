@@ -27,6 +27,7 @@ import { createParaBtn } from '~/src/ui/paragraph-btn';
 import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
+import { createLifecycleRegistry } from '~/src/ui/lifecycle-registry';
 import { translateViaBackground } from '~/src/runtime/messaging';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import { sleep } from '~/src/runtime/sleep';
@@ -61,8 +62,11 @@ export default defineContentScript({
     let stopObserving: (() => void) | null = null;
     let stopHotkeys: (() => void) | null = null;
     let stopDrag: (() => void) | null = null;
-    let stopBall: (() => void) | null = null;
     let stopParaBtn: (() => void) | null = null;
+
+    // #242: UI 生命周期注册表 —— 悬浮球等经注册表启停，
+    // 设置变更由 ensure() 驱动，启停成对、重复注册幂等
+    const registry = createLifecycleRegistry();
 
     const isMainFrame = window.top === window;
 
@@ -73,9 +77,12 @@ export default defineContentScript({
 
     // ── 注入 UI（仅主文档）──
     if (isMainFrame) {
-      if (s.showFloatingBall) {
-        stopBall = createBall({ onToggle: () => void togglePage() });
-      }
+      // #242: 悬浮球经注册表启停；showFloatingBall 决定是否启动
+      registry.register('ball', {
+        create: () => createBall({ onToggle: () => void togglePage() }),
+        stop: (stopBall) => stopBall(),
+      });
+      registry.ensure('ball', s.showFloatingBall);
 
       if (s.showParagraphBtn) {
         stopParaBtn = createParaBtn({
@@ -123,13 +130,8 @@ export default defineContentScript({
       applyCustomCss(ns.customCss);
 
       if (isMainFrame) {
-        // 悬浮球开关
-        if (ns.showFloatingBall && !stopBall) {
-          stopBall = createBall({ onToggle: () => void togglePage() });
-        } else if (!ns.showFloatingBall && stopBall) {
-          stopBall();
-          stopBall = null;
-        }
+        // #242: 悬浮球开关经注册表 ensure —— 启停幂等、即时生效
+        registry.ensure('ball', ns.showFloatingBall);
 
         // 段落按钮开关
         if (ns.showParagraphBtn && !stopParaBtn) {
