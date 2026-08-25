@@ -14,7 +14,7 @@
 // #116：失效判定用 messaging 透出的类型化 invalidated 标志，
 // 不匹配错误文案 —— 文案改写不影响短路行为。
 
-import type { TranslateResponse } from '~/src/engines/types';
+import type { TranslateResponse, FailureCategory } from '~/src/engines/types';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
 
 /** #91: 批次级引擎失败最大重试次数。 */
@@ -55,6 +55,10 @@ export async function attemptBatchWithRetry(
     invalidated?: boolean;
     /** #180: 引擎不可恢复错误（key 无效等）—— 不重试。 */
     retryable?: boolean;
+    /** #236/#246: 类型化失败类别（新字段，存在时优先于 retryable）。 */
+    category?: FailureCategory;
+    /** #236/#246: 已中止（新字段）。 */
+    aborted?: boolean;
   }>,
   opts: BatchRetryOptions = {},
 ): Promise<BatchRetryResult> {
@@ -76,9 +80,17 @@ export async function attemptBatchWithRetry(
     if (resp?.invalidated) {
       return { ok: false, invalidated: true, aborted: false, error: lastError };
     }
-    // #180: 不可恢复错误（key 无效等）重试只会白等退避序列后仍失败 ——
-    // 立即返回，错误 toast 马上出现
-    if (resp?.retryable === false) {
+    // #246: 新字段 aborted（用户中止）→ 立即停止，不记成失败
+    if (resp?.aborted) {
+      return { ok: false, invalidated: false, aborted: true, error: lastError };
+    }
+    // #246: 新字段类别优先 —— invalid-key / quota 不可恢复，立即失败；
+    // 旧字段 retryable=false 在兼容期同样生效（#180）
+    if (
+      resp?.category === 'invalid-key' ||
+      resp?.category === 'quota' ||
+      resp?.retryable === false
+    ) {
       return { ok: false, invalidated: false, aborted: false, error: lastError };
     }
     if (attempt >= BATCH_RETRY_LIMIT) break;
