@@ -65,7 +65,8 @@ export const deepl: TranslateEngine = {
     // #159: 整个请求体过闸门，限制并发在飞请求数
     return getGate()(async () => {
       const key = await getKey('deepl');
-      if (!key) throw new EngineError('deepl', false, '未配置 API key');
+      if (!key)
+        throw new EngineError('deepl', false, '未配置 API key', 'invalid-key');
 
       const endpoint = endpointFor(key);
 
@@ -95,11 +96,16 @@ export const deepl: TranslateEngine = {
         body: body.toString(),
       });
 
+      // #249: 类型化类别 —— 401/403 → key 无效；429 → 配额（免费额度
+      // 耗尽，不重试）；其余非 2xx → 瞬时（可重试，降级下一引擎）
       if (resp.status === 403 || resp.status === 401) {
-        throw new EngineError('deepl', false, 'API key 无效');
+        throw new EngineError('deepl', false, 'API key 无效', 'invalid-key');
+      }
+      if (resp.status === 429) {
+        throw new EngineError('deepl', false, '配额已用尽', 'quota', true);
       }
       if (!resp.ok) {
-        throw new EngineError('deepl', true, `HTTP ${resp.status}`);
+        throw new EngineError('deepl', true, `HTTP ${resp.status}`, 'transient');
       }
 
       const data = await resp.json();
