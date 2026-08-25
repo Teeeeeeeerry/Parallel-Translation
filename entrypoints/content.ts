@@ -60,11 +60,9 @@ export default defineContentScript({
     await detectOS();
     const s = getSettings();
 
-    let stopObserving: (() => void) | null = null;
-    let stopHotkeys: (() => void) | null = null;
-
-    // #242/#243: UI 生命周期注册表 —— 悬浮球、段落按钮等经注册表启停，
-    // 设置变更由 ensure() 驱动，启停成对、重复注册幂等
+    // #242/#243/#255: UI 生命周期注册表 —— 悬浮球、段落按钮、划词拖拽、
+    // 快捷键、observer 全部经注册表启停；设置变更由 ensure() 驱动，
+    // 启停成对、重复注册幂等；五个 stop 变量与重复创建块已删除
     const registry = createLifecycleRegistry();
 
     const isMainFrame = window.top === window;
@@ -96,31 +94,37 @@ export default defineContentScript({
     }
 
     // ── 快捷键（仅主文档，避免与 iframe 内输入冲突）──
+    // #255: 快捷键经注册表启停（无设置开关，恒启用）
     if (isMainFrame) {
-      stopHotkeys = startHotkeys({
-        'toggle-translate': () => void togglePage(),
-        'toggle-mode': () => {
-          // 只翻转全局显示模式。paraDisplayMode 为 'follow' 时跟着变；
-          // 显式设过独立值的不受快捷键影响。
-          const next: 'bilingual' | 'translation-only' =
-            getSettings().displayMode === 'bilingual'
-              ? 'translation-only'
-              : 'bilingual';
-          patchSettings({ displayMode: next }).catch(() => {});
-        },
-        'translate-paragraph': () => {
-          const sel = window.getSelection();
-          if (sel?.rangeCount) {
-            const el = sel.getRangeAt(0).startContainer?.parentElement;
-            if (el) translateOne(el);
-          }
-        },
-        'toggle-extension': () => {
-          const cur = getSettings().enabled;
-          patchSettings({ enabled: !cur }).catch(() => {});
-          toast(cur ? tf('toastExtOff', '扩展已关闭') : tf('toastExtOn', '扩展已开启'));
-        },
+      registry.register('hotkeys', {
+        create: () =>
+          startHotkeys({
+            'toggle-translate': () => void togglePage(),
+            'toggle-mode': () => {
+              // 只翻转全局显示模式。paraDisplayMode 为 'follow' 时跟着变；
+              // 显式设过独立值的不受快捷键影响。
+              const next: 'bilingual' | 'translation-only' =
+                getSettings().displayMode === 'bilingual'
+                  ? 'translation-only'
+                  : 'bilingual';
+              patchSettings({ displayMode: next }).catch(() => {});
+            },
+            'translate-paragraph': () => {
+              const sel = window.getSelection();
+              if (sel?.rangeCount) {
+                const el = sel.getRangeAt(0).startContainer?.parentElement;
+                if (el) translateOne(el);
+              }
+            },
+            'toggle-extension': () => {
+              const cur = getSettings().enabled;
+              patchSettings({ enabled: !cur }).catch(() => {});
+              toast(cur ? tf('toastExtOff', '扩展已关闭') : tf('toastExtOn', '扩展已开启'));
+            },
+          }),
+        stop: (stopHotkeys) => stopHotkeys(),
       });
+      registry.ensure('hotkeys', true);
     }
 
     // ── 划词拖动 ──
@@ -130,6 +134,19 @@ export default defineContentScript({
       stop: (stopDrag) => stopDrag(),
     });
     registry.ensure('drag', true);
+
+    // ── 增量补翻 observer ──
+    // #255: observer 经注册表启停 —— 整页翻译完成时启动，还原时停止；
+    // 启停幂等，不再手写 stopObserving 判空
+    registry.register('observer', {
+      create: () =>
+        startObserver((els) => {
+          doTranslate(els).catch((e) =>
+            console.error('[PT] 增量补翻失败:', e),
+          );
+        }),
+      stop: (stopObserving) => stopObserving(),
+    });
 
     // ── 设置变更监听 ──
     onSettingsChanged((ns: Settings) => {
@@ -365,10 +382,8 @@ export default defineContentScript({
 
     // ── 还原 ──
     function doRestore(): void {
-      if (stopObserving) {
-        stopObserving();
-        stopObserving = null;
-      }
+      // #255: observer 经注册表停止（幂等，未启动为空操作）
+      registry.ensure('observer', false);
 
       // 递增还原纪元 —— 在飞翻译的批次重试检测到变化后放弃重试与
       // 渲染，避免还原后把内容翻回来（#91）
@@ -445,15 +460,9 @@ export default defineContentScript({
       }
 
       if (status === 'translated') {
-        // 增量补翻对三个入口一视同仁 —— 无限滚动/SPA 不该因为
-        // 用户点的是悬浮球而失效
-        if (!stopObserving) {
-          stopObserving = startObserver((els) => {
-            doTranslate(els).catch((e) =>
-              console.error('[PT] 增量补翻失败:', e),
-            );
-          });
-        }
+        // #255: 增量补翻 observer 经注册表启动（幂等）—— 无限滚动/SPA
+        // 不该因为用户点的是悬浮球而失效
+        registry.ensure('observer', true);
       }
 
       if (isMainFrame) {
