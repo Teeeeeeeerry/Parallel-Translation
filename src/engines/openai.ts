@@ -9,12 +9,22 @@ import { fetchWithTimeout } from './fetch-timeout';
 import { engineGate } from './engine-gate';
 import { EngineError } from './types';
 import { classifyStatus, buildNumberedPrompt } from './shared';
+import type { ProbeSpec } from './shared';
 import type { TranslateEngine } from './types';
 
 const DEFAULT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 
 // #159: 引擎级并发闸门 —— 整页翻译批次并发 → translate() 并发调用
 const getGate = engineGate();
+
+/** 连通性探测规格（#321）：GET /v1/models，凭据走请求头。 */
+export const openaiProbe: ProbeSpec = {
+  engineId: 'openai',
+  buildRequest: ({ key }) => ({
+    url: 'https://api.openai.com/v1/models',
+    headers: { Authorization: `Bearer ${key}` },
+  }),
+};
 
 /**
  * 解析 LLM 编号输出为译文数组。
