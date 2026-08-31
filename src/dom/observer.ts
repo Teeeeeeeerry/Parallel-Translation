@@ -86,26 +86,6 @@ export interface ObserverHandle {
 }
 
 /**
- * 启动前登记缓冲（#331）—— 模块级 registerHidden 的语义收敛为
- * 「观察器尚未启动时的登记缓冲」：首轮整页翻译期间采集到的隐藏
- * 单元（collect 在观察器启动前执行）先入此缓冲，观察器启动时
- * 消费并补挂观察（关键语义点：采集期间的登记不丢失）。
- * 元素以 WeakRef 持有（#330：离开 DOM 后仅剩弱引用）。
- */
-let preStartHidden: Set<WeakRef<Element>> | null = null;
-
-/**
- * 模块级隐藏单元登记（#331）—— 仅作启动前缓冲。
- * 观察器运行期间的登记一律走句柄（handle.registerHidden）；
- * 本函数由采集调用方（整页翻译的 collect）传入，观察器启动时
- * 由 startObserver 消费。
- */
-export function registerHidden(el: Element): void {
-  preStartHidden ??= new Set();
-  preStartHidden.add(new WeakRef(el));
-}
-
-/**
  * 启动增量补翻观察器，返回句柄（#331）。
  * 句柄提供停止与隐藏单元登记两项能力；隐藏单元集合、可见性观察
  * 实例、补翻回调三份状态全部随句柄创建与销毁，不再跨用例共享。
@@ -279,18 +259,9 @@ export function startObserver(
         threshold: 0,
       },
     );
-    // 消费启动前登记缓冲（#331 关键语义点：首轮整页翻译期间采集到
-    // 的隐藏单元在此补挂观察，采集期间的登记不丢失；死亡引用丢弃）
-    if (preStartHidden) {
-      for (const ref of preStartHidden) {
-        const el = ref.deref();
-        if (el && !hiddenSeen.has(el)) {
-          hiddenSeen.add(el);
-          io.observe(el);
-        }
-      }
-      preStartHidden = null;
-    }
+    // 启动前登记的缓冲由采集调用方（content）持有，句柄创建后经
+    // handle.registerHidden 补挂（#332）—— 首轮整页翻译期间采集
+    // 到的隐藏单元因此不丢失，此处不再有模块级登记
   }
 
   // #23：启动 IntersectionObserver，监听初次采集时因 display:none 被跳过的元素

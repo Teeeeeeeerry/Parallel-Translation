@@ -234,32 +234,21 @@ describe('可见性追踪弱引用与停止清理（#330）', () => {
     return import('~/src/dom/observer');
   }
 
-  test('隐藏单元登记走弱引用（WeakRef），集合不持有强引用', async () => {
-    const RealWeakRef = globalThis.WeakRef;
-    const spy = vi
-      .spyOn(globalThis, 'WeakRef')
-      .mockImplementation((target: WeakKey) => new RealWeakRef(target));
-    try {
-      const { registerHidden } = await load();
-      const el = document.createElement('p');
-      registerHidden(el);
-      expect(spy).toHaveBeenCalledWith(el);
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  test('IO 启动前登记的隐藏单元在启动时被补挂观察（首轮翻译期间登记不丢失）', async () => {
-    const { registerHidden, startObserver } = await load();
-    const el = document.createElement('p');
-    registerHidden(el);
-
+  test('句柄创建后补挂启动前登记的隐藏单元（首轮翻译期间登记不丢失，#332）', async () => {
+    const { startObserver } = await load();
+    // 模拟 content 的登记缓冲：句柄创建（观察器启动）前采集到的
+    // 隐藏单元，在创建后经 handle.registerHidden 补挂
+    const buffered = [
+      document.createElement('p'),
+      document.createElement('p'),
+    ];
     const handle = startObserver(() => {});
-    expect(CapturingIO.instances[0]!.observed).toContain(el);
+    for (const el of buffered) handle.registerHidden(el);
+    expect(CapturingIO.instances[0]!.observed).toEqual(buffered);
     handle.stop();
   });
 
-  test('句柄登记（IO 启动后）被直接观察', async () => {
+  test('句柄登记被直接观察', async () => {
     const { startObserver } = await load();
     const handle = startObserver(() => {});
     const el = document.createElement('p');
@@ -269,11 +258,10 @@ describe('可见性追踪弱引用与停止清理（#330）', () => {
   });
 
   test('观察器停止后，旧周期登记的隐藏单元不泄漏到新一轮观察', async () => {
-    const { registerHidden, startObserver } = await load();
-    const old = document.createElement('p');
-    registerHidden(old);
-
+    const { startObserver } = await load();
     const handle1 = startObserver(() => {});
+    const old = document.createElement('p');
+    handle1.registerHidden(old);
     expect(CapturingIO.instances[0]!.observed).toContain(old);
     handle1.stop();
 
