@@ -7,6 +7,7 @@ import { fetchWithTimeout } from './fetch-timeout';
 import { engineGate } from './engine-gate';
 import { EngineError } from './types';
 import { classifyStatus } from './shared';
+import type { ProbeSpec } from './shared';
 import type { TranslateEngine } from './types';
 
 // #159: 引擎级并发闸门 —— 整页翻译批次并发 → translate() 并发调用
@@ -18,6 +19,15 @@ function endpointFor(key: string): string {
     ? 'https://api-free.deepl.com/v2/translate'
     : 'https://api.deepl.com/v2/translate';
 }
+
+/** 连通性探测规格（#321）：GET /v2/usage，免费版与专业版端点区分不变。 */
+export const deeplProbe: ProbeSpec = {
+  engineId: 'deepl',
+  buildRequest: ({ key }) => ({
+    url: endpointFor(key).replace('/v2/translate', '/v2/usage'),
+    headers: { Authorization: `DeepL-Auth-Key ${key}` },
+  }),
+};
 
 export const deepl: TranslateEngine = {
   id: 'deepl',

@@ -7,9 +7,14 @@ import { DEFAULT_MODELS } from '~/src/storage/schema';
 import { fetchWithTimeout } from './fetch-timeout';
 import { engineGate } from './engine-gate';
 import { EngineError } from './types';
-import { classifyStatus, buildNumberedPrompt } from './shared';
-import { parseNumbered } from './openai';
+import {
+  classifyStatus,
+  buildNumberedPrompt,
+  type ProbeResult,
+  type ProbeSpec,
+} from './shared';
 import type { TranslateEngine } from './types';
+import { parseNumbered } from './openai';
 
 // #159: 引擎级并发闸门 —— 整页翻译批次并发 → translate() 并发调用
 const getGate = engineGate();
@@ -63,6 +68,43 @@ async function classifyError(resp: Response): Promise<EngineError> {
   const detail = message ? `：${message}` : '';
   return new EngineError('gemini', true, `HTTP ${resp.status}${detail}`, 'transient');
 }
+
+/** 连通性探测规格（#321）：GET /v1beta/models/{model}，凭据走请求头。 */
+export const geminiProbe: ProbeSpec = {
+  engineId: 'gemini',
+  buildRequest: ({ key, model }) => ({
+    url:
+      'https://generativelanguage.googleapis.com/v1beta/models/' +
+      (model ?? DEFAULT_MODELS.gemini),
+    headers: { 'x-goog-api-key': key },
+  }),
+  // 引擎特例（#321/#257 保留在适配器内）：Gemini 的 400 覆盖多种情况，
+  // 只有错误体明示认证失败才是 key 问题；模型名错误 / 内容过长等其余
+  // 情况交回公共状态码分类（瞬时）。
+  classifyError: async (resp): Promise<ProbeResult | null> => {
+    let status = '';
+    let message = '';
+    try {
+      const body = (await resp.json()) as {
+        error?: { status?: string; message?: string };
+      };
+      status = body.error?.status ?? '';
+      message = body.error?.message ?? '';
+    } catch {
+      // 非 JSON 错误体，交回公共状态码分类
+      return null;
+    }
+    const isAuthByBody =
+      status === 'UNAUTHENTICATED' ||
+      status === 'PERMISSION_DENIED' ||
+      /API key/i.test(message) ||
+      /API_KEY_INVALID/i.test(message);
+    if (isAuthByBody) {
+      return { ok: false, category: 'invalid-key', message: 'API key 无效' };
+    }
+    return null;
+  },
+};
 
 export const gemini: TranslateEngine = {
   id: 'gemini',
