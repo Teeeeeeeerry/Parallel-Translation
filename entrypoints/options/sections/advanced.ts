@@ -1,13 +1,13 @@
 // Phase 7 — 高级分区：并发数、缓存管理、设置导入/导出。
 
-import { DEFAULT_SETTINGS, clampConcurrency } from '~/src/storage/schema';
-import { validateCustomCss } from '~/src/styles/custom';
+import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 import {
   getSettings,
   patchSettings,
   replaceSettings,
   onSettingsChanged,
 } from '~/src/storage/settings';
+import { importSettings as applyImport } from '~/src/storage/settings-import';
 import { cacheClear } from '~/src/storage/cache';
 import { removeKey } from '~/src/storage/keys';
 import { tf } from '~/src/i18n';
@@ -34,34 +34,13 @@ async function exportSettings(): Promise<string> {
 }
 
 async function importSettings(json: string): Promise<void> {
-  try {
-    const data = JSON.parse(json);
-    // 白名单校验：只允许已知 Setting 字段
-    const allowed = Object.keys(DEFAULT_SETTINGS);
-    const sanitized: Record<string, unknown> = {};
-    for (const key of allowed) {
-      if (key in data) sanitized[key] = data[key];
-    }
-    // #172: 值校验 —— 导入文件可绕过 UI 下拉，maxConcurrency 必须钳制，
-    // 否则 0/负数会让 Google 闸门永久饿死、全部翻译挂起
-    if (typeof sanitized.maxConcurrency === 'number') {
-      sanitized.maxConcurrency = clampConcurrency(sanitized.maxConcurrency);
-    }
-    // #168: 导入同样走统一校验器 —— 否则 @import/url() 等可通过导入
-    // 绕过表单校验，运行时注入被拒后旧样式还被清掉
-    if (typeof sanitized.customCss === 'string') {
-      const cssResult = validateCustomCss(sanitized.customCss);
-      if (!cssResult.ok) {
-        showToast(tf('toastImportFail', `导入失败：${cssResult.msg}`));
-        return;
-      }
-    }
-    // 显式移除任何密钥相关字段
-    delete sanitized.apiKeys;
-    await patchSettings(sanitized as any);
+  // #324: 导入走整体替换语义（与恢复默认一致）—— 解析校验在
+  // settings-import 模块，失败时配置保持不变
+  const result = await applyImport(json);
+  if (result.ok) {
     showToast(tf('toastImported', '设置已导入'));
-  } catch {
-    showToast(tf('toastImportFail', '导入失败：JSON 格式无效'));
+  } else {
+    showToast(tf('toastImportFail', `导入失败：${result.reason}`));
   }
 }
 
