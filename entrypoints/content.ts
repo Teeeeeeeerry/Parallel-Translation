@@ -17,7 +17,7 @@ import {
   hasBlockTextChildren,
   restorePreserves,
 } from '~/src/dom/text';
-import { startObserver, registerHidden } from '~/src/dom/observer';
+import { startObserver, type ObserverHandle } from '~/src/dom/observer';
 import { walkShadowTree } from '~/src/dom/shadow-walk';
 import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
 import { unsplitPre } from '~/src/dom/pre-split';
@@ -131,15 +131,45 @@ export default defineContentScript({
     // ── 增量补翻 observer ──
     // #255: observer 经注册表启停 —— 整页翻译完成时启动，还原时停止；
     // 启停幂等，不再手写 stopObserving 判空
+    //
+    // #331/#332: 隐藏单元登记能力从观察器句柄取得（模块顶层不再导出
+    // 登记函数）。整页翻译的 collect 先于观察器启动（翻译成功后
+    // ensure('observer', true)），期间的登记进 preStartHidden 缓冲
+    // （WeakRef，#330 弱引用语义），句柄创建时补挂 —— 首轮翻译期间
+    // 采集到的隐藏单元因此不丢失。
+    const preStartHidden = new Set<WeakRef<Element>>();
+    let observerHandle: ObserverHandle | null = null;
+
+    /** 整页翻译 collect 的隐藏单元回调：句柄存在则直登，否则进缓冲。 */
+    function registerHiddenForObserver(el: Element): void {
+      if (observerHandle) {
+        observerHandle.registerHidden(el);
+        return;
+      }
+      preStartHidden.add(new WeakRef(el));
+    }
+
     registry.register('observer', {
-      create: () =>
-        startObserver((els) => {
+      create: () => {
+        const handle = startObserver((els) => {
           doTranslate(els).catch((e) =>
             console.error('[PT] 增量补翻失败:', e),
           );
-        }),
+        });
+        observerHandle = handle;
+        // 补挂启动前登记的隐藏单元（死亡引用直接丢弃）
+        for (const ref of preStartHidden) {
+          const el = ref.deref();
+          if (el) handle.registerHidden(el);
+        }
+        preStartHidden.clear();
+        return handle;
+      },
       // #331: startObserver 返回句柄，stop 经句柄执行（幂等）
-      stop: (handle) => handle.stop(),
+      stop: (handle) => {
+        handle.stop();
+        observerHandle = null;
+      },
     });
 
     // ── 设置变更统一入口（#265）──
@@ -227,7 +257,7 @@ export default defineContentScript({
 
       let targets: Element[];
       try {
-        targets = elements ?? collect(document.body, registerHidden);
+        targets = elements ?? collect(document.body, registerHiddenForObserver);
       } catch (e) {
         throw new Error(
           `[collect] ${e instanceof Error ? e.message : String(e)}`,
