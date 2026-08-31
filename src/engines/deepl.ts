@@ -1,17 +1,13 @@
 // Phase 7 — DeepL 翻译引擎（BYOK）。
 // 免费版与 Pro 版端点不同，靠 key 后缀 ':fx' 区分。
 // DeepL 语言覆盖有限，supportedLangs 必须显式列举。
+//
+// #334: 骨架（闸门 / 取 key / 分类抛错）走公共构造 createByokEngine，
+// 本文件只保留端点区分、语言码归一化、请求构造、响应解析。
 
-import { getKey } from '~/src/storage/keys';
-import { fetchWithTimeout } from './fetch-timeout';
-import { engineGate } from './engine-gate';
-import { EngineError } from './types';
-import { classifyStatus } from './shared';
+import { createByokEngine } from './byok';
 import type { ProbeSpec } from './shared';
 import type { TranslateEngine } from './types';
-
-// #159: 引擎级并发闸门 —— 整页翻译批次并发 → translate() 并发调用
-const getGate = engineGate();
 
 /** 免费版 key 以 :fx 结尾，必须走 free 端点 */
 function endpointFor(key: string): string {
@@ -29,10 +25,19 @@ export const deeplProbe: ProbeSpec = {
   }),
 };
 
-export const deepl: TranslateEngine = {
+// DeepL 使用 'EN' / 'ZH' 大写格式，尝试标准化（#334：语言码归一化不变）
+function normalizeLang(code: string): string {
+  // 'auto' → null（让 DeepL 自动检测）
+  if (code === 'auto') return '';
+  // DeepL API v2 不接受带国家后缀的中文码，官方只认 ZH / ZH-HANS / ZH-HANT（#155）
+  if (code === 'zh-CN') return 'ZH-HANS';
+  if (code === 'zh-TW') return 'ZH-HANT';
+  return code.toUpperCase();
+}
+
+export const deepl: TranslateEngine = createByokEngine({
   id: 'deepl',
   displayName: 'DeepL',
-  requiresKey: true,
   // DeepL 语言覆盖有限，必须显式列出 —— router 依此在不支持时跳过
   supportedLangs: [
     'zh',
@@ -72,64 +77,31 @@ export const deepl: TranslateEngine = {
     'nb',
   ],
 
-  async translate({ texts, from, to }) {
-    // #159: 整个请求体过闸门，限制并发在飞请求数
-    return getGate()(async () => {
-      const key = await getKey('deepl');
-      if (!key)
-        throw new EngineError('deepl', false, '未配置 API key', 'invalid-key');
-
-      const endpoint = endpointFor(key);
-
-      // DeepL 使用 'EN' / 'ZH' 大写格式，尝试标准化
-      const normalizeLang = (code: string): string => {
-        // 'auto' → null（让 DeepL 自动检测）
-        if (code === 'auto') return '';
-        // DeepL API v2 不接受带国家后缀的中文码，官方只认 ZH / ZH-HANS / ZH-HANT（#155）
-        if (code === 'zh-CN') return 'ZH-HANS';
-        if (code === 'zh-TW') return 'ZH-HANT';
-        return code.toUpperCase();
-      };
-
-      const body = new URLSearchParams();
-      body.append('target_lang', normalizeLang(to) || to.toUpperCase());
-      if (from !== 'auto') body.append('source_lang', normalizeLang(from));
-      for (const text of texts) {
-        body.append('text', text);
-      }
-
-      const resp = await fetchWithTimeout('deepl', endpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `DeepL-Auth-Key ${key}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: body.toString(),
-      });
-
-      // #260: 状态分类走公共判定（口径：#239）—— 401/403 → key 无效、
-      // 429 → 配额（免费额度耗尽，不重试）、其余非 2xx → 瞬时
-      const category = classifyStatus('deepl', resp, true);
-      if (category === 'invalid-key') {
-        throw new EngineError('deepl', false, 'API key 无效', 'invalid-key');
-      }
-      if (category === 'quota') {
-        throw new EngineError('deepl', false, '配额已用尽', 'quota', true);
-      }
-      if (!resp.ok) {
-        throw new EngineError('deepl', true, `HTTP ${resp.status}`, 'transient');
-      }
-
-      const data = await resp.json();
-      const translations: string[] = (
-        data.translations as Array<{ text: string }>
-      ).map((t) => t.text);
-      const detectedFrom =
-        data.translations?.[0]?.detected_source_language as
-          | string
-          | undefined;
-
-      return { translations, detectedFrom };
-    });
+  // 请求格式与改造前完全一致（#334）
+  buildRequest: ({ texts, from, to }, key) => {
+    const body = new URLSearchParams();
+    body.append('target_lang', normalizeLang(to) || to.toUpperCase());
+    if (from !== 'auto') body.append('source_lang', normalizeLang(from));
+    for (const text of texts) {
+      body.append('text', text);
+    }
+    return {
+      url: endpointFor(key),
+      headers: {
+        Authorization: `DeepL-Auth-Key ${key}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    };
   },
-};
+
+  parseResponse: (data) => {
+    const translations: string[] = (
+      data as { translations: Array<{ text: string }> }
+    ).translations.map((t) => t.text);
+    const detectedFrom = (
+      data as { translations?: Array<{ detected_source_language?: string }> }
+    ).translations?.[0]?.detected_source_language;
+    return { translations, detectedFrom };
+  },
+});
