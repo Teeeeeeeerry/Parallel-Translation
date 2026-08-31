@@ -37,7 +37,7 @@ describe('startObserver 采集去重（#158）', () => {
     const restore = mockAllBoundingRects();
     try {
       const seen: Element[] = [];
-      const stop = startObserver((els) => seen.push(...els));
+      const handle = startObserver((els) => seen.push(...els));
 
       // 分步 append：容器与子元素落在同一 300ms 防抖窗口
       const container = document.createElement('div');
@@ -52,7 +52,7 @@ describe('startObserver 采集去重（#158）', () => {
       expect(seen).toHaveLength(1);
       expect(seen[0]).toBe(p);
 
-      stop();
+      handle.stop();
     } finally {
       restore();
     }
@@ -62,7 +62,7 @@ describe('startObserver 采集去重（#158）', () => {
     const restore = mockAllBoundingRects();
     try {
       const seen: Element[] = [];
-      const stop = startObserver((els) => seen.push(...els));
+      const handle = startObserver((els) => seen.push(...els));
 
       const p = document.createElement('p');
       p.textContent = 'original text';
@@ -74,7 +74,7 @@ describe('startObserver 采集去重（#158）', () => {
       await vi.advanceTimersByTimeAsync(300);
 
       expect(seen).toContain(p);
-      stop();
+      handle.stop();
     } finally {
       restore();
     }
@@ -84,7 +84,7 @@ describe('startObserver 采集去重（#158）', () => {
     const restore = mockAllBoundingRects();
     try {
       const seen: Element[] = [];
-      const stop = startObserver((els) => seen.push(...els));
+      const handle = startObserver((els) => seen.push(...els));
 
       const p = document.createElement('p');
       p.textContent = '原文';
@@ -103,7 +103,7 @@ describe('startObserver 采集去重（#158）', () => {
       await vi.advanceTimersByTimeAsync(300);
       expect(seen).toHaveLength(0);
 
-      stop();
+      handle.stop();
     } finally {
       restore();
     }
@@ -113,7 +113,7 @@ describe('startObserver 采集去重（#158）', () => {
     const restore = mockAllBoundingRects();
     try {
       const seen: Element[] = [];
-      const stop = startObserver((els) => seen.push(...els));
+      const handle = startObserver((els) => seen.push(...els));
 
       const p = document.createElement('p');
       p.textContent = '旧原文';
@@ -135,7 +135,7 @@ describe('startObserver 采集去重（#158）', () => {
       // 单元被还原（data-pt 清除）并重新采集
       expect(p.getAttribute('data-pt')).toBeNull();
       expect(seen).toContain(p);
-      stop();
+      handle.stop();
     } finally {
       restore();
     }
@@ -145,7 +145,7 @@ describe('startObserver 采集去重（#158）', () => {
     const restore = mockAllBoundingRects();
     try {
       const seen: Element[] = [];
-      const stop = startObserver((els) => seen.push(...els));
+      const handle = startObserver((els) => seen.push(...els));
 
       // host 先入 DOM，随后才 attachShadow（模拟延迟初始化的 Web Component）
       const host = document.createElement('div');
@@ -158,7 +158,7 @@ describe('startObserver 采集去重（#158）', () => {
       await vi.advanceTimersByTimeAsync(300);
 
       expect(seen).toContain(p);
-      stop();
+      handle.stop();
     } finally {
       restore();
     }
@@ -168,7 +168,7 @@ describe('startObserver 采集去重（#158）', () => {
     const restore = mockAllBoundingRects();
     try {
       const seen: Element[] = [];
-      const stop = startObserver((els) => seen.push(...els));
+      const handle = startObserver((els) => seen.push(...els));
 
       // 超长纯文本 pre（> MAX_TEXT），段落间空行分隔 → splitPre 切出多个 .pt-chunk
       const para = (i: number) =>
@@ -191,7 +191,7 @@ describe('startObserver 采集去重（#158）', () => {
         expect(seen.filter((x) => x === el)).toHaveLength(1);
       }
 
-      stop();
+      handle.stop();
     } finally {
       restore();
     }
@@ -249,23 +249,23 @@ describe('可见性追踪弱引用与停止清理（#330）', () => {
     }
   });
 
-  test('IO 启动前登记的隐藏单元在启动时被补挂观察', async () => {
+  test('IO 启动前登记的隐藏单元在启动时被补挂观察（首轮翻译期间登记不丢失）', async () => {
     const { registerHidden, startObserver } = await load();
     const el = document.createElement('p');
     registerHidden(el);
 
-    const stop = startObserver(() => {});
+    const handle = startObserver(() => {});
     expect(CapturingIO.instances[0]!.observed).toContain(el);
-    stop();
+    handle.stop();
   });
 
-  test('IO 启动后登记的隐藏单元被直接观察', async () => {
-    const { registerHidden, startObserver } = await load();
-    const stop = startObserver(() => {});
+  test('句柄登记（IO 启动后）被直接观察', async () => {
+    const { startObserver } = await load();
+    const handle = startObserver(() => {});
     const el = document.createElement('p');
-    registerHidden(el);
+    handle.registerHidden(el);
     expect(CapturingIO.instances[0]!.observed).toContain(el);
-    stop();
+    handle.stop();
   });
 
   test('观察器停止后，旧周期登记的隐藏单元不泄漏到新一轮观察', async () => {
@@ -273,23 +273,140 @@ describe('可见性追踪弱引用与停止清理（#330）', () => {
     const old = document.createElement('p');
     registerHidden(old);
 
-    const stop1 = startObserver(() => {});
+    const handle1 = startObserver(() => {});
     expect(CapturingIO.instances[0]!.observed).toContain(old);
-    stop1();
+    handle1.stop();
 
     // 新一轮：旧单元不再被观察，新一轮登记照常工作
-    const stop2 = startObserver(() => {});
+    const handle2 = startObserver(() => {});
     expect(CapturingIO.instances[1]!.observed).not.toContain(old);
     const fresh = document.createElement('p');
-    registerHidden(fresh);
+    handle2.registerHidden(fresh);
     expect(CapturingIO.instances[1]!.observed).toContain(fresh);
-    stop2();
+    handle2.stop();
   });
 
-  test('停止之后再登记隐藏单元：不抛异常，进入新一轮待观察队列', async () => {
-    const { registerHidden, startObserver } = await load();
-    const stop = startObserver(() => {});
-    stop();
-    expect(() => registerHidden(document.createElement('p'))).not.toThrow();
+  test('停止之后句柄登记不产生效果且不抛异常', async () => {
+    const { startObserver } = await load();
+    const handle = startObserver(() => {});
+    const before = CapturingIO.instances[0]!.observed.length;
+    handle.stop();
+    expect(() => handle.registerHidden(document.createElement('p'))).not.toThrow();
+    expect(CapturingIO.instances[0]!.observed).toHaveLength(before);
+  });
+});
+
+describe('观察器句柄化（#331）', () => {
+  class CapturingIO {
+    static instances: CapturingIO[] = [];
+    observed: Element[] = [];
+    callback: (entries: { isIntersecting: boolean; target: Element }[]) => void;
+
+    constructor(cb: (entries: { isIntersecting: boolean; target: Element }[]) => void) {
+      this.callback = cb;
+      CapturingIO.instances.push(this);
+    }
+
+    observe(el: Element): void {
+      this.observed.push(el);
+    }
+
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    vi.resetModules();
+    CapturingIO.instances = [];
+    vi.stubGlobal('IntersectionObserver', CapturingIO);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+  });
+
+  async function load() {
+    return import('~/src/dom/observer');
+  }
+
+  test('句柄提供停止与隐藏单元登记两项能力', async () => {
+    const { startObserver } = await load();
+    const handle = startObserver(() => {});
+    expect(typeof handle.stop).toBe('function');
+    expect(typeof handle.registerHidden).toBe('function');
+    handle.stop();
+  });
+
+  test('停止之后产生 DOM 变更，补翻回调不再被调用', async () => {
+    vi.useFakeTimers();
+    const restore = mockAllBoundingRects();
+    try {
+      const { startObserver } = await load();
+      const seen: Element[] = [];
+      const handle = startObserver((els) => seen.push(...els));
+
+      const p = document.createElement('p');
+      p.textContent = 'first';
+      document.body.appendChild(p);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(seen).toContain(p);
+
+      handle.stop();
+      const p2 = document.createElement('p');
+      p2.textContent = 'second';
+      document.body.appendChild(p2);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(seen).not.toContain(p2);
+    } finally {
+      vi.useRealTimers();
+      restore();
+    }
+  });
+
+  test('停止是幂等的：连续调用两次不抛异常、无副作用', async () => {
+    const { startObserver } = await load();
+    const handle = startObserver(() => {});
+    expect(() => {
+      handle.stop();
+      handle.stop();
+    }).not.toThrow();
+  });
+
+  test('连续「启动 → 停止 → 启动」后行为与首次一致，前一轮隐藏单元不泄漏', async () => {
+    const { startObserver } = await load();
+    const seen: Element[] = [];
+    const handle1 = startObserver((els) => seen.push(...els));
+    const el1 = document.createElement('p');
+    handle1.registerHidden(el1);
+    expect(CapturingIO.instances[0]!.observed).toContain(el1);
+    handle1.stop();
+
+    const handle2 = startObserver((els) => seen.push(...els));
+    // 前一轮的隐藏单元不进入新一轮观察
+    expect(CapturingIO.instances[1]!.observed).not.toContain(el1);
+    // 新一轮登记照常被观察
+    const el2 = document.createElement('p');
+    handle2.registerHidden(el2);
+    expect(CapturingIO.instances[1]!.observed).toContain(el2);
+    handle2.stop();
+  });
+
+  test('单测不依赖跨用例共享的模块级状态：各句柄状态互不可见', async () => {
+    const { startObserver } = await load();
+    const a = startObserver(() => {});
+    const b = startObserver(() => {});
+    const ea = document.createElement('p');
+    const eb = document.createElement('p');
+    a.registerHidden(ea);
+    b.registerHidden(eb);
+    // 各自的登记只进各自的观察实例
+    expect(CapturingIO.instances[0]!.observed).toContain(ea);
+    expect(CapturingIO.instances[0]!.observed).not.toContain(eb);
+    expect(CapturingIO.instances[1]!.observed).toContain(eb);
+    expect(CapturingIO.instances[1]!.observed).not.toContain(ea);
+    a.stop();
+    b.stop();
   });
 });

@@ -74,76 +74,53 @@ function observeShadowRoots(
 // ── #23 可见性追踪 ──
 
 /**
- * 隐藏单元登记（#330 内存修复）。
- *
- * 待观察的隐藏单元此前是模块级强引用 Set：观察器未启动或元素从未
- * 进入视口时只增不减，长时间停留的单页应用会持续持有已离开 DOM 的
- * 元素。现在：
- *   - hiddenSeen：WeakSet 去重（弱引用，不阻碍回收）
- *   - pendingHidden：IO 启动前登记的待观察队列，元素以 WeakRef 持有
- *     （离开 DOM 后仅剩弱引用，可被回收）；IO 启动时惰性清理死亡引用
- *   - IO 启动后登记的元素直接 observe，不进队列
- * 观察器停止时三者全部清空（#330：相关状态随停止清理）。
+ * 观察器句柄（#331）—— 启动观察器返回的能力集合：
+ *   - stop()：停止全部观察（幂等），随后隐藏单元登记不产生效果
+ *   - registerHidden()：登记因不可见而被跳过的翻译单元
+ * 隐藏单元集合、可见性观察实例、补翻回调三份状态全部随句柄创建与
+ * 销毁，不再跨用例共享模块级状态。
  */
-let hiddenSeen = new WeakSet<Element>();
-let pendingHidden: Set<WeakRef<Element>> | null = null;
-let io: IntersectionObserver | null = null;
-let onVisibleCb: ((els: Element[]) => void) | null = null;
+export interface ObserverHandle {
+  stop(): void;
+  registerHidden(el: Element): void;
+}
 
 /**
- * 注册因不可见而被跳过的翻译单元。
- * 由 walker 的 onHidden 回调调用，也可在 IO 启动后直接挂载观察。
+ * 启动前登记缓冲（#331）—— 模块级 registerHidden 的语义收敛为
+ * 「观察器尚未启动时的登记缓冲」：首轮整页翻译期间采集到的隐藏
+ * 单元（collect 在观察器启动前执行）先入此缓冲，观察器启动时
+ * 消费并补挂观察（关键语义点：采集期间的登记不丢失）。
+ * 元素以 WeakRef 持有（#330：离开 DOM 后仅剩弱引用）。
+ */
+let preStartHidden: Set<WeakRef<Element>> | null = null;
+
+/**
+ * 模块级隐藏单元登记（#331）—— 仅作启动前缓冲。
+ * 观察器运行期间的登记一律走句柄（handle.registerHidden）；
+ * 本函数由采集调用方（整页翻译的 collect）传入，观察器启动时
+ * 由 startObserver 消费。
  */
 export function registerHidden(el: Element): void {
-  if (hiddenSeen.has(el)) return;
-  hiddenSeen.add(el);
-  if (io) {
-    io.observe(el);
-  } else {
-    // IO 尚未启动：进待观察队列（弱引用，IO 启动时补挂）
-    pendingHidden ??= new Set();
-    pendingHidden.add(new WeakRef(el));
-  }
+  preStartHidden ??= new Set();
+  preStartHidden.add(new WeakRef(el));
 }
 
-function startWatching(onNewNodes: (els: Element[]) => void): void {
-  if (io) return; // 已经启动
-  onVisibleCb = onNewNodes;
-  io = new IntersectionObserver(
-    (entries) => {
-      const newlyVisible: Element[] = [];
-      for (const entry of entries) {
-        if (entry.isIntersecting) {
-          io!.unobserve(entry.target);
-          hiddenSeen.delete(entry.target as Element);
-          // 元素变为可见，重新采集其子树中的翻译单元
-          newlyVisible.push(...collect(entry.target, registerHidden));
-        }
-      }
-      if (newlyVisible.length && onVisibleCb) {
-        onVisibleCb(newlyVisible);
-      }
-    },
-    {
-      // 提前 300px 触发，让即将滚入视口的内容提前翻译
-      rootMargin: '300px',
-      threshold: 0,
-    },
-  );
-  // 观察所有已注册的隐藏元素（弱引用队列：死亡引用直接丢弃）
-  if (pendingHidden) {
-    for (const ref of pendingHidden) {
-      const el = ref.deref();
-      if (el) io.observe(el);
-    }
-    pendingHidden.clear();
-  }
-}
-
-/** 启动 MutationObserver，对新增节点触发补翻回调。 */
+/**
+ * 启动增量补翻观察器，返回句柄（#331）。
+ * 句柄提供停止与隐藏单元登记两项能力；隐藏单元集合、可见性观察
+ * 实例、补翻回调三份状态全部随句柄创建与销毁，不再跨用例共享。
+ */
 export function startObserver(
   onNewNodes: (els: Element[]) => void,
-): () => void {
+): ObserverHandle {
+  // ── 随句柄创建的状态（#331）──
+  /** 隐藏单元去重（弱引用，#330）。 */
+  let hiddenSeen = new WeakSet<Element>();
+  let io: IntersectionObserver | null = null;
+  let onVisibleCb: ((els: Element[]) => void) | null = null;
+  /** 已停止：登记与回调全部失效（幂等停止的守卫）。 */
+  let stopped = false;
+
   let pending: Node[] = [];
   let timer: number | undefined;
   // 所有活跃的 observer 列表（主文档 + 各 shadow root）
@@ -176,7 +153,7 @@ export function startObserver(
     // 兜底去重：compat take、shadow 边界等极端路径下保证每单元只回调一次
     const found = [
       ...new Set(
-        roots.flatMap((n) => collect(n as Element, registerHidden)),
+        roots.flatMap((n) => collect(n as Element, registerHiddenInstance)),
       ),
     ];
 
@@ -267,21 +244,76 @@ export function startObserver(
     },
   });
 
-  // #23：启动 IntersectionObserver，监听初次采集时因 display:none 被跳过的元素
-  startWatching(onNewNodes);
+  // ── 可见性追踪（随句柄创建，#331）──
 
-  return () => {
-    unwatch();
-    for (const mo of observers) mo.disconnect();
-    if (timer) clearTimeout(timer);
-    if (io) {
-      io.disconnect();
-      io = null;
+  /** 句柄的隐藏单元登记：停止后不产生效果且不抛异常（#331）。 */
+  function registerHiddenInstance(el: Element): void {
+    if (stopped) return;
+    if (hiddenSeen.has(el)) return;
+    hiddenSeen.add(el);
+    if (io) io.observe(el);
+  }
+
+  function startWatching(): void {
+    if (io) return; // 已经启动
+    onVisibleCb = onNewNodes;
+    io = new IntersectionObserver(
+      (entries) => {
+        const newlyVisible: Element[] = [];
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            io!.unobserve(entry.target);
+            hiddenSeen.delete(entry.target as Element);
+            // 元素变为可见，重新采集其子树中的翻译单元
+            // （隐藏后代经本句柄登记，仍被本实例观察）
+            newlyVisible.push(...collect(entry.target, registerHiddenInstance));
+          }
+        }
+        if (newlyVisible.length && onVisibleCb) {
+          onVisibleCb(newlyVisible);
+        }
+      },
+      {
+        // 提前 300px 触发，让即将滚入视口的内容提前翻译
+        rootMargin: '300px',
+        threshold: 0,
+      },
+    );
+    // 消费启动前登记缓冲（#331 关键语义点：首轮整页翻译期间采集到
+    // 的隐藏单元在此补挂观察，采集期间的登记不丢失；死亡引用丢弃）
+    if (preStartHidden) {
+      for (const ref of preStartHidden) {
+        const el = ref.deref();
+        if (el && !hiddenSeen.has(el)) {
+          hiddenSeen.add(el);
+          io.observe(el);
+        }
+      }
+      preStartHidden = null;
     }
-    // #330：停止时清空全部可见性追踪状态 —— 隐藏单元登记、
-    // 待观察队列不再跨启动周期残留
-    pendingHidden = null;
-    hiddenSeen = new WeakSet();
-    onVisibleCb = null;
+  }
+
+  // #23：启动 IntersectionObserver，监听初次采集时因 display:none 被跳过的元素
+  startWatching();
+
+  return {
+    stop(): void {
+      // #331: 停止幂等 —— 连续调用两次不抛异常、无副作用
+      if (stopped) return;
+      stopped = true;
+      unwatch();
+      for (const mo of observers) mo.disconnect();
+      if (timer) clearTimeout(timer);
+      if (io) {
+        io.disconnect();
+        io = null;
+      }
+      // #330/#331：停止时清空全部可见性追踪状态 —— 隐藏单元登记、
+      // 补翻回调随句柄销毁，不再跨启动周期残留
+      hiddenSeen = new WeakSet();
+      onVisibleCb = null;
+    },
+
+    registerHidden: registerHiddenInstance,
   };
 }
