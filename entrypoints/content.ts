@@ -21,7 +21,6 @@ import { startObserver, type ObserverHandle } from '~/src/dom/observer';
 import { walkShadowTree } from '~/src/dom/shadow-walk';
 import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
 import { unsplitPre } from '~/src/dom/pre-split';
-import { isSiteBlocked } from '~/src/dom/site-filter';
 import { applyCustomCss } from '~/src/styles/custom';
 import { createBall, setBallState } from '~/src/ui/floating-ball';
 import { createParaBtn } from '~/src/ui/paragraph-btn';
@@ -518,32 +517,31 @@ export default defineContentScript({
     async function translateSelection(text: string): Promise<void> {
       // 跨行划词时选区文本天然带 \n，入口归一化
       text = normalizeText(text);
+
+      // #315: 划词翻译走编排模块的单文本入口 —— 与逐段翻译共用
+      // 同一份准入判定与失败提示语义，不再直连消息通道
       const ns = getSettings();
-      if (!ns.enabled) return;
-      // #153: 站点名单拦截划词翻译
-      if (isSiteBlocked(location.hostname, ns.siteList)) {
-        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
+      const result = await orchestrator.translateText(text, ns.from, ns.to);
+
+      // 准入拦截：与逐段 / 整页翻译一致的提示
+      if (result.admission === 'blocked') {
+        if (isMainFrame)
+          toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
         return;
       }
+      if (result.admission !== 'allowed') return;
 
-      const resp = await translateViaBackground({
-        texts: [text],
-        from: ns.from,
-        to: ns.to,
-      });
-
-      if (!resp?.ok) {
-        // #247: 按类型化类别给出提示分支 —— key 无效 / 配额失效展示
-        // 真实原因；瞬时故障保持现有泛化文案
-        if (resp.category === 'invalid-key' || resp.category === 'quota') {
-          toast(resp.error, 'error');
+      if (!result.ok) {
+        // #313: key 无效 / 配额展示真实原因，瞬时故障展示泛化文案
+        if (result.display?.showRealReason && result.error) {
+          toast(result.error, 'error');
         } else {
           toast(tf('toastTranslateFail', '翻译失败'), 'error');
         }
         return;
       }
 
-      toast(resp.data.translations[0]!);
+      toast(result.translation!);
     }
 
     // ── 监听 popup / background 消息 ──
