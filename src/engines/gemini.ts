@@ -1,26 +1,26 @@
 // Phase 7 — Google Gemini 翻译引擎（BYOK）。
 // 与 OpenAI 相同的编号批量策略，复用 parseNumbered。
+//
+// #335: 骨架（闸门 / 取 key / 分类抛错）走公共构造 createByokEngine。
+// 错误体特例（读响应体才能定类别）保留在适配器内（classifyError），
+// 未搬进公共构造；请求格式与凭据传递方式（x-goog-api-key 请求头）
+// 与改造前一致。
 
-import { getKey } from '~/src/storage/keys';
 import { getSettings } from '~/src/storage/settings';
 import { DEFAULT_MODELS } from '~/src/storage/schema';
-import { fetchWithTimeout } from './fetch-timeout';
-import { engineGate } from './engine-gate';
-import { EngineError } from './types';
 import {
   classifyStatus,
   buildNumberedPrompt,
   type ProbeResult,
   type ProbeSpec,
 } from './shared';
+import { createByokEngine } from './byok';
+import { EngineError } from './types';
 import type { TranslateEngine } from './types';
 import { parseNumbered } from './openai';
 
-// #159: 引擎级并发闸门 —— 整页翻译批次并发 → translate() 并发调用
-const getGate = engineGate();
-
 /**
- * 按 Gemini 错误响应区分失败类别 —— #161 / #236 / #257。
+ * 按 Gemini 错误响应区分失败类别 —— #161 / #236 / #257 / #335。
  *
  * Gemini 的 400 覆盖多种情况：key 无效、上下文过长（input too large）、
  * 内容被安全拦截；403 也不只来自 key。此前一律判「key 无效」且
@@ -29,10 +29,10 @@ const getGate = engineGate();
  * 其余 400/404（超长、模型名、安全拦截）与 5xx 归为瞬时，交给下一
  * 引擎降级或批次重试。
  *
- * 状态码维度走公共判定 classifyStatus（#257）；错误体明示认证失败
+ * 状态码维度走公共判定 classifyStatus（#239）；错误体明示认证失败
  * （#161 的 400 + API key 文案）是 gemini 特有特例，保留在适配器内。
  */
-async function classifyError(resp: Response): Promise<EngineError> {
+async function classifyGeminiError(resp: Response): Promise<EngineError> {
   let status = '';
   let message = '';
   try {
@@ -46,7 +46,7 @@ async function classifyError(resp: Response): Promise<EngineError> {
     // 非 JSON 错误体，按状态码兜底
   }
 
-  // 引擎特例（#257 保留在适配器内）：错误体明示认证失败 → key 无效
+  // 引擎特例（#257/#335 保留在适配器内）：错误体明示认证失败 → key 无效
   const isAuthByBody =
     status === 'UNAUTHENTICATED' ||
     status === 'PERMISSION_DENIED' ||
@@ -56,7 +56,6 @@ async function classifyError(resp: Response): Promise<EngineError> {
   // 状态码维度走公共判定（#257）：401/403 → invalid-key；429 → quota；
   // 其余非 2xx → transient
   const category = classifyStatus('gemini', resp, true);
-
   if (isAuthByBody || category === 'invalid-key') {
     return new EngineError('gemini', false, 'API key 无效', 'invalid-key');
   }
@@ -64,9 +63,14 @@ async function classifyError(resp: Response): Promise<EngineError> {
     return new EngineError('gemini', false, '配额已用尽', 'quota', true);
   }
   // 其余错误（上下文过长 / 模型名错误 / 安全拦截 / 5xx 等）→ 瞬时，
-  // router 降级到下一引擎，页面翻译不中断
+  // 携带错误体原因（与改造前文案一致，既有用例断言）
   const detail = message ? `：${message}` : '';
   return new EngineError('gemini', true, `HTTP ${resp.status}${detail}`, 'transient');
+}
+
+/** 当前生效的模型名（设置优先，缺省回落到 schema 默认）。 */
+function currentModel(): string {
+  return getSettings().models?.gemini ?? DEFAULT_MODELS.gemini!;
 }
 
 /** 连通性探测规格（#321）：GET /v1beta/models/{model}，凭据走请求头。 */
@@ -117,49 +121,39 @@ export const geminiProbe: ProbeSpec = {
   },
 };
 
-export const gemini: TranslateEngine = {
+export const gemini: TranslateEngine = createByokEngine({
   id: 'gemini',
   displayName: 'Gemini',
-  requiresKey: true,
   supportedLangs: 'all',
+  model: currentModel,
 
-  async translate({ texts, from, to }) {
-    // #159: 整个请求体过闸门，限制并发在飞请求数
-    return getGate()(async () => {
-      const key = await getKey('gemini');
-      if (!key)
-        throw new EngineError('gemini', false, '未配置 API key', 'invalid-key');
+  // 请求格式与凭据传递方式（走请求头而非查询串）与改造前一致（#335）
+  buildRequest: ({ texts, from, to }, key, model) => ({
+    url:
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': key,
+    },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: buildNumberedPrompt(to, from, texts) }] }],
+      generationConfig: { temperature: 0 },
+    }),
+  }),
 
-      const model = getSettings().models?.gemini ?? DEFAULT_MODELS.gemini!;
-      // key 走 x-goog-api-key 请求头而非 ?key= query。
-      // URL 会进浏览器网络日志、DevTools 记录与任何中间层的访问日志，请求头不会；
-      // 另两个引擎也都是走头，保持一致。
-      const endpoint =
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  // 错误体特例保留在适配器内（#335）：读错误体才能区分认证失败与
+  // 模型名错误 / 内容过长；公共构造未为此新增特例扩展点
+  classifyError: classifyGeminiError,
 
-      // #257: 编号提示词走公共模板（模板唯一来源）—— 格式与现状逐字一致
-      const prompt = buildNumberedPrompt(to, from, texts);
-
-      const resp = await fetchWithTimeout('gemini', endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': key,
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0 },
-        }),
-      });
-
-      if (!resp.ok) {
-        throw await classifyError(resp);
-      }
-
-      const data = await resp.json();
-      const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-      const out = parseNumbered(raw, texts.length);
-      return { translations: out };
-    });
+  parseResponse: (data, expected) => {
+    const raw =
+      (
+        data as {
+          candidates?: Array<{
+            content?: { parts?: Array<{ text?: string }> };
+          }>;
+        }
+      ).candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    return { translations: parseNumbered(raw, expected) };
   },
-};
+});
