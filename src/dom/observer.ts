@@ -73,8 +73,20 @@ function observeShadowRoots(
 
 // ── #23 可见性追踪 ──
 
-/** 初次采集时因 display:none 被跳过的翻译单元 */
-const hiddenTargets = new Set<Element>();
+/**
+ * 隐藏单元登记（#330 内存修复）。
+ *
+ * 待观察的隐藏单元此前是模块级强引用 Set：观察器未启动或元素从未
+ * 进入视口时只增不减，长时间停留的单页应用会持续持有已离开 DOM 的
+ * 元素。现在：
+ *   - hiddenSeen：WeakSet 去重（弱引用，不阻碍回收）
+ *   - pendingHidden：IO 启动前登记的待观察队列，元素以 WeakRef 持有
+ *     （离开 DOM 后仅剩弱引用，可被回收）；IO 启动时惰性清理死亡引用
+ *   - IO 启动后登记的元素直接 observe，不进队列
+ * 观察器停止时三者全部清空（#330：相关状态随停止清理）。
+ */
+let hiddenSeen = new WeakSet<Element>();
+let pendingHidden: Set<WeakRef<Element>> | null = null;
 let io: IntersectionObserver | null = null;
 let onVisibleCb: ((els: Element[]) => void) | null = null;
 
@@ -83,8 +95,15 @@ let onVisibleCb: ((els: Element[]) => void) | null = null;
  * 由 walker 的 onHidden 回调调用，也可在 IO 启动后直接挂载观察。
  */
 export function registerHidden(el: Element): void {
-  hiddenTargets.add(el);
-  if (io) io.observe(el);
+  if (hiddenSeen.has(el)) return;
+  hiddenSeen.add(el);
+  if (io) {
+    io.observe(el);
+  } else {
+    // IO 尚未启动：进待观察队列（弱引用，IO 启动时补挂）
+    pendingHidden ??= new Set();
+    pendingHidden.add(new WeakRef(el));
+  }
 }
 
 function startWatching(onNewNodes: (els: Element[]) => void): void {
@@ -96,7 +115,7 @@ function startWatching(onNewNodes: (els: Element[]) => void): void {
       for (const entry of entries) {
         if (entry.isIntersecting) {
           io!.unobserve(entry.target);
-          hiddenTargets.delete(entry.target as Element);
+          hiddenSeen.delete(entry.target as Element);
           // 元素变为可见，重新采集其子树中的翻译单元
           newlyVisible.push(...collect(entry.target, registerHidden));
         }
@@ -111,9 +130,13 @@ function startWatching(onNewNodes: (els: Element[]) => void): void {
       threshold: 0,
     },
   );
-  // 观察所有已注册的隐藏元素
-  for (const el of hiddenTargets) {
-    io.observe(el);
+  // 观察所有已注册的隐藏元素（弱引用队列：死亡引用直接丢弃）
+  if (pendingHidden) {
+    for (const ref of pendingHidden) {
+      const el = ref.deref();
+      if (el) io.observe(el);
+    }
+    pendingHidden.clear();
   }
 }
 
@@ -255,7 +278,10 @@ export function startObserver(
       io.disconnect();
       io = null;
     }
-    hiddenTargets.clear();
+    // #330：停止时清空全部可见性追踪状态 —— 隐藏单元登记、
+    // 待观察队列不再跨启动周期残留
+    pendingHidden = null;
+    hiddenSeen = new WeakSet();
     onVisibleCb = null;
   };
 }
