@@ -303,6 +303,45 @@ test.describe('Fixture: shadow', () => {
   });
 });
 
+test.describe('Fixture: shadow-collapse', () => {
+  test('@core TC-E2E-59: shadow 内折叠内容展开后自动补翻（#318 回归）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('shadow-collapse');
+
+    await translateAndWait(page);
+
+    // 整页翻译后：折叠区内内容仍隐藏，尚未翻译
+    const before = await page.evaluate(() => {
+      const host = document.getElementById('host');
+      return host?.shadowRoot?.getElementById('hidden-content')?.getAttribute('data-pt') ?? null;
+    });
+    expect(before).toBeNull();
+
+    // 展开折叠区（移除 display:none —— 纯属性级操作，不产生 childList
+    // 记录，只能靠 IntersectionObserver 的隐藏单元注册链路触发补翻）
+    await page.evaluate(() => {
+      const host = document.getElementById('host');
+      const wrap = host?.shadowRoot?.getElementById('collapsible') as HTMLElement;
+      wrap.style.display = 'block';
+    });
+
+    // 自动补翻：shadow 内折叠内容出现译文标记
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const host = document.getElementById('host');
+            return host?.shadowRoot?.getElementById('hidden-content')?.getAttribute('data-pt') ?? null;
+          }),
+        { timeout: 15_000 },
+      )
+      .toBe('done');
+  });
+});
+
 test.describe('Fixture: nested', () => {
   test('@core TC-E2E-21: 嵌套元素不产生重复文本', async ({
     page, mockGoogle, seedSettings, gotoFixture,
