@@ -13,6 +13,7 @@ import {
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import type { TranslateRequest } from '~/src/engines/types';
 import type { Settings } from '~/src/storage/schema';
+import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 
 /** 冲刷微任务 + 一个宏任务，让异步链（send → retry → 回调）完整推进。 */
 async function flush(): Promise<void> {
@@ -282,5 +283,89 @@ describe('设置变更订阅（#265）', () => {
       orch.start();
       orch.stop();
     }).not.toThrow();
+  });
+});
+
+
+describe('准入判定（#311）', () => {
+  const settings = (patch: Partial<Settings>): Settings => ({
+    ...DEFAULT_SETTINGS,
+    ...patch,
+  });
+
+  test('黑名单命中：零请求并返回 blocked', async () => {
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+    const orch = createOrchestrator({
+      send,
+      getSettings: () =>
+        settings({
+          enabled: true,
+          siteList: { mode: 'blacklist', list: ['example.com'] },
+        }),
+      getHostname: () => 'www.example.com',
+    });
+    orch.start();
+    const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+    expect(send).not.toHaveBeenCalled();
+    expect(summary.admission).toBe('blocked');
+    orch.stop();
+  });
+
+  test('白名单未命中：零请求并返回 blocked', async () => {
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+    const orch = createOrchestrator({
+      send,
+      getSettings: () =>
+        settings({
+          enabled: true,
+          siteList: { mode: 'whitelist', list: ['example.com'] },
+        }),
+      getHostname: () => 'other.example.org',
+    });
+    orch.start();
+    const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+    expect(send).not.toHaveBeenCalled();
+    expect(summary.admission).toBe('blocked');
+    orch.stop();
+  });
+
+  test('总开关关闭：零请求并返回 disabled', async () => {
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+    const orch = createOrchestrator({
+      send,
+      getSettings: () =>
+        settings({ enabled: false, siteList: { mode: 'blacklist', list: [] } }),
+      getHostname: () => 'example.com',
+    });
+    orch.start();
+    const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+    expect(send).not.toHaveBeenCalled();
+    expect(summary.admission).toBe('disabled');
+    orch.stop();
+  });
+
+  test('准入放行：正常发送并返回 allowed', async () => {
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+    const orch = createOrchestrator({
+      send,
+      getSettings: () =>
+        settings({ enabled: true, siteList: { mode: 'blacklist', list: [] } }),
+      getHostname: () => 'example.com',
+    });
+    orch.start();
+    const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(summary.admission).toBe('allowed');
+    orch.stop();
+  });
+
+  test('未注入设置读取 / 主机名 → 放行（兼容旧装配）', async () => {
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+    const orch = createOrchestrator({ send });
+    orch.start();
+    const summary = await orch.translatePage(items(1), 'en', 'zh-CN');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(summary.admission).toBe('allowed');
+    orch.stop();
   });
 });

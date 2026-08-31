@@ -219,8 +219,10 @@ export default defineContentScript({
       // #310: 载荷类型收紧为真实 Settings，此处不再需要强制转型
       subscribeSettings: onSettingsChanged,
       onSettingsChange: (ns) => applySettings(ns),
-      // #310: 读取当前设置经注入项提供，模块自身不直接访问存储
+      // #310: 读取当前设置经注入项提供，模块自身不直接访问存储；
+      // #311: 准入判定的当前主机名同样经注入提供
       getSettings,
+      getHostname: () => location.hostname,
       onBatchResult: (_i, batch, result) => {
         if (!result.ok || !result.data) return;
         const translations = result.data.translations;
@@ -254,9 +256,6 @@ export default defineContentScript({
       elements?: Element[],
     ): Promise<string> {
       const ns = getSettings();
-      if (!ns.enabled) return 'disabled';
-      // #153: 站点黑白名单 —— 黑名单命中或白名单未命中 → 整页不发请求
-      if (isSiteBlocked(location.hostname, ns.siteList)) return 'blocked';
 
       let targets: Element[];
       try {
@@ -296,8 +295,14 @@ export default defineContentScript({
 
       // #261/#262: 全页翻译经编排模块执行 —— 批次拆分（15/批）、有界
       // 重试、失效全局短路、epoch 中止、渐进渲染回调都在模块内；
-      // 还原（doRestore → orchestrator.abort()）自动中止在途批次
+      // 还原（doRestore → orchestrator.abort()）自动中止在途批次。
+      // #311: 准入判定（总开关 / 站点名单）也在模块内 —— 拦截时
+      // 零请求，结构化状态说明原因
       const summary = await orchestrator.translatePage(items, ns.from, ns.to);
+
+      // #311: 准入拦截 —— 不发请求、不弹错误提示，返回结构化状态
+      if (summary.admission === 'disabled') return 'disabled';
+      if (summary.admission === 'blocked') return 'blocked';
 
       // #157: 还原发生在翻译进行中 —— 批次被中止不是失败：
       // 不弹“所有引擎均失败”、状态置 aborted（悬浮球回 idle、
