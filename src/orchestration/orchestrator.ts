@@ -16,6 +16,7 @@ import type {
   FailureCategory,
 } from '~/src/engines/types';
 import type { Settings } from '~/src/storage/schema';
+import { isSiteBlocked } from '~/src/dom/site-filter';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
 
@@ -44,6 +45,8 @@ export interface TranslateBatchResult {
 
 /** 全页翻译的批次结果汇总（#261）：content 据此映射页面状态。 */
 export interface PageTranslateSummary {
+  /** 准入结果（#311）：未通过准入时零请求，调用方据此映射状态与提示。 */
+  admission: Admission;
   /** 是否所有非中止批次均失败。 */
   allFailed: boolean;
   /** 是否有批次被中止（还原 / 导航）。 */
@@ -53,6 +56,14 @@ export interface PageTranslateSummary {
   /** 全失败时的致命原因（失效 / 类别化错误），供 toast 展示。 */
   fatalError: string | null;
 }
+
+/**
+ * 翻译入口准入结果（#311）—— 总开关与站点名单判定：
+ *   - allowed：放行
+ *   - disabled：总开关关闭，不发请求
+ *   - blocked：站点在黑名单中（或白名单未命中），不发请求
+ */
+export type Admission = 'allowed' | 'disabled' | 'blocked';
 
 /** 翻译编排模块 —— 小 interface：启动 / 停止 / 翻译入口（#221）。 */
 export interface TranslationOrchestrator {
@@ -103,6 +114,11 @@ export interface OrchestratorOptions {
    * 准入判定等后续逻辑经此注入读取，装配方注入 storage 的 getSettings。
    */
   getSettings?: () => Settings;
+  /**
+   * 读取当前主机名（#311）：准入判定经此注入取得页面地址，
+   * 模块不直接访问 location。
+   */
+  getHostname?: () => string;
 }
 
 /**
@@ -155,6 +171,20 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
 
     async translatePage(items, from, to): Promise<PageTranslateSummary> {
       if (!started) throw new Error('[PT] 编排未启动');
+
+      // #311: 准入判定是翻译入口的前置步骤 —— 总开关关闭或站点被
+      // 名单禁用时零请求，以结构化状态说明拦截原因
+      const admission = admissionFrom(opts);
+      if (admission !== 'allowed') {
+        return {
+          admission,
+          allFailed: false,
+          aborted: false,
+          invalidated: false,
+          fatalError: null,
+        };
+      }
+
       const epochAtStart = epoch;
       // 批次拆分（#245）：与现状一致，每批独立发送
       const batches = splitBatches(items, batchSize);
@@ -225,7 +255,26 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // #157: 还原恰在最后一批与返回之间发生 —— 也报 aborted
       if (isAborted()) aborted = true;
 
-      return { allFailed, aborted, invalidated, fatalError };
+      return {
+        admission: 'allowed',
+        allFailed,
+        aborted,
+        invalidated,
+        fatalError,
+      };
     },
   };
+}
+
+/**
+ * 准入判定（#311）—— 总开关 + 站点黑白名单，发生在任何请求之前。
+ * 当前主机名经注入提供（getHostname），模块不直接访问页面地址。
+ */
+function admissionFrom(opts: OrchestratorOptions): Admission {
+  const s = opts.getSettings?.();
+  if (!s) return 'allowed';
+  if (!s.enabled) return 'disabled';
+  const host = opts.getHostname?.() ?? '';
+  if (isSiteBlocked(host, s.siteList)) return 'blocked';
+  return 'allowed';
 }
