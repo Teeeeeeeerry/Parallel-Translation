@@ -238,7 +238,7 @@ describe('可见性追踪弱引用与停止清理（#330）', () => {
     const RealWeakRef = globalThis.WeakRef;
     const spy = vi
       .spyOn(globalThis, 'WeakRef')
-      .mockImplementation((target: object) => new RealWeakRef(target));
+      .mockImplementation((target: WeakKey) => new RealWeakRef(target));
     try {
       const { registerHidden } = await load();
       const el = document.createElement('p');
