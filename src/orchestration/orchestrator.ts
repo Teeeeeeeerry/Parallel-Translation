@@ -65,6 +65,20 @@ export interface PageTranslateSummary {
  */
 export type Admission = 'allowed' | 'disabled' | 'blocked';
 
+/** 单文本翻译结果（#312）—— 逐段翻译 / 划词翻译共用。 */
+export interface SingleTextResult {
+  /** 准入结果：未通过准入时零请求。 */
+  admission: Admission;
+  /** 是否成功。 */
+  ok: boolean;
+  /** 译文（成功时）—— 引擎结果逐字透传，模块不改写。 */
+  translation?: string;
+  /** 失败类别（失败时，#313 据此决定提示语义）。 */
+  category?: FailureCategory;
+  /** 失败原因文本（key 无效 / 配额等展示真实原因用）。 */
+  error?: string;
+}
+
 /** 翻译编排模块 —— 小 interface：启动 / 停止 / 翻译入口（#221）。 */
 export interface TranslationOrchestrator {
   /** 启动编排（设置变更响应等初始化）。 */
@@ -86,6 +100,16 @@ export interface TranslationOrchestrator {
     from: string,
     to: string,
   ): Promise<PageTranslateSummary>;
+  /**
+   * 单文本翻译入口（#312）—— 供逐段翻译与划词翻译使用。
+   * 复用整页入口的准入判定（#311）：站点被屏蔽、总开关关闭均零请求；
+   * 成功时返回译文（引擎结果逐字透传，模块不改写）。
+   */
+  translateText(
+    text: string,
+    from: string,
+    to: string,
+  ): Promise<SingleTextResult>;
 }
 
 export interface OrchestratorOptions {
@@ -261,6 +285,42 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         aborted,
         invalidated,
         fatalError,
+      };
+    },
+
+    async translateText(text, from, to): Promise<SingleTextResult> {
+      if (!started) throw new Error('[PT] 编排未启动');
+
+      // #311: 与整页入口同一份准入判定 —— 拦截时零请求
+      const admission = admissionFrom(opts);
+      if (admission !== 'allowed') return { admission, ok: false };
+
+      // 单文本单请求，与整页入口共用注入的消息层（#312）
+      const epochAtStart = epoch;
+      const result = (await opts.send({
+        texts: [text],
+        from,
+        to,
+      })) as TranslateBatchResult;
+
+      // 在飞期间被中止（还原递增纪元）—— 不返回译文
+      if (epoch !== epochAtStart) {
+        return { admission, ok: false, category: 'aborted' };
+      }
+
+      if (result.ok) {
+        // 译文逐字透传引擎结果，模块不改写（#312）
+        return {
+          admission,
+          ok: true,
+          translation: result.data?.translations?.[0],
+        };
+      }
+      return {
+        admission,
+        ok: false,
+        category: result.category,
+        error: result.error,
       };
     },
   };

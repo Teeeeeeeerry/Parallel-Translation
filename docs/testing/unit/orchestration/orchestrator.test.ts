@@ -369,3 +369,106 @@ describe('准入判定（#311）', () => {
     orch.stop();
   });
 });
+
+describe('单文本翻译入口（#312）', () => {
+  const settings = (patch: Partial<Settings>): Settings => ({
+    ...DEFAULT_SETTINGS,
+    ...patch,
+  });
+
+  test('成功时返回译文，且译文未被改写（逐字透传）', async () => {
+    const send = vi.fn(async () => ({
+      ok: true,
+      data: { translations: ['  你好，世界！  '] },
+    }));
+    const orch = createOrchestrator({ send });
+    orch.start();
+
+    const result = await orch.translateText('Hello, World!', 'en', 'zh-CN');
+
+    expect(result.ok).toBe(true);
+    expect(result.translation).toBe('  你好，世界！  ');
+    expect(send).toHaveBeenCalledWith({
+      texts: ['Hello, World!'],
+      from: 'en',
+      to: 'zh-CN',
+    });
+    orch.stop();
+  });
+
+  test('站点被屏蔽：零请求并返回 blocked', async () => {
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+    const orch = createOrchestrator({
+      send,
+      getSettings: () =>
+        settings({
+          enabled: true,
+          siteList: { mode: 'blacklist', list: ['example.com'] },
+        }),
+      getHostname: () => 'example.com',
+    });
+    orch.start();
+
+    const result = await orch.translateText('Hello', 'en', 'zh-CN');
+
+    expect(send).not.toHaveBeenCalled();
+    expect(result.admission).toBe('blocked');
+    expect(result.ok).toBe(false);
+    orch.stop();
+  });
+
+  test('总开关关闭：零请求并返回 disabled', async () => {
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+    const orch = createOrchestrator({
+      send,
+      getSettings: () =>
+        settings({ enabled: false, siteList: { mode: 'blacklist', list: [] } }),
+      getHostname: () => 'example.com',
+    });
+    orch.start();
+
+    const result = await orch.translateText('Hello', 'en', 'zh-CN');
+
+    expect(send).not.toHaveBeenCalled();
+    expect(result.admission).toBe('disabled');
+    expect(result.ok).toBe(false);
+    orch.stop();
+  });
+
+  test('失败时携带类别与原因', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      category: 'invalid-key',
+      error: 'API key 无效',
+      retryable: false,
+    }));
+    const orch = createOrchestrator({ send });
+    orch.start();
+
+    const result = await orch.translateText('Hello', 'en', 'zh-CN');
+
+    expect(result.ok).toBe(false);
+    expect(result.category).toBe('invalid-key');
+    expect(result.error).toBe('API key 无效');
+    orch.stop();
+  });
+
+  test('在飞期间被中止（还原递增纪元）→ 不返回译文', async () => {
+    let resolveSend!: (v: unknown) => void;
+    const send = vi.fn(
+      () => new Promise((r) => (resolveSend = r)),
+    );
+    const orch = createOrchestrator({ send });
+    orch.start();
+
+    const pending = orch.translateText('Hello', 'en', 'zh-CN');
+    orch.abort(); // 还原：递增纪元
+    resolveSend({ ok: true, data: { translations: ['你好'] } });
+
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    expect(result.category).toBe('aborted');
+    expect(result.translation).toBeUndefined();
+    orch.stop();
+  });
+});
