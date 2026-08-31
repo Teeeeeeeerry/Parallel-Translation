@@ -58,8 +58,10 @@ function walk(
       continue;
     }
 
-    // 关键：遇到 shadow host 就递归下沉。TreeWalker 自己不会做这件事
-    if (el.shadowRoot) walk(el.shadowRoot, out, seen);
+    // 关键：遇到 shadow host 就递归下沉。TreeWalker 自己不会做这件事。
+    // #317：onHidden 必须一并传递，否则 shadow 内初次不可见的翻译单元
+    // 不会被注册进可见性观察，展开后永久漏翻。
+    if (el.shadowRoot) walk(el.shadowRoot, out, seen, onHidden);
 
     // Phase 8 域名补丁：在通用判定之前给特定站点插入决策。
     // 补丁的 skip/take 优先于通用规则；null 则交回通用逻辑。
