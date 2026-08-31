@@ -20,6 +20,7 @@ export const FIXTURES = [
   'basic',
   'auto-mutate',
   'shadow',
+  'shadow-collapse',
   'custom-elements',
   'iframe',
   'infinite',

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Shadow Collapse — Hidden Content Re-translation</title>
+</head>
+<body>
+  <h1>Shadow Collapse Test Page</h1>
+  <p>This paragraph is in the light DOM and should be translated normally.</p>
+
+  <div id="host"></div>
+
+  <script>
+    // shadow root 内含一个初始隐藏的折叠区：初次整页翻译时其内容
+    // 不可见（0x0 rect），展开（移除 display:none，纯属性级操作）
+    // 后应被自动补翻（#317/#318 完整链路）
+    const host = document.getElementById('host');
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML =
+      '<p>Visible shadow paragraph.</p>' +
+      '<div id="collapsible" style="display:none">' +
+      '<p id="hidden-content">Initially hidden shadow content that needs translation.</p>' +
+      '</div>';
+  </script>
+</body>
+</html>
