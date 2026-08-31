@@ -138,7 +138,8 @@ export default defineContentScript({
             console.error('[PT] 增量补翻失败:', e),
           );
         }),
-      stop: (stopObserving) => stopObserving(),
+      // #331: startObserver 返回句柄，stop 经句柄执行（幂等）
+      stop: (handle) => handle.stop(),
     });
 
     // ── 设置变更统一入口（#265）──
