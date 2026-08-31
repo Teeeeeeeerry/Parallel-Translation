@@ -460,14 +460,6 @@ export default defineContentScript({
 
     // ── 翻译单段 ──
     async function translateOne(el: Element): Promise<void> {
-      const ns = getSettings();
-      if (!ns.enabled) return;
-      // #153: 站点名单拦截逐段翻译
-      if (isSiteBlocked(location.hostname, ns.siteList)) {
-        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
-        return;
-      }
-
       // 提级到最近的可翻单元：按钮路径传来的已是精判通过的单元（原样返回）；
       // 快捷键路径拿的是选区起点的 parentElement，可能是 span 等内联元素，
       // 由这里统一向上找整段。找不到（超长 / .notranslate / 非正文区 /
@@ -483,17 +475,25 @@ export default defineContentScript({
       const text = normalizeForUnit(unit, rawText);
       if (!text) return;
 
-      const resp = await translateViaBackground({
-        texts: [text],
-        from: ns.from,
-        to: ns.to,
-      });
+      // #314: 逐段翻译走编排模块的单文本入口 —— 准入判定（总开关 /
+      // 站点名单）与失败提示语义都由模块给出，不再直连消息通道
+      const ns = getSettings();
+      const result = await orchestrator.translateText(text, ns.from, ns.to);
 
-      if (!resp?.ok) {
-        // #247: 按类型化类别给出提示分支 —— key 无效 / 配额失效展示
-        // 真实原因；瞬时故障保持现有泛化文案
-        if (resp.category === 'invalid-key' || resp.category === 'quota') {
-          toast(resp.error, 'error');
+      // 准入拦截：与整页翻译一致的提示（站点被屏蔽 toast；总开关
+      // 关闭静默）
+      if (result.admission === 'blocked') {
+        if (isMainFrame)
+          toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
+        return;
+      }
+      if (result.admission !== 'allowed') return;
+
+      if (!result.ok) {
+        // #313: 展示决策由编排模块给出 —— key 无效 / 配额展示真实
+        // 原因，瞬时故障展示泛化文案
+        if (result.display?.showRealReason && result.error) {
+          toast(result.error, 'error');
         } else {
           toast(tf('toastTranslateFail', '翻译失败'), 'error');
         }
@@ -502,7 +502,7 @@ export default defineContentScript({
 
       // #58：将占位符替换回原文
       const restored = restorePreserves(
-        resp.data.translations[0]!,
+        result.translation!,
         preserves,
         text,
       );
