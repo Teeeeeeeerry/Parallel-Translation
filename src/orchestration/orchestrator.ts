@@ -15,6 +15,7 @@ import type {
   TranslateResponse,
   FailureCategory,
 } from '~/src/engines/types';
+import type { Settings } from '~/src/storage/schema';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
 
@@ -92,10 +93,16 @@ export interface OrchestratorOptions {
   /**
    * 设置变更订阅注入（#265）：content 传 storage 的 onSettingsChanged；
    * 模块在 start 时订阅、stop 时退订。
+   * #310：回调携带真实设置类型，装配方不再需要强制转型。
    */
-  subscribeSettings?: (fn: (s: unknown) => void) => () => void;
+  subscribeSettings?: (fn: (s: Settings) => void) => () => void;
   /** 设置变更响应（#265）：样式应用与 UI 启停由调用方实现（经注册表）。 */
-  onSettingsChange?: (s: unknown) => void;
+  onSettingsChange?: (s: Settings) => void;
+  /**
+   * 读取当前设置（#310）：模块自身不直接访问存储 ——
+   * 准入判定等后续逻辑经此注入读取，装配方注入 storage 的 getSettings。
+   */
+  getSettings?: () => Settings;
 }
 
 /**

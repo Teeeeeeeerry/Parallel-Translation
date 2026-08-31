@@ -215,9 +215,12 @@ export default defineContentScript({
     const orchestrator = createOrchestrator({
       send: translateViaBackground,
       // #265: 设置变更订阅由模块持有（start 订阅 / stop 退订），
-      // 响应走统一入口 applySettings（初始化与变更共用）
+      // 响应走统一入口 applySettings（初始化与变更共用）。
+      // #310: 载荷类型收紧为真实 Settings，此处不再需要强制转型
       subscribeSettings: onSettingsChanged,
-      onSettingsChange: (ns) => applySettings(ns as Settings),
+      onSettingsChange: (ns) => applySettings(ns),
+      // #310: 读取当前设置经注入项提供，模块自身不直接访问存储
+      getSettings,
       onBatchResult: (_i, batch, result) => {
         if (!result.ok || !result.data) return;
         const translations = result.data.translations;
