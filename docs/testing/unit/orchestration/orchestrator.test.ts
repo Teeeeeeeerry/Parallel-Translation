@@ -588,3 +588,37 @@ describe('失败提示语义映射（#313）', () => {
     });
   });
 });
+
+describe('跨三条路径的失败提示契约（#316）', () => {
+  // 三条翻译路径（整页 / 逐段 / 划词）最终都消费编排模块的
+  // display 决策；本契约断言两个模块入口对同一失败类别产出同一决策，
+  // 内容脚本侧只是渲染该决策（#313 边界：模块不触碰 UI）。
+  const CATEGORIES = ['invalid-key', 'quota', 'transient'] as const;
+
+  for (const category of CATEGORIES) {
+    test(`失败类别 ${category}：整页入口与单文本入口产出同一提示决策`, async () => {
+      const send = vi.fn(async () => ({
+        ok: false,
+        category,
+        error: '引擎给出的原因',
+        retryable: true,
+      }));
+      const orch = createOrchestrator({ send });
+      orch.start();
+
+      const page = await orch.translatePage(items(2), 'en', 'zh-CN');
+      const single = await orch.translateText('Hello', 'en', 'zh-CN');
+
+      expect(page.display).toEqual(single.display);
+      if (category === 'transient') {
+        expect(page.display).toEqual({ showRealReason: false });
+      } else {
+        expect(page.display).toEqual({
+          showRealReason: true,
+          reason: '引擎给出的原因',
+        });
+      }
+      orch.stop();
+    });
+  }
+});
