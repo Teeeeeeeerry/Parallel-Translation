@@ -8,6 +8,7 @@ import {
   onSettingsChanged,
 } from '~/src/storage/settings';
 import { getKey, setKey, removeKey } from '~/src/storage/keys';
+import { testConnection } from '~/src/engines/test-connection';
 import { tf } from '~/src/i18n';
 import { showToast } from '../main';
 
@@ -38,56 +39,33 @@ const BYOK_FALLBACK_DESC: Record<string, string> = {
 };
 
 // ---- Test connection ----
+//
+// #322：openai / deepl 的测试连接统一走探测入口（src/engines/test-connection.ts），
+// 状态分类与翻译路径同一份口径 —— 401/403 → key 问题、429 → 配额、
+// 其余非 2xx → 瞬时。gemini 仍走旧路径，见 #323。
 
-async function testConnection(
+async function runTest(
   engine: EngineId,
   key: string,
 ): Promise<{ ok: boolean; msg: string }> {
+  if (engine === 'openai' || engine === 'deepl') {
+    return testConnection(engine, key);
+  }
+  // gemini 旧路径（#323 接入探测入口）
   try {
-    if (engine === 'openai') {
-      const resp = await fetch('https://api.openai.com/v1/models', {
-        headers: { Authorization: `Bearer ${key}` },
-      });
-      if (resp.ok) return { ok: true, msg: tf('testOk', '连接成功') };
-      if (resp.status === 401)
-        return { ok: false, msg: tf('keyInvalid', 'API key 无效') };
-      return { ok: false, msg: `HTTP ${resp.status}` };
-    }
-    if (engine === 'deepl') {
-      const endpoint = key.endsWith(':fx')
-        ? 'https://api-free.deepl.com/v2/usage'
-        : 'https://api.deepl.com/v2/usage';
-      const resp = await fetch(endpoint, {
-        headers: { Authorization: `DeepL-Auth-Key ${key}` },
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        const count = String(data.character_count ?? '?');
-        return {
-          ok: true,
-          msg: tf('testOkUsage', `连接成功（已用 ${count} 字符）`, count),
-        };
-      }
-      if (resp.status === 403)
-        return { ok: false, msg: tf('keyInvalid', 'API key 无效') };
-      return { ok: false, msg: `HTTP ${resp.status}` };
-    }
-    if (engine === 'gemini') {
-      const model = getSettings().models?.gemini ?? 'gemini-2.0-flash';
-      // key 走请求头而非 query —— URL 会进浏览器网络日志与各级访问日志，请求头不会
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}`,
-        { headers: { 'x-goog-api-key': key } },
-      );
-      if (resp.ok) return { ok: true, msg: tf('testOk', '连接成功') };
-      const data = await resp.json().catch(() => null);
-      const errMsg = data?.error?.message ?? `HTTP ${resp.status}`;
-      return {
-        ok: false,
-        msg: `${tf('keyInvalid', 'API key 无效')}：${errMsg}`,
-      };
-    }
-    return { ok: false, msg: `HTTP 0` };
+    const model = getSettings().models?.gemini ?? 'gemini-2.0-flash';
+    // key 走请求头而非 query —— URL 会进浏览器网络日志与各级访问日志，请求头不会
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}`,
+      { headers: { 'x-goog-api-key': key } },
+    );
+    if (resp.ok) return { ok: true, msg: tf('testOk', '连接成功') };
+    const data = await resp.json().catch(() => null);
+    const errMsg = data?.error?.message ?? `HTTP ${resp.status}`;
+    return {
+      ok: false,
+      msg: `${tf('keyInvalid', 'API key 无效')}：${errMsg}`,
+    };
   } catch (e) {
     return { ok: false, msg: tf('netError', `网络错误：${e}`, String(e)) };
   }
@@ -273,7 +251,7 @@ export function initEngines(): void {
         }
         resultEl.className = 'pt-key-result';
         resultEl.textContent = tf('testing', '测试中…');
-        const result = await testConnection(id, key);
+        const result = await runTest(id, key);
         resultEl.className = `pt-key-result ${result.ok ? 'pt-success' : 'pt-fail'}`;
         resultEl.textContent = result.msg;
 
