@@ -109,6 +109,7 @@ export function displayDecision(
   return { showRealReason: false };
 }
 
+
 /** 翻译编排模块 —— 小 interface：启动 / 停止 / 翻译入口（#221）。 */
 export interface TranslationOrchestrator {
   /** 启动编排（设置变更响应等初始化）。 */
@@ -140,7 +141,46 @@ export interface TranslationOrchestrator {
     from: string,
     to: string,
   ): Promise<SingleTextResult>;
+  /**
+   * 整页开关入口（#325）—— 一次调用完成「查询当前翻译态 → 决定
+   * 翻译还是还原 → 执行」。翻译态查询与还原动作以注入方式提供
+   * （OrchestratorOptions.hasTranslated / restore），模块不触碰 DOM。
+   * 翻译分支与 translatePage 同一条流水线（准入 / 批次 / 中止 / 提示语义）。
+   */
+  togglePage(
+    items: TranslateItem<unknown>[],
+    from: string,
+    to: string,
+  ): Promise<PageToggleResult>;
 }
+
+/** 整页开关入口的结果（#325）。 */
+export interface PageToggleResult {
+  /** 实际执行的动作。 */
+  status: PageToggleStatus;
+  /** 准入结果（翻译分支）。 */
+  admission: Admission;
+  /** 翻译分支的批次汇总（错误提示 / display 决策用）。 */
+  summary?: PageTranslateSummary;
+}
+
+/**
+ * 整页开关入口状态（#325/#326/#327 演进）：
+ *   - translated：整页翻译完成
+ *   - restored：已还原
+ *   - disabled / blocked：准入拦截（零请求）
+ *   - aborted：翻译中还原（中止不计失败）
+ *   - error：全部引擎失败
+ *   - no-elements：本页没有可翻译的内容
+ */
+export type PageToggleStatus =
+  | 'translated'
+  | 'restored'
+  | 'disabled'
+  | 'blocked'
+  | 'aborted'
+  | 'error'
+  | 'no-elements';
 
 export interface OrchestratorOptions {
   /** 消息发送层（测试注入假层；content 注入 translateViaBackground）。 */
@@ -173,6 +213,13 @@ export interface OrchestratorOptions {
    * 模块不直接访问 location。
    */
   getHostname?: () => string;
+  /**
+   * 翻译态查询（#325）：页面是否已有译文 —— 开关入口据此决定翻译
+   * 还是还原，模块不直接访问 DOM。
+   */
+  hasTranslated?: () => boolean;
+  /** 还原动作（#325）：开关入口在页面已有译文时调用（调用方实现 DOM 还原）。 */
+  restore?: () => void;
 }
 
 /**
@@ -201,6 +248,114 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   // #265: 设置变更订阅（start 订阅 / stop 退订）
   let unsubscribeSettings: (() => void) | null = null;
 
+  // #325: 全页翻译流水线本体（translatePage 与 togglePage 共用）
+  const translatePageImpl = async (
+    items: TranslateItem<unknown>[],
+    from: string,
+    to: string,
+  ): Promise<PageTranslateSummary> => {
+    if (!started) throw new Error('[PT] 编排未启动');
+
+    // #311: 准入判定是翻译入口的前置步骤 —— 总开关关闭或站点被
+    // 名单禁用时零请求，以结构化状态说明拦截原因
+    const admission = admissionFrom(opts);
+    if (admission !== 'allowed') {
+      return {
+        admission,
+        allFailed: false,
+        aborted: false,
+        invalidated: false,
+        fatalError: null,
+        display: { showRealReason: false },
+      };
+    }
+
+    const epochAtStart = epoch;
+    // 批次拆分（#245）：与现状一致，每批独立发送
+    const batches = splitBatches(items, batchSize);
+
+    let allFailed = true;
+    let aborted = false;
+    // #111/#247: 失效 / 类别化致命原因 —— 全失败时优先展示
+    let invalidated = false;
+    let fatalError: string | null = null;
+    // #313: 真实原因提示决策（key 无效 / 配额 → 展示真实原因）
+    let realReason: string | null = null;
+
+    // #262: 中止谓词 —— 还原（abort 递增纪元）或他批已判失效
+    const isAborted = (): boolean =>
+      invalidated || epoch !== epochAtStart;
+
+    await Promise.all(
+      batches.map(async (batch, i) => {
+        // 批次级失败有界重试（#91 语义由 batch-retry 承接）：
+        // 失效全局短路 + epoch 中止在每次尝试前后检查
+        const result = await attemptBatchWithRetry(
+          () =>
+            opts.send({
+              texts: batch.map((item) => item.text),
+              from,
+              to,
+            }) as Promise<TranslateBatchResult>,
+          {
+            sleep: sleepFn,
+            shouldAbort: isAborted,
+          },
+        );
+
+        if (result.ok) {
+          // #157: 本批在飞期间用户已还原（纪元递增）—— 放弃渲染，
+          // 否则还原后会把内容翻回来（#91 的渲染侧补漏）
+          if (isAborted()) {
+            aborted = true;
+            return;
+          }
+          allFailed = false;
+        } else {
+          // #157: 中止（还原）与失败分开记账 —— 中止不算失败
+          if (result.aborted) {
+            aborted = true;
+            return;
+          }
+          if (result.error) {
+            console.error('[PT] 批次翻译失败:', result.error);
+          }
+          // 失效（上下文/配额）→ 全局短路，其余批次放弃尝试
+          if (result.invalidated) {
+            invalidated = true;
+            fatalError = result.error;
+          }
+          // #313: 提示语义映射（整页与单文本共用同一份）——
+          // key 无效 / 配额耗尽展示真实原因，瞬时故障展示泛化文案
+          const decision = displayDecision(result.category, result.error);
+          if (decision.showRealReason) {
+            fatalError = result.error;
+            realReason = decision.reason ?? result.error ?? null;
+          }
+        }
+
+        // #256 渐进渲染：每批返回即触发渲染回调，互不等待
+        onBatchResult?.(i, batch, result);
+      }),
+    );
+
+    // #157: 还原恰在最后一批与返回之间发生 —— 也报 aborted
+    if (isAborted()) aborted = true;
+
+    return {
+      admission: 'allowed',
+      allFailed,
+      aborted,
+      invalidated,
+      fatalError,
+      // #313: 全失败时是否展示真实原因（失效原因也算真实原因）
+      display:
+        realReason || (invalidated ? fatalError : null)
+          ? { showRealReason: true, reason: realReason ?? fatalError ?? undefined }
+          : { showRealReason: false },
+    };
+  };
+
   return {
     start(): void {
       started = true;
@@ -224,106 +379,38 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     },
 
     async translatePage(items, from, to): Promise<PageTranslateSummary> {
+      return translatePageImpl(items, from, to);
+    },
+
+    async togglePage(items, from, to): Promise<PageToggleResult> {
       if (!started) throw new Error('[PT] 编排未启动');
 
-      // #311: 准入判定是翻译入口的前置步骤 —— 总开关关闭或站点被
-      // 名单禁用时零请求，以结构化状态说明拦截原因
+      // 准入判定先行（#311）：拦截时零请求、不执行任何动作
       const admission = admissionFrom(opts);
       if (admission !== 'allowed') {
         return {
+          status: admission === 'disabled' ? 'disabled' : 'blocked',
           admission,
-          allFailed: false,
-          aborted: false,
-          invalidated: false,
-          fatalError: null,
-          display: { showRealReason: false },
         };
       }
 
-      const epochAtStart = epoch;
-      // 批次拆分（#245）：与现状一致，每批独立发送
-      const batches = splitBatches(items, batchSize);
+      // #325: 翻译态查询经注入 —— 页面已有译文则还原，否则翻译
+      if (opts.hasTranslated?.()) {
+        opts.restore?.();
+        return { status: 'restored', admission };
+      }
 
-      let allFailed = true;
-      let aborted = false;
-      // #111/#247: 失效 / 类别化致命原因 —— 全失败时优先展示
-      let invalidated = false;
-      let fatalError: string | null = null;
-      // #313: 真实原因提示决策（key 无效 / 配额 → 展示真实原因）
-      let realReason: string | null = null;
+      if (items.length === 0) {
+        return { status: 'no-elements', admission };
+      }
 
-      // #262: 中止谓词 —— 还原（abort 递增纪元）或他批已判失效
-      const isAborted = (): boolean =>
-        invalidated || epoch !== epochAtStart;
-
-      await Promise.all(
-        batches.map(async (batch, i) => {
-          // 批次级失败有界重试（#91 语义由 batch-retry 承接）：
-          // 失效全局短路 + epoch 中止在每次尝试前后检查
-          const result = await attemptBatchWithRetry(
-            () =>
-              opts.send({
-                texts: batch.map((item) => item.text),
-                from,
-                to,
-              }) as Promise<TranslateBatchResult>,
-            {
-              sleep: sleepFn,
-              shouldAbort: isAborted,
-            },
-          );
-
-          if (result.ok) {
-            // #157: 本批在飞期间用户已还原（纪元递增）—— 放弃渲染，
-            // 否则还原后会把内容翻回来（#91 的渲染侧补漏）
-            if (isAborted()) {
-              aborted = true;
-              return;
-            }
-            allFailed = false;
-          } else {
-            // #157: 中止（还原）与失败分开记账 —— 中止不算失败
-            if (result.aborted) {
-              aborted = true;
-              return;
-            }
-            if (result.error) {
-              console.error('[PT] 批次翻译失败:', result.error);
-            }
-            // 失效（上下文/配额）→ 全局短路，其余批次放弃尝试
-            if (result.invalidated) {
-              invalidated = true;
-              fatalError = result.error;
-            }
-            // #313: 提示语义映射（整页与单文本共用同一份）——
-            // key 无效 / 配额耗尽展示真实原因，瞬时故障展示泛化文案
-            const decision = displayDecision(result.category, result.error);
-            if (decision.showRealReason) {
-              fatalError = result.error;
-              realReason = decision.reason ?? result.error ?? null;
-            }
-          }
-
-          // #256 渐进渲染：每批返回即触发渲染回调，互不等待
-          onBatchResult?.(i, batch, result);
-        }),
-      );
-
-      // #157: 还原恰在最后一批与返回之间发生 —— 也报 aborted
-      if (isAborted()) aborted = true;
-
-      return {
-        admission: 'allowed',
-        allFailed,
-        aborted,
-        invalidated,
-        fatalError,
-        // #313: 全失败时是否展示真实原因（失效原因也算真实原因）
-        display:
-          realReason || (invalidated ? fatalError : null)
-            ? { showRealReason: true, reason: realReason ?? fatalError ?? undefined }
-            : { showRealReason: false },
-      };
+      const summary = await translatePageImpl(items, from, to);
+      const status: PageToggleStatus = summary.aborted
+        ? 'aborted'
+        : summary.allFailed
+          ? 'error'
+          : 'translated';
+      return { status, admission, summary };
     },
 
     async translateText(text, from, to): Promise<SingleTextResult> {

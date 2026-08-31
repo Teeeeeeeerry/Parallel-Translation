@@ -622,3 +622,116 @@ describe('跨三条路径的失败提示契约（#316）', () => {
     });
   }
 });
+
+describe('整页开关入口（#325）', () => {
+  test('页面无译文 → 执行翻译并返回 translated', async () => {
+    const send = vi.fn(async () => ({ ok: true, data: { translations: ['译'] } }));
+    const restore = vi.fn();
+    const orch = createOrchestrator({
+      send,
+      hasTranslated: () => false,
+      restore,
+    });
+    orch.start();
+
+    const result = await orch.togglePage(items(2), 'en', 'zh-CN');
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(restore).not.toHaveBeenCalled();
+    expect(result.status).toBe('translated');
+    expect(result.summary?.allFailed).toBe(false);
+    orch.stop();
+  });
+
+  test('页面已有译文 → 执行还原并返回 restored，零请求', async () => {
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+    const restore = vi.fn();
+    const orch = createOrchestrator({
+      send,
+      hasTranslated: () => true,
+      restore,
+    });
+    orch.start();
+
+    const result = await orch.togglePage(items(2), 'en', 'zh-CN');
+
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+    expect(result.status).toBe('restored');
+    orch.stop();
+  });
+
+  test('翻译态查询与还原动作均为注入项：无 DOM 环境假注入可完整测试', async () => {
+    // 本测试本身即证明：hasTranslated / restore 只是普通闭包，
+    // 模块不访问 document / location
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+    let state = false;
+    const orch = createOrchestrator({
+      send,
+      hasTranslated: () => state,
+      restore: () => {
+        state = false;
+      },
+    });
+    orch.start();
+
+    state = false;
+    const t = await orch.togglePage(items(1), 'en', 'zh-CN');
+    expect(t.status).toBe('translated');
+
+    state = true;
+    const r = await orch.togglePage(items(1), 'en', 'zh-CN');
+    expect(r.status).toBe('restored');
+    expect(state).toBe(false);
+    orch.stop();
+  });
+
+  test('准入拦截：站点被屏蔽 / 总开关关闭 → 零请求、不执行还原', async () => {
+    const settings = (enabled: boolean): Settings => ({
+      ...DEFAULT_SETTINGS,
+      enabled,
+      siteList: { mode: 'blacklist', list: ['example.com'] },
+    });
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+    const restore = vi.fn();
+    const orch = createOrchestrator({
+      send,
+      restore,
+      hasTranslated: () => true,
+      getSettings: () => settings(true),
+      getHostname: () => 'example.com',
+    });
+    orch.start();
+
+    const blocked = await orch.togglePage(items(1), 'en', 'zh-CN');
+    expect(blocked.status).toBe('blocked');
+    expect(send).not.toHaveBeenCalled();
+    expect(restore).not.toHaveBeenCalled();
+    orch.stop();
+
+    const orch2 = createOrchestrator({
+      send,
+      restore,
+      hasTranslated: () => true,
+      getSettings: () => settings(false),
+      getHostname: () => 'other.com',
+    });
+    orch2.start();
+    const disabled = await orch2.togglePage(items(1), 'en', 'zh-CN');
+    expect(disabled.status).toBe('disabled');
+    expect(send).not.toHaveBeenCalled();
+    orch2.stop();
+  });
+
+  test('无翻译项（空 items）→ no-elements，零请求', async () => {
+    const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
+    const orch = createOrchestrator({ send, hasTranslated: () => false });
+    orch.start();
+
+    const result = await orch.togglePage([], 'en', 'zh-CN');
+
+    expect(result.status).toBe('no-elements');
+    expect(send).not.toHaveBeenCalled();
+    orch.stop();
+  });
+});
