@@ -110,3 +110,90 @@ describe('testConnection（openai / deepl，#322）', () => {
     expect(result.msg).not.toMatch(/^HTTP /);
   });
 });
+
+describe('testConnection（gemini，#323）', () => {
+  test('模型名填错时报告模型名问题而非 key 问题（修复前失败）', async () => {
+    respond(
+      400,
+      JSON.stringify({
+        error: { code: 400, message: 'models/wrong-model is not found', status: 'NOT_FOUND' },
+      }),
+    );
+    const result = await testConnection('gemini', 'k', 'wrong-model');
+    expect(result.ok).toBe(false);
+    // 不是 key 问题：文案不得以「API key 无效」开头
+    expect(result.msg).not.toMatch(/^API key 无效/);
+    // 报告真实原因：包含模型名信息
+    expect(result.msg).toContain('wrong-model');
+  });
+
+  test('key 确实失效（401）时报告 key 问题', async () => {
+    respond(401);
+    const result = await testConnection('gemini', 'k');
+    expect(result.ok).toBe(false);
+    expect(result.msg).toBe('API key 无效');
+  });
+
+  test('错误体明示认证失败（400）时报告 key 问题', async () => {
+    respond(
+      400,
+      JSON.stringify({
+        error: { code: 400, message: 'API key not valid.', status: 'INVALID_ARGUMENT' },
+      }),
+    );
+    const result = await testConnection('gemini', 'k');
+    expect(result.ok).toBe(false);
+    expect(result.msg).toBe('API key 无效');
+  });
+
+  test('配额耗尽报告为配额问题', async () => {
+    respond(
+      429,
+      JSON.stringify({ error: { code: 429, message: 'quota exceeded', status: 'RESOURCE_EXHAUSTED' } }),
+    );
+    const result = await testConnection('gemini', 'k');
+    expect(result.ok).toBe(false);
+    expect(result.msg).toBe('配额已用尽');
+  });
+
+  test('服务端瞬时故障报告为可重试而非 key 问题', async () => {
+    respond(503);
+    const result = await testConnection('gemini', 'k');
+    expect(result.ok).toBe(false);
+    expect(result.msg).toBe('HTTP 503');
+  });
+
+  test('探测结论与实际翻译对同一响应一致（400 认证体：两者都归 key 无效）', async () => {
+    const body = JSON.stringify({
+      error: { code: 400, message: 'API key not valid.', status: 'INVALID_ARGUMENT' },
+    });
+    // 每次调用新建 Response —— 响应体只能消费一次，探测与翻译各拿一份
+    fetchMock.mockImplementation(async () => new Response(body, { status: 400 }));
+    const probe = await testConnection('gemini', 'k');
+
+    // 同一响应驱动真实翻译路径
+    const { getKey } = await import('~/src/storage/keys');
+    vi.mocked(getKey).mockResolvedValue('k');
+    const { gemini } = await import('~/src/engines/gemini');
+    let translateCategory = '';
+    try {
+      await gemini.translate({ texts: ['a'], from: 'auto', to: 'zh' });
+    } catch (e) {
+      translateCategory = (e as { category: string }).category;
+    }
+    expect(translateCategory).toBe('invalid-key');
+    expect(probe.ok).toBe(false);
+    if (!probe.ok) expect(probe.msg).toBe('API key 无效');
+  });
+
+  test('探测请求带模型名且 key 走请求头不进查询串', async () => {
+    respond(200);
+    await testConnection('gemini', 'k', 'gemini-2.0-flash');
+    const [url, init] = fetchMock.mock.calls[0]! as [string, RequestInit];
+    expect(String(url)).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash',
+    );
+    expect(String(url)).not.toContain('k');
+    expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe('k');
+  });
+});

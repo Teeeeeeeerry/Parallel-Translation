@@ -80,7 +80,8 @@ export const geminiProbe: ProbeSpec = {
   }),
   // 引擎特例（#321/#257 保留在适配器内）：Gemini 的 400 覆盖多种情况，
   // 只有错误体明示认证失败才是 key 问题；模型名错误 / 内容过长等其余
-  // 情况交回公共状态码分类（瞬时）。
+  // 情况报告真实原因（#323 —— 此前任意非 2xx 一律报「API key 无效」，
+  // 模型名填错的用户被误导去重新申请 key）。
   classifyError: async (resp): Promise<ProbeResult | null> => {
     let status = '';
     let message = '';
@@ -102,7 +103,17 @@ export const geminiProbe: ProbeSpec = {
     if (isAuthByBody) {
       return { ok: false, category: 'invalid-key', message: 'API key 无效' };
     }
-    return null;
+    // 模型名错误 / 内容过长 / 安全拦截 / 5xx 等：与翻译路径同一分类
+    const category = classifyStatus('gemini', resp, true);
+    if (category === 'quota') {
+      return { ok: false, category: 'quota', message: '配额已用尽' };
+    }
+    const detail = message ? `：${message}` : '';
+    return {
+      ok: false,
+      category: 'transient',
+      message: `HTTP ${resp.status}${detail}`,
+    };
   },
 };
 
