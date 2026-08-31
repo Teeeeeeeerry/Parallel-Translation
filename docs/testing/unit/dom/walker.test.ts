@@ -261,3 +261,58 @@ describe('collect（#23：不可见单元 → onHidden）', () => {
     }
   });
 });
+
+describe('collect（#317：shadow 内隐藏单元漏翻）', () => {
+  beforeEach(() => {
+    setBody('');
+    mockedCompat.mockReset();
+    mockedCompat.mockReturnValue(null);
+  });
+
+  test('shadow root 内初次不可见的翻译单元被记入 onHidden', () => {
+    setBody('<div id="host"></div>');
+    const host = document.getElementById('host')!;
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = '<p id="shadow-hid">shadow hidden text</p>';
+    mockAllBoundingRects();
+    mockBoundingRect(shadow.getElementById('shadow-hid')!, {
+      width: 0,
+      height: 0,
+    });
+
+    const onHidden = vi.fn();
+    const units = collect(document.body, onHidden);
+
+    expect(units).toHaveLength(0);
+    expect(onHidden).toHaveBeenCalledTimes(1);
+    expect(onHidden.mock.calls[0]![0]).toBe(
+      shadow.getElementById('shadow-hid'),
+    );
+  });
+
+  test('多层嵌套 shadow root 内的隐藏单元同样被记录', () => {
+    setBody('<div id="outer"></div>');
+    const outer = document.getElementById('outer')!;
+    const shadow1 = outer.attachShadow({ mode: 'open' });
+    shadow1.innerHTML = '<div id="inner-host"><p id="vis">visible text</p></div>';
+    const innerHost = shadow1.getElementById('inner-host')!;
+    const shadow2 = innerHost.attachShadow({ mode: 'open' });
+    shadow2.innerHTML = '<p id="deep-hid">deep hidden text</p>';
+    mockAllBoundingRects();
+    mockBoundingRect(shadow2.getElementById('deep-hid')!, {
+      width: 0,
+      height: 0,
+    });
+
+    const onHidden = vi.fn();
+    const units = collect(document.body, onHidden);
+
+    // 两层 shadow 内可见单元照常采集
+    expect(units.map((u) => u.id)).toEqual(['vis']);
+    // 第二层 shadow 内的隐藏单元也被记入 onHidden
+    expect(onHidden).toHaveBeenCalledTimes(1);
+    expect(onHidden.mock.calls[0]![0]).toBe(
+      shadow2.getElementById('deep-hid'),
+    );
+  });
+});
