@@ -221,7 +221,30 @@ export interface OrchestratorOptions {
   hasTranslated?: () => boolean;
   /** 还原动作（#325）：开关入口在页面已有译文时调用（调用方实现 DOM 还原）。 */
   restore?: () => void;
+  /**
+   * 状态推送（#327）：悬浮球等视觉状态由模块单向推送 —— 模块不直接
+   * 操作 UI。推送值见 PageToggleVisual；主框架标志为 false 时不推送。
+   */
+  pushStatus?: (status: PageToggleVisual) => void;
+  /**
+   * 主框架标志（#327）：子框架不推送状态、不产生提示，但照常执行翻译。
+   */
+  isMainFrame?: () => boolean;
+  /**
+   * 渲染结果查询（#327）：引擎返回结果但全部渲染被拒时，状态机不推送
+   * 已完成状态 —— 调用方经 onBatchResult 统计渲染成败后在此报告。
+   */
+  allRenderRejected?: () => boolean;
 }
+
+/**
+ * 整页开关的视觉状态（#327）—— 经 pushStatus 注入回调推送：
+ *   - idle：空闲（还原完成 / 中止后回到空闲，不是错误）
+ *   - loading：翻译在飞
+ *   - done：已完成
+ *   - error：全部引擎失败 / 全部渲染被拒
+ */
+export type PageToggleVisual = 'idle' | 'loading' | 'done' | 'error';
 
 /**
  * 按批次大小切分翻译项（#245）。
@@ -359,6 +382,13 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     };
   };
 
+  // #327: 状态推送 —— 仅主框架推送（子框架不推送状态、不产生提示，
+  // 但照常执行翻译）
+  const pushVisual = (status: PageToggleVisual): void => {
+    if (opts.isMainFrame?.() === false) return;
+    opts.pushStatus?.(status);
+  };
+
   return {
     start(): void {
       started = true;
@@ -409,6 +439,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         // #326: 还原中止在飞批次（epoch 递增，在飞翻译放弃重试与渲染）
         epoch++;
         opts.restore?.();
+        // #327: 还原后推送空闲态（不是错误）
+        pushVisual('idle');
         return { status: 'restored', admission };
       }
 
@@ -417,13 +449,18 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       }
 
       toggleInFlight = true;
+      pushVisual('loading');
       try {
         const summary = await translatePageImpl(items, from, to);
         const status: PageToggleStatus = summary.aborted
           ? 'aborted'
-          : summary.allFailed
+          : summary.allFailed || opts.allRenderRejected?.()
             ? 'error'
             : 'translated';
+        // #327: 中止（还原）→ 空闲态；失败 → 错误态；成功 → 完成态
+        pushVisual(
+          status === 'translated' ? 'done' : status === 'error' ? 'error' : 'idle',
+        );
         return { status, admission, summary };
       } finally {
         toggleInFlight = false;

@@ -804,3 +804,135 @@ describe('在飞互斥（#326）', () => {
     orch.stop();
   });
 });
+
+describe('状态推送与中止记账（#327）', () => {
+  function orchWith(opts: Record<string, unknown>): {
+    orch: ReturnType<typeof createOrchestrator>;
+    pushes: string[];
+  } {
+    const pushes: string[] = [];
+    const orch = createOrchestrator({
+      send: vi.fn(async () => ({ ok: true, data: { translations: ['译'] } })),
+      hasTranslated: () => false,
+      pushStatus: (s) => pushes.push(s),
+      ...opts,
+    } as Parameters<typeof createOrchestrator>[0]);
+    orch.start();
+    return { orch, pushes };
+  }
+
+  test('翻译在飞时执行还原：结果标记为已中止、推送空闲而非错误', async () => {
+    let resolveSend!: (v: unknown) => void;
+    const send = vi.fn(() => new Promise((r) => (resolveSend = r)));
+    const restore = vi.fn();
+    const pushes: string[] = [];
+    let translated = false;
+    const orch = createOrchestrator({
+      send,
+      restore,
+      hasTranslated: () => translated,
+      pushStatus: (s) => pushes.push(s),
+    });
+    orch.start();
+
+    const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    translated = true; // 在飞期间首批已渲染
+    const second = await orch.togglePage(items(1), 'en', 'zh-CN');
+    expect(second.status).toBe('restored');
+
+    resolveSend({ ok: true, data: { translations: ['译'] } });
+    const firstResult = await first;
+
+    // 首轮被中止：不产生错误，推送空闲而非错误
+    expect(firstResult.status).toBe('aborted');
+    expect(pushes).toEqual(['loading', 'idle', 'idle']);
+    expect(pushes).not.toContain('error');
+    orch.stop();
+  });
+
+  test('还原恰好发生在最后一批返回与整体返回之间：同样报告为已中止', async () => {
+    let resolveSend!: (v: unknown) => void;
+    const send = vi.fn(() => new Promise((r) => (resolveSend = r)));
+    const restore = vi.fn();
+    const pushes: string[] = [];
+    const orch = createOrchestrator({
+      send,
+      restore,
+      hasTranslated: () => false,
+      pushStatus: (s) => pushes.push(s),
+    });
+    orch.start();
+
+    const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    // 批次已 resolve（最后一批返回），但整体返回前用户还原
+    resolveSend({ ok: true, data: { translations: ['译'] } });
+    orch.abort();
+    restore();
+
+    const firstResult = await first;
+    expect(firstResult.status).toBe('aborted');
+    expect(pushes).toEqual(['loading', 'idle']);
+    orch.stop();
+  });
+
+  test('引擎全部失败：推送错误状态', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      category: 'invalid-key',
+      error: 'API key 无效',
+      retryable: false,
+    }));
+    const pushes: string[] = [];
+    const orch = createOrchestrator({
+      send,
+      hasTranslated: () => false,
+      pushStatus: (s) => pushes.push(s),
+    });
+    orch.start();
+
+    const result = await orch.togglePage(items(1), 'en', 'zh-CN');
+
+    expect(result.status).toBe('error');
+    expect(pushes).toEqual(['loading', 'error']);
+    orch.stop();
+  });
+
+  test('引擎返回结果但全部渲染被拒：不推送已完成状态', async () => {
+    const { orch, pushes } = orchWith({ allRenderRejected: () => true });
+
+    const result = await orch.togglePage(items(1), 'en', 'zh-CN');
+
+    expect(result.status).toBe('error');
+    expect(pushes).toEqual(['loading', 'error']);
+    orch.stop();
+  });
+
+  test('状态推送为注入回调：模块不直接操作 UI（假回调可完整测试）', async () => {
+    const { orch, pushes } = orchWith({});
+
+    const result = await orch.togglePage(items(1), 'en', 'zh-CN');
+
+    expect(result.status).toBe('translated');
+    expect(pushes).toEqual(['loading', 'done']);
+    orch.stop();
+  });
+
+  test('子框架不推送状态，但照常执行翻译', async () => {
+    const send = vi.fn(async () => ({ ok: true, data: { translations: ['译'] } }));
+    const pushes: string[] = [];
+    const orch = createOrchestrator({
+      send,
+      hasTranslated: () => false,
+      isMainFrame: () => false,
+      pushStatus: (s) => pushes.push(s),
+    });
+    orch.start();
+
+    const result = await orch.togglePage(items(1), 'en', 'zh-CN');
+
+    expect(result.status).toBe('translated');
+    expect(send).toHaveBeenCalledTimes(1); // 子框架照常翻译
+    expect(pushes).toEqual([]); // 但不推送状态
+    orch.stop();
+  });
+});
