@@ -235,6 +235,13 @@ export interface OrchestratorOptions {
    * 已完成状态 —— 调用方经 onBatchResult 统计渲染成败后在此报告。
    */
   allRenderRejected?: () => boolean;
+  /**
+   * 增量补翻观察器启动钩子（#328）：只在整页翻译成功后调用 ——
+   * 调用方接线到生命周期注册表（启停幂等，未启动为空操作）。
+   */
+  onObserverStart?: () => void;
+  /** 增量补翻观察器停止钩子（#328）：还原时调用，幂等。 */
+  onObserverStop?: () => void;
 }
 
 /**
@@ -441,6 +448,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         opts.restore?.();
         // #327: 还原后推送空闲态（不是错误）
         pushVisual('idle');
+        // #328: 还原时停止增量补翻观察器（幂等 —— 重复还原为空操作）
+        opts.onObserverStop?.();
         return { status: 'restored', admission };
       }
 
@@ -461,6 +470,9 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         pushVisual(
           status === 'translated' ? 'done' : status === 'error' ? 'error' : 'idle',
         );
+        // #328: 观察器启停时机 —— 只在整页翻译成功后启动恰好一次；
+        // 失败 / 中止（在飞还原）不启动
+        if (status === 'translated') opts.onObserverStart?.();
         return { status, admission, summary };
       } finally {
         toggleInFlight = false;

@@ -936,3 +936,137 @@ describe('状态推送与中止记账（#327）', () => {
     orch.stop();
   });
 });
+
+describe('观察器启停时机（#328）', () => {
+  test('未触发翻译时观察器始终未被启动', async () => {
+    const start = vi.fn();
+    const stop = vi.fn();
+    const orch = createOrchestrator({
+      send: vi.fn(),
+      hasTranslated: () => false,
+      onObserverStart: start,
+      onObserverStop: stop,
+    });
+    orch.start();
+
+    // 只构造编排、不触发 toggle：观察器启停钩子零调用
+    expect(start).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    orch.stop();
+  });
+
+  test('整页翻译成功后观察器被启动恰好一次', async () => {
+    const start = vi.fn();
+    const orch = createOrchestrator({
+      send: vi.fn(async () => ({ ok: true, data: { translations: ['译'] } })),
+      hasTranslated: () => false,
+      onObserverStart: start,
+    });
+    orch.start();
+
+    const result = await orch.togglePage(items(1), 'en', 'zh-CN');
+
+    expect(result.status).toBe('translated');
+    expect(start).toHaveBeenCalledTimes(1);
+    orch.stop();
+  });
+
+  test('整页翻译失败后观察器未被启动', async () => {
+    const start = vi.fn();
+    const orch = createOrchestrator({
+      send: vi.fn(async () => ({
+        ok: false,
+        category: 'transient',
+        error: 'HTTP 503',
+        retryable: true,
+      })),
+      hasTranslated: () => false,
+      onObserverStart: start,
+    });
+    orch.start();
+
+    const result = await orch.togglePage(items(1), 'en', 'zh-CN');
+
+    expect(result.status).toBe('error');
+    expect(start).not.toHaveBeenCalled();
+    orch.stop();
+  });
+
+  test('翻译在飞时被还原后观察器未被启动', async () => {
+    let resolveSend!: (v: unknown) => void;
+    const send = vi.fn(() => new Promise((r) => (resolveSend = r)));
+    const start = vi.fn();
+    const stop = vi.fn();
+    let translated = false;
+    const orch = createOrchestrator({
+      send,
+      hasTranslated: () => translated,
+      restore: () => {},
+      onObserverStart: start,
+      onObserverStop: stop,
+    });
+    orch.start();
+
+    const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    translated = true;
+    await orch.togglePage(items(1), 'en', 'zh-CN'); // 在飞还原
+    resolveSend({ ok: true, data: { translations: ['译'] } });
+    const firstResult = await first;
+
+    expect(firstResult.status).toBe('aborted');
+    expect(start).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalledTimes(1);
+    orch.stop();
+  });
+
+  test('还原后观察器被停止，重复还原停止幂等（钩子每次调用、注册表保证幂等）', async () => {
+    const stop = vi.fn();
+    let translated = true;
+    const orch = createOrchestrator({
+      send: vi.fn(),
+      hasTranslated: () => translated,
+      restore: () => {
+        translated = false;
+      },
+      onObserverStop: stop,
+    });
+    orch.start();
+
+    await orch.togglePage(items(1), 'en', 'zh-CN');
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    // 重复还原（例如快捷键连按）：停止钩子再次调用，
+    // 幂等性由生命周期注册表保证（ensure(false) 为空操作）
+    translated = true;
+    await orch.togglePage(items(1), 'en', 'zh-CN');
+    expect(stop).toHaveBeenCalledTimes(2);
+    orch.stop();
+  });
+
+  test('成功 → 停止 → 再成功的完整周期：启停各一次', async () => {
+    const start = vi.fn();
+    const stop = vi.fn();
+    let translated = false;
+    const orch = createOrchestrator({
+      send: vi.fn(async () => ({ ok: true, data: { translations: ['译'] } })),
+      hasTranslated: () => translated,
+      restore: () => {
+        translated = false;
+      },
+      onObserverStart: start,
+      onObserverStop: stop,
+    });
+    orch.start();
+
+    await orch.togglePage(items(1), 'en', 'zh-CN');
+    expect(start).toHaveBeenCalledTimes(1);
+
+    translated = true;
+    await orch.togglePage(items(1), 'en', 'zh-CN');
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    await orch.togglePage(items(1), 'en', 'zh-CN');
+    expect(start).toHaveBeenCalledTimes(2);
+    orch.stop();
+  });
+});
