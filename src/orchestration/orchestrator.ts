@@ -178,6 +178,7 @@ export type PageToggleStatus =
   | 'restored'
   | 'disabled'
   | 'blocked'
+  | 'busy'
   | 'aborted'
   | 'error'
   | 'no-elements';
@@ -245,6 +246,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   // #262: 还原纪元在模块内 —— abort() 递增，在飞翻译据此放弃
   // 尝试、重试与渲染；新翻译快照新纪元，不受旧批次干扰
   let epoch = 0;
+  // #326: 整页开关入口在飞互斥 —— 在飞期间页面尚无译文时忽略新触发
+  let toggleInFlight = false;
   // #265: 设置变更订阅（start 订阅 / stop 退订）
   let unsubscribeSettings: (() => void) | null = null;
 
@@ -385,6 +388,13 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     async togglePage(items, from, to): Promise<PageToggleResult> {
       if (!started) throw new Error('[PT] 编排未启动');
 
+      // #326: 在飞互斥 —— 在飞期间页面尚无译文时忽略新触发并返回
+      // 忙碌状态（忙碌不是错误，调用方不应当作失败）；已有译文则
+      // 放行还原（下方还原分支中止在飞批次）
+      if (toggleInFlight && !opts.hasTranslated?.()) {
+        return { status: 'busy', admission: 'allowed' };
+      }
+
       // 准入判定先行（#311）：拦截时零请求、不执行任何动作
       const admission = admissionFrom(opts);
       if (admission !== 'allowed') {
@@ -396,6 +406,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
 
       // #325: 翻译态查询经注入 —— 页面已有译文则还原，否则翻译
       if (opts.hasTranslated?.()) {
+        // #326: 还原中止在飞批次（epoch 递增，在飞翻译放弃重试与渲染）
+        epoch++;
         opts.restore?.();
         return { status: 'restored', admission };
       }
@@ -404,13 +416,18 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         return { status: 'no-elements', admission };
       }
 
-      const summary = await translatePageImpl(items, from, to);
-      const status: PageToggleStatus = summary.aborted
-        ? 'aborted'
-        : summary.allFailed
-          ? 'error'
-          : 'translated';
-      return { status, admission, summary };
+      toggleInFlight = true;
+      try {
+        const summary = await translatePageImpl(items, from, to);
+        const status: PageToggleStatus = summary.aborted
+          ? 'aborted'
+          : summary.allFailed
+            ? 'error'
+            : 'translated';
+        return { status, admission, summary };
+      } finally {
+        toggleInFlight = false;
+      }
     },
 
     async translateText(text, from, to): Promise<SingleTextResult> {

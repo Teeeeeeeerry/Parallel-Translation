@@ -735,3 +735,72 @@ describe('整页开关入口（#325）', () => {
     orch.stop();
   });
 });
+
+describe('在飞互斥（#326）', () => {
+  test('在飞期间二次触发且页面尚无译文：假消息层只收到一轮请求，第二次返回忙碌', async () => {
+    let resolveSend!: (v: unknown) => void;
+    const send = vi.fn(() => new Promise((r) => (resolveSend = r)));
+    const orch = createOrchestrator({
+      send,
+      hasTranslated: () => false,
+    });
+    orch.start();
+
+    const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    const second = await orch.togglePage(items(1), 'en', 'zh-CN');
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(second.status).toBe('busy');
+
+    resolveSend({ ok: true, data: { translations: ['译'] } });
+    const firstResult = await first;
+    expect(firstResult.status).toBe('translated');
+    orch.stop();
+  });
+
+  test('在飞期间页面已有译文时再次触发：放行还原且在飞批次被中止', async () => {
+    let resolveSend!: (v: unknown) => void;
+    const send = vi.fn(() => new Promise((r) => (resolveSend = r)));
+    const restore = vi.fn();
+    let translated = false; // 首批渲染完成后置 true（模拟内容脚本渲染）
+    const orch = createOrchestrator({
+      send,
+      hasTranslated: () => translated,
+      restore,
+    });
+    orch.start();
+
+    const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    // 首批在飞期间译文已落 DOM（渲染回调置位）→ 再次触发放行还原
+    translated = true;
+    const second = await orch.togglePage(items(1), 'en', 'zh-CN');
+
+    expect(second.status).toBe('restored');
+    expect(restore).toHaveBeenCalledTimes(1);
+
+    // 在飞批次被中止：首轮返回 aborted，不产生译文
+    resolveSend({ ok: true, data: { translations: ['译'] } });
+    const firstResult = await first;
+    expect(firstResult.status).toBe('aborted');
+    orch.stop();
+  });
+
+  test('忙碌状态不被调用方当作错误：正常返回而非抛错', async () => {
+    let resolveSend!: (v: unknown) => void;
+    const send = vi.fn(() => new Promise((r) => (resolveSend = r)));
+    const orch = createOrchestrator({ send, hasTranslated: () => false });
+    orch.start();
+
+    const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    const second = await orch.togglePage(items(1), 'en', 'zh-CN');
+
+    expect(second.status).toBe('busy');
+    expect(second.summary).toBeUndefined();
+    // 忙碌结果不携带错误信息（区别于 error 状态）
+    expect(() => second).not.toThrow();
+
+    resolveSend({ ok: true, data: { translations: ['译'] } });
+    await first;
+    orch.stop();
+  });
+});
