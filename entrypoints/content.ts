@@ -28,7 +28,10 @@ import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
 import { createLifecycleRegistry } from '~/src/ui/lifecycle-registry';
-import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import {
+  createOrchestrator,
+  type PageToggleResult,
+} from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import { translateViaBackground } from '~/src/runtime/messaging';
 import { detectOS } from '~/src/hotkeys/platform';
@@ -151,7 +154,7 @@ export default defineContentScript({
     registry.register('observer', {
       create: () => {
         const handle = startObserver((els) => {
-          doTranslate(els).catch((e) =>
+          translateIncremental(els).catch((e) =>
             console.error('[PT] 增量补翻失败:', e),
           );
         });
@@ -189,15 +192,10 @@ export default defineContentScript({
     applySettings(s);
 
     // ── 翻译全页 ──
-    // #261/#262: 批次拆分 / 有界重试 / epoch 中止 / 渐进渲染全部收敛
-    // 到编排模块（还原纪元在模块内，abort() 递增）；这里只装配：
-    // 消息发送（translateViaBackground）与渲染回调注入。
-
-    // #156: 整页翻译在飞互斥。悬浮球自身的 loading 守卫挡不住 popup 与
-    // 快捷键路径 —— 它们直接调 togglePage。在飞期间忽略新的 toggle：
-    // 否则连点会并发整页请求（双倍引擎额度/缓存写入、双 toast），或
-    // 首轮刚完成时第二次触发把刚翻好的页面立即还原。
-    let pageToggleInFlight = false;
+    // #329: 内容脚本不再持有翻译态 —— 在飞标志、翻译态查询、还原编排、
+    // 状态推送、观察器启停全部在编排模块（开关入口）。这里只保留：
+    // 收集与渲染（DOM 职责）、提示渲染、消息监听接线；悬浮球 / 快捷键 /
+    // popup 三条触发路径都只调用 togglePage（开关入口的薄包装）。
 
     /** 翻译项的渲染上下文（#261）：目标元素 + preserves + 原文。 */
     interface PageItemCtx {
@@ -222,6 +220,19 @@ export default defineContentScript({
       // #311: 准入判定的当前主机名同样经注入提供
       getSettings,
       getHostname: () => location.hostname,
+      // #325: 翻译态查询与还原动作经注入 —— 模块不直接访问 DOM
+      hasTranslated,
+      restore: doRestore,
+      // #327: 悬浮球视觉状态由模块单向推送（子框架不推送）
+      pushStatus: (status) => {
+        if (isMainFrame) setBallState(status);
+      },
+      isMainFrame: () => isMainFrame,
+      // #327: 引擎返回结果但全部渲染被拒 → 错误态（不点亮完成）
+      allRenderRejected: () => renderStats.succeeded === 0,
+      // #328: 增量补翻观察器启停经钩子接线到生命周期注册表（幂等）
+      onObserverStart: () => registry.ensure('observer', true),
+      onObserverStop: () => registry.ensure('observer', false),
       onBatchResult: (_i, batch, result) => {
         if (!result.ok || !result.data) return;
         const translations = result.data.translations;
@@ -251,33 +262,12 @@ export default defineContentScript({
     // 订阅随 start 建立
     orchestrator.start();
 
-    async function doTranslate(
-      elements?: Element[],
-    ): Promise<string> {
-      const ns = getSettings();
-
-      let targets: Element[];
-      try {
-        targets = elements ?? collect(document.body, registerHiddenForObserver);
-      } catch (e) {
-        throw new Error(
-          `[collect] ${e instanceof Error ? e.message : String(e)}`,
-        );
-      }
-      if (targets.length === 0) {
-        if (isMainFrame)
-          toast(tf('hintNoElements', '本页没有可翻译的内容'));
-        return 'no-elements';
-      }
-
-      // 归一化内部空白：硬换行切词、撑破 OpenAI 编号结构都源于未折叠的 \n。
-      // translatableText 剔除 .notranslate 与站点元数据（如 Google 来源角标）。
-      // #23：混合内容元素（直接文本 + 块级子元素）使用 shallowTranslatableText，
-      // 只提取直接文本，嵌套块级子元素由各自的翻译单元独立翻译。
-      // #58：translatableTextEx 同时返回 preserves 映射表（占位符 → 原文），
-      // 译文回填时替换占位符，使 GitHub 用户名等标识符保持原样。
-      // pre 内单元（.pt-chunk / 纯文本 pre）保留硬换行（#117 判定）。
-      const items: TranslateItem<PageItemCtx>[] = targets.map((el, i) => {
+    /**
+     * 构建翻译项（DOM 职责，#329 内容脚本保留的部分）：
+     * 归一化内部空白、混合内容提取、占位符映射全部在此。
+     */
+    function buildPageItems(targets: Element[]): TranslateItem<PageItemCtx>[] {
+      return targets.map((el, i) => {
         const useShallow = hasBlockTextChildren(el);
         const { text: rawText, preserves } = useShallow
           ? shallowTranslatableTextEx(el)
@@ -288,28 +278,61 @@ export default defineContentScript({
           ctx: { target: targets[i]!, preserves, rawText: text },
         };
       });
+    }
 
+    /**
+     * 整页开关入口（#329）—— 悬浮球、快捷键、popup 消息三条触发路径
+     * 的唯一调用点：收集（DOM）→ 编排模块开关入口（准入 / 在飞互斥 /
+     * 翻译态决定 / 状态推送 / 观察器启停）→ 提示渲染（DOM）。
+     */
+    async function togglePage(): Promise<PageToggleResult> {
+      const ns = getSettings();
+      let items: TranslateItem<PageItemCtx>[];
+      try {
+        items = buildPageItems(
+          collect(document.body, registerHiddenForObserver),
+        );
+      } catch (e) {
+        throw new Error(
+          `[collect] ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
       renderStats.succeeded = 0;
       renderStats.rejected = 0;
 
-      // #261/#262: 全页翻译经编排模块执行 —— 批次拆分（15/批）、有界
-      // 重试、失效全局短路、epoch 中止、渐进渲染回调都在模块内；
-      // 还原（doRestore → orchestrator.abort()）自动中止在途批次。
-      // #311: 准入判定（总开关 / 站点名单）也在模块内 —— 拦截时
-      // 零请求，结构化状态说明原因
-      const summary = await orchestrator.translatePage(items, ns.from, ns.to);
+      const result = await orchestrator.togglePage(items, ns.from, ns.to);
 
-      // #311: 准入拦截 —— 不发请求、不弹错误提示，返回结构化状态
-      if (summary.admission === 'disabled') return 'disabled';
-      if (summary.admission === 'blocked') return 'blocked';
-
-      // #157: 还原发生在翻译进行中 —— 批次被中止不是失败：
-      // 不弹“所有引擎均失败”、状态置 aborted（悬浮球回 idle、
-      // 不启动 observer、不置 done）
-      if (summary.aborted) return 'aborted';
-
-      // #49：整页翻译结束后用一条 toast 汇总被拒数量，而不是逐条刷屏
-      if (renderStats.rejected > 0 && isMainFrame) {
+      // ── 提示渲染（DOM 职责；视觉状态已由模块推送）──
+      if (result.status === 'blocked' && isMainFrame) {
+        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
+      }
+      if (result.status === 'no-elements' && isMainFrame) {
+        toast(tf('hintNoElements', '本页没有可翻译的内容'));
+      }
+      if (result.status === 'error' && isMainFrame) {
+        if (result.summary?.allFailed) {
+          // #313: 展示决策由模块给出 —— key 无效 / 配额真实原因，瞬时泛化
+          const display = result.summary.display;
+          toast(
+            display.showRealReason && display.reason
+              ? display.reason
+              : tf('toastAllEnginesFail', '所有引擎均失败'),
+            'error',
+          );
+        } else {
+          // #49: 引擎返回了结果但全被 render() 拒绝（纵深防御命中）
+          toast(
+            tf('toastAllRejected', '所有段落均含图片/按钮，无法翻译'),
+            'error',
+          );
+        }
+      }
+      if (
+        result.status === 'translated' &&
+        renderStats.rejected > 0 &&
+        isMainFrame
+      ) {
+        // #49：整页翻译结束后用一条 toast 汇总被拒数量，而不是逐条刷屏
         toast(
           tf(
             'toastRenderRejected',
@@ -319,39 +342,43 @@ export default defineContentScript({
           'info',
         );
       }
-
-      if (summary.allFailed) {
-        if (isMainFrame)
-          toast(
-            summary.fatalError ?? tf('toastAllEnginesFail', '所有引擎均失败'),
-            'error',
-          );
-        return 'error';
-      }
-
-      // #49：引擎返回了结果，但全被 render() 拒绝（纵深防御命中），
-      // 状态不应是 'translated'，悬浮球不应点亮成“已翻译”
-      if (renderStats.succeeded === 0) {
-        if (isMainFrame)
-          toast(tf('toastAllRejected', '所有段落均含图片/按钮，无法翻译'), 'error');
-        return 'error';
-      }
-
-      return 'translated';
+      return result;
     }
 
-    // ── 还原 ──
+    /**
+     * 增量补翻（#329）：observer 的新节点回调 —— 直接走编排模块的
+     * 全页流水线（准入 / 批次 / 中止 / 提示语义），不再经过开关入口
+     * （不触发在飞互斥与状态推送）。
+     */
+    async function translateIncremental(elements: Element[]): Promise<void> {
+      const ns = getSettings();
+      const items = buildPageItems(elements);
+      if (items.length === 0) return;
+      renderStats.succeeded = 0;
+      renderStats.rejected = 0;
+
+      const summary = await orchestrator.translatePage(items, ns.from, ns.to);
+
+      // 中止（还原）不算失败；失败提示与整页同口径
+      if (summary.aborted) return;
+      if (summary.allFailed && isMainFrame) {
+        const display = summary.display;
+        toast(
+          display.showRealReason && display.reason
+            ? display.reason
+            : tf('toastAllEnginesFail', '所有引擎均失败'),
+          'error',
+        );
+      }
+    }
+
+    // ── 还原（DOM 职责）──
     function doRestore(): void {
-      // #255: observer 经注册表停止（幂等，未启动为空操作）
-      registry.ensure('observer', false);
-
-      // #262: 还原纪元在编排模块内 —— abort() 递增，在飞翻译的批次
-      // 重试检测到变化后放弃重试与渲染，避免还原后把内容翻回来（#91）
-      orchestrator.abort();
-
       // #253: 还原收集走统一遍历模块（shadow 穿透 + 集中式跳过规则）。
       // skipTranslated: false —— 嵌套在已翻译单元内的已翻译单元
-      // （.pt-origin 搬移的既有译文）也要一并收集还原
+      // （.pt-origin 搬移的既有译文）也要一并收集还原。
+      // #328: observer 停止与还原纪元（epoch++）由编排模块的开关入口
+      // 统一执行，此处只做 DOM 还原
       const els: Element[] = [];
       const splitPres: Element[] = [];
       walkShadowTree(
@@ -374,9 +401,8 @@ export default defineContentScript({
     }
 
     /**
-     * 页面上是否存在已翻译段落（带 shadow 穿透，短路返回）。
-     * 翻译态以真实 DOM 为准而不是布尔标志：单段翻译（translateOne）与
-     * observer 增量补翻都会落 data-pt="done"，只有整页翻译会记布尔，
+     * 翻译态查询（#325/#329）—— 以真实 DOM 为准而不是布尔标志：
+     * 单段翻译（translateOne）与 observer 增量补翻都会落 data-pt="done"，
      * 仅查标志会把“页面上已有译文”误判成“没翻过”，toggle 走错分支。
      */
     function hasTranslated(): boolean {
@@ -389,72 +415,6 @@ export default defineContentScript({
         }
       });
       return found;
-    }
-
-    /**
-     * 翻译 / 还原的单一入口 —— 悬浮球、快捷键、popup 三条路径共用。
-     *
-     * 翻译态（DOM 上是否存在译文 + observer）是整个 frame 共享的一份
-     * 状态，任何入口各自记一份都会导致“按了没反应”或“重复翻一遍”。
-     * 悬浮球的视觉由这里通过 setBallState 单向推送。
-     */
-    async function togglePageImpl(): Promise<string> {
-      if (hasTranslated()) {
-        doRestore();
-        if (isMainFrame) setBallState('idle');
-        return 'restored';
-      }
-
-      if (isMainFrame) setBallState('loading');
-      let status: string;
-      try {
-        status = await doTranslate();
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error('[PT] 翻译失败:', msg, e);
-        if (isMainFrame) {
-          toast(msg, 'error');
-          setBallState('error');
-        }
-        return 'error';
-      }
-
-      if (status === 'translated') {
-        // #255: 增量补翻 observer 经注册表启动（幂等）—— 无限滚动/SPA
-        // 不该因为用户点的是悬浮球而失效
-        registry.ensure('observer', true);
-      }
-
-      if (isMainFrame) {
-        // #157: 'aborted'（翻译中还原）不置 'done'/'error' —— 页面已还原，
-        // 球回 idle，不弹任何错误 toast
-        setBallState(
-          status === 'translated'
-            ? 'done'
-            : status === 'error'
-              ? 'error'
-              : 'idle',
-        );
-      }
-      if (status === 'blocked' && isMainFrame) {
-        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
-      }
-      return status;
-    }
-
-    // #156: 在飞互斥包裹层 —— 真正的实现见 togglePageImpl。
-    // 在飞期间：页面上尚无译文（首批未渲染）时忽略新 toggle，防止并发
-    // 整页请求（双倍额度/缓存写入）；已有译文则放行还原 —— #157 的
-    // 取消语义：doRestore 递增 epoch，在飞批次中止，页面被还原。
-    // popup 收到 'busy' 不把它当错误。
-    async function togglePage(): Promise<string> {
-      if (pageToggleInFlight && !hasTranslated()) return 'busy';
-      pageToggleInFlight = true;
-      try {
-        return await togglePageImpl();
-      } finally {
-        pageToggleInFlight = false;
-      }
     }
 
     // ── 翻译单段 ──
@@ -549,8 +509,9 @@ export default defineContentScript({
       if (msg?.type === 'pt:toggle-translate') {
         const reply = isMainFrame ? sendResponse : () => {};
         try {
+          // #329: popup 路径同样只调用编排模块的开关入口
           togglePage()
-            .then((status) => reply({ ok: true, status }))
+            .then((result) => reply({ ok: true, status: result.status }))
             .catch((e: Error) => reply({ ok: false, error: e instanceof Error ? e.message : String(e) }));
         } catch (e) {
           reply({ ok: false, error: e instanceof Error ? e.message : String(e) });
