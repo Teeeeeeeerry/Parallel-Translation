@@ -8,6 +8,7 @@ import { describe, test, expect, vi } from 'vitest';
 import {
   createOrchestrator,
   splitBatches,
+  displayDecision,
   FULL_PAGE_BATCH_SIZE,
 } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
@@ -470,5 +471,120 @@ describe('单文本翻译入口（#312）', () => {
     expect(result.category).toBe('aborted');
     expect(result.translation).toBeUndefined();
     orch.stop();
+  });
+});
+
+describe('失败提示语义映射（#313）', () => {
+  test('单文本：key 无效 → 展示真实原因并携带引擎原因文本', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      category: 'invalid-key',
+      error: 'API key 无效',
+      retryable: false,
+    }));
+    const orch = createOrchestrator({ send });
+    orch.start();
+
+    const result = await orch.translateText('Hello', 'en', 'zh-CN');
+
+    expect(result.ok).toBe(false);
+    expect(result.display).toEqual({
+      showRealReason: true,
+      reason: 'API key 无效',
+    });
+    orch.stop();
+  });
+
+  test('单文本：配额耗尽 → 展示真实原因并携带引擎原因文本', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      category: 'quota',
+      error: '配额已用尽',
+      retryable: false,
+      invalidated: true,
+    }));
+    const orch = createOrchestrator({ send });
+    orch.start();
+
+    const result = await orch.translateText('Hello', 'en', 'zh-CN');
+
+    expect(result.ok).toBe(false);
+    expect(result.display).toEqual({
+      showRealReason: true,
+      reason: '配额已用尽',
+    });
+    orch.stop();
+  });
+
+  test('单文本：瞬时故障 → 泛化文案', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      category: 'transient',
+      error: 'HTTP 503',
+      retryable: true,
+    }));
+    const orch = createOrchestrator({ send });
+    orch.start();
+
+    const result = await orch.translateText('Hello', 'en', 'zh-CN');
+
+    expect(result.ok).toBe(false);
+    expect(result.display).toEqual({ showRealReason: false });
+    orch.stop();
+  });
+
+  test('整页：全部引擎 key 无效 → 汇总展示真实原因', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      category: 'invalid-key',
+      error: 'API key 无效',
+      retryable: false,
+    }));
+    const orch = createOrchestrator({ send });
+    orch.start();
+
+    const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+
+    expect(summary.allFailed).toBe(true);
+    expect(summary.display).toEqual({
+      showRealReason: true,
+      reason: 'API key 无效',
+    });
+    orch.stop();
+  });
+
+  test('整页：瞬时故障 → 泛化文案', async () => {
+    const send = vi.fn(async () => ({
+      ok: false,
+      category: 'transient',
+      error: 'HTTP 503',
+      retryable: true,
+    }));
+    const orch = createOrchestrator({ send });
+    orch.start();
+
+    const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+
+    expect(summary.allFailed).toBe(true);
+    expect(summary.display).toEqual({ showRealReason: false });
+    orch.stop();
+  });
+
+  test('整页与单文本共用同一份映射（displayDecision 模块级单测）', () => {
+    // 同一份映射函数被两个入口共用（#313）
+    expect(displayDecision('invalid-key', 'API key 无效')).toEqual({
+      showRealReason: true,
+      reason: 'API key 无效',
+    });
+    expect(displayDecision('quota', '配额已用尽')).toEqual({
+      showRealReason: true,
+      reason: '配额已用尽',
+    });
+    expect(displayDecision('transient', 'HTTP 503')).toEqual({
+      showRealReason: false,
+    });
+    expect(displayDecision(undefined, undefined)).toEqual({
+      showRealReason: false,
+    });
   });
 });

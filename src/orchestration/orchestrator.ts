@@ -55,6 +55,8 @@ export interface PageTranslateSummary {
   invalidated: boolean;
   /** 全失败时的致命原因（失效 / 类别化错误），供 toast 展示。 */
   fatalError: string | null;
+  /** 提示语义（#313）：全失败时展示真实原因还是泛化文案。 */
+  display: FailureDisplay;
 }
 
 /**
@@ -73,10 +75,38 @@ export interface SingleTextResult {
   ok: boolean;
   /** 译文（成功时）—— 引擎结果逐字透传，模块不改写。 */
   translation?: string;
-  /** 失败类别（失败时，#313 据此决定提示语义）。 */
+  /** 失败类别（失败时）。 */
   category?: FailureCategory;
-  /** 失败原因文本（key 无效 / 配额等展示真实原因用）。 */
+  /** 失败原因文本（引擎给出的真实原因）。 */
   error?: string;
+  /** 提示语义（#313）：失败时展示真实原因还是泛化文案。 */
+  display?: FailureDisplay;
+}
+
+/**
+ * 失败提示语义（#313）——「展示引擎给出的真实原因，还是展示泛化文案」
+ * 的决定由失败类别映射，在模块内构造一次，整页与单文本入口共用。
+ * 模块不触碰任何 UI，提示的渲染仍由调用方完成。
+ */
+export interface FailureDisplay {
+  /** true：展示真实原因（key 无效 / 配额耗尽）；false：展示泛化文案（瞬时）。 */
+  showRealReason: boolean;
+  /** 引擎给出的原因文本（showRealReason=true 时）。 */
+  reason?: string;
+}
+
+/**
+ * 失败类别 → 提示语义映射（#313）。
+ * key 无效 / 配额耗尽 → 展示真实原因；瞬时故障 → 泛化文案。
+ */
+export function displayDecision(
+  category: FailureCategory | undefined,
+  error: string | undefined,
+): FailureDisplay {
+  if (category === 'invalid-key' || category === 'quota') {
+    return { showRealReason: true, reason: error };
+  }
+  return { showRealReason: false };
 }
 
 /** 翻译编排模块 —— 小 interface：启动 / 停止 / 翻译入口（#221）。 */
@@ -206,6 +236,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
           aborted: false,
           invalidated: false,
           fatalError: null,
+          display: { showRealReason: false },
         };
       }
 
@@ -218,6 +249,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // #111/#247: 失效 / 类别化致命原因 —— 全失败时优先展示
       let invalidated = false;
       let fatalError: string | null = null;
+      // #313: 真实原因提示决策（key 无效 / 配额 → 展示真实原因）
+      let realReason: string | null = null;
 
       // #262: 中止谓词 —— 还原（abort 递增纪元）或他批已判失效
       const isAborted = (): boolean =>
@@ -262,12 +295,12 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
               invalidated = true;
               fatalError = result.error;
             }
-            // #247: 类别化致命原因 —— key 无效 / 配额失效展示真实原因
-            if (
-              result.category === 'invalid-key' ||
-              result.category === 'quota'
-            ) {
+            // #313: 提示语义映射（整页与单文本共用同一份）——
+            // key 无效 / 配额耗尽展示真实原因，瞬时故障展示泛化文案
+            const decision = displayDecision(result.category, result.error);
+            if (decision.showRealReason) {
               fatalError = result.error;
+              realReason = decision.reason ?? result.error ?? null;
             }
           }
 
@@ -285,6 +318,11 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         aborted,
         invalidated,
         fatalError,
+        // #313: 全失败时是否展示真实原因（失效原因也算真实原因）
+        display:
+          realReason || (invalidated ? fatalError : null)
+            ? { showRealReason: true, reason: realReason ?? fatalError ?? undefined }
+            : { showRealReason: false },
       };
     },
 
@@ -321,6 +359,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         ok: false,
         category: result.category,
         error: result.error,
+        // #313: 失败提示语义由类别映射（与整页入口同一份）
+        display: displayDecision(result.category, result.error),
       };
     },
   };
