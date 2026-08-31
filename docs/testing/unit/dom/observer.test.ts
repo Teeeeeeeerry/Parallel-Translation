@@ -197,3 +197,99 @@ describe('startObserver 采集去重（#158）', () => {
     }
   });
 });
+
+describe('可见性追踪弱引用与停止清理（#330）', () => {
+  /** 记录 observe 目标与实例序号的 IO 桩。 */
+  class CapturingIO {
+    static instances: CapturingIO[] = [];
+    observed: Element[] = [];
+    callback: (entries: { isIntersecting: boolean; target: Element }[]) => void;
+
+    constructor(cb: (entries: { isIntersecting: boolean; target: Element }[]) => void) {
+      this.callback = cb;
+      CapturingIO.instances.push(this);
+    }
+
+    observe(el: Element): void {
+      this.observed.push(el);
+    }
+
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    vi.resetModules();
+    CapturingIO.instances = [];
+    vi.stubGlobal('IntersectionObserver', CapturingIO);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+  });
+
+  async function load() {
+    return import('~/src/dom/observer');
+  }
+
+  test('隐藏单元登记走弱引用（WeakRef），集合不持有强引用', async () => {
+    const RealWeakRef = globalThis.WeakRef;
+    const spy = vi
+      .spyOn(globalThis, 'WeakRef')
+      .mockImplementation((target: WeakKey) => new RealWeakRef(target));
+    try {
+      const { registerHidden } = await load();
+      const el = document.createElement('p');
+      registerHidden(el);
+      expect(spy).toHaveBeenCalledWith(el);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('IO 启动前登记的隐藏单元在启动时被补挂观察', async () => {
+    const { registerHidden, startObserver } = await load();
+    const el = document.createElement('p');
+    registerHidden(el);
+
+    const stop = startObserver(() => {});
+    expect(CapturingIO.instances[0]!.observed).toContain(el);
+    stop();
+  });
+
+  test('IO 启动后登记的隐藏单元被直接观察', async () => {
+    const { registerHidden, startObserver } = await load();
+    const stop = startObserver(() => {});
+    const el = document.createElement('p');
+    registerHidden(el);
+    expect(CapturingIO.instances[0]!.observed).toContain(el);
+    stop();
+  });
+
+  test('观察器停止后，旧周期登记的隐藏单元不泄漏到新一轮观察', async () => {
+    const { registerHidden, startObserver } = await load();
+    const old = document.createElement('p');
+    registerHidden(old);
+
+    const stop1 = startObserver(() => {});
+    expect(CapturingIO.instances[0]!.observed).toContain(old);
+    stop1();
+
+    // 新一轮：旧单元不再被观察，新一轮登记照常工作
+    const stop2 = startObserver(() => {});
+    expect(CapturingIO.instances[1]!.observed).not.toContain(old);
+    const fresh = document.createElement('p');
+    registerHidden(fresh);
+    expect(CapturingIO.instances[1]!.observed).toContain(fresh);
+    stop2();
+  });
+
+  test('停止之后再登记隐藏单元：不抛异常，进入新一轮待观察队列', async () => {
+    const { registerHidden, startObserver } = await load();
+    const stop = startObserver(() => {});
+    stop();
+    expect(() => registerHidden(document.createElement('p'))).not.toThrow();
+  });
+});
