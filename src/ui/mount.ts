@@ -16,7 +16,16 @@ const guards = new Map<string, MutationObserver>();
  * 从 DOM 中移除，MutationObserver 会检测到并自动重新挂载。
  * 这对于 Reddit 新版等会在 document_end 之后替换 body 子节点的站点至关重要。
  */
-export function mountIsolated(id: string): ShadowRoot {
+export interface MountOptions {
+  /**
+   * 覆盖挂载点的定位样式。收的是一段 CSS 声明串（须自带结尾分号），
+   * 不是单个属性值。默认右下角（悬浮球 / toast / 段落按钮），
+   * 更新提示的全屏遮罩传 `'inset: 0;'`。
+   */
+  positionCss?: string;
+}
+
+export function mountIsolated(id: string, opts: MountOptions = {}): ShadowRoot {
   const host = document.createElement('div');
   host.id = `pt-host-${id}`;
 
@@ -26,7 +35,8 @@ export function mountIsolated(id: string): ShadowRoot {
   // 宿主页面可能有 div { position: static !important } 之类的规则，
   // 用 all: initial 兜底
   host.style.cssText =
-    'all: initial; position: fixed; z-index: 2147483647; right: 24px; bottom: 24px;';
+    'all: initial; position: fixed; z-index: 2147483647; ' +
+    (opts.positionCss ?? 'right: 24px; bottom: 24px;');
 
   const shadow = host.attachShadow({ mode: 'open' });
 

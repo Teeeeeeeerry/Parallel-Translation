@@ -70,6 +70,7 @@ pnpm dev
 | [docs/phases/](docs/phases/) | 9 份阶段实施手册，含代码骨架、取舍理由、验收标准 |
 | [docs/DoD-report/](docs/DoD-report/) | 各阶段 DoD 验收报告 |
 | [docs/TESTING.md](docs/TESTING.md) | 自动化测试体系：分层策略、性能与内存、异常与边界、隐私与合规 |
+| [docs/adr/](docs/adr/) | 架构决策记录：难以逆转、且不写下来会被误当作随手之举的取舍 |
 | [store/](store/) | 上架材料 |
 
 ## 约定

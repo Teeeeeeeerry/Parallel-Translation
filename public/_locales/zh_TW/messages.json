@@ -182,5 +182,14 @@
   "welcomeSelection": { "message": "選取文字與右鍵翻譯" },
   "welcomeSelectionDesc": { "message": "選取文字後按右鍵，點擊“翻譯所選文字”即可翻譯選取內容" },
   "welcomeOpenSettings": { "message": "開啟完整設定" },
-  "welcomeClose": { "message": "開始使用" }
+  "welcomeClose": { "message": "開始使用" },
+
+  "changelogTitle": { "message": "更新內容" },
+  "changelogGroupFeature": { "message": "新功能" },
+  "changelogGroupImprove": { "message": "改進" },
+  "changelogGroupFix": { "message": "修復" },
+  "changelogGithub": { "message": "在 GitHub 上 Star" },
+  "changelogSocialDesc": { "message": "取得最新更新，歡迎追蹤：" },
+  "changelogOk": { "message": "知道了" },
+  "changelogClose": { "message": "關閉" }
 }

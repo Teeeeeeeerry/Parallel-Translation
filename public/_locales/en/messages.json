@@ -182,5 +182,14 @@
   "welcomeSelection": { "message": "Selection & context menu" },
   "welcomeSelectionDesc": { "message": "Select text, right-click, and choose \"Translate selected text\" to translate the selection" },
   "welcomeOpenSettings": { "message": "Open full settings" },
-  "welcomeClose": { "message": "Get started" }
+  "welcomeClose": { "message": "Get started" },
+
+  "changelogTitle": { "message": "What's New" },
+  "changelogGroupFeature": { "message": "New" },
+  "changelogGroupImprove": { "message": "Improved" },
+  "changelogGroupFix": { "message": "Fixed" },
+  "changelogGithub": { "message": "Star on GitHub" },
+  "changelogSocialDesc": { "message": "Follow along for the latest updates:" },
+  "changelogOk": { "message": "Got it" },
+  "changelogClose": { "message": "Close" }
 }
