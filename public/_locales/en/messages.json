@@ -3,6 +3,7 @@
   "extDesc": { "message": "Bilingual web page translation extension" },
   "translate": { "message": "Translate Page" },
   "settings": { "message": "Settings" },
+  "popupReportIssue": { "message": "Report issue" },
 
   "navGeneral": { "message": "General" },
   "navEngines": { "message": "Engines" },
@@ -81,7 +82,7 @@
   "styleUnderline": { "message": "Underline" },
   "styleBold": { "message": "Bold" },
   "styleItalic": { "message": "Italic" },
-  "styleFade": { "message": "Faded" },
+  "styleBorder": { "message": "Left border" },
   "previewOrigin": { "message": "The quick brown fox jumps over the lazy dog." },
   "previewTrans": { "message": "敏捷的棕色狐狸跃过那只懒狗。" },
   "cardCustomCss": { "message": "Custom CSS" },

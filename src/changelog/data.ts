@@ -41,7 +41,7 @@ export const GROUP_ORDER: readonly ChangeType[] = ['feature', 'improve', 'fix'];
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
-    version: '2.0.66',
+    version: '2.0.67',
     groups: [
       {
         type: 'feature',
@@ -94,6 +94,18 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
               en: 'This panel. After an update, the next page you open tells you what changed. It shows once and never again.',
             },
           },
+          {
+            title: {
+              zh_CN: '汇报问题',
+              zh_TW: '回報問題',
+              en: 'Report an issue',
+            },
+            desc: {
+              zh_CN: '工具栏面板底部新增入口，点一下直达 GitHub 提问页，不用再自己翻仓库地址。',
+              zh_TW: '工具列面板底部新增入口，點一下直達 GitHub 提問頁，不用再自己翻儲存庫網址。',
+              en: 'A new button at the bottom of the toolbar panel takes you straight to the GitHub issue form, so you no longer have to hunt down the repository.',
+            },
+          },
         ],
       },
       {
@@ -118,9 +130,9 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
               en: 'Adjustable styling',
             },
             desc: {
-              zh_CN: '六种预设样式（弱化显示、下划线、加粗、斜体、半透明等），也可以自己写 CSS。样式只作用于译文，改不动原网页。',
-              zh_TW: '六種預設樣式（淡化顯示、底線、粗體、斜體、半透明等），也可以自己寫 CSS。樣式只作用於譯文，動不了原網頁。',
-              en: 'Six presets — dimmed, underlined, bold, italic, faded — plus your own CSS if you want it. Styling touches only the translation, never the page itself.',
+              zh_CN: '六种预设样式（弱化显示、下划线、加粗、斜体、左边线等），也可以自己写 CSS。样式只作用于译文，改不动原网页。',
+              zh_TW: '六種預設樣式（淡化顯示、底線、粗體、斜體、左側線等），也可以自己寫 CSS。樣式只作用於譯文，動不了原網頁。',
+              en: 'Six presets — dimmed, underlined, bold, italic, left-bordered — plus your own CSS if you want it. Styling touches only the translation, never the page itself.',
             },
           },
           {
@@ -133,6 +145,18 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
               zh_CN: '只申请存储与右键菜单两项权限，网络请求仅限你选用的翻译服务端点。不收集任何个人信息，无分析、无埋点。',
               zh_TW: '只申請儲存與右鍵選單兩項權限，網路請求僅限你選用的翻譯服務端點。不蒐集任何個人資訊，無分析、無追蹤。',
               en: 'Only storage and context menus are requested. Network requests go solely to the translation service you picked. No tracking, no analytics, no personal data collected.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '默认译文样式',
+              zh_TW: '預設譯文樣式',
+              en: 'Default translation style',
+            },
+            desc: {
+              zh_CN: '默认改为半透明，压低译文存在感、不打断原文的阅读节奏。原先那套黄铜色左边线保留为独立选项「左边线」，排在样式列表末尾，想要的话随时选回来。',
+              zh_TW: '預設改為半透明，壓低譯文存在感、不打斷原文的閱讀節奏。原先那套黃銅色左側線保留為獨立選項「左邊線」，排在樣式清單末尾，想要的話隨時選回來。',
+              en: 'The default is now simply translucent, so translations stay out of the way as you read. The old brass left-border look survives as its own option, "Left border", at the bottom of the style list.',
             },
           },
         ],

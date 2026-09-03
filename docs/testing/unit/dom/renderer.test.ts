@@ -157,7 +157,7 @@ describe('applyStyle', () => {
   });
 
   test('不会残留旧样式类', () => {
-    document.documentElement.classList.add('pt-style-fade');
+    document.documentElement.classList.add('pt-style-border');
     document.documentElement.classList.add('pt-style-bold');
     applyStyle('dim');
     const styleClasses = [...document.documentElement.classList].filter((c) =>

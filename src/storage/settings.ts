@@ -1,5 +1,5 @@
 import type { DeepPartial, Settings } from './schema';
-import { DEFAULT_SETTINGS, clampConcurrency } from './schema';
+import { DEFAULT_SETTINGS, clampConcurrency, migrateStyle } from './schema';
 
 const KEY = 'pt-settings';
 
@@ -88,7 +88,10 @@ function clampWriteEntry(s: Settings): Settings {
  * 合并存储值与默认值 —— mergeInto 的特化，base 固定为 DEFAULT_SETTINGS。
  */
 function merge(stored: Partial<Settings> | undefined): Settings {
-  return mergeInto(DEFAULT_SETTINGS, stored ?? {});
+  const merged = mergeInto(DEFAULT_SETTINGS, stored ?? {});
+  // 样式 id 迁移放在读取单点：存储可能留着已删除的 'fade' 或任何脏值，
+  // 放行会让 applyStyle 挂上没有 CSS 规则的类名（译文完全无样式）
+  return { ...merged, style: migrateStyle(merged.style) };
 }
 
 /**

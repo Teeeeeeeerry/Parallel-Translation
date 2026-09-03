@@ -34,7 +34,7 @@ export function validateCustomCss(
  * 用户写 `color: #555`，实际注入 `.pt-trans { color: #555 }`。
  *
  * #168: 选择器用 `.pt-trans.pt-trans`（特异性 0,2,0，与预设
- * `.pt-style-fade .pt-trans` 同级）—— 单类选择器（0,1,0）会被预设
+ * `.pt-style-border .pt-trans` 同级）—— 单类选择器（0,1,0）会被预设
  * 压住，opacity 等预设属性永远无法被自定义覆盖。同级特异性下
  * 后注入者胜：扩展的预设样式随文档注入，本 style 在设置加载/变更时
  * 追加到 head 末尾，时序上晚于预设，自定义总能覆盖预设。

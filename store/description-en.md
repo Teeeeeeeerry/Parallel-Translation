@@ -10,7 +10,7 @@ Traditional translation extensions replace the original text with translations. 
 
 - **Bilingual Mode**: Original text above, translation below, perfectly aligned
 - **Translation-Only Mode**: Traditional replacement view, one-click toggle
-- **6 Translation Styles**: Dimmed, faded, underlined, bold, italic — instantly distinguish translation from original
+- **6 Translation Styles**: Translucent (default), dimmed, underlined, bold, italic, left-bordered — instantly distinguish translation from original
 - **Multi-Engine Support**: Google Translate & Bing Translate work out of the box; bring your own OpenAI, DeepL, or Gemini key for higher quality
 - **Smart Failover**: Primary engine fails? Automatically switches to the next in priority order
 - **Floating Ball & Paragraph Buttons**: Toggle translation, switch modes, translate current paragraph without leaving the page

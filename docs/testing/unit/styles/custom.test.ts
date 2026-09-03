@@ -72,7 +72,7 @@ describe('applyCustomCss', () => {
     const styleEl = document.getElementById('pt-custom-style');
     expect(styleEl).not.toBeNull();
     expect(styleEl!.tagName).toBe('STYLE');
-    // #168: 双类选择器（0,2,0）与预设 .pt-style-fade .pt-trans 同级，
+    // #168: 双类选择器（0,2,0）与预设 .pt-style-border .pt-trans 同级，
     // 自定义 opacity 等属性才能覆盖预设
     expect(styleEl!.textContent).toContain('.pt-trans.pt-trans');
     expect(styleEl!.textContent).toContain('color: #555');

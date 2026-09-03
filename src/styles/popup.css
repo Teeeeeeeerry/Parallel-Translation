@@ -177,6 +177,11 @@ body {
   color: var(--pt-forest-40);
 }
 
+.pt-footer-actions {
+  display: flex;
+  gap: 6px;
+}
+
 .pt-settings-btn {
   font-family: var(--pt-font-mono);
   font-size: 8px;

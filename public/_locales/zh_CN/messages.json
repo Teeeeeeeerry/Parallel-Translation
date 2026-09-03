@@ -3,6 +3,7 @@
   "extDesc": { "message": "对照式网页翻译扩展" },
   "translate": { "message": "翻译此页" },
   "settings": { "message": "设置" },
+  "popupReportIssue": { "message": "汇报问题" },
 
   "navGeneral": { "message": "通用" },
   "navEngines": { "message": "引擎" },
@@ -81,7 +82,7 @@
   "styleUnderline": { "message": "实线下划线" },
   "styleBold": { "message": "加粗" },
   "styleItalic": { "message": "斜体" },
-  "styleFade": { "message": "半透明" },
+  "styleBorder": { "message": "左边线" },
   "previewOrigin": { "message": "The quick brown fox jumps over the lazy dog." },
   "previewTrans": { "message": "敏捷的棕色狐狸跃过那只懒狗。" },
   "cardCustomCss": { "message": "自定义 CSS" },
