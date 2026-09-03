@@ -18,10 +18,32 @@ import { hasSeen, markSeen } from './state';
 let queue: Promise<unknown> = Promise.resolve();
 
 /**
+ * 首装闸门。
+ *
+ * 首装靠 markSeen 挡住更新提示，但那是异步的：storage 还没写完时，
+ * content script 的 claim 会读到「未读」而拿到显示权，新用户于是在
+ * 装完打开的第一个页面上看到一个「更新内容」弹窗 —— 全屏遮罩还会挡住
+ * 页面。窗口很窄，但机器负载一变就会翻转，属于查起来很痛的偶发问题。
+ *
+ * onInstalled 的监听器同步置位此标志，而 SW 是单线程的，同步部分必然
+ * 跑在任何 claim 消息之前，窗口因此归零。SW 回收后标志丢失，但那时
+ * markSeen 早已落盘，storage 判定接手。
+ */
+let freshInstall = false;
+
+/** 标记本次为首次安装 —— 必须在 onInstalled 里同步调用。 */
+export function markFreshInstall(): void {
+  freshInstall = true;
+}
+
+/**
  * 申请显示权。返回 true 表示调用方应当弹出更新提示，
  * 且该版本已被标记为已读（共识：显示出来即算已读）。
  */
 export function claimShow(version: string): Promise<boolean> {
+  // 首装一律不发放：更新提示只服务老用户，新用户看到的是欢迎页
+  if (freshInstall) return Promise.resolve(false);
+
   const result = queue.then(async () => {
     if (await hasSeen(version)) return false;
     await markSeen(version);

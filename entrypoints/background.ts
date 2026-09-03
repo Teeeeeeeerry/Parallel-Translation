@@ -8,7 +8,7 @@ import { route } from '~/src/engines/router';
 import { EngineError } from '~/src/engines/types';
 import { ensureE2EMock, applyE2EMock, getE2EMockStats } from '~/src/engines/e2e-mock';
 import { initContextMenu } from '~/src/ui/context-menu';
-import { claimShow } from '~/src/changelog/claim';
+import { claimShow, markFreshInstall } from '~/src/changelog/claim';
 import { markSeen } from '~/src/changelog/state';
 
 /** 将浏览器 UI 语言映射到 LANG_LIST 中可用的目标语言码 */
@@ -51,9 +51,12 @@ export default defineBackground(() => {
     initContextMenu().catch(() => {});
 
     if (details.reason === 'install') {
-      // 首装用户没有「更新」可看 —— 把当前版本标记为已读，否则装完打开的
-      // 第一个页面就会弹出更新提示。更新提示只服务老用户（ADR-0001），
-      // 新用户看到的是 welcome 页
+      // 首装用户没有「更新」可看 —— 更新提示只服务老用户（ADR-0001），
+      // 新用户看到的是 welcome 页。
+      //
+      // 两道闸：先同步置位内存标志（立即生效，先于任何 claim 消息抵达），
+      // 再异步落盘。只靠落盘会留下竞态窗口 —— 详见 claim.ts 的说明。
+      markFreshInstall();
       markSeen(chrome.runtime.getManifest().version).catch((e) =>
         console.error('[PT] 首装标记更新提示已读失败：', e),
       );

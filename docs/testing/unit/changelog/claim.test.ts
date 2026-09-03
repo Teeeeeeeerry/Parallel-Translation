@@ -46,3 +46,23 @@ describe('claimShow', () => {
     expect(await claimShow('2.2.0')).toBe(true);
   });
 });
+
+describe('首装闸门', () => {
+  beforeEach(() => {
+    resetStorage();
+    vi.resetModules();
+  });
+
+  test('置位后一律拒绝发放 —— 新用户不会看到更新提示', async () => {
+    const { claimShow, markFreshInstall } = await import('~/src/changelog/claim');
+    markFreshInstall();
+    expect(await claimShow('2.1.0')).toBe(false);
+  });
+
+  test('置位早于 markSeen 落盘也生效 —— 消除异步写入的竞态窗口', async () => {
+    const { claimShow, markFreshInstall } = await import('~/src/changelog/claim');
+    // 不调用 markSeen，模拟「storage 尚未写完」的那一瞬
+    markFreshInstall();
+    expect(await claimShow('2.1.0')).toBe(false);
+  });
+});
