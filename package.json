@@ -2,6 +2,7 @@
   "name": "parallel-translation",
   "version": "2.0.67",
   "description": "对照式网页翻译浏览器扩展",
+  "license": "GPL-3.0-or-later",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.18.0",
