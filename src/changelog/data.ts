@@ -131,7 +131,7 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
             },
             desc: {
               zh_CN: '六种预设样式（弱化显示、下划线、加粗、斜体、左边线等），也可以自己写 CSS。样式只作用于译文，改不动原网页。',
-              zh_TW: '六種預設樣式（淡化顯示、底線、粗體、斜體、左側線等），也可以自己寫 CSS。樣式只作用於譯文，動不了原網頁。',
+              zh_TW: '六種預設樣式（淡化顯示、底線、粗體、斜體、左邊線等），也可以自己寫 CSS。樣式只作用於譯文，動不了原網頁。',
               en: 'Six presets — dimmed, underlined, bold, italic, left-bordered — plus your own CSS if you want it. Styling touches only the translation, never the page itself.',
             },
           },
@@ -155,7 +155,7 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
             },
             desc: {
               zh_CN: '默认改为半透明，压低译文存在感、不打断原文的阅读节奏。原先那套黄铜色左边线保留为独立选项「左边线」，排在样式列表末尾，想要的话随时选回来。',
-              zh_TW: '預設改為半透明，壓低譯文存在感、不打斷原文的閱讀節奏。原先那套黃銅色左側線保留為獨立選項「左邊線」，排在樣式清單末尾，想要的話隨時選回來。',
+              zh_TW: '預設改為半透明，壓低譯文存在感、不打斷原文的閱讀節奏。原先帶黃銅色邊線的樣式保留為獨立選項「左邊線」，排在樣式清單末尾，想要的話隨時選回來。',
               en: 'The default is now simply translucent, so translations stay out of the way as you read. The old brass left-border look survives as its own option, "Left border", at the bottom of the style list.',
             },
           },
