@@ -22,6 +22,10 @@ const toSelect = document.getElementById('pt-to-select') as HTMLSelectElement;
 const modeSelect = document.getElementById('pt-mode-select') as HTMLSelectElement;
 const styleSelect = document.getElementById('pt-style-select') as HTMLSelectElement;
 const settingsBtn = document.getElementById('pt-settings-btn')!;
+const reportBtn = document.getElementById('pt-report-btn')!;
+
+/** 汇报问题的落点。GitHub 的新建 issue 页，带模板选择。 */
+const ISSUE_URL = 'https://github.com/Teeeeeeeerry/Parallel-Translation/issues/new';
 
 // 头部标识与扩展图标、悬浮球同源（src/ui/logo.ts）。标记框 32px，
 // 走 compact 字形 —— regular 在这个尺寸下笔画会糊在一起。
@@ -188,6 +192,14 @@ async function init(): Promise<void> {
   // 打开 options 页
   settingsBtn.addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
+  });
+
+  // 汇报问题 —— 新标签页打开 GitHub issue。popup 会在失焦时关闭，
+  // 用 window.open 会连 popup 一起没掉，故走 tabs.create
+  reportBtn.addEventListener('click', () => {
+    chrome.tabs.create({ url: ISSUE_URL }).catch((e) =>
+      console.error('[PT] 打开 issue 页失败:', e),
+    );
   });
 }
 

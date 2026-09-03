@@ -43,6 +43,9 @@ import {
 } from '~/src/storage/settings';
 import type { Settings } from '~/src/storage/schema';
 import { tf } from '~/src/i18n';
+import { isSiteBlocked } from '~/src/dom/site-filter';
+import { decideShow } from '~/src/changelog/decide';
+import { clearSeen } from '~/src/changelog/state';
 
 // pre 判定统一收敛：#117。pre 内单元（.pt-chunk / 纯文本 pre）保留硬换行，
 // pre 外折叠空白；两处采集/渲染路径共用同一判定，避免只改一处导致行为分叉。
@@ -190,6 +193,55 @@ export default defineContentScript({
       }
     }
     applySettings(s);
+
+    /**
+     * 更新提示（ADR-0001）—— 扩展更新到写有 changelog 条目的上架版本后，
+     * 用户下次打开新页面时在页内弹出。
+     *
+     * 分两步：子框架 / 开发构建 / 被拉黑站点 / 内部版本在本地就排除，
+     * 不去打扰 SW;剩下的才向 background 申请显示权，多标签页并发时
+     * 只有一个拿到（见 changelog/claim.ts）。
+     *
+     * 不 await —— 更新提示与翻译功能互不依赖，不该让它拖慢内容脚本启动。
+     */
+    async function maybeShowChangelog(ns: Settings): Promise<void> {
+      const decision = decideShow({
+        version: chrome.runtime.getManifest().version,
+        isDev: import.meta.env.DEV,
+        isMainFrame,
+        siteBlocked: isSiteBlocked(location.hostname, ns.siteList),
+      });
+      if (!decision.show) return;
+
+      let granted = false;
+      try {
+        const res: unknown = await chrome.runtime.sendMessage({
+          type: 'pt:changelog-claim',
+          version: decision.entry.version,
+        });
+        granted = (res as { granted?: boolean } | null)?.granted === true;
+      } catch {
+        // SW 未就绪或扩展上下文失效 —— 这次不弹，下次页面加载再说
+        return;
+      }
+      if (!granted) return;
+
+      // 动态 import 的形式与代价见 ADR-0001（MV3 下并不会真的分包）
+      try {
+        const { showChangelog } = await import('~/src/changelog/modal');
+        showChangelog(decision.entry);
+      } catch (e) {
+        // 显示权是在 background 发放时就标记已读的（并发仲裁的需要）。
+        // 走到这里意味着标记了却没显示成功，不回滚的话这个上架版本
+        // 会被永久跳过，用户再也看不到本次更新说明。
+        await clearSeen(decision.entry.version).catch(() => {});
+        throw e;
+      }
+    }
+
+    void maybeShowChangelog(s).catch((e) =>
+      console.error('[PT] 更新提示失败：', e),
+    );
 
     // ── 翻译全页 ──
     // #329: 内容脚本不再持有翻译态 —— 在飞标志、翻译态查询、还原编排、

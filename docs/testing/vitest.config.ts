@@ -28,6 +28,12 @@ export default defineConfig({
         'src/styles/**',
         'src/queue/**',
         'src/runtime/**',
+        'src/changelog/**',
+      ],
+      exclude: [
+        // modal.ts 是纯 DOM 渲染与 shadow 挂载，与 src/ui/** 同类，
+        // 本就不在统计范围；changelog 的其余模块都是纯逻辑，全部有单测
+        'src/changelog/modal.ts',
       ],
       // #134：门槛键必须是 glob（裸目录键不匹配任何文件，门槛从未生效）。
       // 值取当前实际覆盖率的现实下限（再低会无声失效，再高会立即红灯）。
@@ -40,6 +46,7 @@ export default defineConfig({
         'src/styles/**': { lines: 100 },
         'src/queue/**': { lines: 100 },
         'src/runtime/**': { lines: 98 },
+        'src/changelog/**': { lines: 90 },
       },
       // 覆盖率报告也写到 logs 目录
       reportsDirectory: `${LOGS_DIR}/coverage`,

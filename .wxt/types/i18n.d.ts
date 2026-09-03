@@ -105,6 +105,14 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
+     * "汇报问题"
+     */
+    getMessage(
+      messageName: "popupReportIssue",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
      * "通用"
      */
     getMessage(
@@ -601,10 +609,10 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "半透明"
+     * "左边线"
      */
     getMessage(
-      messageName: "styleFade",
+      messageName: "styleBorder",
       substitutions?: string | string[],
       options?: GetMessageOptions,
     ): string;
@@ -1288,8 +1296,72 @@ declare module "wxt/browser" {
       substitutions?: string | string[],
       options?: GetMessageOptions,
     ): string;
+    /**
+     * "更新内容"
+     */
     getMessage(
-      messageName: "@@extension_id" | "@@ui_locale" | "@@bidi_dir" | "@@bidi_reversed_dir" | "@@bidi_start_edge" | "@@bidi_end_edge" | "extName" | "extDesc" | "translate" | "settings" | "navGeneral" | "navEngines" | "navAppearance" | "navHotkeys" | "navSites" | "navAdvanced" | "secGeneralDesc" | "cardSwitch" | "rowEnabled" | "cardLangs" | "rowFrom" | "rowTo" | "cardDefaultMode" | "rowDisplayMode" | "rowParaDisplayMode" | "modeBilingual" | "modeTranslationOnly" | "modeFollow" | "cardFloatingUi" | "rowFloatingBall" | "rowParagraphBtn" | "btnResetBallPos" | "toastBallPosReset" | "ballPosColHostname" | "ballPosColPosition" | "btnDelete" | "ballPosListEmpty" | "ballPosDefaultTag" | "secEnginesDesc" | "cardPriority" | "cardDisabled" | "cardDisabledDesc" | "cardDisabledEmpty" | "btnEnable" | "btnDisable" | "badgePrimary" | "engineLastOne" | "keyLabelSuffix" | "keyPlaceholder" | "modelLabel" | "btnTest" | "btnClear" | "testing" | "testOk" | "testOkUsage" | "keyInvalid" | "keyRequired" | "keyCleared" | "keySaved" | "keyClearedToast" | "netError" | "descOpenai" | "descDeepl" | "descGemini" | "secAppearanceDesc" | "cardStylePreset" | "rowPreset" | "styleDefault" | "styleDim" | "styleUnderline" | "styleBold" | "styleItalic" | "styleFade" | "previewOrigin" | "previewTrans" | "cardCustomCss" | "cssNoSelector" | "cssNoUrl" | "secHotkeysDesc" | "cardBindings" | "recordTitle" | "recording" | "actionToggleTranslate" | "actionToggleMode" | "actionTranslateParagraph" | "actionToggleExtension" | "conflictReserved" | "conflictDuplicate" | "needModifier" | "secSitesDesc" | "cardListMode" | "rowMode" | "siteBlacklist" | "siteWhitelist" | "cardDomains" | "btnAdd" | "secAdvancedDesc" | "cardPerf" | "rowConcurrency" | "rowUseCache" | "cacheEntries" | "cacheUnknown" | "btnClearCache" | "cardConfig" | "configDesc" | "btnExport" | "btnImport" | "btnReset" | "toastCacheCleared" | "toastExported" | "toastImported" | "toastImportFail" | "toastReset" | "confirmReset" | "optionsLoadFail" | "popupStatus" | "popupMaster" | "popupTranslateThis" | "btnTranslate" | "popupEngine" | "popupLangs" | "popupDisplayMode" | "popupStyle" | "hintDisabled" | "hintNoElements" | "hintCantTranslate" | "hintSaveFail" | "hintInitFail" | "ctxTranslateSelection" | "ballGlyph" | "paraBtnGlyph" | "paraBtnLabel" | "paraBtnRestoreGlyph" | "paraBtnRestoreLabel" | "toastExtOn" | "toastExtOff" | "toastAllEnginesFail" | "toastTranslateFail" | "toastRenderRejected" | "toastAllRejected" | "toastNotTranslatable" | "toastSiteBlocked" | "welcomeTagline" | "welcomeReady" | "welcomeReadyDesc" | "welcomeHotkeys" | "welcomeHotkeysDesc" | "welcomeTargetLang" | "welcomeTargetLangDesc" | "welcomeInteractions" | "welcomeBall" | "welcomeBallDesc" | "welcomeParaBtn" | "welcomeParaBtnDesc" | "welcomeSelection" | "welcomeSelectionDesc" | "welcomeOpenSettings" | "welcomeClose",
+      messageName: "changelogTitle",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "新功能"
+     */
+    getMessage(
+      messageName: "changelogGroupFeature",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "改进"
+     */
+    getMessage(
+      messageName: "changelogGroupImprove",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "修复"
+     */
+    getMessage(
+      messageName: "changelogGroupFix",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "在 GitHub 上 Star"
+     */
+    getMessage(
+      messageName: "changelogGithub",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "获取最新更新，欢迎关注："
+     */
+    getMessage(
+      messageName: "changelogSocialDesc",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "知道了"
+     */
+    getMessage(
+      messageName: "changelogOk",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "关闭"
+     */
+    getMessage(
+      messageName: "changelogClose",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    getMessage(
+      messageName: "@@extension_id" | "@@ui_locale" | "@@bidi_dir" | "@@bidi_reversed_dir" | "@@bidi_start_edge" | "@@bidi_end_edge" | "extName" | "extDesc" | "translate" | "settings" | "popupReportIssue" | "navGeneral" | "navEngines" | "navAppearance" | "navHotkeys" | "navSites" | "navAdvanced" | "secGeneralDesc" | "cardSwitch" | "rowEnabled" | "cardLangs" | "rowFrom" | "rowTo" | "cardDefaultMode" | "rowDisplayMode" | "rowParaDisplayMode" | "modeBilingual" | "modeTranslationOnly" | "modeFollow" | "cardFloatingUi" | "rowFloatingBall" | "rowParagraphBtn" | "btnResetBallPos" | "toastBallPosReset" | "ballPosColHostname" | "ballPosColPosition" | "btnDelete" | "ballPosListEmpty" | "ballPosDefaultTag" | "secEnginesDesc" | "cardPriority" | "cardDisabled" | "cardDisabledDesc" | "cardDisabledEmpty" | "btnEnable" | "btnDisable" | "badgePrimary" | "engineLastOne" | "keyLabelSuffix" | "keyPlaceholder" | "modelLabel" | "btnTest" | "btnClear" | "testing" | "testOk" | "testOkUsage" | "keyInvalid" | "keyRequired" | "keyCleared" | "keySaved" | "keyClearedToast" | "netError" | "descOpenai" | "descDeepl" | "descGemini" | "secAppearanceDesc" | "cardStylePreset" | "rowPreset" | "styleDefault" | "styleDim" | "styleUnderline" | "styleBold" | "styleItalic" | "styleBorder" | "previewOrigin" | "previewTrans" | "cardCustomCss" | "cssNoSelector" | "cssNoUrl" | "secHotkeysDesc" | "cardBindings" | "recordTitle" | "recording" | "actionToggleTranslate" | "actionToggleMode" | "actionTranslateParagraph" | "actionToggleExtension" | "conflictReserved" | "conflictDuplicate" | "needModifier" | "secSitesDesc" | "cardListMode" | "rowMode" | "siteBlacklist" | "siteWhitelist" | "cardDomains" | "btnAdd" | "secAdvancedDesc" | "cardPerf" | "rowConcurrency" | "rowUseCache" | "cacheEntries" | "cacheUnknown" | "btnClearCache" | "cardConfig" | "configDesc" | "btnExport" | "btnImport" | "btnReset" | "toastCacheCleared" | "toastExported" | "toastImported" | "toastImportFail" | "toastReset" | "confirmReset" | "optionsLoadFail" | "popupStatus" | "popupMaster" | "popupTranslateThis" | "btnTranslate" | "popupEngine" | "popupLangs" | "popupDisplayMode" | "popupStyle" | "hintDisabled" | "hintNoElements" | "hintCantTranslate" | "hintSaveFail" | "hintInitFail" | "ctxTranslateSelection" | "ballGlyph" | "paraBtnGlyph" | "paraBtnLabel" | "paraBtnRestoreGlyph" | "paraBtnRestoreLabel" | "toastExtOn" | "toastExtOff" | "toastAllEnginesFail" | "toastTranslateFail" | "toastRenderRejected" | "toastAllRejected" | "toastNotTranslatable" | "toastSiteBlocked" | "welcomeTagline" | "welcomeReady" | "welcomeReadyDesc" | "welcomeHotkeys" | "welcomeHotkeysDesc" | "welcomeTargetLang" | "welcomeTargetLangDesc" | "welcomeInteractions" | "welcomeBall" | "welcomeBallDesc" | "welcomeParaBtn" | "welcomeParaBtnDesc" | "welcomeSelection" | "welcomeSelectionDesc" | "welcomeOpenSettings" | "welcomeClose" | "changelogTitle" | "changelogGroupFeature" | "changelogGroupImprove" | "changelogGroupFix" | "changelogGithub" | "changelogSocialDesc" | "changelogOk" | "changelogClose",
       substitutions?: string | string[],
       options?: GetMessageOptions,
     ): string;

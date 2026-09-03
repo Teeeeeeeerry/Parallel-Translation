@@ -56,7 +56,7 @@ export function initAppearance(): void {
   // ---- Live preview ----
 
   /**
-   * presets.css 用的是祖先-后代选择器（`.pt-style-fade .pt-trans`），
+   * presets.css 用的是祖先-后代选择器（`.pt-style-border .pt-trans`），
    * 所以 pt-style-* 必须加在预览**容器**上而不是 .pt-trans 自身 ——
    * 元素不是自己的祖先，加在自己身上永远匹配不上。
    * 这与 renderer.ts 把类名加在文档根上是同一套规则。

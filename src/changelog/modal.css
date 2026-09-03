@@ -1,0 +1,185 @@
+/* 更新提示弹窗 —— 经 shadow DOM 注入宿主页面，样式自包含。
+   色值一律取 tokens.css 的设计令牌（README 全局要求：不得硬编码色值）。
+   本文件由 modal.ts 以 ?inline 引入，随动态 import 一同分包，
+   不进 injected.css —— 否则每个页面的每个 shadow root 都要背上它。 */
+
+.pt-changelog-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--pt-forest-40);
+  font-family: var(--pt-font-ui);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--pt-forest);
+}
+
+.pt-changelog-card {
+  display: flex;
+  flex-direction: column;
+  width: 600px;
+  max-width: 100%;
+  max-height: 85vh;
+  overflow: hidden;
+  background: var(--pt-surface);
+  border-radius: var(--pt-r-lg);
+  box-shadow: 0 12px 40px var(--pt-forest-22);
+  animation: pt-changelog-in .18s ease-out;
+}
+
+@keyframes pt-changelog-in {
+  from { transform: scale(.96); opacity: 0 }
+  to   { transform: scale(1);   opacity: 1 }
+}
+
+/* ===== 头部 ===== */
+
+.pt-changelog-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--pt-forest-08);
+}
+
+.pt-changelog-title {
+  margin: 0;
+  font-family: var(--pt-font-mono);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+.pt-changelog-version {
+  padding: 1px 7px;
+  border: 1px solid var(--pt-brass);
+  border-radius: var(--pt-r-sm);
+  color: var(--pt-brass);
+  font-family: var(--pt-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pt-changelog-close {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: var(--pt-forest-40);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pt-changelog-close:hover { color: var(--pt-forest); }
+
+/* ===== 正文 ===== */
+
+.pt-changelog-body {
+  padding: 18px 24px;
+  overflow-y: auto;
+}
+
+.pt-changelog-group + .pt-changelog-group { margin-top: 20px; }
+
+.pt-changelog-group-title {
+  margin: 0 0 8px;
+  font-family: var(--pt-font-mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pt-changelog-items {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.pt-changelog-items li + li { margin-top: 9px; }
+
+.pt-changelog-item-title { font-weight: 600; }
+
+.pt-changelog-item-desc { color: var(--pt-forest-55); }
+
+/* ===== 社交模块（SOCIAL_LINKS 为空时整块不渲染）===== */
+
+.pt-changelog-social {
+  margin: 18px 24px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--pt-forest-09);
+  border-radius: var(--pt-r-md);
+  background: var(--pt-paper);
+}
+
+.pt-changelog-social-desc {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--pt-forest-55);
+}
+
+.pt-changelog-social-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pt-changelog-social-link {
+  padding: 6px 12px;
+  border: 1px solid var(--pt-forest-09);
+  border-radius: var(--pt-r-sm);
+  background: var(--pt-surface);
+  color: var(--pt-forest);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+/* ===== 底部 ===== */
+
+.pt-changelog-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--pt-forest-08);
+}
+
+.pt-changelog-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid var(--pt-forest-15);
+  border-radius: var(--pt-r-sm);
+  color: var(--pt-forest);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.pt-changelog-link:hover {
+  border-color: var(--pt-forest-22);
+  background: var(--pt-paper);
+}
+
+.pt-changelog-link svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.pt-changelog-ok {
+  margin-left: auto;
+  padding: 9px 22px;
+  border: 0;
+  border-radius: var(--pt-r-sm);
+  background: var(--pt-forest);
+  color: var(--pt-paper);
+  font-family: var(--pt-font-ui);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pt-changelog-ok:hover { opacity: .88; }

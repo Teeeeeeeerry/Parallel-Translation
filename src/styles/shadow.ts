@@ -22,8 +22,6 @@ const HOST_CONTEXT_CSS = `
 
 /* 6 种样式预设 */
 :host-context(.pt-style-default) .pt-trans {
-  border-left: 2px solid var(--pt-brass);
-  padding-left: 0.5em;
   opacity: 0.6;
 }
 :host-context(.pt-style-dim) .pt-trans {
@@ -43,7 +41,9 @@ const HOST_CONTEXT_CSS = `
 :host-context(.pt-style-italic) .pt-trans {
   font-style: italic;
 }
-:host-context(.pt-style-fade) .pt-trans {
+:host-context(.pt-style-border) .pt-trans {
+  border-left: 2px solid var(--pt-brass);
+  padding-left: 0.5em;
   opacity: 0.6;
 }
 `;

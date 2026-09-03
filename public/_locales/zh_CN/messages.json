@@ -3,6 +3,7 @@
   "extDesc": { "message": "对照式网页翻译扩展" },
   "translate": { "message": "翻译此页" },
   "settings": { "message": "设置" },
+  "popupReportIssue": { "message": "汇报问题" },
 
   "navGeneral": { "message": "通用" },
   "navEngines": { "message": "引擎" },
@@ -81,7 +82,7 @@
   "styleUnderline": { "message": "实线下划线" },
   "styleBold": { "message": "加粗" },
   "styleItalic": { "message": "斜体" },
-  "styleFade": { "message": "半透明" },
+  "styleBorder": { "message": "左边线" },
   "previewOrigin": { "message": "The quick brown fox jumps over the lazy dog." },
   "previewTrans": { "message": "敏捷的棕色狐狸跃过那只懒狗。" },
   "cardCustomCss": { "message": "自定义 CSS" },
@@ -182,5 +183,14 @@
   "welcomeSelection": { "message": "划词与右键翻译" },
   "welcomeSelectionDesc": { "message": "选中文本后右键，点击“翻译所选文本”即可翻译选中内容" },
   "welcomeOpenSettings": { "message": "打开完整设置" },
-  "welcomeClose": { "message": "开始使用" }
+  "welcomeClose": { "message": "开始使用" },
+
+  "changelogTitle": { "message": "更新内容" },
+  "changelogGroupFeature": { "message": "新功能" },
+  "changelogGroupImprove": { "message": "改进" },
+  "changelogGroupFix": { "message": "修复" },
+  "changelogGithub": { "message": "在 GitHub 上 Star" },
+  "changelogSocialDesc": { "message": "获取最新更新，欢迎关注：" },
+  "changelogOk": { "message": "知道了" },
+  "changelogClose": { "message": "关闭" }
 }

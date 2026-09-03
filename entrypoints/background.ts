@@ -8,6 +8,8 @@ import { route } from '~/src/engines/router';
 import { EngineError } from '~/src/engines/types';
 import { ensureE2EMock, applyE2EMock, getE2EMockStats } from '~/src/engines/e2e-mock';
 import { initContextMenu } from '~/src/ui/context-menu';
+import { claimShow, markFreshInstall } from '~/src/changelog/claim';
+import { markSeen } from '~/src/changelog/state';
 
 /** 将浏览器 UI 语言映射到 LANG_LIST 中可用的目标语言码 */
 function deriveTargetLanguage(uiLang: string): string {
@@ -49,6 +51,16 @@ export default defineBackground(() => {
     initContextMenu().catch(() => {});
 
     if (details.reason === 'install') {
+      // 首装用户没有「更新」可看 —— 更新提示只服务老用户（ADR-0001），
+      // 新用户看到的是 welcome 页。
+      //
+      // 两道闸：先同步置位内存标志（立即生效，先于任何 claim 消息抵达），
+      // 再异步落盘。只靠落盘会留下竞态窗口 —— 详见 claim.ts 的说明。
+      markFreshInstall();
+      markSeen(chrome.runtime.getManifest().version).catch((e) =>
+        console.error('[PT] 首装标记更新提示已读失败：', e),
+      );
+
       // 根据浏览器 UI 语言推导默认目标语言
       settingsReady()
         .then(async () => {
@@ -91,6 +103,23 @@ export default defineBackground(() => {
         console.debug('[PT] 关闭 welcome 标签页失败或已关闭');
       });
     }
+  });
+
+  // 更新提示的显示权仲裁（ADR-0001）——
+  // 扩展更新后每个新页面的 content script 都会来问，串行判定只放行一个，
+  // 避免同时打开多个标签页时弹出多个弹窗
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type !== 'pt:changelog-claim') return;
+    // 跨进程载荷不做类型假设 —— 字段不对就当没收到，不去写存储
+    if (typeof msg.version !== 'string' || !msg.version) return;
+
+    claimShow(msg.version)
+      .then((granted) => sendResponse({ ok: true, granted }))
+      .catch((e) => {
+        console.error('[PT] 更新提示仲裁失败：', e);
+        sendResponse({ ok: false, granted: false });
+      });
+    return true; // 异步响应
   });
 
   // 健康检查（E2E 测试用于验证消息通道就绪）

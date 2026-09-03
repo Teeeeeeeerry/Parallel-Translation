@@ -17,10 +17,8 @@
 
 /* ── 6 种样式预设 ───────────────────────────────────── */
 
-/* 默认：黄铜金左边框做弱标识 + 半透明压低存在感（#143） */
+/* 默认：半透明压低存在感（#143），不加任何边框装饰 */
 .pt-style-default .pt-trans {
-  border-left: 2px solid var(--pt-brass);
-  padding-left: 0.5em;
   opacity: 0.6;
 }
 
@@ -49,8 +47,11 @@
   font-style: italic;
 }
 
-/* 半透明：始终可见，只压低存在感 */
-.pt-style-fade .pt-trans {
+/* 左边线：黄铜金左边框做弱标识 + 半透明。原为默认样式，
+   默认改为纯半透明后独立成一项，排在预设列表末尾 */
+.pt-style-border .pt-trans {
+  border-left: 2px solid var(--pt-brass);
+  padding-left: 0.5em;
   opacity: 0.6;
 }
 
@@ -61,6 +62,7 @@
      折叠成一行长文本 */
   white-space: pre-line;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* 覆盖「左边线」预设的边框 —— pre 内译文不带装饰 */
   border-left: none;
   padding-left: 0;
   /* inline：译文紧贴原文块尾换行，不产生块级换行 + 空行框。

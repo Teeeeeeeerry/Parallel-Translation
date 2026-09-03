@@ -17,7 +17,30 @@ export type StyleId =
   | 'underline'
   | 'bold'
   | 'italic'
-  | 'fade';
+  | 'border';
+
+/** 全部有效样式 id —— migrateStyle 据此判断存储里的值还认不认得。 */
+const STYLE_IDS = new Set<string>([
+  'default',
+  'dim',
+  'underline',
+  'bold',
+  'italic',
+  'border',
+]);
+
+/**
+ * 把存储里的样式 id 迁到当前有效值。
+ *
+ * 'fade'（纯半透明）的效果已成为新的 default，选过它的老用户迁过去
+ * 观感不变；认不出的值一律回落 default —— 否则 applyStyle 会挂上一个
+ * 没有任何 CSS 规则的类名，译文变成完全无样式，用户只会觉得设置失灵。
+ */
+export function migrateStyle(style: unknown): StyleId {
+  if (typeof style !== 'string') return 'default';
+  if (style === 'fade') return 'default';
+  return STYLE_IDS.has(style) ? (style as StyleId) : 'default';
+}
 
 export type EngineId =
   | 'google-web'

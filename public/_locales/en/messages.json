@@ -3,6 +3,7 @@
   "extDesc": { "message": "Bilingual web page translation extension" },
   "translate": { "message": "Translate Page" },
   "settings": { "message": "Settings" },
+  "popupReportIssue": { "message": "Report issue" },
 
   "navGeneral": { "message": "General" },
   "navEngines": { "message": "Engines" },
@@ -81,7 +82,7 @@
   "styleUnderline": { "message": "Underline" },
   "styleBold": { "message": "Bold" },
   "styleItalic": { "message": "Italic" },
-  "styleFade": { "message": "Faded" },
+  "styleBorder": { "message": "Left border" },
   "previewOrigin": { "message": "The quick brown fox jumps over the lazy dog." },
   "previewTrans": { "message": "敏捷的棕色狐狸跃过那只懒狗。" },
   "cardCustomCss": { "message": "Custom CSS" },
@@ -182,5 +183,14 @@
   "welcomeSelection": { "message": "Selection & context menu" },
   "welcomeSelectionDesc": { "message": "Select text, right-click, and choose \"Translate selected text\" to translate the selection" },
   "welcomeOpenSettings": { "message": "Open full settings" },
-  "welcomeClose": { "message": "Get started" }
+  "welcomeClose": { "message": "Get started" },
+
+  "changelogTitle": { "message": "What's New" },
+  "changelogGroupFeature": { "message": "New" },
+  "changelogGroupImprove": { "message": "Improved" },
+  "changelogGroupFix": { "message": "Fixed" },
+  "changelogGithub": { "message": "Star on GitHub" },
+  "changelogSocialDesc": { "message": "Follow along for the latest updates:" },
+  "changelogOk": { "message": "Got it" },
+  "changelogClose": { "message": "Close" }
 }
