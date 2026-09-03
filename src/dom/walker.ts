@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
 // Phase 3 / 8 — 采集器：统一遍历模块的一个访问回调。
 //
 // #320：遍历本身、shadow 下沉、集中式跳过规则（扩展自身 UI）、去重

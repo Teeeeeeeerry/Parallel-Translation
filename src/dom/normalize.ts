@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
 // Phase 9 — 取文本前的空白归一化（纯函数，无 DOM 依赖）。
 //
 // Markdown 段落内的软换行会原样保留为文本节点里的 \n（GitHub README 等

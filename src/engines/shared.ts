@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
 // 引擎公共模块 —— #222 架构评审候选 3。
 //
 // 状态分类与编号提示词模板此前在各引擎里各写一遍：401/403 → key 无效

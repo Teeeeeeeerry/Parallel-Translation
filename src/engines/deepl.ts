@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
 // Phase 7 — DeepL 翻译引擎（BYOK）。
 // 免费版与 Pro 版端点不同，靠 key 后缀 ':fx' 区分。
 // DeepL 语言覆盖有限，supportedLangs 必须显式列举。

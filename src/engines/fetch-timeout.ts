@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
 // 引擎 fetch 超时层 —— #154。
 //
 // Chrome fetch 无默认超时，网络黑洞 / 代理中断 / 服务端接受连接但不响应时

@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
 // Phase 2 — Google Web 翻译引擎（免 key）。
 // 端点 translate.googleapis.com，单次只接受一段文本，批量靠并发多请求；
 // 外裹并发闸门防限流。
