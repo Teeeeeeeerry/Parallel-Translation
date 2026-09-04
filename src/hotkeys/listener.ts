@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
 // Phase 6 — content script 运行时快捷键监听。
 // 用捕获阶段监听，抢在页面自身的按键处理之前。
 

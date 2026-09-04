@@ -61,5 +61,5 @@ The interface speaks Simplified Chinese, Traditional Chinese and English, follow
 After an update, the next page you open tells you what changed. It shows once and never again.
 Found a problem? There is a link at the bottom of the toolbar panel.
 
-Open source. Code and issues:
+Open source under the GNU GPL v3. Code and issues:
 https://github.com/Teeeeeeeerry/Parallel-Translation

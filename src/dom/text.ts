@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
 // Phase 9 — 提取可翻译文本（跳过 .notranslate 与站点元数据子树）。
 //
 // 单元文本不能直接取 textContent：Google AI 概览的来源角标（chip）是

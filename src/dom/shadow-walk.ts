@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
 // 统一 shadow 子树遍历模块 —— #220 架构评审候选 4 的核心（#233）。
 //
 // Shadow-DOM 的递归遍历此前在还原流程、已翻译判定、观察器三处各写一遍，

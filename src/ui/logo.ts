@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
 // 品牌标识「A / 文」的字形定义 —— 唯一真相。
 //
 // 拉丁字母 A 在上、汉字「文」在下，对应产品的「原文在上、译文在下」。

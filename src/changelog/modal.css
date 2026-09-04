@@ -1,3 +1,11 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Parallel-Translation contributors
+ *
+ * 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+ * 不含任何担保。完整条款见仓库根目录的 LICENSE。
+ */
+
 /* 更新提示弹窗 —— 经 shadow DOM 注入宿主页面，样式自包含。
    色值一律取 tokens.css 的设计令牌（README 全局要求：不得硬编码色值）。
    本文件由 modal.ts 以 ?inline 引入，随动态 import 一同分包，

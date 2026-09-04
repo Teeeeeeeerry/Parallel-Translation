@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
 // Phase 1 — 全局 Settings 类型定义与默认值。
 // 此文件为全局唯一真相来源。后续所有阶段新增配置项都改这里，
 // 不要在别处另开定义。

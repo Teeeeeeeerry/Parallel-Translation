@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
 // 「该不该弹更新提示」的判定 —— 纯函数，输入全部显式传入。
 //
 // 把判定从 content script 的副作用里摘出来单测，是因为它有五条互相

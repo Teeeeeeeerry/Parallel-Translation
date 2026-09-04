@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
 // 更新提示的变更数据 —— ADR-0002：此文件即上架版本的唯一真相。
 //
 // 这里写了条目的版本号就是「上架版本」，扩展更新到该版本后会向用户

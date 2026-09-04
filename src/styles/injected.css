@@ -1,3 +1,11 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Parallel-Translation contributors
+ *
+ * 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+ * 不含任何担保。完整条款见仓库根目录的 LICENSE。
+ */
+
 /* Phase 5 — 注入 shadow root 的 UI 专属样式。
    此处可安全使用短类名，不会与宿主冲突。
    设计令牌由 mount.ts 注入同一 shadow root，故 CSS 变量可用。 */
