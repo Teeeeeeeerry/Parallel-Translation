@@ -91,6 +91,13 @@ export default defineConfig({
       },
     }),
   }),
+  // Firefox 的 AMO 要求随扩展提交源码包，里面只需要能重现构建的东西。
+  // 默认规则会把整个仓库塞进去 —— 文档、商店截图、设计稿，以及
+  // docs/testing/logs/ 下每次跑测试都会重写的覆盖率与报告产物，
+  // 合计约 4.3MB，对复现构建毫无用处，还让审核者多下载 20 倍体积。
+  zip: {
+    excludeSources: ['docs/**', 'store/**', 'design/**'],
+  },
   vite: () => ({
     plugins: [blockTestFiles()],
   }),
