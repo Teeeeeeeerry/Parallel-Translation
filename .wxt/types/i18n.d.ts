@@ -1433,7 +1433,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "确定删除领域“$name$”吗？其中的术语会一并删除。"
+     * "确定删除领域“$name$”吗？删除后无法恢复。"
      */
     getMessage(
       messageName: "domainDeleteConfirm",

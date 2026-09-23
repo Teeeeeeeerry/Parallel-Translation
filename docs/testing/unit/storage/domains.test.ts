@@ -2,16 +2,17 @@
  * storage/domains.ts — 领域存储与当前领域解析 单元测试（#379）
  *
  * 只断言外部可观察的行为：生效领域列表的内容、给定网址与目标语言时
- * 解析出的当前领域。
+ * 解析出的当前领域；自建领域的新建、删除与存放位置（#391）。
  */
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 import {
   getEffectiveDomains,
   currentDomain,
   createDomain,
   deleteDomain,
+  onDomainsChanged,
 } from '~/src/storage/domains';
-import { resetStorage } from '~/docs/testing/setup';
+import { resetStorage, fireStorageChange } from '~/docs/testing/setup';
 import type { Domain } from '~/src/storage/domains';
 
 function domain(id: string, sites: string[], targetLang = 'zh-CN'): Domain {
@@ -166,5 +167,44 @@ describe('新建与删除自建领域（#391）', () => {
     const domains = await getEffectiveDomains();
     expect(domains).toHaveLength(1);
     expect(domains[0]!.origin).toBe('builtin');
+  });
+
+  test('连续新建不会互相覆盖', async () => {
+    await Promise.all([
+      createDomain({ name: '甲', targetLang: 'zh-CN' }),
+      createDomain({ name: '乙', targetLang: 'zh-CN' }),
+      createDomain({ name: '丙', targetLang: 'zh-CN' }),
+    ]);
+    const names = (await getEffectiveDomains()).slice(1).map((d) => d.name);
+    expect(names).toEqual(['甲', '乙', '丙']);
+  });
+
+  test('存储里与内置领域同 ID 的条目被忽略', async () => {
+    const [dev] = await getEffectiveDomains();
+    await chrome.storage.local.set({
+      'pt-domains': { user: [{ ...dev!, name: '冒名', origin: 'user' }] },
+    });
+    const domains = await getEffectiveDomains();
+    expect(domains).toHaveLength(1);
+    expect(domains[0]!.name).toBe(dev!.name);
+  });
+
+  test('读取存储失败时只剩内置领域，不抛错', async () => {
+    vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
+    const domains = await getEffectiveDomains();
+    expect(domains.map((d) => d.origin)).toEqual(['builtin']);
+  });
+
+  test('领域数据变更时通知订阅者，其他键的变更不通知', () => {
+    const fn = vi.fn();
+    const off = onDomainsChanged(fn);
+    fireStorageChange({ 'pt-cache-index': { newValue: [] } }, 'local');
+    fireStorageChange({ 'pt-domains': { newValue: { user: [] } } }, 'sync');
+    expect(fn).not.toHaveBeenCalled();
+    fireStorageChange({ 'pt-domains': { newValue: { user: [] } } }, 'local');
+    expect(fn).toHaveBeenCalledTimes(1);
+    off();
+    fireStorageChange({ 'pt-domains': { newValue: { user: [] } } }, 'local');
+    expect(fn).toHaveBeenCalledTimes(1);
   });
 });

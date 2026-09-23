@@ -204,7 +204,7 @@
   "domainBuiltinBadge": { "message": "内置 · 只读" },
   "domainDelete": { "message": "删除" },
   "domainDeleteConfirm": {
-    "message": "确定删除领域“$name$”吗？其中的术语会一并删除。",
+    "message": "确定删除领域“$name$”吗？删除后无法恢复。",
     "placeholders": { "name": { "content": "$1" } }
   },
   "domainCreated": { "message": "已新建领域" }

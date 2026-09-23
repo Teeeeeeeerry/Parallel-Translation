@@ -38,7 +38,7 @@ export interface Domain {
 }
 
 /** storage.local 里的用户领域数据。 */
-const KEY = 'pt-domains';
+const STORAGE_KEY = 'pt-domains';
 
 interface StoredDomains {
   /** 自建领域，按新建顺序。 */
@@ -55,6 +55,7 @@ function isUserDomain(v: unknown): v is Domain {
   const d = v as Partial<Domain>;
   return (
     typeof d.id === 'string' &&
+    !BUILTIN_DOMAINS.some((b) => b.id === d.id) &&
     typeof d.name === 'string' &&
     typeof d.targetLang === 'string' &&
     Array.isArray(d.sites) &&
@@ -64,17 +65,40 @@ function isUserDomain(v: unknown): v is Domain {
   );
 }
 
+/**
+ * 读取自建领域。读取失败时退回空列表（只剩内置领域）并记日志 ——
+ * 翻译路径每次请求都会读，存储故障不该让整次翻译失败。
+ */
 async function readUserDomains(): Promise<Domain[]> {
-  const stored = (await chrome.storage.local.get(KEY))[KEY] as
-    | Partial<StoredDomains>
-    | undefined;
+  let stored: Partial<StoredDomains> | undefined;
+  try {
+    stored = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY] as
+      | Partial<StoredDomains>
+      | undefined;
+  } catch (e) {
+    console.warn('[PT] 读取自建领域失败:', e);
+  }
   const user = Array.isArray(stored?.user) ? stored.user : [];
   return user.filter(isUserDomain).map((d) => ({ ...d, origin: 'user' }));
 }
 
-async function writeUserDomains(user: Domain[]): Promise<void> {
-  const stored: StoredDomains = { user };
-  await chrome.storage.local.set({ [KEY]: stored });
+/**
+ * 读-改-写串行化：同一上下文里连续新建 / 删除时，后一次基于前一次的
+ * 结果改，不会互相覆盖（与 cache.ts 的 index 链同一做法）。
+ */
+let writeChain: Promise<unknown> = Promise.resolve();
+
+function updateUserDomains<T>(
+  fn: (user: Domain[]) => { user: Domain[]; result: T },
+): Promise<T> {
+  const next = writeChain.then(async () => {
+    const { user, result } = fn(await readUserDomains());
+    const stored: StoredDomains = { user };
+    await chrome.storage.local.set({ [STORAGE_KEY]: stored });
+    return result;
+  });
+  writeChain = next.catch(() => {});
+  return next;
 }
 
 /**
@@ -111,8 +135,7 @@ export async function createDomain(input: {
     terms: [],
     origin: 'user',
   };
-  await writeUserDomains([...(await readUserDomains()), domain]);
-  return domain;
+  return updateUserDomains((user) => ({ user: [...user, domain], result: domain }));
 }
 
 /**
@@ -122,9 +145,24 @@ export async function deleteDomain(id: string): Promise<void> {
   if (BUILTIN_DOMAINS.some((d) => d.id === id)) {
     throw new Error('[PT] 内置领域不能删除');
   }
-  const user = await readUserDomains();
-  const rest = user.filter((d) => d.id !== id);
-  if (rest.length !== user.length) await writeUserDomains(rest);
+  await updateUserDomains((user) => ({
+    user: user.filter((d) => d.id !== id),
+    result: undefined,
+  }));
+}
+
+/**
+ * 领域数据变更订阅（任一上下文新建、删除后触发）。返回取消订阅函数。
+ */
+export function onDomainsChanged(fn: () => void): () => void {
+  const listener = (
+    changes: Record<string, chrome.storage.StorageChange>,
+    area: string,
+  ) => {
+    if (area === 'local' && changes[STORAGE_KEY]) fn();
+  };
+  chrome.storage.onChanged.addListener(listener);
+  return () => chrome.storage.onChanged.removeListener(listener);
 }
 
 /**

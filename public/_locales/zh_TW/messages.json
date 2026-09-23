@@ -204,7 +204,7 @@
   "domainBuiltinBadge": { "message": "內建 · 唯讀" },
   "domainDelete": { "message": "刪除" },
   "domainDeleteConfirm": {
-    "message": "確定刪除領域「$name$」嗎？其中的術語會一併刪除。",
+    "message": "確定刪除領域「$name$」嗎？刪除後無法復原。",
     "placeholders": { "name": { "content": "$1" } }
   },
   "domainCreated": { "message": "已新增領域" }

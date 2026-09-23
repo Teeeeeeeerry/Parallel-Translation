@@ -12,7 +12,9 @@ import {
   getEffectiveDomains,
   createDomain,
   deleteDomain,
+  onDomainsChanged,
 } from '~/src/storage/domains';
+import { getSettings } from '~/src/storage/settings';
 import type { Domain } from '~/src/storage/domains';
 import { tf } from '~/src/i18n';
 import { showToast } from '../main';
@@ -61,6 +63,8 @@ export function initDomains(): void {
   langSelect.innerHTML = LANG_LIST.filter((l) => l.code !== 'auto')
     .map((l) => `<option value="${l.code}">${l.label}</option>`)
     .join('');
+  // 默认选中当前设置的目标语言 —— 新建的领域通常就是给它用的
+  langSelect.value = getSettings().to;
 
   async function render(): Promise<void> {
     const domains = await getEffectiveDomains();
@@ -68,11 +72,10 @@ export function initDomains(): void {
   }
 
   function remove(d: Domain): void {
-    if (!confirm(tf('domainDeleteConfirm', `确定删除领域“${d.name}”吗？其中的术语会一并删除。`, d.name))) {
+    if (!confirm(tf('domainDeleteConfirm', `确定删除领域“${d.name}”吗？删除后无法恢复。`, d.name))) {
       return;
     }
     deleteDomain(d.id)
-      .then(render)
       .catch((e) => console.error('[PT] 删除领域失败:', e));
   }
 
@@ -85,7 +88,6 @@ export function initDomains(): void {
       .then(() => {
         nameInput.value = '';
         showToast(tf('domainCreated', '已新建领域'));
-        return render();
       })
       .catch((e) => console.error('[PT] 新建领域失败:', e));
   }
@@ -96,5 +98,8 @@ export function initDomains(): void {
     if (e.key === 'Enter') create();
   });
 
-  render().catch((e) => console.error('[PT] 读取领域失败:', e));
+  const refresh = () => render().catch((e) => console.error('[PT] 读取领域失败:', e));
+  refresh();
+  // 其他设置页标签页新建 / 删除后同步刷新
+  onDomainsChanged(refresh);
 }
