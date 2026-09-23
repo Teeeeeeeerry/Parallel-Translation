@@ -3,12 +3,12 @@
  * @vitest-environment-options {"url": "https://github.com/anthropics/claude-code"}
  */
 /**
- * dom/compat.ts — github.com 域名补丁测试
+ * dom/compat.ts — github.com 的 preserve 补丁测试（shouldPreserveText）
  *
  * 与 compat.test.ts 分离的原因：jsdom 的 location.hostname 默认是
  * localhost，域名补丁不激活。本文件用文件顶部的
  * @vitest-environment-options 把 jsdom 的 url 设为 github.com 页面，
- * 使补丁走 github.com 处理器 —— 这是文件级选项，
+ * 使 preserve 表走 github.com 条目 —— 这是文件级选项，
  * 不能与依赖 localhost 的用例同文件。
  *
  * #367：github.com 的 skip 补丁已迁为内置排除数据，applyCompat 的

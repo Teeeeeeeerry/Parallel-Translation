@@ -7,7 +7,10 @@
  *
  * github.com 的 skip 补丁原先写在 compat.ts 代码层，#367 迁为内置
  * 排除数据（ADR-0003）。旧补丁用 closest() 判定，本来就是整块语义，
- * 与数据化的排除等价。本文件在 walker 采集入口 collect() 验证：
+ * 与数据化的排除等价。唯一例外是 shadow DOM：closest() 不穿过 shadow
+ * 边界，旧补丁会采集排除区内宿主的 shadowRoot 里的单元，排除则连同
+ * shadowRoot 整块跳过 —— 更符合“整块不翻译”，github 页面上也不涉及。
+ * 本文件在 walker 采集入口 collect() 验证：
  *   - 迁移前后采集到的单元一致（仓库首页 + blob 页的典型片段）
  *   - 原 compat-github.test.ts 中 applyCompat 的各选择器用例照常不采集，
  *     正文与含行内 code 的正文照常采集
