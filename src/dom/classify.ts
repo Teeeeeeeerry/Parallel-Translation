@@ -12,6 +12,8 @@
 // - INLINE_SET：自身不作为翻译单元，需向上找可翻父节点
 // 此三层分类是 TreeWalker 过滤逻辑的基础。
 
+import { getSiteRules } from '~/src/storage/specialization';
+
 /** 直接翻译的块级元素 */
 export const DIRECT_SET = new Set([
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -277,8 +279,15 @@ function directTextLength(el: Element): number {
  * shouldSkip 有强制同步布局的昂贵步骤（outerHTML、getBoundingClientRect），
  * 只应在低频率路径调用：悬停意图计时器、点击/快捷键入口，不能挂在
  * 每次 mouseover 上。
+ *
+ * #366：站点页面规则作用于逐段翻译 —— el 落在排除区内（自身或祖先命中
+ * 排除选择器）时找不到单元，不出按钮也不翻译。向下降级只在含 el 的分支
+ * 里找，结果必是 el 的祖先或自身，同样在排除区外，无需再判。
  */
 export function closestUnit(el: Element): Element | null {
+  const { exclude } = getSiteRules(location.hostname);
+  if (exclude.some((sel) => el.closest(sel))) return null;
+
   let cur: Element | null = el;
   while (cur) {
     if (isTranslationUnit(cur) && !shouldSkip(cur)) {
