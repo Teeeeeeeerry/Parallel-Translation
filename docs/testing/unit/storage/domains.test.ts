@@ -2,15 +2,26 @@
  * storage/domains.ts — 领域存储与当前领域解析 单元测试（#379）
  *
  * 只断言外部可观察的行为：生效领域列表的内容、给定网址与目标语言时
- * 解析出的当前领域。
+ * 解析出的当前领域；自建领域的新建、删除与存放位置（#391）。
  */
-import { describe, test, expect } from 'vitest';
-import { getEffectiveDomains, currentDomain } from '~/src/storage/domains';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
+import {
+  getEffectiveDomains,
+  currentDomain,
+  createDomain,
+  deleteDomain,
+  onDomainsChanged,
+} from '~/src/storage/domains';
+import { resetStorage, fireStorageChange } from '~/docs/testing/setup';
 import type { Domain } from '~/src/storage/domains';
 
 function domain(id: string, sites: string[], targetLang = 'zh-CN'): Domain {
   return { id, name: id, targetLang, sites, terms: [], origin: 'user' };
 }
+
+beforeEach(() => {
+  resetStorage();
+});
 
 describe('getEffectiveDomains — 生效领域列表', () => {
   test('只含内置领域「软件开发(简体中文)」', async () => {
@@ -88,5 +99,112 @@ describe('currentDomain — 当前领域解析', () => {
   test('语言码比对不区分大小写', () => {
     const domains = [domain('zh', ['github.com'], 'zh-CN')];
     expect(currentDomain(domains, 'github.com', 'zh-cn')?.id).toBe('zh');
+  });
+});
+
+describe('新建与删除自建领域（#391）', () => {
+  test('新建的领域出现在生效领域列表里，排在内置领域之后', async () => {
+    const created = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    expect(created).toMatchObject({
+      name: '法律',
+      targetLang: 'zh-CN',
+      sites: [],
+      terms: [],
+      origin: 'user',
+    });
+    const domains = await getEffectiveDomains();
+    expect(domains.map((d) => d.origin)).toEqual(['builtin', 'user']);
+    expect(domains[1]).toEqual(created);
+  });
+
+  test('名称去掉首尾空格；多个自建领域按新建顺序排列、ID 互不相同', async () => {
+    const a = await createDomain({ name: '  法律  ', targetLang: 'zh-CN' });
+    const b = await createDomain({ name: '医学', targetLang: 'ja' });
+    expect(a.name).toBe('法律');
+    expect(a.id).not.toBe(b.id);
+    const domains = await getEffectiveDomains();
+    expect(domains.slice(1).map((d) => d.name)).toEqual(['法律', '医学']);
+    expect(domains.every((d, i) => domains.findIndex((x) => x.id === d.id) === i)).toBe(true);
+  });
+
+  test('名称或目标语言为空 → 拒绝新建，列表不变', async () => {
+    await expect(createDomain({ name: '   ', targetLang: 'zh-CN' })).rejects.toThrow();
+    await expect(createDomain({ name: '法律', targetLang: '' })).rejects.toThrow();
+    expect(await getEffectiveDomains()).toHaveLength(1);
+  });
+
+  test('自建领域存放在 storage.local，不占 storage.sync', async () => {
+    await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    const local = await chrome.storage.local.get(null);
+    const sync = await chrome.storage.sync.get(null);
+    expect(JSON.stringify(local)).toContain('法律');
+    expect(JSON.stringify(sync)).not.toContain('法律');
+  });
+
+  test('删除自建领域后不再出现在生效领域列表里', async () => {
+    const a = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    const b = await createDomain({ name: '医学', targetLang: 'zh-CN' });
+    await deleteDomain(a.id);
+    const domains = await getEffectiveDomains();
+    expect(domains.map((d) => d.id)).not.toContain(a.id);
+    expect(domains.map((d) => d.id)).toContain(b.id);
+  });
+
+  test('内置领域不能删除', async () => {
+    const [dev] = await getEffectiveDomains();
+    await expect(deleteDomain(dev!.id)).rejects.toThrow();
+    expect((await getEffectiveDomains())[0]!.id).toBe(dev!.id);
+  });
+
+  test('删除不存在的领域不报错，列表不变', async () => {
+    await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    await deleteDomain('user:missing');
+    expect(await getEffectiveDomains()).toHaveLength(2);
+  });
+
+  test('存储里的脏数据被忽略，不影响内置领域', async () => {
+    await chrome.storage.local.set({ 'pt-domains': { user: [{ id: 1 }, null, 'x'] } });
+    const domains = await getEffectiveDomains();
+    expect(domains).toHaveLength(1);
+    expect(domains[0]!.origin).toBe('builtin');
+  });
+
+  test('连续新建不会互相覆盖', async () => {
+    await Promise.all([
+      createDomain({ name: '甲', targetLang: 'zh-CN' }),
+      createDomain({ name: '乙', targetLang: 'zh-CN' }),
+      createDomain({ name: '丙', targetLang: 'zh-CN' }),
+    ]);
+    const names = (await getEffectiveDomains()).slice(1).map((d) => d.name);
+    expect(names).toEqual(['甲', '乙', '丙']);
+  });
+
+  test('存储里与内置领域同 ID 的条目被忽略', async () => {
+    const [dev] = await getEffectiveDomains();
+    await chrome.storage.local.set({
+      'pt-domains': { user: [{ ...dev!, name: '冒名', origin: 'user' }] },
+    });
+    const domains = await getEffectiveDomains();
+    expect(domains).toHaveLength(1);
+    expect(domains[0]!.name).toBe(dev!.name);
+  });
+
+  test('读取存储失败时只剩内置领域，不抛错', async () => {
+    vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
+    const domains = await getEffectiveDomains();
+    expect(domains.map((d) => d.origin)).toEqual(['builtin']);
+  });
+
+  test('领域数据变更时通知订阅者，其他键的变更不通知', () => {
+    const fn = vi.fn();
+    const off = onDomainsChanged(fn);
+    fireStorageChange({ 'pt-cache-index': { newValue: [] } }, 'local');
+    fireStorageChange({ 'pt-domains': { newValue: { user: [] } } }, 'sync');
+    expect(fn).not.toHaveBeenCalled();
+    fireStorageChange({ 'pt-domains': { newValue: { user: [] } } }, 'local');
+    expect(fn).toHaveBeenCalledTimes(1);
+    off();
+    fireStorageChange({ 'pt-domains': { newValue: { user: [] } } }, 'local');
+    expect(fn).toHaveBeenCalledTimes(1);
   });
 });
