@@ -43,6 +43,11 @@ export interface TranslateEngine {
   requiresKey: boolean;
   /** 该引擎支持的语言码列表，'all' 表示不做限制。 */
   supportedLangs: string[] | 'all';
+  /**
+   * 用占位符落实“不翻译”术语（#386）：router 发送前把命中的“不翻译”
+   * 术语换成占位符，译文回来后换回原词。机翻引擎各自声明。
+   */
+  masksNoTranslate?: boolean;
   translate(req: TranslateRequest): Promise<TranslateResponse>;
 }
 

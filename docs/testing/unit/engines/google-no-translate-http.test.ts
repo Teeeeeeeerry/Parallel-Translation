@@ -1,5 +1,5 @@
 /**
- * engines/google-web.ts — “不翻译”术语占位符替换 HTTP 用例（#386）
+ * engines/router.ts × google-web — “不翻译”术语占位符替换 HTTP 用例（#386）
  *
  * 切入点是 route()：真实 router + 真实 google-web 引擎，只 stub fetch。
  * 断言发给 Google 的查询文本（占位符）与回填后的译文（原词）。
@@ -79,7 +79,7 @@ describe('Google “不翻译”术语替换（#386）', () => {
     expect(queries()[0]).toMatch(/^Open an ⟦TM\d+⟧ here$/);
   });
 
-  test('回填后译文该位置是原词，保留原文的大小写', async () => {
+  test('回填后译文该位置是原词，大小写与原文一致', async () => {
     const resp = await translate(['Open an Issue here']);
     expect(resp.translations).toEqual(['译:Open an Issue here']);
   });
@@ -121,5 +121,11 @@ describe('Google “不翻译”术语替换（#386）', () => {
     const resp = await translate(['Open an issue']);
     expect(resp.translations).toEqual(['译:Open an issue']);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('原文里本来就有占位符样式的文字：不替换，照常翻译', async () => {
+    const resp = await translate(['literal ⟦TM0⟧ and an issue']);
+    expect(queries()[0]).toBe('literal ⟦TM0⟧ and an issue');
+    expect(resp.translations).toEqual(['译:literal ⟦TM0⟧ and an issue']);
   });
 });

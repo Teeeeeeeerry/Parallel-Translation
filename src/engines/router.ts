@@ -22,13 +22,6 @@ import { gemini } from './gemini';
 import { EngineError, AllEnginesFailedError } from './types';
 import type { TranslateEngine, TranslateRequest, TranslateResponse } from './types';
 
-/**
- * 用占位符落实“不翻译”术语的机翻引擎（#386）—— 发送前把命中的
- * “不翻译”术语换成占位符，译文回来后换回原词。其余机翻引擎在
- * 各自的 ticket 接入。
- */
-const NO_TRANSLATE_MASK_ENGINES = new Set(['google-web']);
-
 const REGISTRY: Record<string, TranslateEngine> = {
   'google-web': googleWeb,
   'bing-edge': bingEdge,
@@ -115,7 +108,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       // #381: 只带本批（未命中缓存的段落）命中的术语，不发送整个领域
       const batchTerms = uniqueTerms(uncached.flatMap((u) => hits[u.idx]!));
       // #386: 机翻引擎发送前把“不翻译”术语换成占位符
-      const masks = NO_TRANSLATE_MASK_ENGINES.has(id)
+      const masks = engine.masksNoTranslate
         ? uncached.map((u) => maskNoTranslate(u.text, hits[u.idx]!))
         : null;
       const subReq: TranslateRequest = {
@@ -132,15 +125,15 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       const failed = [...(resp.failedIndices ?? [])];
       for (let j = 0; j < uncached.length; j++) {
         const raw = resp.translations[j];
+        if (raw === undefined || raw === null || failed.includes(j)) {
+          translations[uncached[j]!.idx] = null;
+          if (!failed.includes(j)) failed.push(j);
+          continue;
+        }
         // #386: 占位符换回原词；占位符被引擎改坏 → 不采用，按失败槽位处理
-        const text =
-          raw === undefined || raw === null || !masks
-            ? raw
-            : unmaskNoTranslate(raw, masks[j]!.originals);
-        if (text === undefined || text === null) {
-          if (raw !== undefined && raw !== null) {
-            console.debug('[PT] “不翻译”术语占位符被引擎改坏，该段交给下一个引擎', { engine: id });
-          }
+        const text = masks ? unmaskNoTranslate(raw, masks[j]!.originals) : raw;
+        if (text === null) {
+          console.debug('[PT] “不翻译”术语占位符被引擎改坏，该段交给下一个引擎', { engine: id });
           translations[uncached[j]!.idx] = null;
           failed.push(j);
         } else {

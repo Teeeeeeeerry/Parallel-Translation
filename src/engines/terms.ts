@@ -20,9 +20,10 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function termPattern(source: string): RegExp {
-  const escaped = escapeRegExp(source);
-  return new RegExp(`(?<!${WORD_CHAR})${escaped}(?!${WORD_CHAR})`, 'iu');
+/** 按整词边界匹配任一原词（不区分大小写）。 */
+function wholeWord(sources: readonly string[], flags: string): RegExp {
+  const body = sources.map(escapeRegExp).join('|');
+  return new RegExp(`(?<!${WORD_CHAR})(?:${body})(?!${WORD_CHAR})`, flags);
 }
 
 /** 能约束译文的术语：给了译法，或标为“不翻译”。 */
@@ -35,7 +36,7 @@ function isEffective(t: Term): boolean {
  * （既没给译法、也没标“不翻译”）不算命中，不进缓存 key 也不发送。
  */
 export function matchTerms(terms: readonly Term[], text: string): Term[] {
-  return terms.filter((t) => isEffective(t) && termPattern(t.source.trim()).test(text));
+  return terms.filter((t) => isEffective(t) && wholeWord([t.source.trim()], 'iu').test(text));
 }
 
 /**
@@ -48,27 +49,24 @@ const TERM_PLACEHOLDER_RE = /⟦TM(\d+)⟧/g;
 /** 占位符替换结果：发给机翻引擎的文本 + 每个占位符对应的原文。 */
 export interface MaskedText {
   text: string;
-  /** originals[n] 是 ⟦TMn⟧ 替换掉的原文（保留原文里的大小写）。 */
+  /** originals[n] 是 ⟦TMn⟧ 替换掉的那段原文（大小写与原文一致）。 */
   originals: string[];
 }
 
 /**
  * 把命中的“不翻译”术语换成占位符（#386）。指定了译法的术语不参与。
- * 多条术语重叠时长的优先（“pull request”先于“request”）。
+ * 多条术语重叠时长的优先（“pull request”先于“request”）。原文里本来
+ * 就有占位符样式的文字时不替换 —— 回填时无法区分，编号会错乱。
  */
 export function maskNoTranslate(text: string, hits: readonly Term[]): MaskedText {
   const sources = hits
     .filter((t) => t.noTranslate)
     .map((t) => t.source.trim())
     .sort((a, b) => b.length - a.length);
-  if (sources.length === 0) return { text, originals: [] };
+  if (sources.length === 0 || /⟦TM\d+⟧/.test(text)) return { text, originals: [] };
 
-  const alternation = sources
-    .map(escapeRegExp)
-    .join('|');
-  const re = new RegExp(`(?<!${WORD_CHAR})(?:${alternation})(?!${WORD_CHAR})`, 'giu');
   const originals: string[] = [];
-  const masked = text.replace(re, (m) => `⟦TM${originals.push(m) - 1}⟧`);
+  const masked = text.replace(wholeWord(sources, 'giu'), (m) => `⟦TM${originals.push(m) - 1}⟧`);
   return { text: masked, originals };
 }
 
