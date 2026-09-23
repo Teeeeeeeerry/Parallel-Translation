@@ -22,7 +22,8 @@
  *   - 排除区外的正文照常找到段落
  *
  * 保留原文（#369，迁自 compat.ts 的 github.com preserve 补丁）——
- * 采集单元后提取文本（translatableTextEx，全页与逐段翻译共用）：
+ * 采集单元（collect 或逐段翻译的 closestUnit）后提取文本
+ * （translatableTextEx，全页与逐段翻译共用）：
  *   - @mention、hovercard 用户名链接、author 微数据换成占位符，
  *     回填后原文留在译文句子里
  *   - 普通链接、空文本不保留；只对行内元素生效
@@ -34,7 +35,11 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
-import { translatableTextEx, restorePreserves } from '~/src/dom/text';
+import {
+  translatableTextEx,
+  shallowTranslatableTextEx,
+  restorePreserves,
+} from '~/src/dom/text';
 
 let restore: () => void;
 beforeEach(() => {
@@ -162,12 +167,33 @@ describe('保留原文（github.com 内置规则，采集后提取文本）', ()
     expect(preserves.size).toBe(0);
   });
 
-  test('保留原文只对行内元素生效：块级元素命中选择器也照常翻译', () => {
-    // 块级子元素自身也会被采成单元，这里直接对外层提取，只看它是否被换成占位符
+  test('保留原文只对行内元素生效：块级子元素命中选择器也照常翻译', () => {
+    // 选择器须真能命中块级元素：a.user-mention 限定了 a，这里用 hovercard。
+    // 块级子元素只在逐段翻译的完整提取里出现（全页翻译对含块级子元素的
+    // 单元走浅层提取，直接跳过它们），所以经 closestUnit() 取段落
     document.body.innerHTML =
-      '<div id="outer">Opened by <div class="user-mention">@octocat</div> in this thread.</div>';
-    const { text, preserves } = translatableTextEx(document.getElementById('outer')!);
+      '<div id="outer">Opened by <div data-hovercard-url="/users/octocat">@octocat</div> in this thread.</div>';
+    const unit = closestUnit(document.getElementById('outer')!)!;
+    expect(unit.id).toBe('outer');
+    const { text, preserves } = translatableTextEx(unit);
     expect(preserves.size).toBe(0);
     expect(text).toContain('@octocat');
+  });
+
+  test('含块级子项的段落走浅层提取，行内 @mention 同样换成占位符', () => {
+    document.body.innerHTML =
+      '<ul><li id="parent">Assigned to <a class="user-mention">@octocat</a> for review' +
+      '<ul><li id="child">Follow-up item for the next release</li></ul></li></ul>';
+    expect(ids(collect())).toEqual(['parent', 'child']);
+    const parent = document.getElementById('parent')!;
+    expect([...shallowTranslatableTextEx(parent).preserves.values()]).toEqual(['@octocat']);
+  });
+
+  test('逐段翻译：经 closestUnit() 找到段落后同样换成占位符', () => {
+    document.body.innerHTML =
+      '<p id="c">Thanks <a class="user-mention" id="m">@torvalds</a>, merged in the main branch.</p>';
+    const unit = closestUnit(document.getElementById('m')!)!;
+    expect(unit.id).toBe('c');
+    expect([...translatableTextEx(unit).preserves.values()]).toEqual(['@torvalds']);
   });
 });

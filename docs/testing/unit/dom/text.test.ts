@@ -58,7 +58,7 @@ describe('translatableTextEx', () => {
   // 占位符机制的“端到端”行为在 site-rules-github.test.ts 中验证；
   // 此处验证 translatableTextEx 本身的结构逻辑。
 
-  test('translatableTextEx 结构：preserves Map 由 shouldPreserveText 决定', () => {
+  test('translatableTextEx 结构：preserves Map 由保留原文规则决定', () => {
     const p = el('<p><span>normal text</span></p>');
     const result = translatableTextEx(p);
     // localhost 上没有 preserve handler
