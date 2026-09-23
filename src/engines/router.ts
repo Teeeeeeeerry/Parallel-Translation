@@ -13,7 +13,7 @@ import { DEFAULT_MODELS } from '~/src/storage/schema';
 import { cacheGet, cacheSet, cacheKey } from '~/src/storage/cache';
 import { getEffectiveDomains } from '~/src/storage/domains';
 import type { Term } from '~/src/storage/domains';
-import { matchTerms } from './terms';
+import { matchTerms, uniqueTerms } from './terms';
 import { googleWeb } from './google-web';
 import { bingEdge } from './bing-edge';
 import { openai } from './openai';
@@ -39,17 +39,6 @@ async function termHits(req: TranslateRequest): Promise<Term[][]> {
     ? (await getEffectiveDomains()).find((d) => d.id === req.domainId)
     : undefined;
   return req.texts.map((text) => (domain ? matchTerms(domain.terms, text) : []));
-}
-
-/** 按原词去重（不区分大小写），保留先出现的一条。 */
-function uniqueTerms(terms: Term[]): Term[] {
-  const seen = new Set<string>();
-  return terms.filter((t) => {
-    const k = t.source.trim().toLowerCase();
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
 }
 
 export async function route(req: TranslateRequest): Promise<TranslateResponse> {

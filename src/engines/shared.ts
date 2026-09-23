@@ -75,18 +75,22 @@ export function buildNumberedPrompt(
   );
 }
 
+/** “不翻译”的显式标记。 */
+const NO_TRANSLATE_MARK = '“不翻译”';
+
 /**
  * 术语段（#381）—— 追加在编号文本之后，每行一条“原词 → 译法”，
  * “不翻译”用显式标记。没有术语时为空串，提示词与引入术语前逐字节相同。
  */
 function termSection(terms: readonly Term[]): string {
-  // 既没给译法、也没标“不翻译”的术语无从约束，不发送
-  const lines = terms
-    .filter((t) => t.noTranslate || t.target?.trim())
-    .map((t) => `${t.source.trim()} → ${t.noTranslate ? '“不翻译”' : t.target!.trim()}`);
-  if (lines.length === 0) return '';
+  if (terms.length === 0) return '';
+  // 术语文本与段落文本同样归一化 —— 自带换行会撑破编号结构（#160）
+  const lines = terms.map(
+    (t) =>
+      `${normalizeText(t.source)} → ${t.noTranslate ? NO_TRANSLATE_MARK : normalizeText(t.target ?? '')}`,
+  );
   return (
-    '\n\n术语（必须使用以下译法；“不翻译”表示原词原样出现在译文里）：\n' +
+    `\n\n术语（必须使用以下译法；${NO_TRANSLATE_MARK}表示原词原样出现在译文里）：\n` +
     lines.join('\n')
   );
 }

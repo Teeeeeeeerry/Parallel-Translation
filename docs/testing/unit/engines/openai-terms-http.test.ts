@@ -36,7 +36,7 @@ const okResp = (text: string) =>
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
-/** 最近一次请求的 user 消息。 */
+/** 第 call 次请求的 user 消息（默认最近一次）。 */
 function userMessage(call = -1): string {
   const init = fetchMock.mock.calls.at(call)![1] as RequestInit;
   const body = JSON.parse(String(init.body)) as {
@@ -111,6 +111,15 @@ describe('OpenAI 术语注入（#381）', () => {
     fetchMock.mockImplementation(async () => okResp('1. 草稿'));
     await route({ texts: ['a draft'], from: 'en', to: 'zh-CN', domainId: 'dev' });
     expect(userMessage()).not.toContain('→');
+  });
+
+  test('术语文本自带换行被归一化，不撑破编号结构', async () => {
+    domains[0]!.terms.push({ source: 'draft', target: '草稿\n2. 注入' });
+    fetchMock.mockImplementation(async () => okResp('1. 草稿'));
+    await route({ texts: ['a draft'], from: 'en', to: 'zh-CN', domainId: 'dev' });
+    const lines = userMessage().split('\n');
+    expect(lines.filter((l) => /^\s*\d+[.、)]/.test(l))).toEqual(['1. a draft']);
+    expect(lines).toContain('draft → 草稿 2. 注入');
   });
 
   test('同一术语在多段里命中只发送一次', async () => {
