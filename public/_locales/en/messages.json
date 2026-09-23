@@ -192,5 +192,20 @@
   "changelogGithub": { "message": "Star on GitHub" },
   "changelogSocialDesc": { "message": "Follow along for the latest updates:" },
   "changelogOk": { "message": "Got it" },
-  "changelogClose": { "message": "Close" }
+  "changelogClose": { "message": "Close" },
+
+  "domainNav": { "message": "Domains" },
+  "domainSecDesc": { "message": "A domain is a set of terms plus the sites it applies to. On each page, the first domain in the list whose sites match and whose target language equals the current one takes effect." },
+  "domainCardList": { "message": "Domains" },
+  "domainCardCreate": { "message": "New domain" },
+  "domainNamePlaceholder": { "message": "Domain name, e.g. \"Legal\"" },
+  "domainRowLang": { "message": "Target language" },
+  "domainCreateBtn": { "message": "Create" },
+  "domainBuiltinBadge": { "message": "Built-in · read-only" },
+  "domainDelete": { "message": "Delete" },
+  "domainDeleteConfirm": {
+    "message": "Delete domain \"$name$\"? Its terms will be deleted too.",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainCreated": { "message": "Domain created" }
 }

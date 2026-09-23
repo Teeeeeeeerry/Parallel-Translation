@@ -192,5 +192,20 @@
   "changelogGithub": { "message": "在 GitHub 上 Star" },
   "changelogSocialDesc": { "message": "获取最新更新，欢迎关注：" },
   "changelogOk": { "message": "知道了" },
-  "changelogClose": { "message": "关闭" }
+  "changelogClose": { "message": "关闭" },
+
+  "domainNav": { "message": "翻译领域" },
+  "domainSecDesc": { "message": "领域由一组术语和一组适用网址组成。打开网页时，列表中第一个网址命中、且目标语言与当前设置一致的领域生效。" },
+  "domainCardList": { "message": "领域列表" },
+  "domainCardCreate": { "message": "新建领域" },
+  "domainNamePlaceholder": { "message": "领域名称，例如“法律”" },
+  "domainRowLang": { "message": "目标语言" },
+  "domainCreateBtn": { "message": "新建" },
+  "domainBuiltinBadge": { "message": "内置 · 只读" },
+  "domainDelete": { "message": "删除" },
+  "domainDeleteConfirm": {
+    "message": "确定删除领域“$name$”吗？其中的术语会一并删除。",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainCreated": { "message": "已新建领域" }
 }

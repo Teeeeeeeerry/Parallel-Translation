@@ -24,6 +24,7 @@
       <button class="pt-nav-btn" data-section="hotkeys" data-i18n="navHotkeys">快捷键</button>
       <button class="pt-nav-btn" data-section="sites" data-i18n="navSites">站点</button>
       <button class="pt-nav-btn" data-section="advanced" data-i18n="navAdvanced">高级</button>
+      <button class="pt-nav-btn" data-section="domains" data-i18n="domainNav">翻译领域</button>
     </nav>
     <main class="pt-main">
       <!-- 通用 -->
@@ -209,6 +210,24 @@
           </div>
           <div class="pt-actions">
             <button class="pt-btn pt-btn-secondary" id="pt-reset-settings-btn" data-i18n="btnReset">恢复默认设置</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 翻译领域（#391） -->
+      <section class="pt-section" id="pt-section-domains">
+        <h2 data-i18n="domainNav">翻译领域</h2>
+        <p class="pt-section-desc" data-i18n="domainSecDesc">领域由一组术语和一组适用网址组成。打开网页时，列表中第一个网址命中、且目标语言与当前设置一致的领域生效。</p>
+        <div class="pt-card">
+          <div class="pt-card-label" data-i18n="domainCardList">领域列表</div>
+          <ul class="pt-site-list" id="pt-domain-list"></ul>
+        </div>
+        <div class="pt-card">
+          <div class="pt-card-label" data-i18n="domainCardCreate">新建领域</div>
+          <div class="pt-sites-add">
+            <input class="pt-input" id="pt-domain-name-input" type="text" maxlength="60" data-i18n-placeholder="domainNamePlaceholder" placeholder="领域名称，例如“法律”" />
+            <select class="pt-select" id="pt-domain-lang-select" data-i18n-title="domainRowLang" title="目标语言"></select>
+            <button class="pt-btn" id="pt-domain-create-btn" data-i18n="domainCreateBtn">新建</button>
           </div>
         </div>
       </section>

@@ -627,3 +627,25 @@ body {
   animation: pt-pop .2s ease;
   pointer-events: none;
 }
+
+/* ===== Domains（#391） ===== */
+
+.pt-domain-item {
+  gap: 10px;
+  font-family: inherit;
+}
+
+.pt-domain-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pt-domain-lang {
+  color: var(--pt-forest-40);
+}
+
+.pt-domain-badge {
+  color: var(--pt-forest-40);
+  font-size: 11px;
+}

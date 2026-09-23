@@ -192,5 +192,20 @@
   "changelogGithub": { "message": "在 GitHub 上 Star" },
   "changelogSocialDesc": { "message": "取得最新更新，歡迎追蹤：" },
   "changelogOk": { "message": "知道了" },
-  "changelogClose": { "message": "關閉" }
+  "changelogClose": { "message": "關閉" },
+
+  "domainNav": { "message": "翻譯領域" },
+  "domainSecDesc": { "message": "領域由一組術語和一組適用網址組成。開啟網頁時，清單中第一個網址命中、且目標語言與目前設定一致的領域生效。" },
+  "domainCardList": { "message": "領域清單" },
+  "domainCardCreate": { "message": "新增領域" },
+  "domainNamePlaceholder": { "message": "領域名稱，例如「法律」" },
+  "domainRowLang": { "message": "目標語言" },
+  "domainCreateBtn": { "message": "新增" },
+  "domainBuiltinBadge": { "message": "內建 · 唯讀" },
+  "domainDelete": { "message": "刪除" },
+  "domainDeleteConfirm": {
+    "message": "確定刪除領域「$name$」嗎？其中的術語會一併刪除。",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainCreated": { "message": "已新增領域" }
 }
