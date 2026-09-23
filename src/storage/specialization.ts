@@ -26,6 +26,10 @@ const selectorValidity = new Map<string, boolean>();
  * #368：运行时解析失败的选择器只跳过它自己（ADR-0003），避免重演
  * #93 —— 一条带尾随逗号的无效选择器让 walker 对每个元素抛错，整页
  * 采集 0 个单元。用空文档片段试解析，不触碰页面。
+ *
+ * 需要 DOM：只在 content script 等有 document 的上下文调用。只把
+ * SyntaxError 当作无效选择器，其他错误（例如在 service worker 里
+ * document 未定义）照常抛出，不会把全部选择器静默判为无效。
  */
 function isValidSelector(site: string, sel: string): boolean {
   const key = `${site}\n${sel}`;
@@ -34,10 +38,11 @@ function isValidSelector(site: string, sel: string): boolean {
     try {
       document.createDocumentFragment().querySelector(sel);
       valid = true;
-    } catch {
+    } catch (e) {
+      if ((e as Error).name !== 'SyntaxError') throw e;
       valid = false;
       console.warn(
-        `[PT] 站点页面规则中的无效选择器已跳过：${site} 的排除 ${JSON.stringify(sel)}`,
+        `[PT] 站点页面规则中的无效选择器已跳过：${site} ${JSON.stringify(sel)}`,
       );
     }
     selectorValidity.set(key, valid);
