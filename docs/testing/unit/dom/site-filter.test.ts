@@ -2,7 +2,35 @@
  * dom/site-filter.ts — 站点黑白名单判定 单元测试（#153）
  */
 import { describe, test, expect } from 'vitest';
-import { siteMatches, isSiteBlocked } from '~/src/dom/site-filter';
+import { mainDomain, siteMatches, isSiteBlocked } from '~/src/dom/site-filter';
+
+// ---- mainDomain ----
+
+describe('mainDomain', () => {
+  test('github.com → github.com', () => {
+    expect(mainDomain('github.com')).toBe('github.com');
+  });
+
+  test('news.ycombinator.com → ycombinator.com', () => {
+    expect(mainDomain('news.ycombinator.com')).toBe('ycombinator.com');
+  });
+
+  test('sub.domain.example.com → example.com', () => {
+    expect(mainDomain('sub.domain.example.com')).toBe('example.com');
+  });
+
+  test('localhost → localhost', () => {
+    expect(mainDomain('localhost')).toBe('localhost');
+  });
+
+  test('两段域名原样返回', () => {
+    expect(mainDomain('google.com')).toBe('google.com');
+  });
+
+  test('www.youtube.com → youtube.com', () => {
+    expect(mainDomain('www.youtube.com')).toBe('youtube.com');
+  });
+});
 
 // ---- siteMatches ----
 

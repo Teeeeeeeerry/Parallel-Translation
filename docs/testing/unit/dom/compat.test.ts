@@ -1,42 +1,14 @@
 /**
  * dom/compat.ts — 域名补丁 单元测试
  *
- * mainDomain / isGenericInlineBadge / shouldPreserveText
+ * isGenericInlineBadge / shouldPreserveText
  *
  * 注意：jsdom 中 location.hostname === 'localhost'，域名补丁仅对
  * 匹配 hostname 的站点生效。shouldPreserveText 的 github.com 逻辑
  * 在 localhost 下不会被激活 —— 我们通过直接验证 handler 逻辑来覆盖。
  */
 import { describe, test, expect, vi, beforeEach } from 'vitest';
-import { mainDomain, shouldPreserveText } from '~/src/dom/compat';
-
-// ---- mainDomain ----
-
-describe('mainDomain', () => {
-  test('github.com → github.com', () => {
-    expect(mainDomain('github.com')).toBe('github.com');
-  });
-
-  test('news.ycombinator.com → ycombinator.com', () => {
-    expect(mainDomain('news.ycombinator.com')).toBe('ycombinator.com');
-  });
-
-  test('sub.domain.example.com → example.com', () => {
-    expect(mainDomain('sub.domain.example.com')).toBe('example.com');
-  });
-
-  test('localhost → localhost', () => {
-    expect(mainDomain('localhost')).toBe('localhost');
-  });
-
-  test('两段域名原样返回', () => {
-    expect(mainDomain('google.com')).toBe('google.com');
-  });
-
-  test('www.youtube.com → youtube.com', () => {
-    expect(mainDomain('www.youtube.com')).toBe('youtube.com');
-  });
-});
+import { shouldPreserveText } from '~/src/dom/compat';
 
 // ---- isGenericInlineBadge ----
 

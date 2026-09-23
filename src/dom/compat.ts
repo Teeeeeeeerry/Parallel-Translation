@@ -11,6 +11,7 @@
 // 补丁只做两件事：跳过(skip)、改指(take)。不在此处写翻译逻辑或 DOM 操作。
 
 import { INLINE_SET } from './classify';
+import { mainDomain } from './site-filter';
 
 type CompatResult =
   | { skip: true }
@@ -135,16 +136,6 @@ export function shouldPreserveText(el: Element): string | null {
 }
 
 // ---- 域名精修补丁 ----
-
-/**
- * 取主域名（末两段）。
- * news.ycombinator.com → ycombinator.com
- * 对绝大多数站点够用；co.uk 级多级后缀若真遇到再特判。
- */
-export function mainDomain(host: string): string {
-  const parts = host.split('.');
-  return parts.length <= 2 ? host : parts.slice(-2).join('.');
-}
 
 const HANDLERS: Record<string, CompatHandler> = {
   'github.com': (el: Element) => {

@@ -3,10 +3,13 @@
  * @vitest-environment-options {"url": "https://www.youtube.com/watch?v=test"}
  */
 /**
- * dom/walker.ts × 站点页面规则 —— youtube.com 的内置排除（#366）
+ * 站点页面规则 —— youtube.com 的内置排除（#366）
  *
  * youtube.com 的 skip 补丁原先写在 compat.ts 代码层，#366 迁为内置
- * 排除数据（ADR-0003）。本文件在 walker 采集入口验证：
+ * 排除数据（ADR-0003）。站点页面规则作用于全页翻译和逐段翻译，本文件
+ * 分别在两个入口验证。
+ *
+ * 全页翻译 —— walker 采集入口 collect()：
  *   - 迁移前后采集到的单元一致（典型观看页片段）
  *   - 原 compat-youtube.test.ts 的四个选择器都不采集
  *   - 排除是整块语义：命中元素的后代也不采集，根落在排除区内同样不采集
@@ -17,11 +20,17 @@
  * 这些后代在旧补丁下会被采集，属于整块语义带来的新行为。典型页面结构
  * 下两者一致，由第一个用例保证。
  *
+ *
+ * 逐段翻译 —— closestUnit()（悬停按钮与点击翻译共用的入口）：
+ *   - 起点落在排除区内时找不到单元，不出按钮也不翻译
+ *   - 排除区外的正文照常找到单元
+ *
  * jsdom 的 location.hostname 是文件级选项，与其他域名的测试文件分离。
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
+import { closestUnit } from '~/src/dom/classify';
 
 let restore: () => void;
 beforeEach(() => {
@@ -107,5 +116,25 @@ describe('collect（youtube.com 内置排除）', () => {
       '<div class="ytd-thumbnail-overlay-time-status-renderer"><p id="inner">Live now, streaming</p></div>';
     const inner = document.getElementById('inner')!;
     expect(collect(inner)).toEqual([]);
+  });
+});
+
+describe('closestUnit（youtube.com 内置排除，逐段翻译入口）', () => {
+  test('悬停在排除区内的段落上：找不到单元', () => {
+    document.body.innerHTML =
+      '<div class="ytd-thumbnail-overlay-time-status-renderer"><p id="inner">Live now, streaming</p></div>';
+    expect(closestUnit(document.getElementById('inner')!)).toBeNull();
+  });
+
+  test('悬停在排除元素内的行内文字上：找不到单元', () => {
+    document.body.innerHTML =
+      '<div class="ytd-channel-name"><yt-formatted-string><div id="name">Channel Name <b id="bold">Official</b></div></yt-formatted-string></div>';
+    expect(closestUnit(document.getElementById('bold')!)).toBeNull();
+  });
+
+  test('排除区外的正文照常找到单元', () => {
+    document.body.innerHTML =
+      '<p id="body">This video explains the <b id="bold">basics</b>.</p>';
+    expect(closestUnit(document.getElementById('bold')!)?.id).toBe('body');
   });
 });

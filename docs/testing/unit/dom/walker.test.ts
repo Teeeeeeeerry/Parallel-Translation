@@ -18,10 +18,7 @@ import { mockAllBoundingRects, mockBoundingRect } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { applyCompat } from '~/src/dom/compat';
 
-// 只替换 applyCompat；mainDomain 等其余导出保留真实实现 ——
-// 站点页面规则的网址匹配（storage/specialization → site-filter）要用到
-vi.mock('~/src/dom/compat', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('~/src/dom/compat')>()),
+vi.mock('~/src/dom/compat', () => ({
   applyCompat: vi.fn(),
 }));
 
