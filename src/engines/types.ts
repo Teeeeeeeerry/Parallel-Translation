@@ -13,6 +13,8 @@ export interface TranslateRequest {
   from: string | 'auto';
   /** 目标语言。 */
   to: string;
+  /** 当前领域 ID（#379）；页面没有当前领域时不携带。 */
+  domainId?: string;
 }
 
 export interface TranslateResponse {

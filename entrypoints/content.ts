@@ -48,6 +48,7 @@ import {
   patchSettings,
 } from '~/src/storage/settings';
 import type { Settings } from '~/src/storage/schema';
+import { getEffectiveDomains } from '~/src/storage/domains';
 import { tf } from '~/src/i18n';
 import { isSiteBlocked } from '~/src/dom/site-filter';
 import { decideShow } from '~/src/changelog/decide';
@@ -70,6 +71,8 @@ export default defineContentScript({
     // 匹配（忽略 metaKey），Mac 用户加载后的第一次 ⌘⇧Y 静默无响应
     await detectOS();
     const s = getSettings();
+    // #379: 生效领域列表 —— 全页翻译据此选出当前领域，请求里带上领域 ID
+    const domains = await getEffectiveDomains();
 
     // #242/#243/#255: UI 生命周期注册表 —— 悬浮球、段落按钮、划词拖拽、
     // 快捷键、observer 全部经注册表启停；设置变更由 ensure() 驱动，
@@ -278,6 +281,7 @@ export default defineContentScript({
       // #311: 准入判定的当前主机名同样经注入提供
       getSettings,
       getHostname: () => location.hostname,
+      getDomains: () => domains,
       // #325: 翻译态查询与还原动作经注入 —— 模块不直接访问 DOM
       hasTranslated,
       restore: doRestore,
