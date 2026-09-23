@@ -4,6 +4,8 @@
 // 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
+import type { Term } from './domains';
+
 const PREFIX = 'pt-c:';
 const MAX_ENTRIES = 5000;
 const INDEX_KEY = 'pt-cache-index';
@@ -11,12 +13,33 @@ const INDEX_KEY = 'pt-cache-index';
 /** 缓存条目有效期 —— 30 天。超期条目在读取时惰性淘汰（#175）。 */
 export const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+async function sha1hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 /**
- * 生成缓存 key: pt-c:{engine}:{from}:{to}[:{model}]:{sha1hex(text)}
+ * 本段实际生效术语的哈希（#380）：原词、译法、“不翻译”标记。
+ * 与术语顺序、所属领域无关 —— 两个站点命中相同术语时共用缓存。
+ */
+function termsHash(terms: readonly Term[]): Promise<string> {
+  const canonical = terms
+    .map((t) => JSON.stringify([t.source.trim(), t.target ?? '', t.noTranslate === true]))
+    .sort();
+  return sha1hex(`[${canonical.join(',')}]`);
+}
+
+/**
+ * 生成缓存 key: pt-c:{engine}:{from}:{to}[:{model}]:{sha1hex(text)}[:{termsHash}]
  * 跨站点共享 —— 同一段英文在不同网站只翻一次。
  *
  * #175: BYOK 引擎（openai/gemini）的模型名进 key —— 切换模型后
  * 不再命中旧模型的译文。无模型的引擎（google/bing）key 不含模型段。
+ *
+ * #380: 本段命中术语时追加术语哈希 —— 修改术语后不命中旧译文；
+ * 没有命中时不追加，key 与引入术语前逐字节相同，现有缓存继续有效。
  */
 export async function cacheKey(
   engine: string,
@@ -24,15 +47,10 @@ export async function cacheKey(
   to: string,
   text: string,
   model = '',
+  terms: readonly Term[] = [],
 ): Promise<string> {
-  const buf = await crypto.subtle.digest(
-    'SHA-1',
-    new TextEncoder().encode(text),
-  );
-  const hex = [...new Uint8Array(buf)]
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-  return `${PREFIX}${engine}:${from}:${to}${model ? `:${model}` : ''}:${hex}`;
+  const base = `${PREFIX}${engine}:${from}:${to}${model ? `:${model}` : ''}:${await sha1hex(text)}`;
+  return terms.length > 0 ? `${base}:${await termsHash(terms)}` : base;
 }
 
 // ---- Index 序列化链 ----

@@ -11,6 +11,9 @@
 import { getSettings } from '~/src/storage/settings';
 import { DEFAULT_MODELS } from '~/src/storage/schema';
 import { cacheGet, cacheSet, cacheKey } from '~/src/storage/cache';
+import { getEffectiveDomains } from '~/src/storage/domains';
+import type { Term } from '~/src/storage/domains';
+import { matchTerms } from './terms';
 import { googleWeb } from './google-web';
 import { bingEdge } from './bing-edge';
 import { openai } from './openai';
@@ -27,6 +30,17 @@ const REGISTRY: Record<string, TranslateEngine> = {
   'gemini': gemini,
 };
 
+/**
+ * 请求里每段原文命中的术语（#380）。请求不带领域 ID、或领域已不存在
+ * （例如刚被删除）时，每段都视为没有命中。
+ */
+async function termHits(req: TranslateRequest): Promise<Term[][]> {
+  const domain = req.domainId
+    ? (await getEffectiveDomains()).find((d) => d.id === req.domainId)
+    : undefined;
+  return req.texts.map((text) => (domain ? matchTerms(domain.terms, text) : []));
+}
+
 export async function route(req: TranslateRequest): Promise<TranslateResponse> {
   const { enginePriority, useCache } = getSettings();
   const errors: EngineError[] = [];
@@ -35,6 +49,9 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
   const translations: (string | null)[] = new Array(req.texts.length).fill(
     null,
   );
+
+  // #380: 每段原文命中的术语 —— 参与缓存 key，改了术语不命中旧译文
+  const hits = await termHits(req);
 
   for (const id of enginePriority) {
     const engine = REGISTRY[id];
@@ -59,7 +76,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       const cacheChecks = await Promise.all(
         req.texts.map(async (text, i) => {
           if (translations[i] !== null) return { i, cached: null, text };
-          const k = await cacheKey(id, req.from, req.to, text, model);
+          const k = await cacheKey(id, req.from, req.to, text, model, hits[i]);
           const cached = await cacheGet(k);
           return { i, cached, text };
         }),
@@ -121,7 +138,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
           if (succeeded.length > 0) {
             await Promise.all(
               succeeded.map(async (u) => {
-                const k = await cacheKey(id, req.from, req.to, u.text, model);
+                const k = await cacheKey(id, req.from, req.to, u.text, model, hits[u.idx]);
                 const idx = uncached.indexOf(u);
                 const val = resp.translations[idx];
                 // #171: 短数组下成功槽位必然有值，这里再做一次防御
@@ -147,7 +164,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       if (useCache) {
         await Promise.all(
           uncached.map(async (u) => {
-            const k = await cacheKey(id, req.from, req.to, u.text, model);
+            const k = await cacheKey(id, req.from, req.to, u.text, model, hits[u.idx]);
             const idx = uncached.indexOf(u);
             await cacheSet(k, resp.translations[idx]!);
           }),
