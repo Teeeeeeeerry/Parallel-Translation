@@ -41,6 +41,17 @@ async function termHits(req: TranslateRequest): Promise<Term[][]> {
   return req.texts.map((text) => (domain ? matchTerms(domain.terms, text) : []));
 }
 
+/** 按原词去重（不区分大小写），保留先出现的一条。 */
+function uniqueTerms(terms: Term[]): Term[] {
+  const seen = new Set<string>();
+  return terms.filter((t) => {
+    const k = t.source.trim().toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 export async function route(req: TranslateRequest): Promise<TranslateResponse> {
   const { enginePriority, useCache } = getSettings();
   const errors: EngineError[] = [];
@@ -105,10 +116,13 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
     }
 
     try {
+      // #381: 只带本批（未命中缓存的段落）命中的术语，不发送整个领域
+      const batchTerms = uniqueTerms(uncached.flatMap((u) => hits[u.idx]!));
       const subReq: TranslateRequest = {
         texts: uncached.map((u) => u.text),
         from: req.from,
         to: req.to,
+        ...(batchTerms.length > 0 && { terms: batchTerms }),
       };
       const resp = await engine.translate(subReq);
 
