@@ -19,14 +19,41 @@ export interface SiteRules {
   exclude: string[];
 }
 
+/** 选择器能否解析：按“站点 + 选择器”缓存，无效的只警告一次。 */
+const selectorValidity = new Map<string, boolean>();
+
 /**
- * 按当前站点读取生效站点规则。
+ * #368：运行时解析失败的选择器只跳过它自己（ADR-0003），避免重演
+ * #93 —— 一条带尾随逗号的无效选择器让 walker 对每个元素抛错，整页
+ * 采集 0 个单元。用空文档片段试解析，不触碰页面。
+ */
+function isValidSelector(site: string, sel: string): boolean {
+  const key = `${site}\n${sel}`;
+  let valid = selectorValidity.get(key);
+  if (valid === undefined) {
+    try {
+      document.createDocumentFragment().querySelector(sel);
+      valid = true;
+    } catch {
+      valid = false;
+      console.warn(
+        `[PT] 站点页面规则中的无效选择器已跳过：${site} 的排除 ${JSON.stringify(sel)}`,
+      );
+    }
+    selectorValidity.set(key, valid);
+  }
+  return valid;
+}
+
+/**
+ * 按当前站点读取生效站点规则，已剔除无法解析的选择器。
  * 同步返回 —— walker 的采集入口是同步的，每次采集调用一次。
  */
 export function getSiteRules(host: string): SiteRules {
   const exclude: string[] = [];
   for (const [site, rules] of Object.entries(BUILTIN_SITE_RULES)) {
-    if (siteMatches(host, site)) exclude.push(...rules.exclude);
+    if (!siteMatches(host, site)) continue;
+    exclude.push(...rules.exclude.filter((sel) => isValidSelector(site, sel)));
   }
   return { exclude };
 }
