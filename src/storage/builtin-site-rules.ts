@@ -22,4 +22,28 @@ export const BUILTIN_SITE_RULES: Record<string, SiteRules> = {
       '.ytd-channel-name yt-formatted-string',        // 频道名
     ],
   },
+
+  // #367：迁自 compat.ts 的 github.com skip 补丁。
+  // 每条选择器独立成项 —— 旧补丁拼接选择器字符串时曾带出尾随逗号，
+  // 一条无效选择器让整页采集 0 个单元（#93）
+  'github.com': {
+    exclude: [
+      // 代码行、文件名、commit hash、blob 内容
+      '.blob-code',
+      '.blob-code-inner',
+      '.file-info',
+      '.file-header',
+      '.commit-tease-sha',
+      '.commit-message code',
+      '.highlight',
+      '.blame-hunk',
+      '.text-mono',
+      // #49：纯 UI 而非正文
+      '.file-tree',             // blob 页文件树（新版）
+      '.js-file-tree',          // blob 页文件树（旧版 JS 挂钩）
+      '.tree-browser',          // blob 页文件树（旧版）
+      '.BorderGrid',            // 仓库首页贡献者网格
+      '.repository-lang-stats', // 仓库首页语言统计条
+    ],
+  },
 };
