@@ -101,6 +101,11 @@ describe('术语匹配（拉丁字母整词、不区分大小写）', () => {
     expect(k).not.toBe(await legacyKey('PR: fixes the issue.'));
   });
 
+  test('拉丁字母术语紧挨中日韩文字也算整词', async () => {
+    expect(await keyWritten('打开PR页面', 'dev')).not.toBe(await legacyKey('打开PR页面'));
+    expect(await keyWritten('PRを開く', 'dev')).not.toBe(await legacyKey('PRを開く'));
+  });
+
   test('多词术语按整词命中，不命中词的一部分', async () => {
     domains[0]!.terms = [{ source: 'pull request', noTranslate: true }];
     expect(await keyWritten('open a pull request', 'dev')).not.toBe(
@@ -164,6 +169,13 @@ describe('缓存 key 与术语', () => {
       domainId: 'dev-gitlab',
     });
     expect(resp.translations).toEqual(['译:Clone the repository']);
+    expect(googleTranslate).toHaveBeenCalledTimes(1);
+  });
+
+  test('原词首尾空格不影响共用缓存', async () => {
+    domains.push(domain('dev-spaced', ['gitlab.com'], [{ source: ' repository ', target: '仓库' }]));
+    await route({ texts: ['Clone the repository'], from: 'en', to: 'zh-CN', domainId: 'dev' });
+    await route({ texts: ['Clone the repository'], from: 'en', to: 'zh-CN', domainId: 'dev-spaced' });
     expect(googleTranslate).toHaveBeenCalledTimes(1);
   });
 

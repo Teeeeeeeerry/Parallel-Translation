@@ -26,7 +26,7 @@ async function sha1hex(s: string): Promise<string> {
  */
 function termsHash(terms: readonly Term[]): Promise<string> {
   const canonical = terms
-    .map((t) => JSON.stringify([t.source, t.target ?? '', t.noTranslate === true]))
+    .map((t) => JSON.stringify([t.source.trim(), t.target ?? '', t.noTranslate === true]))
     .sort();
   return sha1hex(`[${canonical.join(',')}]`);
 }

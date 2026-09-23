@@ -6,15 +6,19 @@
 
 // 术语匹配（#380，父 #365）—— 找出一段原文里命中的术语。
 //
-// 不区分大小写；拉丁字母术语按整词匹配：术语两侧不能紧挨字母或数字，
-// 这样 PR 不会误命中 price 里的 pr。
+// 不区分大小写；拉丁字母术语按整词匹配：术语两侧不能紧挨字母、数字
+// 或下划线，这样 PR 不会误命中 price 里的 pr。中日韩文字不算词内字符
+// —— 这些语言不用空格分词，“打开PR页面”里的 PR 照样命中。
 
 import type { Term } from '~/src/storage/domains';
 
-/** 整词边界：前后不是字母、数字或下划线。 */
+/** 词内字符：字母、数字、下划线，中日韩文字除外。 */
+const WORD_CHAR =
+  '(?:(?![\\p{sc=Han}\\p{sc=Hiragana}\\p{sc=Katakana}\\p{sc=Hangul}])[\\p{L}\\p{N}_])';
+
 function termPattern(source: string): RegExp {
   const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'iu');
+  return new RegExp(`(?<!${WORD_CHAR})${escaped}(?!${WORD_CHAR})`, 'iu');
 }
 
 /** 原文里命中的术语，保持术语在领域里的顺序。 */
