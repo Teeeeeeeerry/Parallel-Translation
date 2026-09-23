@@ -13,7 +13,7 @@ import { DEFAULT_MODELS } from '~/src/storage/schema';
 import { cacheGet, cacheSet, cacheKey } from '~/src/storage/cache';
 import { getEffectiveDomains } from '~/src/storage/domains';
 import type { Term } from '~/src/storage/domains';
-import { matchTerms, uniqueTerms } from './terms';
+import { matchTerms, uniqueTerms, maskNoTranslate, unmaskNoTranslate } from './terms';
 import { googleWeb } from './google-web';
 import { bingEdge } from './bing-edge';
 import { openai } from './openai';
@@ -107,8 +107,12 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
     try {
       // #381: 只带本批（未命中缓存的段落）命中的术语，不发送整个领域
       const batchTerms = uniqueTerms(uncached.flatMap((u) => hits[u.idx]!));
+      // #386: 机翻引擎发送前把“不翻译”术语换成占位符
+      const masks = engine.masksNoTranslate
+        ? uncached.map((u) => maskNoTranslate(u.text, hits[u.idx]!))
+        : null;
       const subReq: TranslateRequest = {
-        texts: uncached.map((u) => u.text),
+        texts: masks ? masks.map((m) => m.text) : uncached.map((u) => u.text),
         from: req.from,
         to: req.to,
         ...(batchTerms.length > 0 && { terms: batchTerms }),
@@ -120,8 +124,16 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       // TypeError —— 一律置 null 并记入失败，交给下一个引擎补齐。
       const failed = [...(resp.failedIndices ?? [])];
       for (let j = 0; j < uncached.length; j++) {
-        const text = resp.translations[j];
-        if (text === undefined || text === null) {
+        const raw = resp.translations[j];
+        if (raw === undefined || raw === null || failed.includes(j)) {
+          translations[uncached[j]!.idx] = null;
+          if (!failed.includes(j)) failed.push(j);
+          continue;
+        }
+        // #386: 占位符换回原词；占位符被引擎改坏 → 不采用，按失败槽位处理
+        const text = masks ? unmaskNoTranslate(raw, masks[j]!.originals) : raw;
+        if (text === null) {
+          console.debug('[PT] “不翻译”术语占位符被引擎改坏，该段交给下一个引擎', { engine: id });
           translations[uncached[j]!.idx] = null;
           failed.push(j);
         } else {
@@ -142,8 +154,8 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
             await Promise.all(
               succeeded.map(async (u) => {
                 const k = await cacheKey(id, req.from, req.to, u.text, model, hits[u.idx]);
-                const idx = uncached.indexOf(u);
-                const val = resp.translations[idx];
+                // 缓存换回原词后的译文（#386），不是引擎原始输出
+                const val = translations[u.idx];
                 // #171: 短数组下成功槽位必然有值，这里再做一次防御
                 if (val !== undefined && val !== null) {
                   await cacheSet(k, val);
@@ -168,8 +180,8 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
         await Promise.all(
           uncached.map(async (u) => {
             const k = await cacheKey(id, req.from, req.to, u.text, model, hits[u.idx]);
-            const idx = uncached.indexOf(u);
-            await cacheSet(k, resp.translations[idx]!);
+            // 缓存换回原词后的译文（#386），不是引擎原始输出
+            await cacheSet(k, translations[u.idx]!);
           }),
         );
       }
