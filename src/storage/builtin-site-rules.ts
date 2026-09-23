@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
+// 内置站点页面规则（ADR-0003）—— 纯数据，随扩展打包。
+//
+// 键是裸域名，匹配语义与站点黑白名单相同（子域归入、主域名归一）。
+// 新增一个站点只需在此添加条目；选择器表达不了的逻辑（take 改指、
+// 按尺寸识别角标等）留在 src/dom/compat.ts 代码层。
+
+import type { SiteRules } from './specialization';
+
+export const BUILTIN_SITE_RULES: Record<string, SiteRules> = {
+  // #366：迁自 compat.ts 的 youtube.com skip 补丁
+  'youtube.com': {
+    exclude: [
+      '.ytd-thumbnail-overlay-time-status-renderer', // 视频时长角标
+      '#metadata-line span',                          // 播放量、发布时间
+      '.ytd-video-meta-block ytd-badge-supported-renderer', // CC / 4K 等徽章
+      '.ytd-channel-name yt-formatted-string',        // 频道名
+    ],
+  },
+};

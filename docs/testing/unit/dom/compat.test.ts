@@ -32,6 +32,10 @@ describe('mainDomain', () => {
   test('两段域名原样返回', () => {
     expect(mainDomain('google.com')).toBe('google.com');
   });
+
+  test('www.youtube.com → youtube.com', () => {
+    expect(mainDomain('www.youtube.com')).toBe('youtube.com');
+  });
 });
 
 // ---- isGenericInlineBadge ----
