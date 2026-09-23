@@ -137,51 +137,10 @@ export function shouldPreserveText(el: Element): string | null {
 
 // ---- 域名精修补丁 ----
 
-const HANDLERS: Record<string, CompatHandler> = {
-  'github.com': (el: Element) => {
-    // 代码行、文件名、commit hash、blob 内容不翻
-    if (
-      el.closest(
-        '.blob-code, .blob-code-inner, ' +
-          '.file-info, .file-header, ' +
-          '.commit-tease-sha, ' +
-          '.commit-message code, ' +
-          '.highlight, ' +
-          '.blame-hunk, ' +
-          '.text-mono',
-      )
-    ) {
-      return { skip: true };
-    }
-
-    // #49：文件树侧栏（blob 页）、贡献者面板（仓库首页）均为纯 UI 而非正文。
-    // 即使 #50 已在采集阶段过滤含非文本内容的容器，提前跳过整棵子树
-    // 可避免无效的 translate-unit 判定。
-    //
-    // #93：此处原来用逐行字符串拼接，最后一项带尾随逗号拼出
-    // '.repository-lang-stats,' 无效选择器，closest() 抛 SyntaxError，
-    // 被 walker 静默吞掉后整页采集 0 个单元。改用数组 join 从结构上
-    // 杜绝尾随逗号。
-    if (
-      el.closest(
-        [
-          '.file-tree',            // blob 页文件树（新版）
-          '.js-file-tree',         // blob 页文件树（旧版 JS 挂钩）
-          '.tree-browser',         // blob 页文件树（旧版）
-          '.BorderGrid',           // 仓库首页贡献者网格
-          '.repository-lang-stats', // 仓库首页语言统计条
-        ].join(','),
-      )
-    ) {
-      return { skip: true };
-    }
-
-    // 行内 code 的短 hash / 变量名 / 纯数字判定（#61-#67）已移除：
-    // walker 的 acceptNode 通过 SKIP_SET 先一步拒绝 CODE 节点，
-    // applyCompat(el) 永远收不到 CODE，该分支不可达（#41 附带分析）。
-    return null;
-  },
-};
+// #366 / #367：youtube.com、github.com 的 skip 补丁已迁为内置排除数据
+// （src/storage/builtin-site-rules.ts）。本表只收选择器表达不了的逻辑
+// （如 take 改指），目前为空。
+const HANDLERS: Record<string, CompatHandler> = {};
 
 export function applyCompat(el: Element): CompatResult {
   const handler = HANDLERS[mainDomain(location.hostname)];
