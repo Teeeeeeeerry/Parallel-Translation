@@ -15,6 +15,7 @@
 // 401 会话失效清 JWT 等）留在适配器内显式处理，不再各自发明分类规则。
 
 import type { FailureCategory } from './types';
+import type { Term } from '~/src/storage/domains';
 import { normalizeText } from '~/src/dom/normalize';
 import { fetchWithTimeout } from './fetch-timeout';
 
@@ -62,13 +63,35 @@ export function buildNumberedPrompt(
   to: string,
   from: string | 'auto',
   texts: string[],
+  terms: readonly Term[] = [],
 ): string {
   const numbered = texts
     .map((t, i) => `${i + 1}. ${normalizeText(t)}`)
     .join('\n');
   return (
     `将以下编号文本翻译成${to}${from === 'auto' ? '' : `（源语言：${from}）`}。` +
-    `严格保持编号与行数一致，只输出译文，不要解释。\n\n${numbered}`
+    `严格保持编号与行数一致，只输出译文，不要解释。\n\n${numbered}` +
+    termSection(terms)
+  );
+}
+
+/** “不翻译”的显式标记。 */
+const NO_TRANSLATE_MARK = '“不翻译”';
+
+/**
+ * 术语段（#381）—— 追加在编号文本之后，每行一条“原词 → 译法”，
+ * “不翻译”用显式标记。没有术语时为空串，提示词与引入术语前逐字节相同。
+ */
+function termSection(terms: readonly Term[]): string {
+  if (terms.length === 0) return '';
+  // 术语文本与段落文本同样归一化 —— 自带换行会撑破编号结构（#160）
+  const lines = terms.map(
+    (t) =>
+      `${normalizeText(t.source)} → ${t.noTranslate ? NO_TRANSLATE_MARK : normalizeText(t.target ?? '')}`,
+  );
+  return (
+    `\n\n术语（必须使用以下译法；${NO_TRANSLATE_MARK}表示原词原样出现在译文里）：\n` +
+    lines.join('\n')
   );
 }
 

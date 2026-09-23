@@ -6,6 +6,8 @@
 
 // Phase 2 — 翻译引擎统一接口与错误类型。
 
+import type { Term } from '~/src/storage/domains';
+
 export interface TranslateRequest {
   /** 待翻译文本列表，顺序敏感。 */
   texts: string[];
@@ -15,6 +17,11 @@ export interface TranslateRequest {
   to: string;
   /** 当前领域 ID（#379）；页面没有当前领域时不携带。 */
   domainId?: string;
+  /**
+   * 本批文本命中的术语（#381）—— router 填写，已去重；没有命中时不携带。
+   * 引擎按类别注入，不需要的引擎忽略。
+   */
+  terms?: Term[];
 }
 
 export interface TranslateResponse {

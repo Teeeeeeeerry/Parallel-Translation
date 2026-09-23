@@ -55,7 +55,7 @@ export const openai: TranslateEngine = createByokEngine({
   model: currentModel,
 
   // 请求格式与改造前完全一致（#333）
-  buildRequest: ({ texts, from, to }, key) => ({
+  buildRequest: ({ texts, from, to, terms }, key) => ({
     url: DEFAULT_ENDPOINT,
     headers: {
       'Content-Type': 'application/json',
@@ -63,8 +63,9 @@ export const openai: TranslateEngine = createByokEngine({
     },
     body: JSON.stringify({
       model: currentModel(),
-      // #258: 编号提示词走公共模板（模板唯一来源）—— 格式与现状逐字一致
-      messages: [{ role: 'user', content: buildNumberedPrompt(to, from, texts) }],
+      // #258: 编号提示词走公共模板（模板唯一来源）—— 格式与现状逐字一致；
+      // #381: 本批命中的术语追加在 user 消息末尾，消息结构不变
+      messages: [{ role: 'user', content: buildNumberedPrompt(to, from, texts, terms) }],
       temperature: 0,
     }),
   }),

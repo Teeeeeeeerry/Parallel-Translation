@@ -13,7 +13,7 @@ import { DEFAULT_MODELS } from '~/src/storage/schema';
 import { cacheGet, cacheSet, cacheKey } from '~/src/storage/cache';
 import { getEffectiveDomains } from '~/src/storage/domains';
 import type { Term } from '~/src/storage/domains';
-import { matchTerms } from './terms';
+import { matchTerms, uniqueTerms } from './terms';
 import { googleWeb } from './google-web';
 import { bingEdge } from './bing-edge';
 import { openai } from './openai';
@@ -105,10 +105,13 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
     }
 
     try {
+      // #381: 只带本批（未命中缓存的段落）命中的术语，不发送整个领域
+      const batchTerms = uniqueTerms(uncached.flatMap((u) => hits[u.idx]!));
       const subReq: TranslateRequest = {
         texts: uncached.map((u) => u.text),
         from: req.from,
         to: req.to,
+        ...(batchTerms.length > 0 && { terms: batchTerms }),
       };
       const resp = await engine.translate(subReq);
 
