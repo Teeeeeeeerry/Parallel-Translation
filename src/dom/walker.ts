@@ -9,12 +9,15 @@
 // #320：遍历本身、shadow 下沉、集中式跳过规则（扩展自身 UI）、去重
 // 全部交给统一遍历模块 walkShadowTree（src/dom/shadow-walk.ts）；
 // 本模块只保留：
-//   - 域名补丁装配（src/dom/compat.ts）
+//   - 站点页面规则的排除（数据，src/storage/specialization.ts，ADR-0003）
+//   - 域名补丁装配（src/dom/compat.ts，选择器表达不了的代码层）
 //   - 超大纯文本 pre 切块（src/dom/pre-split.ts）
 //   - 翻译单元判定（src/dom/classify.ts）
 //
 // 决策表（#319）到遍历决策的映射：
 //   - R1 扩展自身 UI 整棵子树跳过（含其 shadowRoot）—— 遍历模块内建
+//   - S1 站点页面规则的排除（#366）整棵子树跳过；采集根落在排除区内
+//     （observer 增量补翻的新增节点）时直接返回空集
 //   - R2 SKIP_SET 整棵子树拒绝 —— 本回调返回 skip-subtree（根元素除外，
 //     根为 body 时按既有语义仍遍历其子树）
 //   - D1/D2 域名补丁 skip/take —— 仍在通用判定之前生效
@@ -29,6 +32,7 @@ import {
   hasNonTextContent,
 } from './classify';
 import { applyCompat } from './compat';
+import { getSiteRules } from '~/src/storage/specialization';
 import { splitPre } from './pre-split';
 import { walkShadowTree } from './shadow-walk';
 
@@ -53,6 +57,11 @@ export function collect(
   const rootEl =
     root.nodeType === Node.ELEMENT_NODE ? (root as Element) : null;
 
+  // S1 站点页面规则的排除：命中的元素整块不采集。划词翻译只拿选中
+  // 文本、不经过本入口，因此不受站点页面规则影响。
+  const { exclude } = getSiteRules(location.hostname);
+  if (rootEl && exclude.some((sel) => rootEl.closest(sel))) return out;
+
   // skipTranslated: false —— 已翻译单元（data-pt="done"）的子树仍要访问：
   // 单元自身由 D6 跳过，但其内新增的段落（原文容器之外）仍被采集（#179）。
   // 遍历模块在每一层递归（含 shadow 边界内侧）都调用本回调，
@@ -61,6 +70,8 @@ export function collect(
     root as ParentNode,
     (el) => {
       try {
+        if (exclude.some((sel) => el.matches(sel))) return 'skip-subtree';
+
         // R2 整棵子树拒绝：SKIP_SET（button/code/script 等）。
         // 根元素除外 —— 根是 body 时旧语义仍遍历其子树（acceptNode
         // 不作用于 TreeWalker 根节点）

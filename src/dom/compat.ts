@@ -147,21 +147,6 @@ export function mainDomain(host: string): string {
 }
 
 const HANDLERS: Record<string, CompatHandler> = {
-  'youtube.com': (el: Element) => {
-    // 时长、播放量、发布时间等元数据不翻
-    if (
-      el.matches(
-        '.ytd-thumbnail-overlay-time-status-renderer,' +
-          '#metadata-line span,' +
-          '.ytd-video-meta-block ytd-badge-supported-renderer,' +
-          '.ytd-channel-name yt-formatted-string',
-      )
-    ) {
-      return { skip: true };
-    }
-    return null;
-  },
-
   'github.com': (el: Element) => {
     // 代码行、文件名、commit hash、blob 内容不翻
     if (
