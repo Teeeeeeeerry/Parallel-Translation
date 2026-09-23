@@ -21,12 +21,20 @@
  *   - 排除区内找不到段落，不出按钮也不翻译
  *   - 排除区外的正文照常找到段落
  *
+ * 保留原文（#369，迁自 compat.ts 的 github.com preserve 补丁）——
+ * 采集单元后提取文本（translatableTextEx，全页与逐段翻译共用）：
+ *   - @mention、hovercard 用户名链接、author 微数据换成占位符，
+ *     回填后原文留在译文句子里
+ *   - 普通链接、空文本不保留；只对行内元素生效
+ *   - 原 compat-github.test.ts 中 shouldPreserveText 的用例改在这里验证
+ *
  * jsdom 的 location.hostname 是文件级选项，与其他域名的测试文件分离。
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
+import { translatableTextEx, restorePreserves } from '~/src/dom/text';
 
 let restore: () => void;
 beforeEach(() => {
@@ -101,5 +109,65 @@ describe('closestUnit（github.com 内置排除，逐段翻译入口）', () => 
     document.body.innerHTML =
       '<article class="markdown-body"><p id="readme">Run the <b id="bold">installer</b> first.</p></article>';
     expect(closestUnit(document.getElementById('bold')!)?.id).toBe('readme');
+  });
+});
+
+describe('保留原文（github.com 内置规则，采集后提取文本）', () => {
+  /** 放入页面、采集唯一的单元并提取文本 —— 与 content 发往引擎的内容一致 */
+  function extract(html: string) {
+    document.body.innerHTML = html;
+    const units = collect();
+    expect(units).toHaveLength(1);
+    return translatableTextEx(units[0]!);
+  }
+
+  test('评论里的 @mention：换成占位符，回填后原文留在译文句子里', () => {
+    const { text, preserves } = extract(
+      '<p>Thanks <a class="user-mention" href="/torvalds">@torvalds</a>, merged in the main branch.</p>',
+    );
+    expect(text).not.toContain('@torvalds');
+    expect([...preserves.values()]).toEqual(['@torvalds']);
+
+    const [ph] = [...preserves.keys()];
+    const restored = restorePreserves(`感谢 ${ph}，已合并到主分支。`, preserves, text);
+    expect(restored).toBe('感谢 @torvalds，已合并到主分支。');
+  });
+
+  test('hovercard 用户名链接（[data-hovercard-url^="/users/"]）保留原文', () => {
+    const { preserves } = extract(
+      '<p>Reviewed by <a data-hovercard-url="/users/torvalds/hovercard">torvalds</a> yesterday.</p>',
+    );
+    expect([...preserves.values()]).toEqual(['torvalds']);
+  });
+
+  test('author 微数据（[rel="author"] / [itemprop="author"]）保留原文', () => {
+    const { preserves } = extract(
+      '<p>Written by <a rel="author">Linus Torvalds</a> and <span itemprop="author">octocat</span> together.</p>',
+    );
+    expect([...preserves.values()]).toEqual(['Linus Torvalds', 'octocat']);
+  });
+
+  test('普通链接照常翻译，不保留', () => {
+    const { text, preserves } = extract(
+      '<p>See <a href="https://github.com/foo/bar">the foo project</a> for details.</p>',
+    );
+    expect(preserves.size).toBe(0);
+    expect(text).toContain('the foo project');
+  });
+
+  test('空文本的 @mention 不保留', () => {
+    const { preserves } = extract(
+      '<p>Thanks <a class="user-mention">  </a> for the quick review.</p>',
+    );
+    expect(preserves.size).toBe(0);
+  });
+
+  test('保留原文只对行内元素生效：块级元素命中选择器也照常翻译', () => {
+    // 块级子元素自身也会被采成单元，这里直接对外层提取，只看它是否被换成占位符
+    document.body.innerHTML =
+      '<div id="outer">Opened by <div class="user-mention">@octocat</div> in this thread.</div>';
+    const { text, preserves } = translatableTextEx(document.getElementById('outer')!);
+    expect(preserves.size).toBe(0);
+    expect(text).toContain('@octocat');
   });
 });

@@ -4,8 +4,8 @@
  * isGenericInlineBadge / shouldPreserveText
  *
  * 注意：jsdom 中 location.hostname === 'localhost'，域名补丁仅对
- * 匹配 hostname 的站点生效。shouldPreserveText 的 github.com 逻辑
- * 在 localhost 下不会被激活 —— 我们通过直接验证 handler 逻辑来覆盖。
+ * 匹配 hostname 的站点生效。github.com 的保留原文已迁为内置数据
+ * （#369），在 site-rules-github.test.ts 里验证。
  */
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { shouldPreserveText } from '~/src/dom/compat';

@@ -7,12 +7,12 @@
 // 内置站点页面规则（ADR-0003）—— 纯数据，随扩展打包。
 //
 // 键是裸域名，匹配语义与站点黑白名单相同（子域归入、主域名归一）。
-// 新增一个站点只需在此添加条目；选择器表达不了的逻辑（take 改指、
+// 各字段可省略，省略即为空列表。新增一个站点只需在此添加条目；选择器表达不了的逻辑（take 改指、
 // 按尺寸识别角标等）留在 src/dom/compat.ts 代码层。
 
 import type { SiteRules } from './specialization';
 
-export const BUILTIN_SITE_RULES: Record<string, SiteRules> = {
+export const BUILTIN_SITE_RULES: Record<string, Partial<SiteRules>> = {
   // #366：迁自 compat.ts 的 youtube.com skip 补丁
   'youtube.com': {
     exclude: [
@@ -44,6 +44,13 @@ export const BUILTIN_SITE_RULES: Record<string, SiteRules> = {
       '.tree-browser',          // blob 页文件树（旧版）
       '.BorderGrid',            // 仓库首页贡献者网格
       '.repository-lang-stats', // 仓库首页语言统计条
+    ],
+    // #369：迁自 compat.ts 的 github.com preserve 补丁
+    preserve: [
+      'a.user-mention',                 // 评论正文里的 @mention，最高频场景
+      '[data-hovercard-url^="/users/"]', // hovercard 用户名链接，覆盖几乎所有用户名
+      '[rel="author"]',                 // 微数据：author 关联
+      '[itemprop="author"]',
     ],
   },
 };
