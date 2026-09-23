@@ -16,8 +16,12 @@ import type { Term } from '~/src/storage/domains';
 const WORD_CHAR =
   '(?:(?![\\p{sc=Han}\\p{sc=Hiragana}\\p{sc=Katakana}\\p{sc=Hangul}])[\\p{L}\\p{N}_])';
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function termPattern(source: string): RegExp {
-  const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escaped = escapeRegExp(source);
   return new RegExp(`(?<!${WORD_CHAR})${escaped}(?!${WORD_CHAR})`, 'iu');
 }
 
@@ -32,6 +36,54 @@ function isEffective(t: Term): boolean {
  */
 export function matchTerms(terms: readonly Term[], text: string): Term[] {
   return terms.filter((t) => isEffective(t) && termPattern(t.source.trim()).test(text));
+}
+
+/**
+ * “不翻译”术语占位符（#386）：⟦TM0⟧、⟦TM1⟧ ……
+ * 与保留原文的 ⟦PT0⟧ 区分开 —— 两者同段出现时编号互不冲突，
+ * content 侧的保留原文回填也不会误认它。
+ */
+const TERM_PLACEHOLDER_RE = /⟦TM(\d+)⟧/g;
+
+/** 占位符替换结果：发给机翻引擎的文本 + 每个占位符对应的原文。 */
+export interface MaskedText {
+  text: string;
+  /** originals[n] 是 ⟦TMn⟧ 替换掉的原文（保留原文里的大小写）。 */
+  originals: string[];
+}
+
+/**
+ * 把命中的“不翻译”术语换成占位符（#386）。指定了译法的术语不参与。
+ * 多条术语重叠时长的优先（“pull request”先于“request”）。
+ */
+export function maskNoTranslate(text: string, hits: readonly Term[]): MaskedText {
+  const sources = hits
+    .filter((t) => t.noTranslate)
+    .map((t) => t.source.trim())
+    .sort((a, b) => b.length - a.length);
+  if (sources.length === 0) return { text, originals: [] };
+
+  const alternation = sources
+    .map(escapeRegExp)
+    .join('|');
+  const re = new RegExp(`(?<!${WORD_CHAR})(?:${alternation})(?!${WORD_CHAR})`, 'giu');
+  const originals: string[] = [];
+  const masked = text.replace(re, (m) => `⟦TM${originals.push(m) - 1}⟧`);
+  return { text: masked, originals };
+}
+
+/**
+ * 把译文里的占位符换回原文（#386）。占位符缺失、重复或编号越界说明
+ * 引擎把它改坏了，返回 null —— 调用方不采用这份译文。
+ */
+export function unmaskNoTranslate(translation: string, originals: readonly string[]): string | null {
+  if (originals.length === 0) return translation;
+  const found = [...translation.matchAll(TERM_PLACEHOLDER_RE)].map((m) => Number(m[1]));
+  const intact =
+    found.length === originals.length &&
+    originals.every((_, n) => found.filter((f) => f === n).length === 1);
+  if (!intact) return null;
+  return translation.replace(TERM_PLACEHOLDER_RE, (_, n: string) => originals[Number(n)]!);
 }
 
 /** 按原词去重（不区分大小写，与匹配口径一致），保留先出现的一条（#381）。 */
