@@ -10,8 +10,8 @@
 | 全页翻译 | 翻译整页 | `togglePage()` |
 | 划词翻译 | 翻译选中文本 | `translateSelection()` |
 | **更新提示** | 更新内容 / What's New | `src/changelog/`(数据与渲染)、`pt-changelog`(storage key) |
-| **领域** | 翻译领域 | `domain`(未实现) |
-| **术语** | 术语 | (未实现) |
+| **领域** | 翻译领域 | `Domain`、`src/storage/domains.ts`(生效领域列表、`currentDomain()` 当前领域解析)、`src/storage/builtin-domains.ts`(内置领域数据)、`TranslateRequest.domainId` |
+| **术语** | 术语 | `Term`(`noTranslate` = 不翻译) |
 | **站点页面规则** | 站点规则 | (未实现;现有代码层为 `src/dom/compat.ts`) |
 
 **逐段翻译**(2026-08-15 定名):设置 → 悬浮 UI → 「逐段翻译」开关。语义 = 光标悬停在文字上时出现翻译按钮,点击仅翻译该段。关闭即解绑悬停监听(不再检测),即时生效无需刷新。此前文案「段落悬停按钮」因与用户语言对不上导致「找不到开关」,已统一改名;`welcomeParaBtnDesc` 描述文案未改(功能说明,不含名称)。

@@ -22,6 +22,8 @@ import type {
   FailureCategory,
 } from '~/src/engines/types';
 import type { Settings } from '~/src/storage/schema';
+import { currentDomain } from '~/src/storage/domains';
+import type { Domain } from '~/src/storage/domains';
 import { isSiteBlocked } from '~/src/dom/site-filter';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
@@ -221,6 +223,11 @@ export interface OrchestratorOptions {
    */
   getHostname?: () => string;
   /**
+   * 读取生效领域列表（#379）：全页翻译按当前主机名与目标语言从中
+   * 选出当前领域，把领域 ID 放进翻译请求；未注入视同没有领域。
+   */
+  getDomains?: () => readonly Domain[];
+  /**
    * 翻译态查询（#325）：页面是否已有译文 —— 开关入口据此决定翻译
    * 还是还原，模块不直接访问 DOM。
    */
@@ -312,6 +319,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     const epochAtStart = epoch;
     // 批次拆分（#245）：与现状一致，每批独立发送
     const batches = splitBatches(items, batchSize);
+    // #379: 当前领域在翻译开始时定一次，各批次一致；没有则不携带字段
+    const domainId = currentDomainIdFrom(opts, to);
 
     let allFailed = true;
     let aborted = false;
@@ -335,6 +344,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
               texts: batch.map((item) => item.text),
               from,
               to,
+              ...(domainId !== undefined && { domainId }),
             }) as Promise<TranslateBatchResult>,
           {
             sleep: sleepFn,
@@ -536,4 +546,14 @@ function admissionFrom(opts: OrchestratorOptions): Admission {
   const host = opts.getHostname?.() ?? '';
   if (isSiteBlocked(host, s.siteList)) return 'blocked';
   return 'allowed';
+}
+
+/** 当前领域 ID（#379）—— 生效领域与主机名均经注入提供。 */
+function currentDomainIdFrom(
+  opts: OrchestratorOptions,
+  to: string,
+): string | undefined {
+  const domains = opts.getDomains?.();
+  if (!domains) return undefined;
+  return currentDomain(domains, opts.getHostname?.() ?? '', to)?.id;
 }

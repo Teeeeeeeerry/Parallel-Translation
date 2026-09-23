@@ -15,6 +15,7 @@ import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import type { TranslateRequest } from '~/src/engines/types';
 import type { Settings } from '~/src/storage/schema';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
+import { getEffectiveDomains } from '~/src/storage/domains';
 
 /** 冲刷微任务 + 一个宏任务，让异步链（send → retry → 回调）完整推进。 */
 async function flush(): Promise<void> {
@@ -1068,5 +1069,66 @@ describe('观察器启停时机（#328）', () => {
     await orch.togglePage(items(1), 'en', 'zh-CN');
     expect(start).toHaveBeenCalledTimes(2);
     orch.stop();
+  });
+});
+
+describe('全页翻译携带当前领域（#379）', () => {
+  async function pageRequests(
+    host: string,
+    to: string,
+    via: 'translatePage' | 'togglePage' = 'translatePage',
+  ): Promise<TranslateRequest[]> {
+    const send = vi.fn(async (_req: TranslateRequest) => ({
+      ok: true,
+      data: { translations: [] },
+    }));
+    const domains = await getEffectiveDomains();
+    const orch = createOrchestrator({
+      send,
+      batchSize: 2,
+      getSettings: () => DEFAULT_SETTINGS,
+      getHostname: () => host,
+      getDomains: () => domains,
+      hasTranslated: () => false,
+    });
+    orch.start();
+    await orch[via](items(3), 'en', to);
+    orch.stop();
+    return send.mock.calls.map((c) => c[0]!);
+  }
+
+  test('网址命中内置领域 → 每一批请求都带上领域 ID', async () => {
+    const [dev] = await getEffectiveDomains();
+    const reqs = await pageRequests('github.com', 'zh-CN');
+    expect(reqs).toHaveLength(2);
+    for (const req of reqs) expect(req.domainId).toBe(dev!.id);
+  });
+
+  test('整页开关入口同样带上领域 ID', async () => {
+    const [dev] = await getEffectiveDomains();
+    const reqs = await pageRequests('www.github.com', 'zh-CN', 'togglePage');
+    expect(reqs[0]!.domainId).toBe(dev!.id);
+  });
+
+  test('网址未命中任何领域 → 请求不含 domainId 字段', async () => {
+    const reqs = await pageRequests('example.com', 'zh-CN');
+    for (const req of reqs) expect(req).not.toHaveProperty('domainId');
+  });
+
+  test('目标语言与领域不一致 → 请求不含 domainId 字段', async () => {
+    const reqs = await pageRequests('github.com', 'ja');
+    for (const req of reqs) expect(req).not.toHaveProperty('domainId');
+  });
+
+  test('未注入领域列表 → 请求不含 domainId 字段', async () => {
+    const send = vi.fn(async (_req: TranslateRequest) => ({
+      ok: true,
+      data: { translations: [] },
+    }));
+    const orch = createOrchestrator({ send, getHostname: () => 'github.com' });
+    orch.start();
+    await orch.translatePage(items(1), 'en', 'zh-CN');
+    orch.stop();
+    expect(send.mock.calls[0]![0]).not.toHaveProperty('domainId');
   });
 });
