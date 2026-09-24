@@ -83,9 +83,25 @@ async function refreshIndex(key: string): Promise<void> {
 
 // ---- Public API ----
 
+/** 一条缓存：译文，以及它是否“未遵守术语”（#428）。 */
+export interface CacheEntry {
+  value: string;
+  /**
+   * 未遵守术语：机翻引擎改坏了“不翻译”术语的占位符，这份译文是用原文
+   * 重译的（#389），却写在带术语哈希的 key 下 —— 同一段原文再次翻译时
+   * 直接命中，不再重走回退。
+   */
+  ignoresTerms: boolean;
+}
+
 /** 读取缓存条目。命中时刷新 LRU 位置，未命中返回 null。 */
 export function cacheGet(key: string): Promise<string | null> {
-  let value: string | null = null;
+  return cacheGetEntry(key).then((entry) => entry?.value ?? null);
+}
+
+/** 读取缓存条目及其标记（#428）。命中时刷新 LRU 位置，未命中返回 null。 */
+export function cacheGetEntry(key: string): Promise<CacheEntry | null> {
+  let entry: CacheEntry | null = null;
 
   chain = chain
     .then(() => chrome.storage.local.get(key))
@@ -96,17 +112,17 @@ export function cacheGet(key: string): Promise<string | null> {
       // 旧版纯字符串条目（升级前写入）没有时间戳，按永不过期处理，
       // 由 LRU 自然淘汰。
       try {
-        const parsed = JSON.parse(v) as { v?: string; t?: number };
+        const parsed = JSON.parse(v) as { v?: string; t?: number; ignoresTerms?: boolean };
         if (typeof parsed.v === 'string' && typeof parsed.t === 'number') {
           if (Date.now() - parsed.t > CACHE_TTL_MS) {
             return chrome.storage.local.remove(key).then(() => undefined);
           }
-          value = parsed.v;
+          entry = { value: parsed.v, ignoresTerms: parsed.ignoresTerms === true };
         } else {
-          value = v;
+          entry = { value: v, ignoresTerms: false };
         }
       } catch {
-        value = v;
+        entry = { value: v, ignoresTerms: false };
       }
       // 命中 → 刷新 index 位置
       return refreshIndex(key);
@@ -115,18 +131,24 @@ export function cacheGet(key: string): Promise<string | null> {
       console.warn('[PT] 缓存读取失败:', e);
     });
 
-  return chain.then(() => value);
+  return chain.then(() => entry);
 }
 
 /**
  * 写入缓存条目。
  * 自动维护 LRU index —— 超过 MAX_ENTRIES 则淘汰最旧的条目。
+ * opts.ignoresTerms 标记这份译文未遵守术语（#428），缺省不标记。
  */
-export function cacheSet(key: string, value: string): Promise<void> {
+export function cacheSet(
+  key: string,
+  value: string,
+  opts: { ignoresTerms?: boolean } = {},
+): Promise<void> {
+  const stored = { v: value, t: Date.now(), ...(opts.ignoresTerms && { ignoresTerms: true }) };
   chain = chain
     .then(() =>
       chrome.storage.local.set({
-        [key]: JSON.stringify({ v: value, t: Date.now() }),
+        [key]: JSON.stringify(stored),
       }),
     )
     .then(() => refreshIndex(key))

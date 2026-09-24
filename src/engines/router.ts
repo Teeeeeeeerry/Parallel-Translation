@@ -178,7 +178,9 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       }
 
       // 并行写缓存（仅成功的条目）。缓存换回原词后的译文（#386），不是
-      // 引擎原始输出；原文重译的译文没有遵守术语，key 不带术语哈希（#389）
+      // 引擎原始输出。原文重译的译文没有遵守术语：写到不带术语哈希的
+      // key 下（#389），同时写到带术语哈希的 key 下并标记“未遵守术语”，
+      // 同一段原文再次翻译时直接命中，不再重走回退（#428）
       if (useCache) {
         await Promise.all(
           uncached.map(async (u, j) => {
@@ -186,8 +188,13 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
             const val = translations[u.idx];
             // #171: 短数组下成功槽位必然有值，这里再做一次防御
             if (val === undefined || val === null) return;
-            const terms = plain.has(j) ? [] : hits[u.idx];
-            await cacheSet(await cacheKey(id, req.from, req.to, u.text, model, terms), val);
+            const key = await cacheKey(id, req.from, req.to, u.text, model, hits[u.idx]);
+            if (!plain.has(j)) {
+              await cacheSet(key, val);
+              return;
+            }
+            await cacheSet(await cacheKey(id, req.from, req.to, u.text, model), val);
+            await cacheSet(key, val, { ignoresTerms: true });
           }),
         );
       }
