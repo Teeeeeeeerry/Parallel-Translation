@@ -31,7 +31,7 @@ export interface Domain {
   name: string;
   /** 目标语言（BCP-47，与 Settings.to 同一套语言码）。 */
   targetLang: string;
-  /** 适用网址：裸域名，语义与站点黑白名单相同。 */
+  /** 适用网址：裸域名、localhost 或 IPv4 地址（#431），匹配语义与站点黑白名单相同。 */
   sites: string[];
   terms: Term[];
   /** 来源：内置或用户自建。 */
@@ -216,6 +216,18 @@ export async function deleteDomain(id: string): Promise<void> {
 /** 裸域名格式，与站点黑白名单的输入校验一致。 */
 const SITE_RE = /^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$/;
 
+/** IPv4 的一段：0–255，不带前导零。 */
+const IPV4_OCTET = '(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
+const IPV4_RE = new RegExp(`^${IPV4_OCTET}(\\.${IPV4_OCTET}){3}$`);
+
+/**
+ * 适用网址条目是否合法：裸域名，或 localhost、IPv4 地址（#431）—— 后两者
+ * 在 siteMatches 里只做精确匹配。协议、端口、路径一律不收。
+ */
+function isValidSite(entry: string): boolean {
+  return entry === 'localhost' || IPV4_RE.test(entry) || SITE_RE.test(entry);
+}
+
 /** 适用网址里有不合法的条目；invalid 按输入顺序列出这些条目（去重）。 */
 export class InvalidSitesError extends Error {
   constructor(readonly invalid: string[]) {
@@ -225,9 +237,10 @@ export class InvalidSitesError extends Error {
 }
 
 /**
- * 保存自建领域的适用网址（#392），整体替换原列表。每条去掉首尾空格并
- * 转小写，空行与重复条目丢弃；有不合法的条目时抛 InvalidSitesError，
- * 不写入。内置领域、不存在的领域抛错。返回保存后的领域。
+ * 保存自建领域的适用网址（#392），整体替换原列表。条目为裸域名、localhost
+ * 或 IPv4 地址（#431）。每条去掉首尾空格并转小写，空行与重复条目丢弃；
+ * 有不合法的条目时抛 InvalidSitesError，不写入。内置领域、不存在的领域
+ * 抛错。返回保存后的领域。
  */
 export async function setDomainSites(id: string, sites: readonly string[]): Promise<Domain> {
   if (BUILTIN_DOMAINS.some((d) => d.id === id)) {
@@ -235,7 +248,7 @@ export async function setDomainSites(id: string, sites: readonly string[]): Prom
   }
   const cleaned = [...new Set(sites.map((s) => s.trim().toLowerCase()).filter(Boolean))];
   const invalid = [
-    ...new Set(sites.map((s) => s.trim()).filter((s) => s && !SITE_RE.test(s.toLowerCase()))),
+    ...new Set(sites.map((s) => s.trim()).filter((s) => s && !isValidSite(s.toLowerCase()))),
   ];
   if (invalid.length > 0) throw new InvalidSitesError(invalid);
 

@@ -212,11 +212,11 @@
     "message": "Sites ($count$)",
     "placeholders": { "count": { "content": "$1" } }
   },
-  "domainSitesPlaceholder": { "message": "One domain per line, e.g. example.com" },
+  "domainSitesPlaceholder": { "message": "One domain, localhost or IPv4 address per line, e.g. example.com, 192.168.1.10" },
   "domainSitesSave": { "message": "Save" },
   "domainSitesSaved": { "message": "Sites saved" },
   "domainSitesInvalid": {
-    "message": "Invalid domain format: $list$",
+    "message": "Invalid entries (use a domain, localhost or an IPv4 address, without protocol, port or path): $list$",
     "placeholders": { "list": { "content": "$1" } }
   },
   "domainPopupLabel": { "message": "Domain" },

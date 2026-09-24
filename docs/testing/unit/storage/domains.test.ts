@@ -252,8 +252,8 @@ describe('编辑自建领域的适用网址（#392）', () => {
     const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
     await setDomainSites(law.id, ['example.com']);
     await expect(
-      setDomainSites(law.id, ['ok.com', 'https://github.com/foo', 'not a domain', 'localhost', 'not a domain']),
-    ).rejects.toMatchObject({ invalid: ['https://github.com/foo', 'not a domain', 'localhost'] });
+      setDomainSites(law.id, ['ok.com', 'https://github.com/foo', 'not a domain', 'not a domain']),
+    ).rejects.toMatchObject({ invalid: ['https://github.com/foo', 'not a domain'] });
     expect((await getEffectiveDomains()).find((d) => d.id === law.id)!.sites).toEqual(['example.com']);
   });
 
@@ -266,6 +266,47 @@ describe('编辑自建领域的适用网址（#392）', () => {
   test('领域不存在 → 抛错，不新建领域', async () => {
     await expect(setDomainSites('user:missing', ['example.com'])).rejects.toThrow();
     expect(await getEffectiveDomains()).toHaveLength(1);
+  });
+});
+
+describe('适用网址支持 localhost 与 IPv4（#431）', () => {
+  test('保存 localhost 与 IPv4 后，在这些主机上该领域成为当前领域', async () => {
+    const dev = await createDomain({ name: '本地', targetLang: 'zh-CN' });
+    const saved = await setDomainSites(dev.id, ['localhost', ' 192.168.1.10 ', '127.0.0.1']);
+    expect(saved.sites).toEqual(['localhost', '192.168.1.10', '127.0.0.1']);
+
+    const domains = await getEffectiveDomains();
+    expect(currentDomain(domains, 'localhost', 'zh-CN')?.id).toBe(dev.id);
+    expect(currentDomain(domains, '192.168.1.10', 'zh-CN')?.id).toBe(dev.id);
+    expect(currentDomain(domains, '127.0.0.1', 'zh-CN')?.id).toBe(dev.id);
+  });
+
+  test('IP 只做精确匹配', async () => {
+    const lan = await createDomain({ name: '内网', targetLang: 'zh-CN' });
+    await setDomainSites(lan.id, ['192.168.1.10']);
+    const domains = await getEffectiveDomains();
+    expect(currentDomain(domains, '192.168.1.11', 'zh-CN')).toBeNull();
+    expect(currentDomain(domains, '10.192.168.1.10', 'zh-CN')).toBeNull();
+  });
+
+  test('非法 IP、带端口、协议或路径的输入 → 拒绝保存并报出这些条目', async () => {
+    const dev = await createDomain({ name: '本地', targetLang: 'zh-CN' });
+    const bad = [
+      '999.1.1.1',
+      '1.2.3',
+      '1.2.3.4.5',
+      '01.2.3.4',
+      'localhost:3000',
+      '192.168.1.10:8080',
+      'http://localhost',
+      'https://192.168.1.10',
+      'localhost/admin',
+      '192.168.1.10/app',
+    ];
+    await expect(setDomainSites(dev.id, ['localhost', ...bad])).rejects.toMatchObject({
+      invalid: bad,
+    });
+    expect((await getEffectiveDomains()).find((d) => d.id === dev.id)!.sites).toEqual([]);
   });
 });
 

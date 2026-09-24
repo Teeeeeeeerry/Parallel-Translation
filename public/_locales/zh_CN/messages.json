@@ -212,11 +212,11 @@
     "message": "适用网址（$count$）",
     "placeholders": { "count": { "content": "$1" } }
   },
-  "domainSitesPlaceholder": { "message": "每行一个域名，例如 example.com" },
+  "domainSitesPlaceholder": { "message": "每行一个域名、localhost 或 IPv4 地址，例如 example.com、192.168.1.10" },
   "domainSitesSave": { "message": "保存" },
   "domainSitesSaved": { "message": "已保存适用网址" },
   "domainSitesInvalid": {
-    "message": "以下网址格式不正确：$list$",
+    "message": "以下网址格式不正确（只填域名、localhost 或 IPv4 地址，不带协议、端口和路径）：$list$",
     "placeholders": { "list": { "content": "$1" } }
   },
   "domainPopupLabel": { "message": "当前领域" },

@@ -212,11 +212,11 @@
     "message": "適用網址（$count$）",
     "placeholders": { "count": { "content": "$1" } }
   },
-  "domainSitesPlaceholder": { "message": "每行一個網域，例如 example.com" },
+  "domainSitesPlaceholder": { "message": "每行一個網域、localhost 或 IPv4 位址，例如 example.com、192.168.1.10" },
   "domainSitesSave": { "message": "儲存" },
   "domainSitesSaved": { "message": "已儲存適用網址" },
   "domainSitesInvalid": {
-    "message": "以下網址格式不正確：$list$",
+    "message": "以下網址格式不正確（只填網域、localhost 或 IPv4 位址，不帶協定、連接埠和路徑）：$list$",
     "placeholders": { "list": { "content": "$1" } }
   },
   "domainPopupLabel": { "message": "目前領域" },

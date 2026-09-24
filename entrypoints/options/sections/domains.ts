@@ -30,8 +30,8 @@ function langLabel(code: string): string {
 }
 
 /**
- * 适用网址编辑（#392）：每行一个裸域名，保存时整体替换。不合法的条目
- * 在输入框下方列出，不写入。
+ * 适用网址编辑（#392）：每行一个裸域名、localhost 或 IPv4 地址（#431），
+ * 保存时整体替换。不合法的条目在输入框下方列出，不写入。
  */
 function sitesEditor(d: Domain): HTMLDetailsElement {
   const details = document.createElement('details');
@@ -47,7 +47,7 @@ function sitesEditor(d: Domain): HTMLDetailsElement {
   textarea.className = 'pt-input pt-domain-sites-input';
   textarea.rows = 4;
   textarea.spellcheck = false;
-  textarea.placeholder = tf('domainSitesPlaceholder', '每行一个域名，例如 example.com');
+  textarea.placeholder = tf('domainSitesPlaceholder', '每行一个域名、localhost 或 IPv4 地址，例如 example.com、192.168.1.10');
   textarea.value = d.sites.join('\n');
 
   const error = document.createElement('p');
@@ -69,7 +69,7 @@ function sitesEditor(d: Domain): HTMLDetailsElement {
         if (e instanceof InvalidSitesError) {
           textarea.classList.add('pt-error');
           const list = e.invalid.join(listSep());
-          error.textContent = tf('domainSitesInvalid', `以下网址格式不正确：${list}`, list);
+          error.textContent = tf('domainSitesInvalid', `以下网址格式不正确（只填域名、localhost 或 IPv4 地址，不带协议、端口和路径）：${list}`, list);
           error.classList.add('pt-visible');
         } else {
           console.error('[PT] 保存适用网址失败:', e);

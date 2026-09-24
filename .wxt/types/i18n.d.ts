@@ -1457,7 +1457,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "每行一个域名，例如 example.com"
+     * "每行一个域名、localhost 或 IPv4 地址，例如 example.com、192.168.1.10"
      */
     getMessage(
       messageName: "domainSitesPlaceholder",
@@ -1481,7 +1481,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "以下网址格式不正确：$list$"
+     * "以下网址格式不正确（只填域名、localhost 或 IPv4 地址，不带协议、端口和路径）：$list$"
      */
     getMessage(
       messageName: "domainSitesInvalid",
