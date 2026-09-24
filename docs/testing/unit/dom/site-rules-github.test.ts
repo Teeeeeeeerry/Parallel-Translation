@@ -10,16 +10,23 @@
  * 与数据化的排除等价。唯一例外是 shadow DOM：closest() 不穿过 shadow
  * 边界，旧补丁会采集排除区内宿主的 shadowRoot 里的单元，排除则连同
  * shadowRoot 整块跳过 —— 更符合“整块不翻译”，github 页面上也不涉及。
- * 本文件在 walker 采集入口 collect() 验证：
+ * 站点页面规则作用于全页翻译和逐段翻译，本文件分别在两个入口验证。
+ *
+ * 全页翻译 —— walker 采集入口 collect()：
  *   - 迁移前后采集到的单元一致（仓库首页 + blob 页的典型片段）
  *   - 原 compat-github.test.ts 中 applyCompat 的各选择器用例照常不采集，
  *     正文与含行内 code 的正文照常采集
+ *
+ * 逐段翻译 —— closestUnit()（悬停按钮与点击翻译共用的入口，#409）：
+ *   - 排除区内找不到段落，不出按钮也不翻译
+ *   - 排除区外的正文照常找到段落
  *
  * jsdom 的 location.hostname 是文件级选项，与其他域名的测试文件分离。
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
+import { closestUnit } from '~/src/dom/classify';
 
 let restore: () => void;
 beforeEach(() => {
@@ -74,5 +81,25 @@ describe('collect（github.com 内置排除）', () => {
   test('含行内 code 的正文照常采集', () => {
     document.body.innerHTML = '<p id="body">Run <code>pnpm build</code> first.</p>';
     expect(ids(collect())).toEqual(['body']);
+  });
+});
+
+describe('closestUnit（github.com 内置排除，逐段翻译入口）', () => {
+  test('贡献者网格（.BorderGrid）内的段落：找不到段落', () => {
+    document.body.innerHTML =
+      '<div class="BorderGrid"><p id="about">Claude Code is an agentic <b id="bold">coding</b> tool.</p></div>';
+    expect(closestUnit(document.getElementById('bold')!)).toBeNull();
+  });
+
+  test('文件树（.file-tree）内的段落：找不到段落', () => {
+    document.body.innerHTML =
+      '<div class="file-tree"><p id="tree">src directory</p></div>';
+    expect(closestUnit(document.getElementById('tree')!)).toBeNull();
+  });
+
+  test('排除区外的 README 正文照常找到段落', () => {
+    document.body.innerHTML =
+      '<article class="markdown-body"><p id="readme">Run the <b id="bold">installer</b> first.</p></article>';
+    expect(closestUnit(document.getElementById('bold')!)?.id).toBe('readme');
   });
 });
