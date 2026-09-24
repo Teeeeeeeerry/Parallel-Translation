@@ -207,5 +207,16 @@
     "message": "确定删除领域“$name$”吗？删除后无法恢复。",
     "placeholders": { "name": { "content": "$1" } }
   },
-  "domainCreated": { "message": "已新建领域" }
+  "domainCreated": { "message": "已新建领域" },
+  "domainSitesSummary": {
+    "message": "适用网址（$count$）",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "domainSitesPlaceholder": { "message": "每行一个域名，例如 example.com" },
+  "domainSitesSave": { "message": "保存" },
+  "domainSitesSaved": { "message": "已保存适用网址" },
+  "domainSitesInvalid": {
+    "message": "以下网址格式不正确：$list$",
+    "placeholders": { "list": { "content": "$1" } }
+  }
 }

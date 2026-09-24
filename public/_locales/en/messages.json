@@ -207,5 +207,16 @@
     "message": "Delete domain \"$name$\"? This cannot be undone.",
     "placeholders": { "name": { "content": "$1" } }
   },
-  "domainCreated": { "message": "Domain created" }
+  "domainCreated": { "message": "Domain created" },
+  "domainSitesSummary": {
+    "message": "Sites ($count$)",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "domainSitesPlaceholder": { "message": "One domain per line, e.g. example.com" },
+  "domainSitesSave": { "message": "Save" },
+  "domainSitesSaved": { "message": "Sites saved" },
+  "domainSitesInvalid": {
+    "message": "Invalid domain format: $list$",
+    "placeholders": { "list": { "content": "$1" } }
+  }
 }

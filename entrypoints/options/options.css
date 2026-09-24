@@ -649,3 +649,33 @@ body {
   color: var(--pt-forest-40);
   font-size: 11px;
 }
+
+/* ===== Domain sites（#392） ===== */
+
+.pt-domain-item {
+  flex-wrap: wrap;
+}
+
+.pt-domain-sites {
+  flex-basis: 100%;
+  margin-top: 4px;
+}
+
+.pt-domain-sites summary {
+  cursor: pointer;
+  color: var(--pt-forest-40);
+  font-size: 11px;
+}
+
+.pt-domain-sites-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 6px 0;
+  resize: vertical;
+}
+
+.pt-domain-sites-error {
+  margin: 0 0 6px;
+  font-family: inherit;
+}
