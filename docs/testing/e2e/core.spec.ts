@@ -1366,4 +1366,45 @@ test.describe('站点页面规则', () => {
     await ball.click();
     await expect(page.locator('li').first()).toHaveAttribute('data-pt', 'done', { timeout: 30_000 });
   });
+
+  test('@core TC-E2E-66: 有内置规则的站点卡片显示停用开关 → 打开后存入 storage.local → 重新打开仍保持（#375）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    for (const site of ['github.com', 'localhost']) {
+      await page.fill('#pt-site-rules-site-input', site);
+      await page.click('#pt-site-rules-add-btn');
+    }
+    const github = page.locator('.pt-site-rules-card', { hasText: 'github.com' });
+    const local = page.locator('.pt-site-rules-card', { hasText: 'localhost' });
+    const toggle = github.locator('.pt-site-rules-builtin-toggle');
+
+    // 没有内置规则的站点不显示开关
+    await expect(toggle).toBeVisible();
+    await expect(toggle).not.toHaveClass(/pt-on/);
+    await expect(local.locator('.pt-site-rules-builtin-toggle')).toHaveCount(0);
+
+    // 打开开关即保存
+    await toggle.click();
+    await expect(page.locator('#pt-toast')).toBeVisible();
+    await expect(toggle).toHaveClass(/pt-on/);
+    const cards = () =>
+      serviceWorker.evaluate(async () => {
+        const stored = (await chrome.storage.local.get('pt-site-rules'))['pt-site-rules'] as {
+          user: unknown[];
+        };
+        return stored.user;
+      });
+    expect(await cards()).toContainEqual({ site: 'github.com', disableBuiltin: true });
+
+    // 重新打开设置页仍保持；关闭后存为 false，恢复追加合并
+    await page.reload();
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    await expect(toggle).toHaveClass(/pt-on/);
+    await toggle.click();
+    await expect(toggle).not.toHaveClass(/pt-on/);
+    await expect.poll(cards).toContainEqual({ site: 'github.com', disableBuiltin: false });
+  });
 });

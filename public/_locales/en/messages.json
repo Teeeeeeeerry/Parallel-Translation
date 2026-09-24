@@ -277,5 +277,6 @@
     "message": "Delete the rules for \"$site$\"? Only the built-in rules will apply to this site afterwards.",
     "placeholders": { "site": { "content": "$1" } }
   },
-  "siteRulesDeleted": { "message": "Deleted. Reload the site to apply." }
+  "siteRulesDeleted": { "message": "Deleted. Reload the site to apply." },
+  "siteRulesDisableBuiltin": { "message": "Disable built-in rules for this site" }
 }

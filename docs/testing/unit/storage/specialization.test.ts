@@ -487,3 +487,90 @@ describe('删除站点卡片（#371）', () => {
     ]);
   });
 });
+
+/**
+ * 停用某个站点的内置规则（#375）：站点卡片上的开关，打开后该站点只剩
+ * 用户规则生效，便于内置规则出错时完全接管；关闭后恢复追加合并。开关
+ * 状态随站点卡片存放在 storage.local。
+ */
+describe('停用某个站点的内置规则（#375）', () => {
+  type Spec = typeof import('~/src/storage/specialization');
+  async function load(): Promise<Spec> {
+    vi.resetModules();
+    return import('~/src/storage/specialization');
+  }
+
+  let options: Spec;
+  beforeEach(async () => {
+    resetStorage();
+    options = await load();
+  });
+
+  async function rulesOnNewPage(host: string) {
+    const page = await load();
+    await page.siteRulesReady();
+    return page.getSiteRules(host);
+  }
+
+  test('有内置规则的站点才显示开关：按裸域名语义判断', () => {
+    expect(options.hasBuiltinSiteRules('github.com')).toBe(true);
+    expect(options.hasBuiltinSiteRules('www.youtube.com')).toBe(true);
+    expect(options.hasBuiltinSiteRules('example.com')).toBe(false);
+    expect(options.hasBuiltinSiteRules('notgithub.com')).toBe(false);
+  });
+
+  test('开关打开后，生效规则只含用户规则；子域同样生效', async () => {
+    await options.saveUserSiteRules('github.com', { exclude: ['.my-sidebar'] });
+    await options.setBuiltinSiteRulesDisabled('github.com', true);
+    const only = { scope: [], exclude: ['.my-sidebar'], preserve: [] };
+    expect(await rulesOnNewPage('github.com')).toEqual(only);
+    expect(await rulesOnNewPage('gist.github.com')).toEqual(only);
+    // 设置所在的上下文同样立即生效
+    expect(options.getSiteRules('github.com')).toEqual(only);
+  });
+
+  test('开关状态存放在 storage.local；关闭后恢复追加合并', async () => {
+    const builtin = getSiteRules('github.com');
+    await options.saveUserSiteRules('github.com', { exclude: ['.my-sidebar'] });
+    await options.setBuiltinSiteRulesDisabled('github.com', true);
+    expect(await chrome.storage.sync.get(null)).toEqual({});
+    expect(await options.getUserSiteRules()).toEqual([
+      { site: 'github.com', exclude: ['.my-sidebar'], disableBuiltin: true },
+    ]);
+
+    await options.setBuiltinSiteRulesDisabled('github.com', false);
+    expect((await rulesOnNewPage('github.com')).exclude).toEqual([
+      ...builtin.exclude,
+      '.my-sidebar',
+    ]);
+    expect((await rulesOnNewPage('github.com')).preserve).toEqual(builtin.preserve);
+  });
+
+  test('只停用该站点的内置规则，其他站点不受影响', async () => {
+    await options.saveUserSiteRules('github.com', {});
+    await options.setBuiltinSiteRulesDisabled('github.com', true);
+    expect(await rulesOnNewPage('youtube.com')).toEqual(getSiteRules('youtube.com'));
+  });
+
+  test('保存选择器不改变开关状态', async () => {
+    await options.saveUserSiteRules('github.com', {});
+    await options.setBuiltinSiteRulesDisabled('github.com', true);
+    await options.saveUserSiteRules('github.com', { exclude: ['.ad'] });
+    expect((await rulesOnNewPage('github.com')).exclude).toEqual(['.ad']);
+  });
+
+  test('存储里开关不是布尔值的卡片跳过', async () => {
+    await chrome.storage.local.set({
+      'pt-site-rules': {
+        user: [
+          { site: 'github.com', disableBuiltin: 'yes' },
+          { site: 'example.com', exclude: ['.ad'] },
+        ],
+      },
+    });
+    const page = await load();
+    await page.siteRulesReady();
+    expect(page.getSiteRules('github.com')).toEqual(getSiteRules('github.com'));
+    expect(page.getSiteRules('example.com').exclude).toEqual(['.ad']);
+  });
+});
