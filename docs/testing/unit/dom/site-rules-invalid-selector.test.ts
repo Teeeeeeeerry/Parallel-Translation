@@ -12,12 +12,13 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import type { SiteRules } from '~/src/storage/specialization';
 
-const rules = vi.hoisted(() => ({}) as Record<string, SiteRules>);
+const rules = vi.hoisted(() => ({}) as Record<string, Partial<SiteRules>>);
 vi.mock('~/src/storage/builtin-site-rules', () => ({ BUILTIN_SITE_RULES: rules }));
 
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
 import { getSiteRules } from '~/src/storage/specialization';
+import { translatableTextEx } from '~/src/dom/text';
 
 /** #93 的原始形态：数组拼接前的逐行字符串带出尾随逗号 */
 const TRAILING_COMMA = '.repository-lang-stats,';
@@ -90,9 +91,25 @@ describe('closestUnit（规则里混入无效选择器，逐段翻译入口）',
   });
 });
 
+describe('保留原文（规则里混入无效选择器，#369）', () => {
+  test('提取文本不抛出，其余保留原文选择器照常生效', () => {
+    rules['localhost'] = { preserve: [TRAILING_COMMA, 'a.user-mention'] };
+    document.body.innerHTML =
+      '<p id="c">Thanks <a class="user-mention">@octocat</a> for the quick review.</p>';
+    const [unit] = collect();
+    expect(unit!.id).toBe('c');
+    expect([...translatableTextEx(unit!).preserves.values()]).toEqual(['@octocat']);
+  });
+});
+
 describe('getSiteRules（生效站点规则不含无效选择器）', () => {
   test('无效选择器被剔除，其余按原顺序保留', () => {
     rules['localhost'] = { exclude: ['.panel', TRAILING_COMMA, '', '.lang'] };
     expect(getSiteRules('localhost').exclude).toEqual(['.panel', '.lang']);
+  });
+
+  test('保留原文里的无效选择器同样被剔除（#369）', () => {
+    rules['localhost'] = { preserve: [TRAILING_COMMA, 'a.user-mention'] };
+    expect(getSiteRules('localhost').preserve).toEqual(['a.user-mention']);
   });
 });
