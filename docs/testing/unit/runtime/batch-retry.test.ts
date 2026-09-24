@@ -306,3 +306,57 @@ describe('BatchRetryResult 类别透传（#247）', () => {
     }
   });
 });
+
+describe('部分段落失败（#416）', () => {
+  const partial = (translations: string[], failedIndices: number[]) => ({
+    ok: true,
+    data: { translations, failedIndices },
+  });
+
+  test('重试只采用原先失败段落的新译文，已成功的段落不被覆盖', async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce(partial(['甲', '', '丙'], [1]))
+      .mockResolvedValueOnce({ ok: true, data: { translations: ['甲2', '乙', '丙2'] } });
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ ok: true, data: { translations: ['甲', '乙', '丙'], failedIndices: [] } });
+  });
+
+  test('重试预算耗尽仍有段落失败 → 返回已成功的部分，失败段落留在 failedIndices', async () => {
+    const sleep = vi.fn((_ms: number) => Promise.resolve());
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce(partial(['甲', '', ''], [1, 2]))
+      .mockResolvedValueOnce(partial(['', '乙', ''], [0, 2]))
+      .mockResolvedValueOnce({ ok: false, error: '网络错误' });
+    const result = await attemptBatchWithRetry(send, { sleep });
+
+    expect(send).toHaveBeenCalledTimes(BATCH_RETRY_LIMIT + 1);
+    expect(sleep.mock.calls.map((c) => c[0])).toEqual(BATCH_RETRY_DELAYS_MS);
+    expect(result).toEqual({ ok: true, data: { translations: ['甲', '乙', ''], failedIndices: [2] } });
+  });
+
+  test('重试遇到不可恢复的失败 → 立即返回已成功的部分', async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce(partial(['甲', ''], [1]))
+      .mockResolvedValueOnce({ ok: false, error: '配额耗尽', category: 'quota' as const });
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ ok: true, data: { translations: ['甲', ''], failedIndices: [1] } });
+  });
+
+  test('重试时被中止 → 报 aborted，不返回部分结果', async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce(partial(['甲', ''], [1]))
+      .mockResolvedValueOnce({ ok: false, error: '', aborted: true });
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.aborted).toBe(true);
+  });
+});

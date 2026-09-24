@@ -217,10 +217,20 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
     }
   }
 
+  const summary = errors.map((e) => `${e.engineId}(${e.message})`).join(', ');
+
+  // #416: 最后一个引擎仍有失败段落时，已成功的段落照常返回，失败段落
+  // 经 failedIndices 标记（槽位填空串）；全部失败才抛聚合错误
+  const failedIndices = translations.flatMap((t, i) => (t === null ? [i] : []));
+  if (failedIndices.length < translations.length) {
+    console.warn('[PT] 部分段落在所有引擎上都失败', { failedIndices, errors: summary });
+    return {
+      translations: translations.map((t) => t ?? ''),
+      failedIndices,
+    };
+  }
+
   // #237: 聚合失败显式构造类型化结果（瞬时、可重试）—— 不再抛裸普通
   // Error，消除「普通 Error 即隐式可重试」的启发式
-  throw new AllEnginesFailedError(
-    errors.map((e) => `${e.engineId}(${e.message})`).join(', '),
-    errors,
-  );
+  throw new AllEnginesFailedError(summary, errors);
 }

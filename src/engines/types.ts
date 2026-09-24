@@ -33,6 +33,7 @@ export interface TranslateResponse {
    * 翻译失败的槽位索引（可选）。
    * router 根据此字段将失败槽位交给下一个引擎重试，
    * 已成功的译文保留在 translations 中不被丢弃。
+   * route() 的返回值也用它标记所有引擎都失败的段落（#416），槽位为空串。
    */
   failedIndices?: number[];
 }

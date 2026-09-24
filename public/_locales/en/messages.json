@@ -251,5 +251,9 @@
   "siteRulesExclude": { "message": "Exclude" },
   "siteRulesExcludePlaceholder": { "message": "One CSS selector per line; matching elements are not translated" },
   "siteRulesSave": { "message": "Save" },
-  "siteRulesSaved": { "message": "Saved. Reload the site to apply." }
+  "siteRulesSaved": { "message": "Saved. Reload the site to apply." },
+  "domainPartialFail": {
+    "message": "$count$ paragraphs failed to translate",
+    "placeholders": { "count": { "content": "$1" } }
+  }
 }

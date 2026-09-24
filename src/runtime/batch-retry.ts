@@ -19,6 +19,10 @@
 // 不再发起新尝试，toast 立即出现而非等完 [1000, 3000]ms 重试序列。
 // #116：失效判定用 messaging 透出的类型化 invalidated 标志，
 // 不匹配错误文案 —— 文案改写不影响短路行为。
+//
+// #416：引擎返回部分成功（failedIndices）时，已成功的段落先留下，整批
+// 按同一序列重试，只采用重试结果里原先失败的段落；重试用尽仍失败的
+// 段落留在 failedIndices 里交给调用方标记。
 
 import type { TranslateResponse, FailureCategory } from '~/src/engines/types';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
@@ -48,10 +52,25 @@ export interface BatchRetryOptions {
   shouldAbort?: () => boolean;
 }
 
+/** 用 next 补齐 prev 中失败的段落（#416）。 */
+function fillFailed(prev: TranslateResponse, next: TranslateResponse): TranslateResponse {
+  const nextFailed = new Set(next.failedIndices ?? []);
+  const translations = [...prev.translations];
+  const failedIndices: number[] = [];
+  for (const i of prev.failedIndices ?? []) {
+    const text = next.translations[i];
+    if (nextFailed.has(i) || typeof text !== 'string') failedIndices.push(i);
+    else translations[i] = text;
+  }
+  return { ...prev, translations, failedIndices };
+}
+
 /**
  * 发送一批文本直至成功或重试预算耗尽。
- * - ok 响应立即返回（调用方负责渲染）
- * - 引擎级失败按 BATCH_RETRY_DELAYS_MS 有界重试（#91）
+ * - 全部成功的 ok 响应立即返回（调用方负责渲染）
+ * - 引擎级失败按 BATCH_RETRY_DELAYS_MS 有界重试（#91）；部分失败同样
+ *   重试，只补失败的段落，预算耗尽或遇到不可恢复的失败时返回已成功的
+ *   部分（#416）
  * - 上下文失效立即返回 invalidated，0 次重试（#111）
  */
 export async function attemptBatchWithRetry(
@@ -70,6 +89,8 @@ export async function attemptBatchWithRetry(
 ): Promise<BatchRetryResult> {
   const sleep = opts.sleep ?? defaultSleep;
   let lastError = '未知错误';
+  /** #416: 前几次尝试里已成功的段落；failedIndices 为仍待补齐的段落。 */
+  let partial: TranslateResponse | null = null;
   for (let attempt = 0; ; attempt++) {
     if (opts.shouldAbort?.()) {
       return { ok: false, invalidated: false, aborted: true, error: '' };
@@ -79,9 +100,18 @@ export async function attemptBatchWithRetry(
       return { ok: false, invalidated: false, aborted: true, error: '' };
     }
     if (resp?.ok && resp.data) {
-      return { ok: true, data: resp.data };
+      const data: TranslateResponse = partial ? fillFailed(partial, resp.data) : resp.data;
+      if (!data.failedIndices?.length) return { ok: true, data };
+      partial = data;
+      if (attempt >= BATCH_RETRY_LIMIT) break;
+      await sleep(BATCH_RETRY_DELAYS_MS[attempt]!);
+      continue;
     }
     lastError = resp?.error ?? '未知错误';
+    // #416: 已有成功的段落时，不可恢复的失败只结束重试，已成功的照常返回
+    const fatal =
+      resp?.invalidated || resp?.category === 'invalid-key' || resp?.category === 'quota';
+    if (partial && fatal && !resp?.aborted) return { ok: true, data: partial };
     // #111/#116: 上下文失效是类型化标志 —— 立即失败，不进入重试序列
     if (resp?.invalidated) {
       return {
@@ -110,6 +140,7 @@ export async function attemptBatchWithRetry(
     if (attempt >= BATCH_RETRY_LIMIT) break;
     await sleep(BATCH_RETRY_DELAYS_MS[attempt]!);
   }
+  if (partial) return { ok: true, data: partial };
   // #157: 最后一次尝试失败后、返回前再查一次中止 —— 还原（纪元递增）
   // 恰在最后失败与返回之间发生时，也必须报 aborted 而不是 failed，
   // 否则调用方把它记成真失败（allFailed/错误 toast 误报）
