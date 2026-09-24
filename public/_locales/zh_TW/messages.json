@@ -251,5 +251,9 @@
   "siteRulesExclude": { "message": "排除" },
   "siteRulesExcludePlaceholder": { "message": "每行一個 CSS 選擇器，命中的元素整塊不翻譯" },
   "siteRulesSave": { "message": "儲存" },
-  "siteRulesSaved": { "message": "已儲存，重新整理該網站後生效" }
+  "siteRulesSaved": { "message": "已儲存，重新整理該網站後生效" },
+  "domainPartialFail": {
+    "message": "$count$ 段翻譯失敗",
+    "placeholders": { "count": { "content": "$1" } }
+  }
 }

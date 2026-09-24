@@ -268,8 +268,8 @@ export default defineContentScript({
       rawText: string;
     }
 
-    /** 渲染统计（每次整页翻译开始时清零）。 */
-    const renderStats = { succeeded: 0, rejected: 0 };
+    /** 渲染统计（每次整页翻译开始时清零）。failed：翻译失败的段落（#416）。 */
+    const renderStats = { succeeded: 0, rejected: 0, failed: 0 };
 
     // #261: 编排模块 —— 全页翻译的批次流水线在模块内，
     // 渲染回调按批触发（#256 渐进渲染，首屏不等最慢段）
@@ -299,9 +299,18 @@ export default defineContentScript({
       onObserverStart: () => registry.ensure('observer', true),
       onObserverStop: () => registry.ensure('observer', false),
       onBatchResult: (_i, batch, result) => {
-        if (!result.ok || !result.data) return;
+        if (!result.ok || !result.data) {
+          renderStats.failed += batch.length;
+          return;
+        }
         const translations = result.data.translations;
+        // #416: 所有引擎都失败的段落不渲染，保持原样，结束后汇总提示
+        const failed = new Set(result.data.failedIndices ?? []);
         for (let j = 0; j < batch.length; j++) {
+          if (failed.has(j)) {
+            renderStats.failed++;
+            continue;
+          }
           const ctx = batch[j]!.ctx as PageItemCtx;
           try {
             // #58：将占位符替换回原文（用户名等标识符不翻译但保留）
@@ -364,6 +373,7 @@ export default defineContentScript({
       }
       renderStats.succeeded = 0;
       renderStats.rejected = 0;
+      renderStats.failed = 0;
 
       const result = await orchestrator.togglePage(items, ns.from, ns.to);
 
@@ -407,6 +417,22 @@ export default defineContentScript({
           'info',
         );
       }
+      if (
+        result.status === 'translated' &&
+        renderStats.failed > 0 &&
+        isMainFrame
+      ) {
+        // #416: 部分段落翻译失败 —— 已成功的段落照常渲染，失败数汇总提示
+        // （放在被拒提示之后：同一时刻只显示一条 toast，失败更需要看到）
+        toast(
+          tf(
+            'domainPartialFail',
+            `${renderStats.failed} 段翻译失败`,
+            String(renderStats.failed),
+          ),
+          'error',
+        );
+      }
       return result;
     }
 
@@ -421,6 +447,7 @@ export default defineContentScript({
       if (items.length === 0) return;
       renderStats.succeeded = 0;
       renderStats.rejected = 0;
+      renderStats.failed = 0;
 
       const summary = await orchestrator.translatePage(items, ns.from, ns.to);
 
