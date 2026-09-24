@@ -383,11 +383,17 @@ describe('限定范围全部无效时的提示（#443）', () => {
     warn.mockRestore();
   });
 
-  test('没有声明限定范围时不记这条警告', async () => {
+  test('没有声明限定范围时不记这条警告；只有空白行也算没有声明', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const page = await pageWithStored([{ site: 'example.com', exclude: ['.ad,'] }]);
+    const page = await pageWithStored([
+      { site: 'example.com', exclude: ['.ad,'] },
+      { site: 'blank.com', scope: ['', '   '] },
+    ]);
     expect(page.getSiteRules('example.com').scope).toEqual([]);
+    expect(page.getSiteRules('blank.com').scope).toEqual([]);
     expect(warnings(warn)).toEqual([]);
+    // 设置页同样不把空白行当作无效行
+    expect(page.findInvalidSelectors({ scope: ['', '   '] })).toEqual([]);
     warn.mockRestore();
   });
 

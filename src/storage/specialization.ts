@@ -95,7 +95,8 @@ export function getSiteRules(host: string): SiteRules {
     const valid = (sels: string[] = []) =>
       sels.filter((sel) => isValidSelector(site, sel));
     for (const field of SITE_RULE_FIELDS) out[field].push(...valid(rules[field]));
-    if (rules.scope?.length) scopeSites.push(site);
+    // 只有空白行不算声明了限定范围 —— 与设置页校验（findInvalidSelectors）一致
+    if (rules.scope?.some((sel) => sel.trim())) scopeSites.push(site);
   }
   if (scopeSites.length > 0 && out.scope.length === 0) {
     const key = scopeSites.join(' ');
