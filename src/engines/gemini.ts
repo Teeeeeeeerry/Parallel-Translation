@@ -131,6 +131,7 @@ export const gemini: TranslateEngine = createByokEngine({
   id: 'gemini',
   displayName: 'Gemini',
   supportedLangs: 'all',
+  injectsTerms: true,
   model: currentModel,
 
   // 请求格式与凭据传递方式（走请求头而非查询串）与改造前一致（#335）；

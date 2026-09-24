@@ -7,11 +7,12 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Domain } from '~/src/storage/domains';
 
+let useCache = false;
 vi.mock('~/src/storage/settings', async (importOriginal) => ({
   ...(await importOriginal<typeof import('~/src/storage/settings')>()),
   getSettings: vi.fn(() => ({
     enginePriority: ['gemini'],
-    useCache: false,
+    useCache,
     maxConcurrency: 6,
     models: { gemini: 'gemini-2.5-flash' },
   })),
@@ -27,6 +28,7 @@ vi.mock('~/src/storage/domains', () => ({
 }));
 
 import { route } from '~/src/engines/router';
+import { resetStorage } from '~/docs/testing/setup';
 
 const okResp = (text: string) =>
   new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }), {
@@ -48,6 +50,7 @@ function promptText(call = -1): string {
 }
 
 beforeEach(() => {
+  useCache = false;
   domains = [
     {
       id: 'dev',
@@ -64,11 +67,13 @@ beforeEach(() => {
     },
   ];
   fetchMock = vi.fn(async () => okResp('1. 甲\n2. 乙\n3. 丙'));
-  vi.stubGlobal('fetch', fetchMock);
+  globalThis.fetch = fetchMock as unknown as typeof fetch;
 });
 
+// 只还原 fetch：unstubAllGlobals 会连测试环境装的 chrome 一起撤掉
+const realFetch = globalThis.fetch;
 afterEach(() => {
-  vi.unstubAllGlobals();
+  globalThis.fetch = realFetch;
 });
 
 describe('Gemini 术语注入（#382）', () => {
@@ -115,5 +120,23 @@ describe('Gemini 术语注入（#382）', () => {
       domainId: 'dev',
     });
     expect(resp.translations).toEqual(['打开一个 issue', '克隆仓库', '你好']);
+  });
+});
+
+describe('缓存 key 的术语哈希（#419）', () => {
+  test('Gemini 注入指定译法：改了译法后不命中旧缓存', async () => {
+    resetStorage();
+    useCache = true;
+    fetchMock.mockImplementation(async () => okResp('1. 克隆仓库'));
+    const req = { texts: ['Clone the repository'], from: 'en', to: 'zh-CN', domainId: 'dev' };
+    await route(req);
+    await route(req);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    domains[0]!.terms = domains[0]!.terms.map((t) =>
+      t.source === 'repository' ? { source: 'repository', target: '代码库' } : t,
+    );
+    await route(req);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

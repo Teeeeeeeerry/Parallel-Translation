@@ -134,3 +134,26 @@ describe('Google “不翻译”术语替换（#386）', () => {
     expect(resp.translations).toEqual(['译:literal ⟦TM0⟧ and an issue']);
   });
 });
+
+describe('缓存 key 的术语哈希（#419）', () => {
+  test('Google 不使用指定译法：改了译法后继续命中缓存', async () => {
+    useCache = true;
+    await translate(['Clone the repository']);
+    domains[0]!.terms = domains[0]!.terms.map((t) =>
+      t.source === 'repository' ? { source: 'repository', target: '代码库' } : t,
+    );
+    const resp = await translate(['Clone the repository']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(resp.translations).toEqual(['译:Clone the repository']);
+  });
+
+  test('Google 使用“不翻译”术语：改成指定译法后不命中旧缓存', async () => {
+    useCache = true;
+    await translate(['Open an issue']);
+    domains[0]!.terms = domains[0]!.terms.map((t) =>
+      t.source === 'issue' ? { source: 'issue', target: '议题' } : t,
+    );
+    await translate(['Open an issue']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
