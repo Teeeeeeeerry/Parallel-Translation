@@ -1,5 +1,5 @@
 /**
- * 站点页面规则 —— 用户排除规则（#370）
+ * 站点页面规则 —— 用户排除规则（#370）与用户保留原文规则（#373）
  *
  * 用户在设置页新增站点卡片、在“排除”里写选择器并保存；页面打开时
  * content script 先 await siteRulesReady() 载入用户规则，之后全页翻译
@@ -14,7 +14,9 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
+import { translatableTextEx } from '~/src/dom/text';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
+import type { SiteRules } from '~/src/storage/specialization';
 
 const PAGE =
   '<div class="panel"><p id="side">Contributors and maintainers of the project</p></div>' +
@@ -36,9 +38,18 @@ afterEach(() => {
 
 /** 设置页保存一张 localhost 的站点卡片，页面载入用户规则 */
 async function exclude(...selectors: string[]) {
-  await saveUserSiteRules('localhost', { exclude: selectors });
+  await rules({ exclude: selectors });
+}
+
+async function rules(r: Partial<SiteRules>) {
+  await saveUserSiteRules('localhost', r);
   await siteRulesReady();
 }
+
+/** 段落送去翻译的文本里保留原文的部分 */
+const preserved = (id: string) => [
+  ...translatableTextEx(collect().find((u) => u.id === id)!).preserves.values(),
+];
 
 describe('collect（用户排除规则）', () => {
   test('没有用户规则时照常采集', () => {
@@ -65,5 +76,32 @@ describe('closestUnit（用户排除规则，逐段翻译入口）', () => {
   test('排除区外照常找到段落', async () => {
     await exclude('.panel');
     expect(closestUnit(document.getElementById('bold')!)?.id).toBe('body');
+  });
+});
+
+describe('collect（用户保留原文规则，#373）', () => {
+  test('没有用户规则时行内元素照常翻译', () => {
+    expect(preserved('body')).toEqual([]);
+  });
+
+  test('命中用户保留原文的行内元素不翻译，原文留在译文里', async () => {
+    await rules({ preserve: ['#bold'] });
+    expect(ids(collect())).toEqual(['side', 'body', 'more']);
+    const body = collect().find((u) => u.id === 'body')!;
+    const { text, preserves } = translatableTextEx(body);
+    expect([...preserves.values()]).toEqual(['coding']);
+    expect(text).not.toContain('coding');
+  });
+
+  test('同一元素同时命中排除与保留原文时，整块排除', async () => {
+    await rules({ exclude: ['.panel'], preserve: ['.panel', '#side'] });
+    expect(ids(collect())).toEqual(['body', 'more']);
+    expect(closestUnit(document.getElementById('side')!)).toBeNull();
+  });
+
+  test('排除与保留原文各自命中不同元素时互不影响', async () => {
+    await rules({ exclude: ['.panel'], preserve: ['#bold'] });
+    expect(ids(collect())).toEqual(['body', 'more']);
+    expect(preserved('body')).toEqual(['coding']);
   });
 });

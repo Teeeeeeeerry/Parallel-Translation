@@ -257,5 +257,7 @@
     "placeholders": { "count": { "content": "$1" } }
   },
   "siteRulesScope": { "message": "Translate only" },
-  "siteRulesScopePlaceholder": { "message": "One CSS selector per line; only matching elements are translated. Leave empty to translate the whole page" }
+  "siteRulesScopePlaceholder": { "message": "One CSS selector per line; only matching elements are translated. Leave empty to translate the whole page" },
+  "siteRulesPreserve": { "message": "Keep original" },
+  "siteRulesPreservePlaceholder": { "message": "One CSS selector per line; matching inline elements stay untranslated inside the translated sentence" }
 }

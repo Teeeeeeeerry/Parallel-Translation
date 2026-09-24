@@ -6,8 +6,8 @@
 
 // 站点规则分区（#370，父 #365）：新增站点卡片，在各字段的多行文本框里
 // 每行写一个 CSS 选择器。用户规则逐字段追加在内置规则之上，保存后刷新
-// 该站点生效。字段按判定顺序排列：限定范围（#374）、排除。删除卡片、
-// 保存时校验选择器、保留原文等由后续 ticket 接入。
+// 该站点生效。字段按判定顺序排列：限定范围（#374）、排除、保留原文（#373）。
+// 删除卡片、保存时校验选择器等由后续 ticket 接入。
 
 import {
   getUserSiteRules,
@@ -32,6 +32,11 @@ function fieldDefs(): Array<{ field: Field; label: string; placeholder: string }
       field: 'exclude',
       label: tf('siteRulesExclude', '排除'),
       placeholder: tf('siteRulesExcludePlaceholder', '每行一个 CSS 选择器，命中的元素整块不翻译'),
+    },
+    {
+      field: 'preserve',
+      label: tf('siteRulesPreserve', '保留原文'),
+      placeholder: tf('siteRulesPreservePlaceholder', '每行一个 CSS 选择器，命中的行内元素不翻译，原文留在译文里'),
     },
   ];
 }

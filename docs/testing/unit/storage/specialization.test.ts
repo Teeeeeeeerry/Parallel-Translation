@@ -1,5 +1,5 @@
 /**
- * storage/specialization.ts — 领域与规则存储模块：生效站点规则（#366、#367、#369、#370、#374）
+ * storage/specialization.ts — 领域与规则存储模块：生效站点规则（#366、#367、#369、#370、#373、#374）
  *
  * 来源为内置规则与用户规则（#370）；按当前站点读取，网址匹配沿用
  * 站点黑白名单的裸域名语义（子域归入、主域名归一、IP 精确匹配）。
@@ -244,5 +244,23 @@ describe('用户规则（#370）', () => {
     });
     expect((await rulesOnNewPage('example.com')).scope).toEqual(['main']);
     expect((await rulesOnNewPage('bad.com')).scope).toEqual([]);
+  });
+
+  test('用户保留原文逐字段追加在内置保留原文之后（#373）', async () => {
+    const builtin = getSiteRules('github.com');
+    await options.saveUserSiteRules('github.com', { preserve: [' .my-handle ', ''] });
+    const rules = await rulesOnNewPage('github.com');
+    expect(rules.preserve).toEqual([...builtin.preserve, '.my-handle']);
+    expect(rules.exclude).toEqual(builtin.exclude);
+  });
+
+  test('只改排除时，已保存的保留原文不丢（#373）', async () => {
+    await options.saveUserSiteRules('example.com', { preserve: ['.handle'] });
+    await options.saveUserSiteRules('example.com', { exclude: ['.ad'] });
+    expect(await rulesOnNewPage('example.com')).toEqual({
+      scope: [],
+      exclude: ['.ad'],
+      preserve: ['.handle'],
+    });
   });
 });
