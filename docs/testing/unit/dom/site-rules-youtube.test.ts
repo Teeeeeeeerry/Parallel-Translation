@@ -21,6 +21,9 @@
  * 下两者一致，由第一个用例保证。
  *
  *
+ * 自定义元素嵌在段落的行内元素里、命中排除时（#455），段落照常采集，
+ * 它在提取送翻文本（translatableTextEx）时原文保留，与 span 相同。
+ *
  * 逐段翻译 —— closestUnit()（悬停按钮与点击翻译共用的入口）：
  *   - 起点落在排除区内时找不到单元，不出按钮也不翻译
  *   - 排除区外的正文照常找到单元
@@ -31,6 +34,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
+import { translatableTextEx } from '~/src/dom/text';
 
 let restore: () => void;
 beforeEach(() => {
@@ -136,5 +140,16 @@ describe('closestUnit（youtube.com 内置排除，逐段翻译入口）', () =>
     document.body.innerHTML =
       '<p id="body">This video explains the <b id="bold">basics</b>.</p>';
     expect(closestUnit(document.getElementById('bold')!)?.id).toBe('body');
+  });
+});
+
+describe('自定义元素命中排除（#455）', () => {
+  test('嵌在 span 里的频道名（.ytd-channel-name yt-formatted-string）原文保留', () => {
+    document.body.innerHTML =
+      '<p id="body">Uploaded by <span class="ytd-channel-name"><yt-formatted-string>Some Channel</yt-formatted-string></span> last week.</p>';
+    expect(ids(collect())).toEqual(['body']);
+    const { text, preserves } = translatableTextEx(document.getElementById('body')!);
+    expect(text).not.toContain('Some Channel');
+    expect([...preserves.values()]).toEqual(['Some Channel']);
   });
 });
