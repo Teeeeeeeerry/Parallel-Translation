@@ -10,12 +10,15 @@
 // 保存时逐行校验选择器（#372），有无效行时整张卡片不保存，在对应文本框下
 // 列出行号与选择器，修改后提示消失。渲染卡片时对已保存的规则做同样的
 // 校验（#443）：导入等途径带进的无效行照样标出。删除卡片（#371）前先确认，
-// 删除后该站点只剩内置规则生效。
+// 删除后该站点只剩内置规则生效。有内置规则的站点，卡片上显示“停用这个
+// 站点的内置规则”开关（#375），点击即保存。
 
 import {
   getUserSiteRules,
   saveUserSiteRules,
   deleteUserSiteRules,
+  setBuiltinSiteRulesDisabled,
+  hasBuiltinSiteRules,
   onUserSiteRulesChanged,
   findInvalidSelectors,
   InvalidSelectorsError,
@@ -55,6 +58,8 @@ interface Card {
   saved: Map<Field, string>;
   /** 按无效选择器标出各字段：有则标红并逐行列出，没有则清除提示 */
   showInvalid: (invalid: InvalidSelector[], fields?: Iterable<Field>) => void;
+  /** 停用内置规则的开关，站点没有内置规则时为 null（#375） */
+  builtinToggle: HTMLButtonElement | null;
 }
 
 const toText = (sels: string[] = []) => sels.join('\n');
@@ -71,6 +76,31 @@ function siteCard(u: UserSiteRules, onDelete: (site: string) => void): Card {
   site.className = 'pt-site-rules-site';
   site.textContent = u.site;
   el.append(site);
+
+  // #375：有内置规则的站点才显示停用开关
+  let builtinToggle: HTMLButtonElement | null = null;
+  if (hasBuiltinSiteRules(u.site)) {
+    const row = document.createElement('div');
+    row.className = 'pt-row pt-site-rules-builtin';
+    const label = document.createElement('span');
+    label.className = 'pt-row-label';
+    label.textContent = tf('siteRulesDisableBuiltin', '停用这个站点的内置规则');
+    const toggle = document.createElement('button');
+    toggle.className = 'pt-toggle pt-site-rules-builtin-toggle';
+    toggle.setAttribute('aria-label', label.textContent);
+    toggle.addEventListener('click', () => {
+      const disabled = !toggle.classList.contains('pt-on');
+      setBuiltinSiteRulesDisabled(u.site, disabled)
+        .then(() => {
+          toggle.classList.toggle('pt-on', disabled);
+          showToast(tf('siteRulesSaved', '已保存，刷新该网站后生效'));
+        })
+        .catch((e) => console.error('[PT] 保存站点规则失败:', e));
+    });
+    row.append(label, toggle);
+    el.append(row);
+    builtinToggle = toggle;
+  }
 
   const inputs = new Map<Field, HTMLTextAreaElement>();
   const errors = new Map<Field, HTMLParagraphElement>();
@@ -137,7 +167,7 @@ function siteCard(u: UserSiteRules, onDelete: (site: string) => void): Card {
       error.classList.toggle('pt-visible', lines.length > 0);
     }
   }
-  return { el, inputs, saved: new Map(), showInvalid };
+  return { el, inputs, saved: new Map(), showInvalid, builtinToggle };
 }
 
 export function initSiteRules(): void {
@@ -168,6 +198,7 @@ export function initSiteRules(): void {
         card.saved.set(field, text);
       }
       card.showInvalid(findInvalidSelectors(u), clean);
+      card.builtinToggle?.classList.toggle('pt-on', u.disableBuiltin === true);
       return card.el;
     });
     listEl.replaceChildren(...els);

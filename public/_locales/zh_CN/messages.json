@@ -277,5 +277,6 @@
     "message": "确定删除站点“$site$”的规则吗？删除后该站点只剩内置规则生效。",
     "placeholders": { "site": { "content": "$1" } }
   },
-  "siteRulesDeleted": { "message": "已删除，刷新该网站后生效" }
+  "siteRulesDeleted": { "message": "已删除，刷新该网站后生效" },
+  "siteRulesDisableBuiltin": { "message": "停用这个站点的内置规则" }
 }

@@ -752,6 +752,11 @@ body {
   resize: vertical;
 }
 
+/* 停用内置规则的开关（#375） */
+.pt-site-rules-builtin {
+  margin-bottom: 12px;
+}
+
 /* ===== Domain builtin overlay（#395） ===== */
 
 .pt-domain-terms-table .pt-term-source[readonly] {
