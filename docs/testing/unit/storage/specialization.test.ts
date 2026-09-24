@@ -419,3 +419,71 @@ describe('限定范围全部无效时的提示（#443）', () => {
     warn.mockRestore();
   });
 });
+
+/**
+ * 删除站点卡片（#371）：设置页删除用户新增的站点卡片后，storage.local
+ * 里不再有该站点的用户规则，该站点的生效规则回到仅内置规则。
+ */
+describe('删除站点卡片（#371）', () => {
+  type Spec = typeof import('~/src/storage/specialization');
+  async function load(): Promise<Spec> {
+    vi.resetModules();
+    return import('~/src/storage/specialization');
+  }
+
+  let options: Spec;
+  beforeEach(async () => {
+    resetStorage();
+    options = await load();
+  });
+
+  test('删除后 storage.local 不再有该站点的用户规则，其他卡片不变', async () => {
+    await options.saveUserSiteRules('example.com', { exclude: ['.ad'] });
+    await options.saveUserSiteRules('example.org', { exclude: ['.promo'] });
+    await options.deleteUserSiteRules('example.com');
+    expect(await options.getUserSiteRules()).toEqual([
+      { site: 'example.org', exclude: ['.promo'] },
+    ]);
+    expect(JSON.stringify(await chrome.storage.local.get(null))).not.toContain('.ad');
+  });
+
+  test('删除后该站点的生效规则回到仅内置规则', async () => {
+    const builtin = getSiteRules('github.com');
+    await options.saveUserSiteRules('github.com', {
+      scope: ['main'],
+      exclude: ['.my-sidebar'],
+      preserve: ['.handle'],
+    });
+    await options.deleteUserSiteRules('github.com');
+
+    const page = await load();
+    await page.siteRulesReady();
+    expect(page.getSiteRules('github.com')).toEqual(builtin);
+    // 删除所在的上下文同样立即生效
+    expect(options.getSiteRules('github.com')).toEqual(builtin);
+  });
+
+  test('已打开的页面在别处删除后同步更新，不必刷新', async () => {
+    await options.saveUserSiteRules('example.com', { exclude: ['.ad'] });
+    const page = await load();
+    await page.siteRulesReady();
+    expect(page.getSiteRules('example.com').exclude).toEqual(['.ad']);
+
+    const before = await chrome.storage.local.get('pt-site-rules');
+    await options.deleteUserSiteRules('example.com');
+    const after = await chrome.storage.local.get('pt-site-rules');
+    fireStorageChange(
+      { 'pt-site-rules': { oldValue: before['pt-site-rules'], newValue: after['pt-site-rules'] } },
+      'local',
+    );
+    expect(page.getSiteRules('example.com').exclude).toEqual([]);
+  });
+
+  test('删除不存在的站点卡片不报错，已有卡片不变', async () => {
+    await options.saveUserSiteRules('example.org', { exclude: ['.promo'] });
+    await options.deleteUserSiteRules('example.com');
+    expect(await options.getUserSiteRules()).toEqual([
+      { site: 'example.org', exclude: ['.promo'] },
+    ]);
+  });
+});
