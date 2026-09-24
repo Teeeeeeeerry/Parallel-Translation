@@ -123,6 +123,8 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       // 短出的槽位若填 undefined，content 侧 restorePreserves 会抛
       // TypeError —— 一律置 null 并记入失败，交给下一个引擎补齐。
       const failed = [...(resp.failedIndices ?? [])];
+      // #389: 占位符被改坏的段落，稍后改用原文重译一次
+      const corrupted: number[] = [];
       for (let j = 0; j < uncached.length; j++) {
         const raw = resp.translations[j];
         if (raw === undefined || raw === null || failed.includes(j)) {
@@ -130,41 +132,68 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
           if (!failed.includes(j)) failed.push(j);
           continue;
         }
-        // #386: 占位符换回原词；占位符被引擎改坏 → 不采用，按失败槽位处理
+        // #386: 占位符换回原词；占位符被引擎改坏 → 不采用这份译文
         const text = masks ? unmaskNoTranslate(raw, masks[j]!.originals) : raw;
         if (text === null) {
-          console.debug('[PT] “不翻译”术语占位符被引擎改坏，该段交给下一个引擎', { engine: id });
           translations[uncached[j]!.idx] = null;
-          failed.push(j);
+          corrupted.push(j);
         } else {
           translations[uncached[j]!.idx] = text;
         }
       }
 
-      // 处理部分失败：将失败槽位重置为 null，交给下一个引擎重试
-      if (failed.length > 0) {
-        for (const j of resp.failedIndices ?? []) {
-          translations[uncached[j]!.idx] = null;
+      // #389: 损坏段落用未替换术语的原文、不带术语重译一次。重译失败的
+      // 段落按失败槽位处理，交给下一个引擎。
+      const plain = new Set<number>();
+      if (corrupted.length > 0) {
+        for (const j of corrupted) {
+          console.warn('[PT] “不翻译”术语占位符被引擎改坏，改用原文重译该段', {
+            engine: id,
+            index: uncached[j]!.idx,
+          });
         }
-
-        // 并行写缓存（仅成功的条目）
-        if (useCache) {
-          const succeeded = uncached.filter((_, j) => !failed.includes(j));
-          if (succeeded.length > 0) {
-            await Promise.all(
-              succeeded.map(async (u) => {
-                const k = await cacheKey(id, req.from, req.to, u.text, model, hits[u.idx]);
-                // 缓存换回原词后的译文（#386），不是引擎原始输出
-                const val = translations[u.idx];
-                // #171: 短数组下成功槽位必然有值，这里再做一次防御
-                if (val !== undefined && val !== null) {
-                  await cacheSet(k, val);
-                }
-              }),
-            );
+        let retried: (string | undefined)[] = [];
+        try {
+          const retry = await engine.translate({
+            texts: corrupted.map((j) => uncached[j]!.text),
+            from: req.from,
+            to: req.to,
+          });
+          retried = corrupted.map((_, k) =>
+            retry.failedIndices?.includes(k) ? undefined : (retry.translations[k] ?? undefined),
+          );
+        } catch {
+          // 重译出错：这些段落交给下一个引擎
+        }
+        corrupted.forEach((j, k) => {
+          // 与首次译文同一口径：只有缺失的槽位算失败
+          const text = retried[k];
+          if (text !== undefined) {
+            translations[uncached[j]!.idx] = text;
+            plain.add(j);
+          } else {
+            failed.push(j);
           }
-        }
+        });
+      }
 
+      // 并行写缓存（仅成功的条目）。缓存换回原词后的译文（#386），不是
+      // 引擎原始输出；原文重译的译文没有遵守术语，key 不带术语哈希（#389）
+      if (useCache) {
+        await Promise.all(
+          uncached.map(async (u, j) => {
+            if (failed.includes(j)) return;
+            const val = translations[u.idx];
+            // #171: 短数组下成功槽位必然有值，这里再做一次防御
+            if (val === undefined || val === null) return;
+            const terms = plain.has(j) ? [] : hits[u.idx];
+            await cacheSet(await cacheKey(id, req.from, req.to, u.text, model, terms), val);
+          }),
+        );
+      }
+
+      // 处理部分失败：失败槽位保持 null，交给下一个引擎重试
+      if (failed.length > 0) {
         errors.push(
           new EngineError(
             id,
@@ -173,17 +202,6 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
           ),
         );
         continue; // 下一个引擎自动拾取 translations[i] === null 的槽位
-      }
-
-      // 全部成功 → 并行写缓存
-      if (useCache) {
-        await Promise.all(
-          uncached.map(async (u) => {
-            const k = await cacheKey(id, req.from, req.to, u.text, model, hits[u.idx]);
-            // 缓存换回原词后的译文（#386），不是引擎原始输出
-            await cacheSet(k, translations[u.idx]!);
-          }),
-        );
       }
 
       return {
