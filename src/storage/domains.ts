@@ -8,7 +8,8 @@
 // 见 specialization.ts。
 //
 // 设置页、popup、content、router 都只经这里读取领域。生效领域列表 =
-// 内置领域 + 自建领域（#391）；用户叠加层与排序在后续 ticket 接入。
+// 内置领域（叠加用户的修改与新增，#395）+ 自建领域（#391）；排序在后续
+// ticket 接入。
 // 用户数据放在 storage.local（不占 sync 配额），跨设备迁移靠导入导出。
 
 import { siteMatches } from '~/src/dom/site-filter';
@@ -40,13 +41,39 @@ export interface Domain {
 /** storage.local 里的用户领域数据。 */
 const STORAGE_KEY = 'pt-domains';
 
+/**
+ * 内置领域的用户叠加层（#395）：按原词记录用户的修改与新增。生效内容 =
+ * 当前版本的内置内容 + 叠加层，同一原词（不区分大小写）以叠加层为准，
+ * 所以升级带来的新内置术语照样生效，用户改过的术语不被覆盖。
+ */
+interface BuiltinOverlay {
+  /** 与内置不同的术语（修改）和内置没有的术语（新增），按保存顺序。 */
+  terms: Term[];
+}
+
 interface StoredDomains {
   /** 自建领域，按新建顺序。 */
   user: Domain[];
+  /** 内置领域的叠加层，按内置领域 ID（#395）。 */
+  builtin: Record<string, BuiltinOverlay>;
 }
 
 function isTerm(v: unknown): v is Term {
-  return typeof v === 'object' && v !== null && typeof (v as Term).source === 'string';
+  if (typeof v !== 'object' || v === null) return false;
+  const t = v as Partial<Term>;
+  return (
+    typeof t.source === 'string' &&
+    (t.target === undefined || typeof t.target === 'string') &&
+    (t.noTranslate === undefined || typeof t.noTranslate === 'boolean')
+  );
+}
+
+/**
+ * 叠加层里的术语还要能约束译文（#395）：原词非空，给了译法或标了“不翻译”。
+ * 否则跳过 —— 不让一条空术语顶掉同原词的内置术语。
+ */
+function isOverlayTerm(v: unknown): v is Term {
+  return isTerm(v) && v.source.trim() !== '' && (v.noTranslate === true || !!v.target?.trim());
 }
 
 /** 存储里的自建领域形状校验 —— 脏数据跳过，不影响其他领域。 */
@@ -66,20 +93,31 @@ function isUserDomain(v: unknown): v is Domain {
 }
 
 /**
- * 读取自建领域。读取失败时退回空列表（只剩内置领域）并记日志 ——
- * 翻译路径每次请求都会读，存储故障不该让整次翻译失败。
+ * 读取用户领域数据（自建领域与叠加层）。读取失败时退回空数据（只剩内置
+ * 领域的内置内容）并记日志 —— 翻译路径每次请求都会读，存储故障不该让
+ * 整次翻译失败。形状不对的条目跳过。
  */
-async function readUserDomains(): Promise<Domain[]> {
+async function readStored(): Promise<StoredDomains> {
   let stored: Partial<StoredDomains> | undefined;
   try {
     stored = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY] as
       | Partial<StoredDomains>
       | undefined;
   } catch (e) {
-    console.warn('[PT] 读取自建领域失败:', e);
+    console.warn('[PT] 读取用户领域数据失败:', e);
   }
   const user = Array.isArray(stored?.user) ? stored.user : [];
-  return user.filter(isUserDomain).map((d) => ({ ...d, origin: 'user' }));
+  const builtin: Record<string, BuiltinOverlay> = {};
+  if (typeof stored?.builtin === 'object' && stored.builtin !== null) {
+    for (const [id, overlay] of Object.entries(stored.builtin)) {
+      const terms = (overlay as Partial<BuiltinOverlay> | null)?.terms;
+      if (Array.isArray(terms)) builtin[id] = { terms: terms.filter(isOverlayTerm) };
+    }
+  }
+  return {
+    user: user.filter(isUserDomain).map((d) => ({ ...d, origin: 'user' })),
+    builtin,
+  };
 }
 
 /**
@@ -88,12 +126,11 @@ async function readUserDomains(): Promise<Domain[]> {
  */
 let writeChain: Promise<unknown> = Promise.resolve();
 
-function updateUserDomains<T>(
-  fn: (user: Domain[]) => { user: Domain[]; result: T },
+function updateStored<T>(
+  fn: (stored: StoredDomains) => { stored: StoredDomains; result: T },
 ): Promise<T> {
   const next = writeChain.then(async () => {
-    const { user, result } = fn(await readUserDomains());
-    const stored: StoredDomains = { user };
+    const { stored, result } = fn(await readStored());
     await chrome.storage.local.set({ [STORAGE_KEY]: stored });
     return result;
   });
@@ -101,17 +138,42 @@ function updateUserDomains<T>(
   return next;
 }
 
-/**
- * 生效领域列表 —— 内置领域在前，自建领域按新建顺序在后。
- * 调用方可随意改动返回值。
- */
-export async function getEffectiveDomains(): Promise<Domain[]> {
-  const builtin = BUILTIN_DOMAINS.map((d) => ({
+function updateUserDomains<T>(
+  fn: (user: Domain[]) => { user: Domain[]; result: T },
+): Promise<T> {
+  return updateStored((stored) => {
+    const { user, result } = fn(stored.user);
+    return { stored: { ...stored, user }, result };
+  });
+}
+
+/** 术语的原词键：去掉首尾空格，不区分大小写。 */
+function termKey(t: Term): string {
+  return t.source.trim().toLowerCase();
+}
+
+/** 内置领域叠加用户的修改与新增（#395）：修改的术语留在原位，新增的排在最后。 */
+function withOverlay(d: Domain, overlay: BuiltinOverlay | undefined): Domain {
+  const own = new Map((overlay?.terms ?? []).map((t) => [termKey(t), t]));
+  const terms = d.terms.map((t) => {
+    const mine = own.get(termKey(t));
+    own.delete(termKey(t));
+    return { ...(mine ?? t) };
+  });
+  return {
     ...d,
     sites: [...d.sites],
-    terms: d.terms.map((t) => ({ ...t })),
-  }));
-  return [...builtin, ...(await readUserDomains())];
+    terms: [...terms, ...[...own.values()].map((t) => ({ ...t }))],
+  };
+}
+
+/**
+ * 生效领域列表 —— 内置领域在前（叠加用户的修改与新增），自建领域按新建
+ * 顺序在后。调用方可随意改动返回值。
+ */
+export async function getEffectiveDomains(): Promise<Domain[]> {
+  const { user, builtin } = await readStored();
+  return [...BUILTIN_DOMAINS.map((d) => withOverlay(d, builtin[d.id])), ...user];
 }
 
 /**
@@ -202,15 +264,61 @@ export class InvalidTermsError extends Error {
 }
 
 /**
- * 保存自建领域的术语（#393），整体替换原术语表。原词与译法去掉首尾
- * 空格，两者都为空的行丢弃；勾选“不翻译”的行不保存译法。同一领域内
- * 原词重复（不区分大小写）、缺译法或缺原词时抛 InvalidTermsError，
- * 不写入。内置领域、不存在的领域抛错。返回保存后的领域。
+ * 保存领域的术语，整体替换原术语表。原词与译法去掉首尾空格，两者都为空
+ * 的行丢弃；勾选“不翻译”的行不保存译法。同一领域内原词重复（不区分
+ * 大小写）、缺译法或缺原词时抛 InvalidTermsError，不写入。不存在的领域
+ * 抛错。返回保存后的生效领域。
+ *
+ * 自建领域（#393）直接替换。内置领域（#395）只在叠加层记下与内置不同
+ * 的术语和新增的术语，与内置相同的不记，之后跟随新版内置；提交时漏掉的
+ * 内置术语照常生效。
  */
 export async function setDomainTerms(id: string, terms: readonly Term[]): Promise<Domain> {
-  if (BUILTIN_DOMAINS.some((d) => d.id === id)) {
-    throw new Error('[PT] 内置领域的术语不能修改');
+  const cleaned = cleanTerms(terms);
+
+  const base = BUILTIN_DOMAINS.find((d) => d.id === id);
+  if (base) {
+    const builtinTerms = new Map(base.terms.map((t) => [termKey(t), t]));
+    const own = cleaned.filter((t) => !sameTerm(t, builtinTerms.get(termKey(t))));
+    return updateStored((stored) => {
+      // 只替换术语部分，叠加层的其他记录原样保留；全部为空时删掉这一条
+      const { [id]: prev, ...rest } = stored.builtin;
+      const overlay: BuiltinOverlay = { ...prev, terms: own };
+      const empty = Object.values(overlay).every((v) => Array.isArray(v) && v.length === 0);
+      const builtin = empty ? rest : { ...rest, [id]: overlay };
+      return { stored: { ...stored, builtin }, result: withOverlay(base, builtin[id]) };
+    });
   }
+
+  return updateUserDomains((user) => {
+    const domain = user.find((d) => d.id === id);
+    if (!domain) throw new Error('[PT] 领域不存在');
+    const updated: Domain = { ...domain, terms: cleaned };
+    return { user: user.map((d) => (d.id === id ? updated : d)), result: updated };
+  });
+}
+
+/**
+ * 该原词是否为内置领域在当前版本内置的术语（#395）。设置页据此锁定这些
+ * 行的原词、不提供删除。自建领域一律返回 false。
+ */
+export function isBuiltinTerm(domainId: string, source: string): boolean {
+  const key = source.trim().toLowerCase();
+  return BUILTIN_DOMAINS.some((d) => d.id === domainId && d.terms.some((t) => termKey(t) === key));
+}
+
+/** 两条术语的原词（不区分大小写）、译法与“不翻译”标记都相同。 */
+function sameTerm(a: Term, b: Term | undefined): boolean {
+  return (
+    b !== undefined &&
+    termKey(a) === termKey(b) &&
+    (a.target ?? '') === (b.target ?? '') &&
+    (a.noTranslate === true) === (b.noTranslate === true)
+  );
+}
+
+/** 按 setDomainTerms 的规则整理术语表；有不合法的行时抛 InvalidTermsError。 */
+function cleanTerms(terms: readonly Term[]): Term[] {
   const cleaned: Term[] = [];
   const seen = new Set<string>();
   const duplicates = new Set<string>();
@@ -238,13 +346,7 @@ export async function setDomainTerms(id: string, terms: readonly Term[]): Promis
   if (duplicates.size + missingTarget.size + missingSource.size > 0) {
     throw new InvalidTermsError([...duplicates], [...missingTarget], [...missingSource]);
   }
-
-  return updateUserDomains((user) => {
-    const domain = user.find((d) => d.id === id);
-    if (!domain) throw new Error('[PT] 领域不存在');
-    const updated: Domain = { ...domain, terms: cleaned };
-    return { user: user.map((d) => (d.id === id ? updated : d)), result: updated };
-  });
+  return cleaned;
 }
 
 /**

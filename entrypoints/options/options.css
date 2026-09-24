@@ -751,3 +751,10 @@ body {
 .pt-site-rules-card textarea {
   resize: vertical;
 }
+
+/* ===== Domain builtin overlay（#395） ===== */
+
+.pt-domain-terms-table .pt-term-source[readonly] {
+  background: transparent;
+  border-color: transparent;
+}

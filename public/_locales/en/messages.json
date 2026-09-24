@@ -201,7 +201,7 @@
   "domainNamePlaceholder": { "message": "Domain name, e.g. \"Legal\"" },
   "domainRowLang": { "message": "Target language" },
   "domainCreateBtn": { "message": "Create" },
-  "domainBuiltinBadge": { "message": "Built-in · read-only" },
+  "domainBuiltinBadge": { "message": "Built-in" },
   "domainDelete": { "message": "Delete" },
   "domainDeleteConfirm": {
     "message": "Delete domain \"$name$\"? This cannot be undone.",

@@ -5,7 +5,8 @@
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
 // 翻译领域分区（#391，父 #365）：列出内置与自建领域，新建与删除自建领域；
-// 编辑自建领域的适用网址（#392）与术语（#393）。内置领域在本期只读。
+// 编辑自建领域的适用网址（#392）与术语（#393）；编辑内置领域的术语
+// （#395），内置领域的适用网址在本期只读。
 
 import { LANG_LIST } from '~/src/storage/schema';
 import {
@@ -17,6 +18,7 @@ import {
   onDomainsChanged,
   InvalidSitesError,
   InvalidTermsError,
+  isBuiltinTerm,
 } from '~/src/storage/domains';
 import { getSettings } from '~/src/storage/settings';
 import type { Domain, Term } from '~/src/storage/domains';
@@ -85,14 +87,20 @@ function listSep(): string {
   return chrome.i18n.getUILanguage().startsWith('zh') ? '、' : ', ';
 }
 
-/** 术语表的一行：原词 / 译法 / 不翻译 / 删除。勾选“不翻译”后译法列禁用。 */
-function termRow(onRemove: () => void, t?: Term): HTMLTableRowElement {
+/**
+ * 术语表的一行：原词 / 译法 / 不翻译 / 删除。勾选“不翻译”后译法列禁用。
+ * 内置术语（#395）只能改译法与“不翻译”：原词只读，没有删除按钮。
+ */
+function termRow(onRemove: () => void, t?: Term, builtin = false): HTMLTableRowElement {
   const tr = document.createElement('tr');
 
   const source = document.createElement('input');
   source.className = 'pt-input pt-term-source';
   source.value = t?.source ?? '';
   source.placeholder = tf('domainTermsSource', '原词');
+  source.readOnly = builtin;
+  // 只读的原词不进 Tab 顺序，免得出现焦点框像是能编辑
+  if (builtin) source.tabIndex = -1;
 
   const target = document.createElement('input');
   target.className = 'pt-input pt-term-target';
@@ -118,9 +126,9 @@ function termRow(onRemove: () => void, t?: Term): HTMLTableRowElement {
     onRemove();
   });
 
-  for (const el of [source, target, noTranslate, del]) {
+  for (const el of [source, target, noTranslate, builtin ? null : del]) {
     const td = document.createElement('td');
-    td.append(el);
+    if (el) td.append(el);
     tr.append(td);
   }
   return tr;
@@ -129,7 +137,7 @@ function termRow(onRemove: () => void, t?: Term): HTMLTableRowElement {
 /**
  * 术语表格编辑（#393）：列为原词 / 译法 / 不翻译，可新增、修改、删除
  * 行，保存时整体替换。重复的原词、缺译法或缺原词的行标红并在表格下方
- * 说明，不写入。
+ * 说明，不写入。内置领域（#395）同样可编辑，保存到叠加层。
  */
 function termsEditor(d: Domain): HTMLDetailsElement {
   const details = document.createElement('details');
@@ -156,7 +164,7 @@ function termsEditor(d: Domain): HTMLDetailsElement {
   const thead = document.createElement('thead');
   thead.append(head);
   const tbody = document.createElement('tbody');
-  tbody.append(...d.terms.map((t) => termRow(clearError, t)));
+  tbody.append(...d.terms.map((t) => termRow(clearError, t, isBuiltinTerm(d.id, t.source))));
   table.append(thead, tbody);
 
   const error = document.createElement('p');
@@ -257,8 +265,8 @@ function domainItem(d: Domain, onDelete: (d: Domain) => void): HTMLLIElement {
   if (d.origin === 'builtin') {
     const badge = document.createElement('span');
     badge.className = 'pt-domain-badge';
-    badge.textContent = tf('domainBuiltinBadge', '内置 · 只读');
-    li.append(badge);
+    badge.textContent = tf('domainBuiltinBadge', '内置');
+    li.append(badge, termsEditor(d));
   } else {
     const del = document.createElement('button');
     del.className = 'pt-site-remove';

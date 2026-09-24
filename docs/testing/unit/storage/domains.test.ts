@@ -3,7 +3,8 @@
  *
  * 只断言外部可观察的行为：生效领域列表的内容、给定网址与目标语言时
  * 解析出的当前领域；自建领域的新建、删除与存放位置（#391）；自建领域
- * 适用网址的编辑（#392）；自建领域术语的编辑（#393）。
+ * 适用网址的编辑（#392）；自建领域术语的编辑（#393）。内置领域叠加层见
+ * domains-builtin-overlay.test.ts（#395）。
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import {
@@ -352,10 +353,7 @@ describe('编辑自建领域的术语（#393）', () => {
     expect(await termsOf(law.id)).toEqual([]);
   });
 
-  test('内置领域的术语不能修改；领域不存在时抛错', async () => {
-    const [dev] = await getEffectiveDomains();
-    await expect(setDomainTerms(dev!.id, [])).rejects.toThrow();
-    expect((await getEffectiveDomains())[0]!.terms).toEqual(dev!.terms);
+  test('领域不存在时抛错', async () => {
     await expect(setDomainTerms('user:missing', [])).rejects.toThrow();
   });
 
