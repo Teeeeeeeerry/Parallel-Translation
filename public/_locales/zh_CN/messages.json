@@ -218,5 +218,7 @@
   "domainSitesInvalid": {
     "message": "以下网址格式不正确：$list$",
     "placeholders": { "list": { "content": "$1" } }
-  }
+  },
+  "domainPopupLabel": { "message": "当前领域" },
+  "domainPopupNone": { "message": "无领域" }
 }

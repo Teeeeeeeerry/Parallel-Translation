@@ -218,5 +218,7 @@
   "domainSitesInvalid": {
     "message": "Invalid domain format: $list$",
     "placeholders": { "list": { "content": "$1" } }
-  }
+  },
+  "domainPopupLabel": { "message": "Domain" },
+  "domainPopupNone": { "message": "No domain" }
 }

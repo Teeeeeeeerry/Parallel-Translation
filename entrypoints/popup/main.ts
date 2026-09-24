@@ -29,6 +29,7 @@ const modeSelect = document.getElementById('pt-mode-select') as HTMLSelectElemen
 const styleSelect = document.getElementById('pt-style-select') as HTMLSelectElement;
 const settingsBtn = document.getElementById('pt-settings-btn')!;
 const reportBtn = document.getElementById('pt-report-btn')!;
+const domainEl = document.getElementById('pt-domain-current')!;
 
 /** 汇报问题的落点。GitHub 的新建 issue 页，带模板选择。 */
 const ISSUE_URL = 'https://github.com/Teeeeeeeerry/Parallel-Translation/issues/new';
@@ -128,6 +129,30 @@ async function onTranslatePageClick(): Promise<void> {
   }
 }
 
+/**
+ * 当前标签页的当前领域（#399）。问本页主文档的 content script ——
+ * 与全页翻译实际携带的领域一致；页面不支持内容脚本（chrome:// 等）或
+ * 没有命中时显示“无领域”。领域名是用户输入，只走 textContent。
+ */
+async function refreshDomain(): Promise<void> {
+  let name: string | null = null;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id != null) {
+      const resp = await chrome.tabs.sendMessage(
+        tab.id,
+        { type: 'pt:current-domain', to: getSettings().to },
+        { frameId: 0 },
+      );
+      if (typeof resp?.name === 'string') name = resp.name;
+    }
+  } catch {
+    // 本页没有 content script：按无领域显示
+  }
+  domainEl.textContent = name ?? tf('domainPopupNone', '无领域');
+  domainEl.classList.toggle('pt-muted', name === null);
+}
+
 function showHint(msg: string): void {
   const hint = document.getElementById('pt-hint');
   if (hint) {
@@ -192,8 +217,14 @@ async function init(): Promise<void> {
   modeSelect.addEventListener('change', onModeChange);
   styleSelect.addEventListener('change', onStyleChange);
 
-  // 跨上下文同步：别处改了设置 → 自动刷新 UI
-  onSettingsChanged(() => syncUI());
+  refreshDomain();
+
+  // 跨上下文同步：别处改了设置 → 自动刷新 UI；目标语言变了当前领域
+  // 可能随之变化（#399）
+  onSettingsChanged(() => {
+    syncUI();
+    refreshDomain();
+  });
 
   // 打开 options 页
   settingsBtn.addEventListener('click', () => {
