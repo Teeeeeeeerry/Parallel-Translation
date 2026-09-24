@@ -37,6 +37,7 @@ import { createLifecycleRegistry } from '~/src/ui/lifecycle-registry';
 import {
   createOrchestrator,
   type PageToggleResult,
+  type PageTranslateSummary,
 } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import { translateViaBackground } from '~/src/runtime/messaging';
@@ -294,7 +295,8 @@ export default defineContentScript({
       },
       isMainFrame: () => isMainFrame,
       // #327: 引擎返回结果但全部渲染被拒 → 错误态（不点亮完成）
-      allRenderRejected: () => renderStats.succeeded === 0,
+      // #416: 有段落翻译失败时不算“全部被拒”，失败另行提示
+      allRenderRejected: () => renderStats.succeeded === 0 && renderStats.failed === 0,
       // #328: 增量补翻观察器启停经钩子接线到生命周期注册表（幂等）
       onObserverStart: () => registry.ensure('observer', true),
       onObserverStop: () => registry.ensure('observer', false),
@@ -417,23 +419,23 @@ export default defineContentScript({
           'info',
         );
       }
-      if (
-        result.status === 'translated' &&
-        renderStats.failed > 0 &&
-        isMainFrame
-      ) {
-        // #416: 部分段落翻译失败 —— 已成功的段落照常渲染，失败数汇总提示
-        // （放在被拒提示之后：同一时刻只显示一条 toast，失败更需要看到）
-        toast(
-          tf(
-            'domainPartialFail',
-            `${renderStats.failed} 段翻译失败`,
-            String(renderStats.failed),
-          ),
-          'error',
-        );
-      }
+      // 放在被拒提示之后：同一时刻只显示一条 toast，失败更需要看到
+      if (result.status === 'translated') toastPartialFail(result.summary?.display);
       return result;
+    }
+
+    /**
+     * #416: 部分段落翻译失败 —— 已成功的段落照常渲染，失败段落保持原样，
+     * 结束后用一条 toast 汇总。key 无效 / 配额耗尽时展示真实原因（#313）。
+     */
+    function toastPartialFail(display: PageTranslateSummary['display'] | undefined): void {
+      if (renderStats.failed === 0 || !isMainFrame) return;
+      toast(
+        display?.showRealReason && display.reason
+          ? display.reason
+          : tf('domainPartialFail', `${renderStats.failed} 段翻译失败`, String(renderStats.failed)),
+        'error',
+      );
     }
 
     /**
@@ -461,6 +463,8 @@ export default defineContentScript({
             : tf('toastAllEnginesFail', '所有引擎均失败'),
           'error',
         );
+      } else {
+        toastPartialFail(summary.display);
       }
     }
 

@@ -120,8 +120,7 @@ describe('最后一个引擎部分失败', () => {
 
     const resp = await translate(['Alpha', 'Bravo fail', 'Charlie']);
 
-    expect(resp.translations[0]).toBe('译:Alpha');
-    expect(resp.translations[2]).toBe('译:Charlie');
+    expect(resp.translations).toEqual(['译:Alpha', '', '译:Charlie']);
     expect(resp.failedIndices).toEqual([1]);
   });
 
