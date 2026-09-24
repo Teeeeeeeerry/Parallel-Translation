@@ -10,11 +10,18 @@
 // 各字段可省略，省略即为空列表。新增一个站点只需在此添加条目；
 // 选择器表达不了的逻辑（take 改指、按尺寸识别角标等）留在
 // src/dom/compat.ts 代码层。
+//
+// #441：排除命中块级元素时整块不翻译；命中段落里的行内元素时，段落照常
+// 翻译，该元素不翻译、原文留在译文句子里（与保留原文效果相同）。
 
 import type { SiteRules } from './specialization';
 
 export const BUILTIN_SITE_RULES: Record<string, Partial<SiteRules>> = {
-  // #366：迁自 compat.ts 的 youtube.com skip 补丁
+  // #366：迁自 compat.ts 的 youtube.com skip 补丁。
+  // 会命中行内元素的：#metadata-line span、时长角标里带
+  // .ytd-thumbnail-overlay-time-status-renderer 的 span —— 播放量、时长
+  // 本就不该翻，落在段落里时原文保留（#441）。另两条命中的是自定义元素，
+  // 不属于行内元素，仍整块不翻译
   'youtube.com': {
     exclude: [
       '.ytd-thumbnail-overlay-time-status-renderer', // 视频时长角标
@@ -26,7 +33,10 @@ export const BUILTIN_SITE_RULES: Record<string, Partial<SiteRules>> = {
 
   // #367：迁自 compat.ts 的 github.com skip 补丁。
   // 每条选择器独立成项 —— 旧补丁拼接选择器字符串时曾带出尾随逗号，
-  // 一条无效选择器让整页采集 0 个单元（#93）
+  // 一条无效选择器让整页采集 0 个单元（#93）。
+  // 会命中行内元素的：.text-mono（分支名、标识符）、.commit-message code、
+  // .commit-tease-sha（commit hash 链接）、.blob-code-inner —— 都是代码或
+  // 标识符，落在段落里时原文保留（#441）
   'github.com': {
     exclude: [
       // 代码行、文件名、commit hash、blob 内容

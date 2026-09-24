@@ -28,6 +28,7 @@
  *     回填后原文留在译文句子里
  *   - 普通链接、空文本不保留；只对行内元素生效
  *   - 原 compat-github.test.ts 中 shouldPreserveText 的用例改在这里验证
+ *   - 内置排除命中段落里的行内元素时同样原文保留（#441）
  *
  * jsdom 的 location.hostname 是文件级选项，与其他域名的测试文件分离。
  */
@@ -187,6 +188,20 @@ describe('保留原文（github.com 内置规则，采集后提取文本）', ()
     expect(ids(collect())).toEqual(['parent', 'child']);
     const parent = document.getElementById('parent')!;
     expect([...shallowTranslatableTextEx(parent).preserves.values()]).toEqual(['@octocat']);
+  });
+
+  test('#441：内置排除命中段落内的行内元素（.text-mono、.commit-message code）时原文保留', () => {
+    const mono = extract(
+      '<p>Merged branch <span class="text-mono">feature/login-flow</span> into the main branch.</p>',
+    );
+    expect(mono.text).not.toContain('feature/login-flow');
+    expect([...mono.preserves.values()]).toEqual(['feature/login-flow']);
+
+    const commit = extract(
+      '<p class="commit-message">Fix <code>parseArgs</code> handling of empty flags.</p>',
+    );
+    expect(commit.text).not.toContain('parseArgs');
+    expect([...commit.preserves.values()]).toEqual(['parseArgs']);
   });
 
   test('逐段翻译：经 closestUnit() 找到段落后同样换成占位符', () => {
