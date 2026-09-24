@@ -83,7 +83,7 @@ async function readUserDomains(): Promise<Domain[]> {
 }
 
 /**
- * 读-改-写串行化：同一上下文里连续新建 / 删除时，后一次基于前一次的
+ * 读-改-写串行化：同一上下文里连续新建 / 删除 / 修改时，后一次基于前一次的
  * 结果改，不会互相覆盖（与 cache.ts 的 index 链同一做法）。
  */
 let writeChain: Promise<unknown> = Promise.resolve();
@@ -151,8 +151,42 @@ export async function deleteDomain(id: string): Promise<void> {
   }));
 }
 
+/** 裸域名格式，与站点黑白名单的输入校验一致。 */
+const SITE_RE = /^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$/;
+
+/** 适用网址里有不合法的条目；invalid 按输入顺序列出这些条目（去重）。 */
+export class InvalidSitesError extends Error {
+  constructor(readonly invalid: string[]) {
+    super(`[PT] 适用网址格式不正确: ${invalid.join(', ')}`);
+    this.name = 'InvalidSitesError';
+  }
+}
+
 /**
- * 领域数据变更订阅（任一上下文新建、删除后触发）。返回取消订阅函数。
+ * 保存自建领域的适用网址（#392），整体替换原列表。每条去掉首尾空格并
+ * 转小写，空行与重复条目丢弃；有不合法的条目时抛 InvalidSitesError，
+ * 不写入。内置领域、不存在的领域抛错。返回保存后的领域。
+ */
+export async function setDomainSites(id: string, sites: readonly string[]): Promise<Domain> {
+  if (BUILTIN_DOMAINS.some((d) => d.id === id)) {
+    throw new Error('[PT] 内置领域的适用网址不能修改');
+  }
+  const cleaned = [...new Set(sites.map((s) => s.trim().toLowerCase()).filter(Boolean))];
+  const invalid = [
+    ...new Set(sites.map((s) => s.trim()).filter((s) => s && !SITE_RE.test(s.toLowerCase()))),
+  ];
+  if (invalid.length > 0) throw new InvalidSitesError(invalid);
+
+  return updateUserDomains((user) => {
+    const target = user.find((d) => d.id === id);
+    if (!target) throw new Error('[PT] 领域不存在');
+    const updated: Domain = { ...target, sites: cleaned };
+    return { user: user.map((d) => (d.id === id ? updated : d)), result: updated };
+  });
+}
+
+/**
+ * 领域数据变更订阅（任一上下文新建、删除、修改后触发）。返回取消订阅函数。
  */
 export function onDomainsChanged(fn: () => void): () => void {
   const listener = (

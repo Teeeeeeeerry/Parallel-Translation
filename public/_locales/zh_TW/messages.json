@@ -207,5 +207,16 @@
     "message": "確定刪除領域「$name$」嗎？刪除後無法復原。",
     "placeholders": { "name": { "content": "$1" } }
   },
-  "domainCreated": { "message": "已新增領域" }
+  "domainCreated": { "message": "已新增領域" },
+  "domainSitesSummary": {
+    "message": "適用網址（$count$）",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "domainSitesPlaceholder": { "message": "每行一個網域，例如 example.com" },
+  "domainSitesSave": { "message": "儲存" },
+  "domainSitesSaved": { "message": "已儲存適用網址" },
+  "domainSitesInvalid": {
+    "message": "以下網址格式不正確：$list$",
+    "placeholders": { "list": { "content": "$1" } }
+  }
 }

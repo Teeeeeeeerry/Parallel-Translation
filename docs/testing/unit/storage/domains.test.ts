@@ -2,7 +2,8 @@
  * storage/domains.ts — 领域存储与当前领域解析 单元测试（#379）
  *
  * 只断言外部可观察的行为：生效领域列表的内容、给定网址与目标语言时
- * 解析出的当前领域；自建领域的新建、删除与存放位置（#391）。
+ * 解析出的当前领域；自建领域的新建、删除与存放位置（#391）；自建领域
+ * 适用网址的编辑（#392）。
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import {
@@ -11,6 +12,7 @@ import {
   createDomain,
   deleteDomain,
   onDomainsChanged,
+  setDomainSites,
 } from '~/src/storage/domains';
 import { resetStorage, fireStorageChange } from '~/docs/testing/setup';
 import type { Domain } from '~/src/storage/domains';
@@ -206,5 +208,61 @@ describe('新建与删除自建领域（#391）', () => {
     off();
     fireStorageChange({ 'pt-domains': { newValue: { user: [] } } }, 'local');
     expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('编辑自建领域的适用网址（#392）', () => {
+  test('保存后该领域在匹配站点上成为当前领域', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    expect(currentDomain(await getEffectiveDomains(), 'law.example.com', 'zh-CN')).toBeNull();
+
+    await setDomainSites(law.id, ['example.com']);
+    const domains = await getEffectiveDomains();
+    expect(domains.find((d) => d.id === law.id)!.sites).toEqual(['example.com']);
+    expect(currentDomain(domains, 'law.example.com', 'zh-CN')?.id).toBe(law.id);
+    expect(currentDomain(domains, 'other.org', 'zh-CN')).toBeNull();
+  });
+
+  test('多个领域都命中时，列表顺序靠前的优先', async () => {
+    const a = await createDomain({ name: '甲', targetLang: 'zh-CN' });
+    const b = await createDomain({ name: '乙', targetLang: 'zh-CN' });
+    await setDomainSites(b.id, ['example.com']);
+    await setDomainSites(a.id, ['example.com']);
+    const domains = await getEffectiveDomains();
+    expect(currentDomain(domains, 'example.com', 'zh-CN')?.id).toBe(a.id);
+  });
+
+  test('去掉首尾空格与空行、转小写、去重', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    const saved = await setDomainSites(law.id, ['  Example.COM ', '', 'example.com', 'law.gov.cn']);
+    expect(saved.sites).toEqual(['example.com', 'law.gov.cn']);
+    expect((await getEffectiveDomains()).find((d) => d.id === law.id)!.sites).toEqual(saved.sites);
+  });
+
+  test('可以清空适用网址', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    await setDomainSites(law.id, ['example.com']);
+    await setDomainSites(law.id, ['', '  ']);
+    expect((await getEffectiveDomains()).find((d) => d.id === law.id)!.sites).toEqual([]);
+  });
+
+  test('非法域名格式 → 拒绝保存，报出不合法的条目，原网址不变', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    await setDomainSites(law.id, ['example.com']);
+    await expect(
+      setDomainSites(law.id, ['ok.com', 'https://github.com/foo', 'not a domain', 'localhost', 'not a domain']),
+    ).rejects.toMatchObject({ invalid: ['https://github.com/foo', 'not a domain', 'localhost'] });
+    expect((await getEffectiveDomains()).find((d) => d.id === law.id)!.sites).toEqual(['example.com']);
+  });
+
+  test('内置领域的适用网址不能修改', async () => {
+    const [dev] = await getEffectiveDomains();
+    await expect(setDomainSites(dev!.id, ['example.com'])).rejects.toThrow();
+    expect((await getEffectiveDomains())[0]!.sites).toEqual(dev!.sites);
+  });
+
+  test('领域不存在 → 抛错，不新建领域', async () => {
+    await expect(setDomainSites('user:missing', ['example.com'])).rejects.toThrow();
+    expect(await getEffectiveDomains()).toHaveLength(1);
   });
 });
