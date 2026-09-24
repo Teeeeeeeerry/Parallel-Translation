@@ -48,7 +48,7 @@ import {
   patchSettings,
 } from '~/src/storage/settings';
 import type { Settings } from '~/src/storage/schema';
-import { getEffectiveDomains } from '~/src/storage/domains';
+import { getEffectiveDomains, currentDomain } from '~/src/storage/domains';
 import { tf } from '~/src/i18n';
 import { isSiteBlocked } from '~/src/dom/site-filter';
 import { decideShow } from '~/src/changelog/decide';
@@ -579,6 +579,16 @@ export default defineContentScript({
           reply({ ok: false, error: e instanceof Error ? e.message : String(e) });
         }
         return isMainFrame ? true : undefined;
+      }
+
+      if (msg?.type === 'pt:current-domain') {
+        // #399: popup 显示当前领域 —— 与全页翻译携带的领域同一口径
+        // （本页读到的领域列表 + 主文档主机名）；目标语言用 popup 当前
+        // 所选，避免设置刚改、本页还没收到变更时显示旧结果
+        if (!isMainFrame) return;
+        const to = typeof msg.to === 'string' ? msg.to : getSettings().to;
+        sendResponse({ name: currentDomain(domains, location.hostname, to)?.name ?? null });
+        return;
       }
 
       if (msg?.type === 'pt:translate-selection') {

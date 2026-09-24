@@ -240,3 +240,18 @@ body {
   padding: 4px 0;
   animation: pt-pop .15s ease;
 }
+
+/* ===== 当前领域（#399） ===== */
+
+.pt-option-value {
+  font-size: 11px;
+  color: var(--pt-forest);
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pt-option-value.pt-muted {
+  color: var(--pt-forest-40);
+}
