@@ -133,8 +133,9 @@ export const gemini: TranslateEngine = createByokEngine({
   supportedLangs: 'all',
   model: currentModel,
 
-  // 请求格式与凭据传递方式（走请求头而非查询串）与改造前一致（#335）
-  buildRequest: ({ texts, from, to }, key, model) => ({
+  // 请求格式与凭据传递方式（走请求头而非查询串）与改造前一致（#335）；
+  // 本批命中的术语沿用 #381 的格式追加在编号文本之后（#382）
+  buildRequest: ({ texts, from, to, terms }, key, model) => ({
     url:
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     headers: {
@@ -142,7 +143,7 @@ export const gemini: TranslateEngine = createByokEngine({
       'x-goog-api-key': key,
     },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: buildNumberedPrompt(to, from, texts) }] }],
+      contents: [{ parts: [{ text: buildNumberedPrompt(to, from, texts, terms) }] }],
       generationConfig: { temperature: 0 },
     }),
   }),
