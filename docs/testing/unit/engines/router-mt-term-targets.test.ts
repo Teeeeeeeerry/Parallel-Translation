@@ -56,6 +56,11 @@ function queries(): string[] {
   return fetchMock.mock.calls.map((c) => new URL(String(c[0])).searchParams.get('q') ?? '');
 }
 
+async function sha1(s: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(s));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 function translate(texts: string[]) {
   return route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' });
 }
@@ -110,9 +115,11 @@ describe('开关关闭（默认）', () => {
   });
 
   test('术语哈希与开关引入前逐字节相同 —— 已有缓存继续有效', async () => {
+    // #419 口径：只算“不翻译”术语 [原词, 译法, 不翻译]，带 v2 版本标记
     const text = 'Open an issue in the repository';
+    const termsHash = await sha1(`v2[${JSON.stringify(['issue', '', true])}]`);
     expect(await keyWritten(text)).toBe(
-      await cacheKey('google-web', 'en', 'zh-CN', text, '', [ISSUE]),
+      `${await cacheKey('google-web', 'en', 'zh-CN', text)}:${termsHash}`,
     );
   });
 });
@@ -133,6 +140,13 @@ describe('开关打开', () => {
     const resp = await translate(['Open an Issue in the repository']);
     expect(queries()[0]).not.toMatch(/issue|repository/i);
     expect(resp.translations).toEqual(['【仓库 the in Issue an Open】']);
+  });
+
+  test('同时标了“不翻译”又给了译法的术语：按“不翻译”回填原词', async () => {
+    domains[0]!.terms = [{ source: 'repository', target: '仓库', noTranslate: true }];
+    const resp = await translate(['Clone the Repository']);
+    expect(queries()).toEqual(['Clone the ⟦TM0⟧']);
+    expect(resp.translations).toEqual(['译:Clone the Repository']);
   });
 
   test('占位符被引擎改坏 → 改用原文重译（#389），译文里不出现指定译法', async () => {
