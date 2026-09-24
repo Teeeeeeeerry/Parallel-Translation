@@ -9,11 +9,13 @@
 // 该站点生效。字段按判定顺序排列：限定范围（#374）、排除、保留原文（#373）。
 // 保存时逐行校验选择器（#372），有无效行时整张卡片不保存，在对应文本框下
 // 列出行号与选择器，修改后提示消失。渲染卡片时对已保存的规则做同样的
-// 校验（#443）：导入等途径带进的无效行照样标出。删除卡片等由后续 ticket 接入。
+// 校验（#443）：导入等途径带进的无效行照样标出。删除卡片（#371）前先确认，
+// 删除后该站点只剩内置规则生效。
 
 import {
   getUserSiteRules,
   saveUserSiteRules,
+  deleteUserSiteRules,
   onUserSiteRulesChanged,
   findInvalidSelectors,
   InvalidSelectorsError,
@@ -57,8 +59,11 @@ interface Card {
 
 const toText = (sels: string[] = []) => sels.join('\n');
 
-/** 站点卡片：站点名、各字段的多行文本框、保存按钮。站点名是用户输入，只走 textContent。 */
-function siteCard(u: UserSiteRules): Card {
+/**
+ * 站点卡片：站点名、各字段的多行文本框、保存与删除按钮。站点名是用户
+ * 输入，只走 textContent。
+ */
+function siteCard(u: UserSiteRules, onDelete: (site: string) => void): Card {
   const el = document.createElement('div');
   el.className = 'pt-card pt-site-rules-card';
 
@@ -96,9 +101,13 @@ function siteCard(u: UserSiteRules): Card {
   const actions = document.createElement('div');
   actions.className = 'pt-actions';
   const save = document.createElement('button');
-  save.className = 'pt-btn';
+  save.className = 'pt-btn pt-site-rules-save';
   save.textContent = tf('siteRulesSave', '保存');
-  actions.append(save);
+  const del = document.createElement('button');
+  del.className = 'pt-btn pt-btn-secondary pt-site-rules-delete';
+  del.textContent = tf('siteRulesDelete', '删除站点');
+  del.addEventListener('click', () => onDelete(u.site));
+  actions.append(save, del);
   el.append(actions);
 
   save.addEventListener('click', () => {
@@ -144,7 +153,7 @@ export function initSiteRules(): void {
     const els = list.map((u) => {
       let card = cards.get(u.site);
       if (!card) {
-        card = siteCard(u);
+        card = siteCard(u, remove);
         cards.set(u.site, card);
       }
       // #443：已保存的规则也逐行校验。只标没有未保存改动的字段 ——
@@ -162,6 +171,25 @@ export function initSiteRules(): void {
       return card.el;
     });
     listEl.replaceChildren(...els);
+    // 已删除的站点不再复用旧卡片 —— 重新新增同名站点时从空白开始
+    for (const site of cards.keys()) {
+      if (!list.some((u) => u.site === site)) cards.delete(site);
+    }
+  }
+
+  function remove(site: string): void {
+    if (
+      !confirm(
+        tf('siteRulesDeleteConfirm',
+          `确定删除站点“${site}”的规则吗？删除后该站点只剩内置规则生效。`, site),
+      )
+    ) {
+      return;
+    }
+    deleteUserSiteRules(site)
+      .then(render)
+      .then(() => showToast(tf('siteRulesDeleted', '已删除，刷新该网站后生效')))
+      .catch((e) => console.error('[PT] 删除站点规则失败:', e));
   }
 
   function add(): void {

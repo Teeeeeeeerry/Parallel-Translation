@@ -268,7 +268,25 @@ export function saveUserSiteRules(
 }
 
 /**
- * 用户规则变更订阅（任一上下文保存后触发）。返回取消订阅函数。
+ * 删除一张站点卡片（#371）：该站点的用户规则从 storage.local 移除，生效
+ * 规则回到仅内置规则。站点不存在时不做改动。与保存共用读-改-写串行链。
+ */
+export function deleteUserSiteRules(site: string): Promise<void> {
+  const key = site.trim().toLowerCase();
+  const next = writeChain.then(async () => {
+    const user = await readUserSiteRules();
+    const rest = user.filter((u) => u.site !== key);
+    if (rest.length === user.length) return;
+    const stored: StoredSiteRules = { user: rest };
+    await chrome.storage.local.set({ [STORAGE_KEY]: stored });
+    userSnapshot = rest;
+  });
+  writeChain = next.catch(() => {});
+  return next;
+}
+
+/**
+ * 用户规则变更订阅（任一上下文保存或删除后触发）。返回取消订阅函数。
  */
 export function onUserSiteRulesChanged(fn: () => void): () => void {
   const listener = (

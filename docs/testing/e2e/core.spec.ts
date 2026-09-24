@@ -1153,7 +1153,7 @@ test.describe('站点页面规则', () => {
     for (const [field, value] of Object.entries(fields)) {
       await card.locator(`textarea[data-field="${field}"]`).fill(value);
     }
-    await card.locator('button').click();
+    await card.locator('.pt-site-rules-save').click();
     await expect(options.locator('#pt-toast')).toBeVisible();
     await options.close();
   }
@@ -1269,7 +1269,7 @@ test.describe('站点页面规则', () => {
 
     // 第 3 行无效（空行也计行号）：拒绝保存，标红并指出行号与选择器
     await exclude.fill('ul\n\n.promo,\n  p  ');
-    await card.locator('button').click();
+    await card.locator('.pt-site-rules-save').click();
     await expect(exclude).toHaveClass(/pt-error/);
     await expect(error).toBeVisible();
     await expect(error).toContainText('3');
@@ -1282,7 +1282,7 @@ test.describe('站点页面规则', () => {
     await exclude.fill('ul\n\n.promo\n  p  ');
     await expect(error).toBeHidden();
     await expect(exclude).not.toHaveClass(/pt-error/);
-    await card.locator('button').click();
+    await card.locator('.pt-site-rules-save').click();
     await expect(page.locator('#pt-toast')).toBeVisible();
   });
 
@@ -1316,12 +1316,54 @@ test.describe('站点页面规则', () => {
     // 修改后提示消失；改正后保存，重新打开也不再提示
     await scope.fill('main\n.post');
     await expect(error).toBeHidden();
-    await card.locator('button').click();
+    await card.locator('.pt-site-rules-save').click();
     await expect(page.locator('#pt-toast')).toBeVisible();
     await page.reload();
     await page.click('.pt-nav-btn[data-section="site-rules"]');
     await expect(scope).toHaveValue('main\n.post');
     await expect(scope).not.toHaveClass(/pt-error/);
     await expect(error).toBeHidden();
+  });
+
+  test('@core TC-E2E-65: 设置页删除站点卡片 → 先确认 → 用户规则移除，只剩内置规则（#371）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ showParagraphBtn: true });
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+    await saveLocalhostRules(page, serviceWorker, { exclude: 'ul' });
+
+    const extId = new URL(serviceWorker.url()).host;
+    const options = await page.context().newPage();
+    await options.goto(`chrome-extension://${extId}/options.html`);
+    await options.click('.pt-nav-btn[data-section="site-rules"]');
+    const card = options.locator('.pt-site-rules-card', { hasText: 'localhost' });
+    const stored = () =>
+      serviceWorker.evaluate(async () => (await chrome.storage.local.get('pt-site-rules'))['pt-site-rules']);
+
+    // 取消确认：卡片与规则都还在
+    options.once('dialog', (d) => d.dismiss());
+    await card.locator('.pt-site-rules-delete').click();
+    await expect(card).toBeVisible();
+    expect(JSON.stringify(await stored())).toContain('localhost');
+
+    // 确认删除：卡片消失，storage.local 里不再有该站点
+    let message = '';
+    options.once('dialog', (d) => {
+      message = d.message();
+      void d.accept();
+    });
+    await card.locator('.pt-site-rules-delete').click();
+    await expect(card).toHaveCount(0);
+    expect(message).toContain('localhost');
+    expect(JSON.stringify(await stored())).not.toContain('localhost');
+    await options.close();
+
+    // 刷新该站点：之前排除的列表项重新可以翻译
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const ball = await waitForBall(page);
+    await ball.click();
+    await expect(page.locator('li').first()).toHaveAttribute('data-pt', 'done', { timeout: 30_000 });
   });
 });
