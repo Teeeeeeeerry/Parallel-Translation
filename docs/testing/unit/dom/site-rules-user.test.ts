@@ -8,13 +8,16 @@
  * 全页翻译 —— walker 采集入口 collect()：用户排除命中的元素整块不采集。
  * 逐段翻译 —— closestUnit()（#409）：排除区内找不到段落，不出按钮。
  *
+ * 排除命中段落里的行内元素时（#441），段落照常采集，该元素在提取送翻
+ * 文本（translatableTextEx）时换成占位符，原文留在译文里。
+ *
  * jsdom 默认 location.hostname 为 localhost，站点卡片用 localhost。
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
-import { translatableTextEx } from '~/src/dom/text';
+import { translatableTextEx, restorePreserves } from '~/src/dom/text';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
 import type { SiteRules } from '~/src/storage/specialization';
 
@@ -141,5 +144,34 @@ describe('排除越过 Shadow DOM 边界（#442）', () => {
     await exclude('.panel');
     expect(ids(collect(root.getElementById('ok')!))).toEqual(['ok']);
     expect(closestUnit(root.getElementById('ok-b')!)?.id).toBe('ok');
+  });
+});
+
+describe('排除命中段落内的行内元素（#441）', () => {
+  test('段落照常采集，被排除的行内元素不翻译，原文留在译文句子里', async () => {
+    await exclude('#bold');
+    expect(ids(collect())).toEqual(['side', 'body', 'more']);
+    const body = collect().find((u) => u.id === 'body')!;
+    const { text, preserves } = translatableTextEx(body);
+    expect(text).not.toContain('coding');
+    expect([...preserves.values()]).toEqual(['coding']);
+
+    const [ph] = [...preserves.keys()];
+    const restored = restorePreserves(`Claude Code 是一个智能体式 ${ph} 工具。`, preserves, text);
+    expect(restored).toBe('Claude Code 是一个智能体式 coding 工具。');
+  });
+
+  test('同时命中排除与保留原文的行内元素：结果相同', async () => {
+    await rules({ exclude: ['#bold'], preserve: ['#bold'] });
+    expect(ids(collect())).toEqual(['side', 'body', 'more']);
+    expect(preserved('body')).toEqual(['coding']);
+  });
+
+  test('逐段翻译：起点是被排除的行内元素时找不到段落；从同段其他文字找到的段落同样保留原文', async () => {
+    await exclude('#bold');
+    expect(closestUnit(document.getElementById('bold')!)).toBeNull();
+    const unit = closestUnit(document.getElementById('body')!)!;
+    expect(unit.id).toBe('body');
+    expect([...translatableTextEx(unit).preserves.values()]).toEqual(['coding']);
   });
 });

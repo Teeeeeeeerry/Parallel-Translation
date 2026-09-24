@@ -11,11 +11,13 @@
 // - .notranslate 类：HTML 标准约定（Google 翻译同样尊重），通用
 // - shouldOmitText()：域名补丁（compat.ts），站点的特定元数据
 // - 保留原文：#58 占位符机制，用户名等标识符不翻译但保留原文。先按站点
-//   页面规则的保留原文选择器（数据，#369），再按 compat 代码层判定
+//   页面规则的排除（#441）与保留原文（#369）选择器（数据），再按 compat
+//   代码层判定
 
 import { shouldOmitText, shouldPreserveText } from './compat';
 import { INLINE_SET } from './classify';
 import { getSiteRules } from '~/src/storage/specialization';
+import type { SiteRules } from '~/src/storage/specialization';
 
 /**
  * Preserve 占位符格式：⟦PT0⟧、⟦PT1⟧ ...
@@ -29,15 +31,16 @@ const PLACEHOLDER_SUFFIX = '⟧';
 interface PreserveMap {
   placeholders: Map<string, string>; // ⟦PT0⟧ → 原文
   nextIndex: number;
-  /** 当前站点的保留原文选择器，每次提取读一次 */
-  selectors: string[];
+  /** 当前站点的排除与保留原文选择器，每次提取读一次 */
+  rules: Pick<SiteRules, 'exclude' | 'preserve'>;
 }
 
 function makePreserveMap(): PreserveMap {
+  const { exclude, preserve } = getSiteRules(location.hostname);
   return {
     placeholders: new Map(),
     nextIndex: 0,
-    selectors: getSiteRules(location.hostname).preserve,
+    rules: { exclude, preserve },
   };
 }
 
@@ -47,11 +50,21 @@ function makePlaceholder(idx: number): string {
 
 /**
  * 元素应保留的原文，或 null 表示不保留。只对行内元素生效。
- * 判定顺序（ADR-0003）：站点页面规则的保留原文 → compat 代码层。
+ * 判定顺序（ADR-0003）：站点页面规则的排除 → 保留原文 → compat 代码层。
+ *
+ * #441：段落里命中排除的行内元素同样原文保留 —— 段落照常采集，排除的
+ * “整块不翻译”落到行内元素上就是不送翻、原样留在译文句子里。不从译文
+ * 里去掉：“仅译文”显示模式下那样会丢内容。同时命中排除与保留原文时
+ * 结果相同，“排除优先”在行内元素上不再有冲突。块级元素的排除仍由采集
+ * 入口整块跳过，不经过这里。
  */
-function preservedText(el: Element, selectors: string[]): string | null {
+function preservedText(
+  el: Element,
+  rules: Pick<SiteRules, 'exclude' | 'preserve'>,
+): string | null {
   if (!INLINE_SET.has(el.tagName.toLowerCase())) return null;
-  if (selectors.some((sel) => el.matches(sel))) {
+  const hit = (sels: string[]) => sels.some((sel) => el.matches(sel));
+  if (hit(rules.exclude) || hit(rules.preserve)) {
     return el.textContent?.trim() || null;
   }
   return shouldPreserveText(el);
@@ -93,7 +106,7 @@ function walkTranslatable(el: Element, pm: PreserveMap | null): string {
 
         // #58 preserve：不翻译但保留原文（用户名等标识符）
         if (pm) {
-          const preserved = preservedText(c, pm.selectors);
+          const preserved = preservedText(c, pm.rules);
           if (preserved) {
             const ph = makePlaceholder(pm.nextIndex);
             pm.placeholders.set(ph, preserved);
@@ -154,7 +167,7 @@ function walkShallow(el: Element, pm: PreserveMap | null): string {
 
       // #58 preserve
       if (pm) {
-        const preserved = preservedText(c, pm.selectors);
+        const preserved = preservedText(c, pm.rules);
         if (preserved) {
           const ph = makePlaceholder(pm.nextIndex);
           pm.placeholders.set(ph, preserved);
