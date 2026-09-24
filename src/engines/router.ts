@@ -41,6 +41,19 @@ async function termHits(req: TranslateRequest): Promise<Term[][]> {
   return req.texts.map((text) => (domain ? matchTerms(domain.terms, text) : []));
 }
 
+/**
+ * 该引擎实际生效的术语（#419）：AI 引擎注入全部命中术语；Google 等机翻
+ * 引擎只用占位符落实“不翻译”术语（#386）；其余引擎不处理术语。缓存 key
+ * 的术语哈希只算这些术语 —— 不生效的术语改了也不该让缓存失效。
+ * 机翻引擎“指定译法”开关（#390）打开后，占位符引擎也要算上指定译法的
+ * 术语，开关状态一并进哈希。
+ */
+function effectiveTerms(engine: TranslateEngine, terms: readonly Term[]): Term[] {
+  if (engine.injectsTerms) return [...terms];
+  if (engine.masksNoTranslate) return terms.filter((t) => t.noTranslate === true);
+  return [];
+}
+
 export async function route(req: TranslateRequest): Promise<TranslateResponse> {
   const { enginePriority, useCache } = getSettings();
   const errors: EngineError[] = [];
@@ -62,6 +75,8 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
 
     // #175: BYOK 引擎的模型名参与缓存 key —— 切换模型后不命中旧译文
     const model = getSettings().models?.[id] ?? DEFAULT_MODELS[id] ?? '';
+    // #419: 参与缓存 key 的只是本引擎实际生效的术语
+    const keyTerms = hits.map((h) => effectiveTerms(engine, h));
 
     if (
       engine.supportedLangs !== 'all' &&
@@ -79,7 +94,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       const cacheChecks = await Promise.all(
         req.texts.map(async (text, i) => {
           if (translations[i] !== null) return { i, cached: null, text };
-          const k = await cacheKey(id, req.from, req.to, text, model, hits[i]);
+          const k = await cacheKey(id, req.from, req.to, text, model, keyTerms[i]);
           const cached = await cacheGet(k);
           return { i, cached, text };
         }),
@@ -191,7 +206,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
             const val = translations[u.idx];
             // #171: 短数组下成功槽位必然有值，这里再做一次防御
             if (val === undefined || val === null) return;
-            const key = await cacheKey(id, req.from, req.to, u.text, model, hits[u.idx]);
+            const key = await cacheKey(id, req.from, req.to, u.text, model, keyTerms[u.idx]);
             if (!plain.has(j)) {
               await cacheSet(key, val);
               return;

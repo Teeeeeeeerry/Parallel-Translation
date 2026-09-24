@@ -56,6 +56,11 @@ export interface TranslateEngine {
    * 术语换成占位符，译文回来后换回原词。机翻引擎各自声明。
    */
   masksNoTranslate?: boolean;
+  /**
+   * 把本批命中的术语（译法与“不翻译”）注入请求（#381/#382）。AI 引擎各自
+   * 声明；router 据此决定哪些术语参与缓存 key 的术语哈希（#419）。
+   */
+  injectsTerms?: boolean;
   translate(req: TranslateRequest): Promise<TranslateResponse>;
 }
 

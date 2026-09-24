@@ -21,14 +21,22 @@ async function sha1hex(s: string): Promise<string> {
 }
 
 /**
- * 本段实际生效术语的哈希（#380）：原词、译法、“不翻译”标记。
- * 与术语顺序、所属领域无关 —— 两个站点命中相同术语时共用缓存。
+ * 术语哈希的口径版本（#419）。#380 起按“命中的全部术语”写入的条目，写入时
+ * 译文可能还没有术语约束；口径改为“实际生效的术语”后换版本，这批旧条目
+ * 不再命中。以后哈希口径再变时递增。
+ */
+const TERMS_HASH_VERSION = 2;
+
+/**
+ * 本段实际生效术语的哈希（#380）：原词、译法、“不翻译”标记，外加口径
+ * 版本（#419）。与术语顺序、所属领域无关 —— 两个站点命中相同术语时共用
+ * 缓存。
  */
 function termsHash(terms: readonly Term[]): Promise<string> {
   const canonical = terms
     .map((t) => JSON.stringify([t.source.trim(), t.target ?? '', t.noTranslate === true]))
     .sort();
-  return sha1hex(`[${canonical.join(',')}]`);
+  return sha1hex(`v${TERMS_HASH_VERSION}[${canonical.join(',')}]`);
 }
 
 /**
@@ -40,6 +48,7 @@ function termsHash(terms: readonly Term[]): Promise<string> {
  *
  * #380: 本段命中术语时追加术语哈希 —— 修改术语后不命中旧译文；
  * 没有命中时不追加，key 与引入术语前逐字节相同，现有缓存继续有效。
+ * #419: 调用方只传该引擎实际生效的术语。
  */
 export async function cacheKey(
   engine: string,

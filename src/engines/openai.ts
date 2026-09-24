@@ -52,6 +52,7 @@ export const openai: TranslateEngine = createByokEngine({
   id: 'openai',
   displayName: 'OpenAI',
   supportedLangs: 'all',
+  injectsTerms: true,
   model: currentModel,
 
   // 请求格式与改造前完全一致（#333）
