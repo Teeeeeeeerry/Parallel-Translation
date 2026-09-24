@@ -66,8 +66,8 @@ function isInline(el: Element): boolean {
  * #441：段落里命中排除的行内元素同样原文保留 —— 段落照常采集，排除的
  * “整块不翻译”落到行内元素上就是不送翻、原样留在译文句子里。不从译文
  * 里去掉：“仅译文”显示模式下那样会丢内容。同时命中排除与保留原文时
- * 结果相同，“排除优先”在行内元素上不再有冲突。块级元素的排除仍由采集
- * 入口整块跳过，不经过这里。
+ * 结果相同，“排除优先”在行内元素上不再有冲突。块级元素的排除由采集
+ * 入口整块跳过；段落里命中排除的块级子元素在提取时整块跳过（#456）。
  */
 function preservedText(
   el: Element,
@@ -129,6 +129,10 @@ function walkTranslatable(el: Element, pm: PreserveMap | null): string {
           }
         }
 
+        // #456：命中排除、没有按原文保留的元素（块级元素）整块跳过，
+        // 与 .notranslate 相同 —— 全页翻译的浅层提取本就不送段落里的
+        // 块级子元素，逐段翻译的完整提取与它一致
+        if (pm && pm.rules.exclude.some((sel) => c.matches(sel))) continue;
         if (c.classList.contains('notranslate')) continue;
         if (shouldOmitText(c)) continue;
         // 元素子节点之间补空格，防止源 HTML 中相邻元素无空白时
