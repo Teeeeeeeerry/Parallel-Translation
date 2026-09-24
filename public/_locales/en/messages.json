@@ -263,5 +263,10 @@
   "siteRulesInvalidSelector": {
     "message": "Line $line$ is not a valid CSS selector: $selector$",
     "placeholders": { "line": { "content": "$1" }, "selector": { "content": "$2" } }
+  },
+  "domainSaveDeleted": { "message": "This domain has been deleted. The list has been refreshed." },
+  "domainSaveFailed": {
+    "message": "Save failed: $error$",
+    "placeholders": { "error": { "content": "$1" } }
   }
 }

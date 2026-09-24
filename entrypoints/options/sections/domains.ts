@@ -18,6 +18,7 @@ import {
   onDomainsChanged,
   InvalidSitesError,
   InvalidTermsError,
+  DomainNotFoundError,
   isBuiltinTerm,
 } from '~/src/storage/domains';
 import { getSettings } from '~/src/storage/settings';
@@ -33,7 +34,7 @@ function langLabel(code: string): string {
  * 适用网址编辑（#392）：每行一个裸域名、localhost 或 IPv4 地址（#431），
  * 保存时整体替换。不合法的条目在输入框下方列出，不写入。
  */
-function sitesEditor(d: Domain): HTMLDetailsElement {
+function sitesEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
   const details = document.createElement('details');
   details.className = 'pt-domain-sites';
   details.dataset.editor = 'sites';
@@ -63,6 +64,7 @@ function sitesEditor(d: Domain): HTMLDetailsElement {
   }
 
   save.addEventListener('click', () => {
+    clearError();
     setDomainSites(d.id, textarea.value.split('\n'))
       .then(() => showToast(tf('domainSitesSaved', '已保存适用网址')))
       .catch((e) => {
@@ -72,7 +74,7 @@ function sitesEditor(d: Domain): HTMLDetailsElement {
           error.textContent = tf('domainSitesInvalid', `以下网址格式不正确（只填域名、localhost 或 IPv4 地址，不带协议、端口和路径）：${list}`, list);
           error.classList.add('pt-visible');
         } else {
-          console.error('[PT] 保存适用网址失败:', e);
+          saveFailed(e, error, onGone);
         }
       });
   });
@@ -80,6 +82,23 @@ function sitesEditor(d: Domain): HTMLDetailsElement {
 
   details.append(summary, textarea, error, save);
   return details;
+}
+
+/**
+ * 保存失败（#430）：领域已在别处被删除时提示并刷新列表（该领域随之消失）；
+ * 其他写入错误把原因写在编辑框下方。
+ */
+function saveFailed(e: unknown, error: HTMLElement, onGone: () => void): void {
+  console.error('[PT] 保存领域失败:', e);
+  if (e instanceof DomainNotFoundError) {
+    showToast(tf('domainSaveDeleted', '这个领域已被删除，列表已刷新'), 4000);
+    onGone();
+    return;
+  }
+  // 内部错误的“[PT] ”日志前缀不给用户看
+  const reason = (e instanceof Error ? e.message : String(e)).replace(/^\[PT\]\s*/, '');
+  error.textContent = tf('domainSaveFailed', `保存失败：${reason}`, reason);
+  error.classList.add('pt-visible');
 }
 
 /** 列表分隔符：中文界面用顿号。 */
@@ -139,7 +158,7 @@ function termRow(onRemove: () => void, t?: Term, builtin = false): HTMLTableRowE
  * 行，保存时整体替换。重复的原词、缺译法或缺原词的行标红并在表格下方
  * 说明，不写入。内置领域（#395）同样可编辑，保存到叠加层。
  */
-function termsEditor(d: Domain): HTMLDetailsElement {
+function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
   const details = document.createElement('details');
   details.className = 'pt-domain-terms';
   details.dataset.editor = 'terms';
@@ -232,7 +251,7 @@ function termsEditor(d: Domain): HTMLDetailsElement {
       .then(() => showToast(tf('domainTermsSaved', '已保存术语')))
       .catch((e) => {
         if (e instanceof InvalidTermsError) showError(e);
-        else console.error('[PT] 保存术语失败:', e);
+        else saveFailed(e, error, onGone);
       });
   });
   tbody.addEventListener('input', clearError);
@@ -247,7 +266,11 @@ function termsEditor(d: Domain): HTMLDetailsElement {
 }
 
 /** 一行领域：名称、目标语言、内置标注或删除按钮。领域名是用户输入，只走 textContent。 */
-function domainItem(d: Domain, onDelete: (d: Domain) => void): HTMLLIElement {
+function domainItem(
+  d: Domain,
+  onDelete: (d: Domain) => void,
+  onGone: () => void,
+): HTMLLIElement {
   const li = document.createElement('li');
   li.className = 'pt-site-item pt-domain-item';
   li.dataset.id = d.id;
@@ -266,14 +289,14 @@ function domainItem(d: Domain, onDelete: (d: Domain) => void): HTMLLIElement {
     const badge = document.createElement('span');
     badge.className = 'pt-domain-badge';
     badge.textContent = tf('domainBuiltinBadge', '内置');
-    li.append(badge, termsEditor(d));
+    li.append(badge, termsEditor(d, onGone));
   } else {
     const del = document.createElement('button');
     del.className = 'pt-site-remove';
     del.textContent = '×';
     del.title = tf('domainDelete', '删除');
     del.addEventListener('click', () => onDelete(d));
-    li.append(del, sitesEditor(d), termsEditor(d));
+    li.append(del, sitesEditor(d, onGone), termsEditor(d, onGone));
   }
   return li;
 }
@@ -298,7 +321,7 @@ export function initDomains(): void {
       [...listEl.querySelectorAll<HTMLElement>('.pt-domain-item')].map((li) => [li.dataset.id, li]),
     );
     const items = domains.map((d) => {
-      const li = domainItem(d, remove);
+      const li = domainItem(d, remove, refresh);
       const prevLi = old.get(d.id);
       li.querySelectorAll('details').forEach((next) => {
         const prev = prevLi?.querySelector<HTMLDetailsElement>(

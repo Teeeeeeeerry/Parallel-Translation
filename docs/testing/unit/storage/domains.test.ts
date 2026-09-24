@@ -17,6 +17,7 @@ import {
   watchEffectiveDomains,
   setDomainSites,
   setDomainTerms,
+  DomainNotFoundError,
 } from '~/src/storage/domains';
 import { resetStorage, fireStorageChange } from '~/docs/testing/setup';
 import type { Domain } from '~/src/storage/domains';
@@ -265,9 +266,20 @@ describe('编辑自建领域的适用网址（#392）', () => {
     expect((await getEffectiveDomains())[0]!.sites).toEqual(dev!.sites);
   });
 
-  test('领域不存在 → 抛错，不新建领域', async () => {
-    await expect(setDomainSites('user:missing', ['example.com'])).rejects.toThrow();
+  test('领域不存在 → 抛 DomainNotFoundError，不新建领域', async () => {
+    await expect(setDomainSites('user:missing', ['example.com'])).rejects.toBeInstanceOf(
+      DomainNotFoundError,
+    );
     expect(await getEffectiveDomains()).toHaveLength(1);
+  });
+
+  test('领域已在别处被删除 → 保存适用网址抛 DomainNotFoundError（#430）', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    await deleteDomain(law.id);
+    await expect(setDomainSites(law.id, ['example.com'])).rejects.toBeInstanceOf(
+      DomainNotFoundError,
+    );
+    expect((await getEffectiveDomains()).some((d) => d.id === law.id)).toBe(false);
   });
 });
 
@@ -396,8 +408,17 @@ describe('编辑自建领域的术语（#393）', () => {
     expect(await termsOf(law.id)).toEqual([]);
   });
 
-  test('领域不存在时抛错', async () => {
-    await expect(setDomainTerms('user:missing', [])).rejects.toThrow();
+  test('领域不存在时抛 DomainNotFoundError', async () => {
+    await expect(setDomainTerms('user:missing', [])).rejects.toBeInstanceOf(DomainNotFoundError);
+  });
+
+  test('领域已在别处被删除 → 保存术语抛 DomainNotFoundError，不复活该领域（#430）', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    await deleteDomain(law.id);
+    await expect(
+      setDomainTerms(law.id, [{ source: 'plaintiff', target: '原告' }]),
+    ).rejects.toBeInstanceOf(DomainNotFoundError);
+    expect((await getEffectiveDomains()).some((d) => d.id === law.id)).toBe(false);
   });
 
   test('只改术语不影响名称、目标语言与适用网址', async () => {
