@@ -144,11 +144,14 @@ export function cacheSet(
   value: string,
   opts: { ignoresTerms?: boolean } = {},
 ): Promise<void> {
-  const stored = { v: value, t: Date.now(), ...(opts.ignoresTerms && { ignoresTerms: true }) };
   chain = chain
     .then(() =>
       chrome.storage.local.set({
-        [key]: JSON.stringify(stored),
+        [key]: JSON.stringify({
+          v: value,
+          t: Date.now(),
+          ...(opts.ignoresTerms && { ignoresTerms: true }),
+        }),
       }),
     )
     .then(() => refreshIndex(key))

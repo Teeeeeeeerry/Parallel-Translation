@@ -208,11 +208,26 @@ describe('重译结果的缓存', () => {
     corruptFirstCall(() => '打开一个问题');
     await translate(['Open an issue']);
 
-    domains[0]!.terms = [{ source: 'issue', target: '议题' }];
+    // 对机翻引擎生效的是“不翻译”术语，这里改动它们的集合
+    domains[0]!.terms = [
+      { source: 'issue', noTranslate: true },
+      { source: 'Open', noTranslate: true },
+    ];
     googleTranslate.mockClear();
     await translate(['Open an issue']);
 
     expect(googleTranslate).toHaveBeenCalledTimes(1);
-    expect(googleTranslate.mock.calls[0]![0].texts).toEqual(['Open an issue']);
+    expect(googleTranslate.mock.calls[0]![0].texts[0]).toMatch(/⟦TM\d+⟧ an ⟦TM\d+⟧/);
+  });
+
+  test('带术语哈希的 key 下已有旧格式条目（不含标记）→ 照常命中，不调用引擎', async () => {
+    useCache = true;
+    const key = await cacheKey('google-web', 'en', 'zh-CN', 'Open an issue', '', issueHits);
+    await chrome.storage.local.set({ [key]: JSON.stringify({ v: '旧译文', t: Date.now() }) });
+
+    const resp = await translate(['Open an issue']);
+
+    expect(googleTranslate).not.toHaveBeenCalled();
+    expect(resp.translations).toEqual(['旧译文']);
   });
 });
