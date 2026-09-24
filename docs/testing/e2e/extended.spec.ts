@@ -6,6 +6,7 @@
  *       响应不足、中途切语言、悬浮球钳制、超长段落、RTL 全文
  *
  * #120：TC-E2E-31/32/33/39/40/41/42/43/45 由占位 skip 实现为真实用例。
+ * #440：TC-E2E-64 覆盖下一个引擎 key 无效时保留已成功段落。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -189,6 +190,39 @@ test.describe('故障切换 @extended', () => {
     // 两条失败请求确实被 Google 500 掉（防止 failTexts 失效假绿）
     const stats = await serviceWorker.evaluate(() => (self as any).getE2EMockStats());
     expect(stats.failTextsServed).toBe(2);
+  });
+
+  test('TC-E2E-64: Google 部分成功 + 下一个引擎 key 无效 → 成功段渲染，toast 显示真实原因（#440）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ enginePriority: ['google-web', 'openai'] });
+    await serviceWorker.evaluate(() => {
+      chrome.storage.local.set({ 'pt-keys': { openai: 'invalid-key' } });
+    });
+    const texts = ['Alpha one', 'Bravo two', 'Charlie fail'];
+    await mockGoogle({ prefix: '[GOOGLE] ', failTexts: ['Charlie fail'] });
+    await stubOpenAI(serviceWorker, { status: 401 });
+    await installRequestCounter(serviceWorker);
+    await gotoFixture('basic');
+    await injectParagraphs(page, texts);
+
+    const ball = await waitForBall(page);
+    await ball.click();
+
+    // 同批的成功段照常渲染，不因下一个引擎 key 无效而整批丢弃
+    for (const ok of ['Alpha one', 'Bravo two']) {
+      await expect(page.locator('p', { hasText: ok }).locator('.pt-trans')).toContainText('[GOOGLE]', {
+        timeout: 30_000,
+      });
+    }
+    // toast 显示 key 无效这一真实原因，而不是泛化的“N 段翻译失败”
+    const toast = page.locator('#pt-host-toast .pt-toast[data-kind="error"]');
+    await expect(toast).toBeVisible({ timeout: 30_000 });
+    await expect(toast).toHaveText(/API key/);
+    await expect(page.locator('p', { hasText: 'Charlie fail' }).locator('.pt-trans')).toHaveCount(0);
+    // 失败段只交给 openai 一次：不可重试的失败不做批次重试
+    const counts = await getReqCounts(serviceWorker);
+    expect(counts.openai).toBe(1);
   });
 });
 

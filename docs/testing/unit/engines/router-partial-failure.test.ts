@@ -3,7 +3,8 @@
  *
  * 切入点是 route()：mock 引擎让一批中的部分段落失败，真实缓存模块。
  * 断言已成功段落的译文照常返回、失败段落经 failedIndices 单独标记；
- * 全部段落都失败时仍抛出聚合错误。
+ * 全部段落都失败时仍抛出聚合错误。后续引擎报不可重试错误时同样保留
+ * 已成功段落，并带上失败类别与原因（#440）。
  */
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Domain } from '~/src/storage/domains';
@@ -54,7 +55,7 @@ vi.mock('~/src/engines/bing-edge', () => ({
 }));
 
 import { route } from '~/src/engines/router';
-import { AllEnginesFailedError } from '~/src/engines/types';
+import { AllEnginesFailedError, EngineError } from '~/src/engines/types';
 
 /** 引擎把含 fail 的段落报告为失败，其余照常翻译。 */
 function failMatching(prefix: string) {
@@ -174,5 +175,103 @@ describe('全部段落都失败', () => {
     bingTranslate.mockRejectedValueOnce(new Error('网络错误'));
 
     await expect(translate(['Alpha', 'Bravo'])).rejects.toBeInstanceOf(AllEnginesFailedError);
+  });
+});
+
+describe('后续引擎报不可重试错误（#440）', () => {
+  const invalidKey = () => new EngineError('bing-edge', false, 'API key 无效', 'invalid-key');
+
+  beforeEach(() => {
+    enginePriority = ['google-web', 'bing-edge'];
+    bingTranslate.mockReset();
+  });
+
+  test('前一个引擎部分成功，后一个报 key 无效 → 成功段落返回，失败段落标记，带上类别与原因', async () => {
+    googleTranslate.mockImplementation(failMatching('译:'));
+    bingTranslate.mockRejectedValueOnce(invalidKey());
+
+    const resp = await translate(['Alpha', 'Bravo fail', 'Charlie']);
+
+    expect(bingTranslate.mock.calls[0]![0].texts).toEqual(['Bravo fail']);
+    expect(resp.translations).toEqual(['译:Alpha', '', '译:Charlie']);
+    expect(resp.failedIndices).toEqual([1]);
+    expect(resp.failure).toEqual({ category: 'invalid-key', error: 'API key 无效' });
+  });
+
+  test('后一个报配额耗尽 → 带上配额类别', async () => {
+    googleTranslate.mockImplementation(failMatching('译:'));
+    bingTranslate.mockRejectedValueOnce(new EngineError('bing-edge', false, '配额已用尽', 'quota'));
+
+    const resp = await translate(['Alpha fail', 'Bravo']);
+
+    expect(resp.translations).toEqual(['', '译:Bravo']);
+    expect(resp.failedIndices).toEqual([0]);
+    expect(resp.failure).toEqual({ category: 'quota', error: '配额已用尽' });
+  });
+
+  test('不可重试的错误结束引擎循环，不再尝试更后面的引擎', async () => {
+    enginePriority = ['google-web', 'bing-edge', 'openai'];
+    googleTranslate.mockImplementation(failMatching('译:'));
+    bingTranslate.mockRejectedValueOnce(invalidKey());
+
+    const resp = await translate(['Alpha', 'Bravo fail']);
+
+    // 原因是 Bing 的 key 无效，不是 openai 的“未配置 API key” —— 没有继续尝试 openai
+    expect(resp.failedIndices).toEqual([1]);
+    expect(resp.failure).toEqual({ category: 'invalid-key', error: 'API key 无效' });
+  });
+
+  test('第一个引擎就报 key 无效、没有段落成功 → 照旧抛出原错误', async () => {
+    enginePriority = ['bing-edge', 'google-web'];
+    const err = invalidKey();
+    bingTranslate.mockRejectedValueOnce(err);
+
+    await expect(translate(['Alpha', 'Bravo'])).rejects.toBe(err);
+    expect(googleTranslate).not.toHaveBeenCalled();
+  });
+
+  test('缓存命中的段落算作已成功', async () => {
+    useCache = true;
+    await translate(['Alpha']);
+    googleTranslate.mockClear();
+    googleTranslate.mockImplementation(failMatching('译:'));
+    bingTranslate.mockRejectedValueOnce(invalidKey());
+
+    // Alpha 命中缓存，Bravo fail 由 Google 报失败、交给 Bing 报 key 无效
+    const resp = await translate(['Alpha', 'Bravo fail']);
+
+    expect(googleTranslate.mock.calls[0]![0].texts).toEqual(['Bravo fail']);
+    expect(resp.translations).toEqual(['译:Alpha', '']);
+    expect(resp.failedIndices).toEqual([1]);
+    expect(resp.failure?.category).toBe('invalid-key');
+  });
+
+  test('只有缓存命中、没有引擎译出段落时也不抛出', async () => {
+    useCache = true;
+    await translate(['Alpha']);
+    enginePriority = ['google-web', 'bing-edge'];
+    // Google 缓存命中 Alpha；Bravo 未命中，Google 抛可重试错误，Bing 报 key 无效
+    googleTranslate.mockRejectedValueOnce(new Error('网络错误'));
+    bingTranslate.mockRejectedValueOnce(invalidKey());
+
+    const resp = await translate(['Alpha', 'Bravo']);
+
+    expect(resp.translations).toEqual(['译:Alpha', '']);
+    expect(resp.failedIndices).toEqual([1]);
+  });
+
+  test('成功段落写入缓存，再次翻译只重发失败段落', async () => {
+    useCache = true;
+    googleTranslate.mockImplementation(failMatching('译:'));
+    bingTranslate.mockRejectedValue(invalidKey());
+    await translate(['Alpha', 'Bravo fail']);
+
+    googleTranslate.mockClear();
+    const resp = await translate(['Alpha', 'Bravo fail']);
+
+    expect(googleTranslate).toHaveBeenCalledTimes(1);
+    expect(googleTranslate.mock.calls[0]![0].texts).toEqual(['Bravo fail']);
+    expect(resp.translations[0]).toBe('译:Alpha');
+    expect(resp.failedIndices).toEqual([1]);
   });
 });
