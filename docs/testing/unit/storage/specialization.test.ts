@@ -1,5 +1,5 @@
 /**
- * storage/specialization.ts — 领域与规则存储模块：生效站点规则（#366、#367、#369、#370）
+ * storage/specialization.ts — 领域与规则存储模块：生效站点规则（#366、#367、#369、#370、#374）
  *
  * 来源为内置规则与用户规则（#370）；按当前站点读取，网址匹配沿用
  * 站点黑白名单的裸域名语义（子域归入、主域名归一、IP 精确匹配）。
@@ -51,11 +51,11 @@ describe('getSiteRules（生效站点规则）', () => {
   });
 
   test('没有内置规则的站点返回空规则', () => {
-    expect(getSiteRules('example.com')).toEqual({ exclude: [], preserve: [] });
+    expect(getSiteRules('example.com')).toEqual({ scope: [], exclude: [], preserve: [] });
   });
 
   test('仅后缀相同的域名不误命中', () => {
-    expect(getSiteRules('notyoutube.com')).toEqual({ exclude: [], preserve: [] });
+    expect(getSiteRules('notyoutube.com')).toEqual({ scope: [], exclude: [], preserve: [] });
   });
 });
 
@@ -98,6 +98,7 @@ describe('用户规则（#370）', () => {
   test('没有内置规则的站点只含用户规则', async () => {
     await options.saveUserSiteRules('example.com', { exclude: ['.ad', '#footer'] });
     expect(await rulesOnNewPage('example.com')).toEqual({
+      scope: [],
       exclude: ['.ad', '#footer'],
       preserve: [],
     });
@@ -212,5 +213,36 @@ describe('用户规则（#370）', () => {
     await options.saveUserSiteRules('example.com', { exclude: ['.ad,', '.promo'] });
     expect((await rulesOnNewPage('example.com')).exclude).toEqual(['.promo']);
     warn.mockRestore();
+  });
+
+  test('限定范围与排除一样保存、追加生效（#374）', async () => {
+    await options.saveUserSiteRules('example.com', { scope: ['  main ', '', '.post'] });
+    await options.saveUserSiteRules('example.com', { exclude: ['.ad'] });
+    expect(await options.getUserSiteRules()).toEqual([
+      { site: 'example.com', scope: ['main', '.post'], exclude: ['.ad'] },
+    ]);
+    expect(await rulesOnNewPage('docs.example.com')).toEqual({
+      scope: ['main', '.post'],
+      exclude: ['.ad'],
+      preserve: [],
+    });
+  });
+
+  test('没有设置限定范围的站点，限定范围为空（不限定）（#374）', async () => {
+    await options.saveUserSiteRules('example.com', { exclude: ['.ad'] });
+    expect((await rulesOnNewPage('example.com')).scope).toEqual([]);
+    expect((await rulesOnNewPage('github.com')).scope).toEqual([]);
+  });
+
+  test('存储里限定范围不是字符串列表的卡片跳过（#374）', async () => {
+    await options.saveUserSiteRules('example.com', { scope: ['main'] });
+    const stored = await chrome.storage.local.get(null);
+    const [key] = Object.keys(stored);
+    const value = stored[key!] as { user: unknown[] };
+    await chrome.storage.local.set({
+      [key!]: { user: [{ site: 'bad.com', scope: 'main' }, ...value.user] },
+    });
+    expect((await rulesOnNewPage('example.com')).scope).toEqual(['main']);
+    expect((await rulesOnNewPage('bad.com')).scope).toEqual([]);
   });
 });

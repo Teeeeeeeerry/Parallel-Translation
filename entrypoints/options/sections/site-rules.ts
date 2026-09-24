@@ -4,30 +4,49 @@
 // 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
-// 站点规则分区（#370，父 #365）：新增站点卡片，在“排除”里每行写一个
-// CSS 选择器。用户规则逐字段追加在内置规则之上，保存后刷新该站点生效。
-// 删除卡片、保存时校验选择器、保留原文等由后续 ticket 接入。
+// 站点规则分区（#370，父 #365）：新增站点卡片，在各字段的多行文本框里
+// 每行写一个 CSS 选择器。用户规则逐字段追加在内置规则之上，保存后刷新
+// 该站点生效。字段按判定顺序排列：限定范围（#374）、排除。删除卡片、
+// 保存时校验选择器、保留原文等由后续 ticket 接入。
 
 import {
   getUserSiteRules,
   saveUserSiteRules,
   onUserSiteRulesChanged,
 } from '~/src/storage/specialization';
-import type { UserSiteRules } from '~/src/storage/specialization';
+import type { SiteRules, UserSiteRules } from '~/src/storage/specialization';
 import { tf } from '~/src/i18n';
 import { showToast } from '../main';
 
-/** 一张站点卡片的元素，以及上次渲染时的已保存内容。 */
+type Field = keyof SiteRules;
+
+/** 卡片上的文本框，按判定顺序。每次渲染卡片时取，界面语言以当时为准。 */
+function fieldDefs(): Array<{ field: Field; label: string; placeholder: string }> {
+  return [
+    {
+      field: 'scope',
+      label: tf('siteRulesScope', '限定范围'),
+      placeholder: tf('siteRulesScopePlaceholder', '每行一个 CSS 选择器；填写后只翻译命中的元素，留空则不限定'),
+    },
+    {
+      field: 'exclude',
+      label: tf('siteRulesExclude', '排除'),
+      placeholder: tf('siteRulesExcludePlaceholder', '每行一个 CSS 选择器，命中的元素整块不翻译'),
+    },
+  ];
+}
+
+/** 一张站点卡片的元素，以及上次渲染时各字段的已保存内容。 */
 interface Card {
   el: HTMLDivElement;
-  exclude: HTMLTextAreaElement;
-  /** 已保存的排除文本 —— 文本框与它相同时说明没有未保存的改动 */
-  saved: string;
+  inputs: Map<Field, HTMLTextAreaElement>;
+  /** 各字段已保存的文本 —— 文本框与它相同时说明该字段没有未保存的改动 */
+  saved: Map<Field, string>;
 }
 
 const toText = (sels: string[] = []) => sels.join('\n');
 
-/** 站点卡片：站点名、“排除”多行文本框、保存按钮。站点名是用户输入，只走 textContent。 */
+/** 站点卡片：站点名、各字段的多行文本框、保存按钮。站点名是用户输入，只走 textContent。 */
 function siteCard(u: UserSiteRules): Card {
   const el = document.createElement('div');
   el.className = 'pt-card pt-site-rules-card';
@@ -35,16 +54,24 @@ function siteCard(u: UserSiteRules): Card {
   const site = document.createElement('div');
   site.className = 'pt-site-rules-site';
   site.textContent = u.site;
+  el.append(site);
 
-  const label = document.createElement('div');
-  label.className = 'pt-card-label';
-  label.textContent = tf('siteRulesExclude', '排除');
+  const inputs = new Map<Field, HTMLTextAreaElement>();
+  for (const def of fieldDefs()) {
+    const label = document.createElement('div');
+    label.className = 'pt-card-label';
+    label.textContent = def.label;
 
-  const exclude = document.createElement('textarea');
-  exclude.className = 'pt-input';
-  exclude.rows = 4;
-  exclude.spellcheck = false;
-  exclude.placeholder = tf('siteRulesExcludePlaceholder', '每行一个 CSS 选择器，命中的元素整块不翻译');
+    const input = document.createElement('textarea');
+    input.className = 'pt-input';
+    input.dataset.field = def.field;
+    input.rows = 4;
+    input.spellcheck = false;
+    input.placeholder = def.placeholder;
+
+    el.append(label, input);
+    inputs.set(def.field, input);
+  }
 
   const actions = document.createElement('div');
   actions.className = 'pt-actions';
@@ -52,16 +79,16 @@ function siteCard(u: UserSiteRules): Card {
   save.className = 'pt-btn';
   save.textContent = tf('siteRulesSave', '保存');
   actions.append(save);
+  el.append(actions);
 
-  el.append(site, label, exclude, actions);
-
-  const card: Card = { el, exclude, saved: '' };
   save.addEventListener('click', () => {
-    saveUserSiteRules(u.site, { exclude: exclude.value.split('\n') })
+    const rules: Partial<SiteRules> = {};
+    for (const [field, input] of inputs) rules[field] = input.value.split('\n');
+    saveUserSiteRules(u.site, rules)
       .then(() => showToast(tf('siteRulesSaved', '已保存，刷新该网站后生效')))
       .catch((e) => console.error('[PT] 保存站点规则失败:', e));
   });
-  return card;
+  return { el, inputs, saved: new Map() };
 }
 
 export function initSiteRules(): void {
@@ -80,9 +107,11 @@ export function initSiteRules(): void {
         card = siteCard(u);
         cards.set(u.site, card);
       }
-      const text = toText(u.exclude);
-      if (card.exclude.value === card.saved) card.exclude.value = text;
-      card.saved = text;
+      for (const [field, input] of card.inputs) {
+        const text = toText(u[field]);
+        if (input.value === (card.saved.get(field) ?? '')) input.value = text;
+        card.saved.set(field, text);
+      }
       return card.el;
     });
     listEl.replaceChildren(...els);
@@ -94,7 +123,7 @@ export function initSiteRules(): void {
       .then(render)
       .then(() => {
         siteInput.value = '';
-        cards.get(site)?.exclude.focus();
+        cards.get(site)?.inputs.values().next().value?.focus();
       })
       .catch((e) => {
         // 不是裸域名（或写入失败）：标红输入框，不新增卡片

@@ -1133,6 +1133,27 @@ test.describe('引擎', () => {
 // ================================================================
 
 test.describe('站点页面规则', () => {
+  /** 设置页：新增 localhost 站点卡片，按字段填入选择器并保存 */
+  async function saveLocalhostRules(
+    page: import('@playwright/test').Page,
+    serviceWorker: import('@playwright/test').Worker,
+    fields: Record<string, string>,
+  ): Promise<void> {
+    const extId = new URL(serviceWorker.url()).host;
+    const options = await page.context().newPage();
+    await options.goto(`chrome-extension://${extId}/options.html`);
+    await options.click('.pt-nav-btn[data-section="site-rules"]');
+    await options.fill('#pt-site-rules-site-input', 'localhost');
+    await options.click('#pt-site-rules-add-btn');
+    const card = options.locator('.pt-site-rules-card', { hasText: 'localhost' });
+    for (const [field, value] of Object.entries(fields)) {
+      await card.locator(`textarea[data-field="${field}"]`).fill(value);
+    }
+    await card.locator('button').click();
+    await expect(options.locator('#pt-toast')).toBeVisible();
+    await options.close();
+  }
+
   test('@core TC-E2E-60: 设置页新增排除 → 刷新 → 元素不翻译（#370）', async ({
     page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
   }) => {
@@ -1141,18 +1162,7 @@ test.describe('站点页面规则', () => {
     await gotoFixture('basic');
     await waitForBall(page);
 
-    // 设置页：新增 localhost 站点卡片，排除列表
-    const extId = new URL(serviceWorker.url()).host;
-    const options = await page.context().newPage();
-    await options.goto(`chrome-extension://${extId}/options.html`);
-    await options.click('.pt-nav-btn[data-section="site-rules"]');
-    await options.fill('#pt-site-rules-site-input', 'localhost');
-    await options.click('#pt-site-rules-add-btn');
-    const card = options.locator('.pt-site-rules-card', { hasText: 'localhost' });
-    await card.locator('textarea').fill('ul');
-    await card.locator('button').click();
-    await expect(options.locator('#pt-toast')).toBeVisible();
-    await options.close();
+    await saveLocalhostRules(page, serviceWorker, { exclude: 'ul' });
 
     // 刷新该站点
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -1170,5 +1180,32 @@ test.describe('站点页面规则', () => {
     await expect(page.locator('p').last()).toHaveAttribute('data-pt', 'done', { timeout: 30_000 });
     await expect(page.locator('li[data-pt]')).toHaveCount(0);
     await expect(page.locator('li').first()).not.toContainText('【译】');
+  });
+
+  test('@core TC-E2E-61: 设置页填写限定范围 → 刷新 → 只翻译范围内（#374）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ showParagraphBtn: true });
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+
+    await saveLocalhostRules(page, serviceWorker, { scope: 'ul' });
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const ball = await waitForBall(page);
+
+    // 逐段翻译：范围外不出按钮，范围内照常浮出
+    await page.locator('p').first().hover();
+    await page.waitForTimeout(1_000);
+    await expect(page.locator('.pt-para-btn')).toBeHidden();
+    await page.locator('li').first().hover();
+    await expect(page.locator('.pt-para-btn')).toBeVisible({ timeout: 5_000 });
+
+    // 全页翻译：列表项翻译，范围外的标题与段落不翻译
+    await ball.click();
+    await expect(page.locator('li').last()).toHaveAttribute('data-pt', 'done', { timeout: 30_000 });
+    await expect(page.locator('p[data-pt], h1[data-pt]')).toHaveCount(0);
+    await expect(page.locator('p').first()).not.toContainText('【译】');
   });
 });
