@@ -14,6 +14,14 @@
 
 import { getSiteRules } from '~/src/storage/specialization';
 
+/**
+ * #374：el 是否在站点页面规则的限定范围内 —— 自身或祖先命中任一选择器。
+ * 限定范围为空即不限定。采集入口与逐段翻译入口共用这一判定。
+ */
+export function inScope(el: Element, scope: string[]): boolean {
+  return scope.length === 0 || scope.some((sel) => el.closest(sel) !== null);
+}
+
 /** 直接翻译的块级元素 */
 export const DIRECT_SET = new Set([
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -283,13 +291,18 @@ function directTextLength(el: Element): number {
  * #366：站点页面规则作用于逐段翻译 —— el 落在排除区内（自身或祖先命中
  * 排除选择器）时找不到单元，不出按钮也不翻译。向下降级只在含 el 的分支
  * 里找，结果必是 el 的祖先或自身，同样在排除区外，无需再判。
+ *
+ * #374：限定范围与采集入口一致 —— 找到的单元须在范围内。向上找时一旦
+ * 走出范围即停：范围外元素的祖先同样在范围外。向下降级的结果在 cur
+ * 与 el 之间，cur 在范围内它也在。
  */
 export function closestUnit(el: Element): Element | null {
-  const { exclude } = getSiteRules(location.hostname);
+  const { scope, exclude } = getSiteRules(location.hostname);
   if (exclude.some((sel) => el.closest(sel))) return null;
 
   let cur: Element | null = el;
   while (cur) {
+    if (!inScope(cur, scope)) return null;
     if (isTranslationUnit(cur) && !shouldSkip(cur)) {
       // #50：容器含媒体 / 交互控件时，向下降级到纯文本后代。
       // 否则用户看到一个注定失败的段落按钮，等一次网络往返后被 render() 拒绝。

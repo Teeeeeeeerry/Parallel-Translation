@@ -20,11 +20,16 @@ import { BUILTIN_SITE_RULES } from './builtin-site-rules';
 
 /** 一个站点的页面规则：CSS 选择器列表。 */
 export interface SiteRules {
+  /** 限定范围（#374）：非空时只翻译命中的元素及其后代；空列表即不限定 */
+  scope: string[];
   /** 排除：命中的元素整块不翻译 */
   exclude: string[];
   /** 保留原文：命中的行内元素不翻译，原文留在译文句子里 */
   preserve: string[];
 }
+
+/** 站点页面规则的字段，按判定顺序。存储校验、保存与合并都按它逐字段处理。 */
+export const SITE_RULE_FIELDS = ['scope', 'exclude', 'preserve'] as const;
 
 /** 选择器能否解析：按“站点 + 选择器”缓存，无效的只警告一次。 */
 const selectorValidity = new Map<string, boolean>();
@@ -63,8 +68,7 @@ function isValidSelector(site: string, sel: string): boolean {
  * 每次采集调用一次。用户规则须先 await siteRulesReady()，之前只有内置规则。
  */
 export function getSiteRules(host: string): SiteRules {
-  const exclude: string[] = [];
-  const preserve: string[] = [];
+  const out: SiteRules = { scope: [], exclude: [], preserve: [] };
   const sources: Array<[string, Partial<SiteRules>]> = [
     ...Object.entries(BUILTIN_SITE_RULES),
     ...userSnapshot.map((u): [string, Partial<SiteRules>] => [u.site, u]),
@@ -73,10 +77,9 @@ export function getSiteRules(host: string): SiteRules {
     if (!siteMatches(host, site)) continue;
     const valid = (sels: string[] = []) =>
       sels.filter((sel) => isValidSelector(site, sel));
-    exclude.push(...valid(rules.exclude));
-    preserve.push(...valid(rules.preserve));
+    for (const field of SITE_RULE_FIELDS) out[field].push(...valid(rules[field]));
   }
-  return { exclude, preserve };
+  return out;
 }
 
 // ---- 用户规则（#370） ----
@@ -107,8 +110,7 @@ function isUserSiteRules(v: unknown): v is UserSiteRules {
   const u = v as Partial<UserSiteRules>;
   return (
     typeof u.site === 'string' &&
-    (u.exclude === undefined || isStringList(u.exclude)) &&
-    (u.preserve === undefined || isStringList(u.preserve))
+    SITE_RULE_FIELDS.every((f) => u[f] === undefined || isStringList(u[f]))
   );
 }
 
@@ -176,7 +178,7 @@ export function saveUserSiteRules(
     return Promise.reject(new Error(`[PT] 站点须为裸域名：${JSON.stringify(site)}`));
   }
   const patch: Partial<SiteRules> = {};
-  for (const field of ['exclude', 'preserve'] as const) {
+  for (const field of SITE_RULE_FIELDS) {
     const sels = rules[field];
     if (sels) patch[field] = sels.map((s) => s.trim()).filter(Boolean);
   }

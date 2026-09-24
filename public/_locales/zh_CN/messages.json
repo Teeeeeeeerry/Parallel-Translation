@@ -245,7 +245,7 @@
   },
 
   "siteRulesNav": { "message": "站点规则" },
-  "siteRulesSecDesc": { "message": "为特定网站修正翻译范围。网址填裸域名，子域一并生效；在“排除”里每行写一个 CSS 选择器，命中的元素整块不翻译。你的规则追加在内置规则之上，保存后刷新该网站生效。" },
+  "siteRulesSecDesc": { "message": "为特定网站修正翻译范围。网址填裸域名，子域一并生效；每个文本框里每行写一个 CSS 选择器。你的规则追加在内置规则之上，保存后刷新该网站生效。" },
   "siteRulesCardAdd": { "message": "新增站点" },
   "siteRulesAddBtn": { "message": "新增" },
   "siteRulesExclude": { "message": "排除" },
@@ -255,5 +255,7 @@
   "domainPartialFail": {
     "message": "$count$ 段翻译失败",
     "placeholders": { "count": { "content": "$1" } }
-  }
+  },
+  "siteRulesScope": { "message": "限定范围" },
+  "siteRulesScopePlaceholder": { "message": "每行一个 CSS 选择器；填写后只翻译命中的元素，留空则不限定" }
 }
