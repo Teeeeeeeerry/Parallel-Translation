@@ -7,12 +7,14 @@
 // 站点规则分区（#370，父 #365）：新增站点卡片，在各字段的多行文本框里
 // 每行写一个 CSS 选择器。用户规则逐字段追加在内置规则之上，保存后刷新
 // 该站点生效。字段按判定顺序排列：限定范围（#374）、排除、保留原文（#373）。
-// 删除卡片、保存时校验选择器等由后续 ticket 接入。
+// 保存时逐行校验选择器（#372），有无效行时整张卡片不保存，在对应文本框下
+// 列出行号与选择器，修改后提示消失。删除卡片等由后续 ticket 接入。
 
 import {
   getUserSiteRules,
   saveUserSiteRules,
   onUserSiteRulesChanged,
+  InvalidSelectorsError,
 } from '~/src/storage/specialization';
 import type { SiteRules, UserSiteRules } from '~/src/storage/specialization';
 import { tf } from '~/src/i18n';
@@ -62,6 +64,7 @@ function siteCard(u: UserSiteRules): Card {
   el.append(site);
 
   const inputs = new Map<Field, HTMLTextAreaElement>();
+  const errors = new Map<Field, HTMLParagraphElement>();
   for (const def of fieldDefs()) {
     const label = document.createElement('div');
     label.className = 'pt-card-label';
@@ -74,7 +77,15 @@ function siteCard(u: UserSiteRules): Card {
     input.spellcheck = false;
     input.placeholder = def.placeholder;
 
-    el.append(label, input);
+    const error = document.createElement('p');
+    error.className = 'pt-input-err pt-site-rules-error';
+    errors.set(def.field, error);
+    input.addEventListener('input', () => {
+      input.classList.remove('pt-error');
+      error.classList.remove('pt-visible');
+    });
+
+    el.append(label, input, error);
     inputs.set(def.field, input);
   }
 
@@ -91,8 +102,28 @@ function siteCard(u: UserSiteRules): Card {
     for (const [field, input] of inputs) rules[field] = input.value.split('\n');
     saveUserSiteRules(u.site, rules)
       .then(() => showToast(tf('siteRulesSaved', '已保存，刷新该网站后生效')))
-      .catch((e) => console.error('[PT] 保存站点规则失败:', e));
+      .catch((e) => {
+        if (e instanceof InvalidSelectorsError) showInvalid(e);
+        else console.error('[PT] 保存站点规则失败:', e);
+      });
   });
+
+  /** 无效选择器：标红对应文本框，逐行列出行号与选择器 */
+  function showInvalid(e: InvalidSelectorsError): void {
+    for (const [field, input] of inputs) {
+      const lines = e.invalid
+        .filter((i) => i.field === field)
+        .map((i) =>
+          tf('siteRulesInvalidSelector', `第 ${i.line} 行不是有效的 CSS 选择器：${i.selector}`,
+            String(i.line), i.selector),
+        );
+      if (lines.length === 0) continue;
+      input.classList.add('pt-error');
+      const error = errors.get(field)!;
+      error.textContent = lines.join('\n');
+      error.classList.add('pt-visible');
+    }
+  }
   return { el, inputs, saved: new Map() };
 }
 

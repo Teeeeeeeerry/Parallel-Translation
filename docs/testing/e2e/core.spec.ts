@@ -1250,4 +1250,35 @@ test.describe('站点页面规则', () => {
     expect(sent.join('\n')).toContain('useful resource');
     await expect(mention.locator('.pt-trans')).toContainText('@alice');
   });
+
+  test('@core TC-E2E-63: 设置页保存无效选择器 → 标红并提示行号 → 改正后保存（#372）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    await page.fill('#pt-site-rules-site-input', 'localhost');
+    await page.click('#pt-site-rules-add-btn');
+    const card = page.locator('.pt-site-rules-card', { hasText: 'localhost' });
+    const exclude = card.locator('textarea[data-field="exclude"]');
+    const error = card.locator('textarea[data-field="exclude"] + .pt-site-rules-error');
+
+    // 第 3 行无效（空行也计行号）：拒绝保存，标红并指出行号与选择器
+    await exclude.fill('ul\n\n.promo,\n  p  ');
+    await card.locator('button').click();
+    await expect(exclude).toHaveClass(/pt-error/);
+    await expect(error).toBeVisible();
+    await expect(error).toContainText('3');
+    await expect(error).toContainText('.promo,');
+    await expect(page.locator('#pt-toast')).toBeHidden();
+    const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('pt-site-rules'));
+    expect(JSON.stringify(stored)).not.toContain('promo');
+
+    // 修改后提示消失；改正后保存成功
+    await exclude.fill('ul\n\n.promo\n  p  ');
+    await expect(error).toBeHidden();
+    await expect(exclude).not.toHaveClass(/pt-error/);
+    await card.locator('button').click();
+    await expect(page.locator('#pt-toast')).toBeVisible();
+  });
 });

@@ -35,24 +35,33 @@ export const SITE_RULE_FIELDS = ['scope', 'exclude', 'preserve'] as const;
 const selectorValidity = new Map<string, boolean>();
 
 /**
- * #368：运行时解析失败的选择器只跳过它自己（ADR-0003），避免重演
- * #93 —— 一条带尾随逗号的无效选择器让 walker 对每个元素抛错，整页
- * 采集 0 个单元。用空文档片段试解析，不触碰页面。
+ * 选择器能否解析。用空文档片段试解析，不触碰页面。
  *
- * 需要 DOM：只在 content script 等有 document 的上下文调用。只把
+ * 需要 DOM：只在 content script、设置页等有 document 的上下文调用。只把
  * SyntaxError 当作无效选择器，其他错误（例如在 service worker 里
  * document 未定义）照常抛出，不会把全部选择器静默判为无效。
+ */
+function parses(sel: string): boolean {
+  try {
+    document.createDocumentFragment().querySelector(sel);
+    return true;
+  } catch (e) {
+    if ((e as Error).name !== 'SyntaxError') throw e;
+    return false;
+  }
+}
+
+/**
+ * #368：运行时解析失败的选择器只跳过它自己（ADR-0003），避免重演
+ * #93 —— 一条带尾随逗号的无效选择器让 walker 对每个元素抛错，整页
+ * 采集 0 个单元。
  */
 function isValidSelector(site: string, sel: string): boolean {
   const key = `${site}\n${sel}`;
   let valid = selectorValidity.get(key);
   if (valid === undefined) {
-    try {
-      document.createDocumentFragment().querySelector(sel);
-      valid = true;
-    } catch (e) {
-      if ((e as Error).name !== 'SyntaxError') throw e;
-      valid = false;
+    valid = parses(sel);
+    if (!valid) {
       console.warn(
         `[PT] 站点页面规则中的无效选择器已跳过：${site} ${JSON.stringify(sel)}`,
       );
@@ -159,6 +168,30 @@ export function getUserSiteRules(): Promise<UserSiteRules[]> {
   return readUserSiteRules();
 }
 
+/** 保存时发现的一条无效选择器。 */
+export interface InvalidSelector {
+  field: keyof SiteRules;
+  /** 行号，从 1 起，按传入的原始行计（含空行），与设置页文本框的行一致 */
+  line: number;
+  /** 去掉首尾空白后的选择器 */
+  selector: string;
+}
+
+/**
+ * #372：保存时存在无法解析的选择器 —— 整张卡片拒绝保存（ADR-0003 坏规则
+ * 两头拦的保存一头）。invalid 按字段、行号排列。
+ */
+export class InvalidSelectorsError extends Error {
+  constructor(readonly invalid: InvalidSelector[]) {
+    super(
+      `[PT] 站点页面规则含无效选择器：${invalid
+        .map((i) => `${i.field} 第 ${i.line} 行 ${JSON.stringify(i.selector)}`)
+        .join('；')}`,
+    );
+    this.name = 'InvalidSelectorsError';
+  }
+}
+
 /**
  * 读-改-写串行化：同一上下文里连续保存时，后一次基于前一次的结果改，
  * 不会互相覆盖（与 domains.ts 同一做法）。
@@ -167,7 +200,8 @@ let writeChain: Promise<unknown> = Promise.resolve();
 
 /**
  * 保存一张站点卡片：站点不存在时新增在末尾，已存在时更新传入的字段。
- * 每个选择器去掉首尾空白，空行不保存。站点不是裸域名时抛错，不写入。
+ * 每个选择器去掉首尾空白，空行不保存。站点不是裸域名时抛错；有选择器
+ * 无法解析时抛 InvalidSelectorsError（#372）。两种情况都不写入。
  */
 export function saveUserSiteRules(
   site: string,
@@ -178,10 +212,17 @@ export function saveUserSiteRules(
     return Promise.reject(new Error(`[PT] 站点须为裸域名：${JSON.stringify(site)}`));
   }
   const patch: Partial<SiteRules> = {};
+  const invalid: InvalidSelector[] = [];
   for (const field of SITE_RULE_FIELDS) {
     const sels = rules[field];
-    if (sels) patch[field] = sels.map((s) => s.trim()).filter(Boolean);
+    if (!sels) continue;
+    sels.forEach((raw, i) => {
+      const selector = raw.trim();
+      if (selector && !parses(selector)) invalid.push({ field, line: i + 1, selector });
+    });
+    patch[field] = sels.map((s) => s.trim()).filter(Boolean);
   }
+  if (invalid.length > 0) return Promise.reject(new InvalidSelectorsError(invalid));
 
   const next = writeChain.then(async () => {
     const user = await readUserSiteRules();

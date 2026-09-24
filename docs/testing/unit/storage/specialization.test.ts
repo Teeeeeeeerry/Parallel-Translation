@@ -1,5 +1,5 @@
 /**
- * storage/specialization.ts — 领域与规则存储模块：生效站点规则（#366、#367、#369、#370、#373、#374）
+ * storage/specialization.ts — 领域与规则存储模块：生效站点规则（#366、#367、#369、#370、#372、#373、#374）
  *
  * 来源为内置规则与用户规则（#370）；按当前站点读取，网址匹配沿用
  * 站点黑白名单的裸域名语义（子域归入、主域名归一、IP 精确匹配）。
@@ -208,9 +208,15 @@ describe('用户规则（#370）', () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  test('用户规则里的无效选择器只跳过它自己', async () => {
+  test('存储里的无效选择器只跳过它自己', async () => {
+    // 设置页保存时会拒绝无效选择器（#372）；存储里仍可能有（例如导入的规则）
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await options.saveUserSiteRules('example.com', { exclude: ['.ad,', '.promo'] });
+    await options.saveUserSiteRules('example.com', {});
+    const stored = await chrome.storage.local.get(null);
+    const [key] = Object.keys(stored);
+    await chrome.storage.local.set({
+      [key!]: { user: [{ site: 'example.com', exclude: ['.ad,', '.promo'] }] },
+    });
     expect((await rulesOnNewPage('example.com')).exclude).toEqual(['.promo']);
     warn.mockRestore();
   });
@@ -262,5 +268,72 @@ describe('用户规则（#370）', () => {
       exclude: ['.ad'],
       preserve: ['.handle'],
     });
+  });
+});
+
+/**
+ * 保存时校验选择器（#372，ADR-0003 坏规则两头拦的保存一头）：逐行校验，
+ * 存在无效行时整张卡片拒绝保存，并指出是哪个字段的第几行。
+ */
+describe('保存时校验选择器（#372）', () => {
+  type Spec = typeof import('~/src/storage/specialization');
+  let spec: Spec;
+  beforeEach(async () => {
+    resetStorage();
+    vi.resetModules();
+    spec = await import('~/src/storage/specialization');
+  });
+
+  /** 保存被拒时的错误 */
+  async function rejection(p: Promise<void>) {
+    const e = await p.then(() => null, (err: unknown) => err);
+    expect(e).toBeInstanceOf(spec.InvalidSelectorsError);
+    return e as InstanceType<Spec['InvalidSelectorsError']>;
+  }
+
+  test('存在无效行时拒绝保存，已保存的规则不变', async () => {
+    await spec.saveUserSiteRules('example.com', { exclude: ['.ad'] });
+    await rejection(spec.saveUserSiteRules('example.com', { exclude: ['.ad', '.promo,'] }));
+    expect(await spec.getUserSiteRules()).toEqual([{ site: 'example.com', exclude: ['.ad'] }]);
+  });
+
+  test('新站点带无效行时不新增卡片', async () => {
+    await rejection(spec.saveUserSiteRules('example.com', { exclude: ['div['] }));
+    expect(await spec.getUserSiteRules()).toEqual([]);
+  });
+
+  test('逐行校验：指出每一条无效行的字段、行号与选择器', async () => {
+    const e = await rejection(
+      spec.saveUserSiteRules('example.com', {
+        exclude: ['.ad', '.promo,', '#ok', 'div['],
+        preserve: ['a.user-mention', '>>'],
+      }),
+    );
+    expect(e.invalid).toEqual([
+      { field: 'exclude', line: 2, selector: '.promo,' },
+      { field: 'exclude', line: 4, selector: 'div[' },
+      { field: 'preserve', line: 2, selector: '>>' },
+    ]);
+  });
+
+  test('限定范围同样逐行校验', async () => {
+    const e = await rejection(spec.saveUserSiteRules('example.com', { scope: ['main', 'main,'] }));
+    expect(e.invalid).toEqual([{ field: 'scope', line: 2, selector: 'main,' }]);
+  });
+
+  test('空行与首尾空白被忽略，不算无效；行号按文本框里的原始行计', async () => {
+    const e = await rejection(
+      spec.saveUserSiteRules('example.com', { exclude: ['', '  .ad  ', '   ', ' .x, '] }),
+    );
+    expect(e.invalid).toEqual([{ field: 'exclude', line: 4, selector: '.x,' }]);
+  });
+
+  test('全部有效时照常保存', async () => {
+    await spec.saveUserSiteRules('example.com', {
+      exclude: ['', '  .ad  ', 'div > p:not(.x)', '[data-a="1"]'],
+    });
+    expect(await spec.getUserSiteRules()).toEqual([
+      { site: 'example.com', exclude: ['.ad', 'div > p:not(.x)', '[data-a="1"]'] },
+    ]);
   });
 });

@@ -259,5 +259,9 @@
   "siteRulesScope": { "message": "限定范围" },
   "siteRulesScopePlaceholder": { "message": "每行一个 CSS 选择器；填写后只翻译命中的元素，留空则不限定" },
   "siteRulesPreserve": { "message": "保留原文" },
-  "siteRulesPreservePlaceholder": { "message": "每行一个 CSS 选择器，命中的行内元素不翻译，原文留在译文里" }
+  "siteRulesPreservePlaceholder": { "message": "每行一个 CSS 选择器，命中的行内元素不翻译，原文留在译文里" },
+  "siteRulesInvalidSelector": {
+    "message": "第 $line$ 行不是有效的 CSS 选择器：$selector$",
+    "placeholders": { "line": { "content": "$1" }, "selector": { "content": "$2" } }
+  }
 }

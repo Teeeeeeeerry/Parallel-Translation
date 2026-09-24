@@ -259,5 +259,9 @@
   "siteRulesScope": { "message": "Translate only" },
   "siteRulesScopePlaceholder": { "message": "One CSS selector per line; only matching elements are translated. Leave empty to translate the whole page" },
   "siteRulesPreserve": { "message": "Keep original" },
-  "siteRulesPreservePlaceholder": { "message": "One CSS selector per line; matching inline elements stay untranslated inside the translated sentence" }
+  "siteRulesPreservePlaceholder": { "message": "One CSS selector per line; matching inline elements stay untranslated inside the translated sentence" },
+  "siteRulesInvalidSelector": {
+    "message": "Line $line$ is not a valid CSS selector: $selector$",
+    "placeholders": { "line": { "content": "$1" }, "selector": { "content": "$2" } }
+  }
 }
