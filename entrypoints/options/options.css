@@ -679,3 +679,60 @@ body {
   margin: 0 0 6px;
   font-family: inherit;
 }
+
+/* ===== Domain terms（#393） ===== */
+
+.pt-domain-terms {
+  flex-basis: 100%;
+  margin-top: 4px;
+}
+
+.pt-domain-terms summary {
+  cursor: pointer;
+  color: var(--pt-forest-40);
+  font-size: 11px;
+}
+
+.pt-domain-terms-table {
+  width: 100%;
+  margin: 6px 0;
+  border-collapse: collapse;
+}
+
+.pt-domain-terms-table th {
+  text-align: left;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--pt-forest-40);
+  padding: 0 4px 4px 0;
+}
+
+.pt-domain-terms-table td {
+  padding: 2px 4px 2px 0;
+}
+
+.pt-domain-terms-table th:nth-child(3),
+.pt-domain-terms-table td:nth-child(3) {
+  width: 1%;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.pt-domain-terms-table td:nth-child(4) {
+  width: 1%;
+}
+
+.pt-domain-terms-table .pt-input:disabled {
+  opacity: .45;
+}
+
+.pt-domain-terms-error {
+  margin: 0 0 6px;
+  font-family: inherit;
+  white-space: pre-line;
+}
+
+.pt-domain-terms-actions {
+  display: flex;
+  gap: 8px;
+}
