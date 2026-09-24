@@ -2,8 +2,9 @@
  * engines/router.ts — “不翻译”术语占位符损坏时回退重试（#389）
  *
  * 切入点是 route()：mock 机翻引擎返回损坏的占位符，真实缓存模块。
- * 断言损坏段落改用原文重译一次、重译结果的缓存 key 不带术语哈希、
- * 每次回退记一条含引擎名的日志。
+ * 断言损坏段落改用原文重译一次、每次回退记一条含引擎名的日志；
+ * 重译结果同时缓存在带术语哈希的 key 下并标记为“未遵守术语”，
+ * 同一段原文再次翻译时直接命中（#428）。
  */
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Domain } from '~/src/storage/domains';
@@ -54,7 +55,7 @@ vi.mock('~/src/engines/bing-edge', () => ({
 }));
 
 import { route } from '~/src/engines/router';
-import { cacheKey } from '~/src/storage/cache';
+import { cacheKey, cacheGetEntry } from '~/src/storage/cache';
 
 /** 第一次调用按 corrupt 改写含占位符的文本，之后照常翻译。 */
 function corruptFirstCall(corrupt: (t: string) => string) {
@@ -167,25 +168,66 @@ describe('回退重试', () => {
 });
 
 describe('重译结果的缓存', () => {
-  test('写入缓存时不带术语哈希；完好段落仍带术语哈希', async () => {
+  const issueHits = [{ source: 'issue', noTranslate: true }];
+
+  test('同时写入不带与带术语哈希的 key；后者标记为“未遵守术语”，完好段落不标记（#428）', async () => {
     useCache = true;
     googleTranslate.mockImplementationOnce(async () => ({
       translations: ['丢了', '译:Make a ⟦TM0⟧'],
     }));
     await translate(['Open an issue', 'Make a fork']);
 
-    const keys = await storedKeys();
-    const issueHits = [{ source: 'issue', noTranslate: true }];
     const forkHits = [{ source: 'fork', noTranslate: true }];
-    expect(keys).toContain(await cacheKey('google-web', 'en', 'zh-CN', 'Open an issue'));
-    expect(keys).not.toContain(
-      await cacheKey('google-web', 'en', 'zh-CN', 'Open an issue', '', issueHits),
-    );
-    expect(keys).toContain(await cacheKey('google-web', 'en', 'zh-CN', 'Make a fork', '', forkHits));
-    expect(keys).toHaveLength(2);
+    const plainKey = await cacheKey('google-web', 'en', 'zh-CN', 'Open an issue');
+    const hashedKey = await cacheKey('google-web', 'en', 'zh-CN', 'Open an issue', '', issueHits);
+    const forkKey = await cacheKey('google-web', 'en', 'zh-CN', 'Make a fork', '', forkHits);
+    expect((await storedKeys()).sort()).toEqual([plainKey, hashedKey, forkKey].sort());
 
-    const all = await chrome.storage.local.get(null);
-    const plain = all[await cacheKey('google-web', 'en', 'zh-CN', 'Open an issue')];
-    expect(JSON.stringify(plain)).toContain('译:Open an issue');
+    expect(await cacheGetEntry(plainKey)).toEqual({ value: '译:Open an issue', ignoresTerms: false });
+    expect(await cacheGetEntry(hashedKey)).toEqual({ value: '译:Open an issue', ignoresTerms: true });
+    expect(await cacheGetEntry(forkKey)).toEqual({ value: '译:Make a fork', ignoresTerms: false });
+  });
+
+  test('同一领域、同一段原文、术语未变：第二次翻译不调用引擎，也不再记回退日志（#428）', async () => {
+    useCache = true;
+    corruptFirstCall(() => '打开一个问题');
+    const first = await translate(['Open an issue']);
+    expect(googleTranslate).toHaveBeenCalledTimes(2);
+
+    const second = await translate(['Open an issue']);
+
+    expect(googleTranslate).toHaveBeenCalledTimes(2);
+    expect(bingTranslate).not.toHaveBeenCalled();
+    expect(second.translations).toEqual(first.translations);
+    const fallbackLogs = warn.mock.calls.filter((c) => String(c[0]).includes('占位符'));
+    expect(fallbackLogs).toHaveLength(1);
+  });
+
+  test('术语改了（术语哈希变化）之后照常重新翻译（#428）', async () => {
+    useCache = true;
+    corruptFirstCall(() => '打开一个问题');
+    await translate(['Open an issue']);
+
+    // 对机翻引擎生效的是“不翻译”术语，这里改动它们的集合
+    domains[0]!.terms = [
+      { source: 'issue', noTranslate: true },
+      { source: 'Open', noTranslate: true },
+    ];
+    googleTranslate.mockClear();
+    await translate(['Open an issue']);
+
+    expect(googleTranslate).toHaveBeenCalledTimes(1);
+    expect(googleTranslate.mock.calls[0]![0].texts[0]).toMatch(/⟦TM\d+⟧ an ⟦TM\d+⟧/);
+  });
+
+  test('带术语哈希的 key 下已有旧格式条目（不含标记）→ 照常命中，不调用引擎', async () => {
+    useCache = true;
+    const key = await cacheKey('google-web', 'en', 'zh-CN', 'Open an issue', '', issueHits);
+    await chrome.storage.local.set({ [key]: JSON.stringify({ v: '旧译文', t: Date.now() }) });
+
+    const resp = await translate(['Open an issue']);
+
+    expect(googleTranslate).not.toHaveBeenCalled();
+    expect(resp.translations).toEqual(['旧译文']);
   });
 });
