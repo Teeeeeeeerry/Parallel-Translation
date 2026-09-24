@@ -213,6 +213,17 @@ export async function deleteDomain(id: string): Promise<void> {
   }));
 }
 
+/**
+ * 要修改的领域不存在（#430）—— 例如已在另一个设置页标签页里删除。设置页
+ * 据此提示用户并刷新列表。
+ */
+export class DomainNotFoundError extends Error {
+  constructor(readonly id: string) {
+    super('[PT] 领域不存在');
+    this.name = 'DomainNotFoundError';
+  }
+}
+
 /** 裸域名格式，与站点黑白名单的输入校验一致。 */
 const SITE_RE = /^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$/;
 
@@ -239,8 +250,8 @@ export class InvalidSitesError extends Error {
 /**
  * 保存自建领域的适用网址（#392），整体替换原列表。条目为裸域名、localhost
  * 或 IPv4 地址（#431）。每条去掉首尾空格并转小写，空行与重复条目丢弃；
- * 有不合法的条目时抛 InvalidSitesError，不写入。内置领域、不存在的领域
- * 抛错。返回保存后的领域。
+ * 有不合法的条目时抛 InvalidSitesError，不写入。内置领域抛错，不存在的
+ * 领域抛 DomainNotFoundError。返回保存后的领域。
  */
 export async function setDomainSites(id: string, sites: readonly string[]): Promise<Domain> {
   if (BUILTIN_DOMAINS.some((d) => d.id === id)) {
@@ -254,7 +265,7 @@ export async function setDomainSites(id: string, sites: readonly string[]): Prom
 
   return updateUserDomains((user) => {
     const target = user.find((d) => d.id === id);
-    if (!target) throw new Error('[PT] 领域不存在');
+    if (!target) throw new DomainNotFoundError(id);
     const updated: Domain = { ...target, sites: cleaned };
     return { user: user.map((d) => (d.id === id ? updated : d)), result: updated };
   });
@@ -280,7 +291,7 @@ export class InvalidTermsError extends Error {
  * 保存领域的术语，整体替换原术语表。原词与译法去掉首尾空格，两者都为空
  * 的行丢弃；勾选“不翻译”的行不保存译法。同一领域内原词重复（不区分
  * 大小写）、缺译法或缺原词时抛 InvalidTermsError，不写入。不存在的领域
- * 抛错。返回保存后的生效领域。
+ * 抛 DomainNotFoundError。返回保存后的生效领域。
  *
  * 自建领域（#393）直接替换。内置领域（#395）只在叠加层记下与内置不同
  * 的术语和新增的术语，与内置相同的不记，之后跟随新版内置；提交时漏掉的
@@ -305,7 +316,7 @@ export async function setDomainTerms(id: string, terms: readonly Term[]): Promis
 
   return updateUserDomains((user) => {
     const domain = user.find((d) => d.id === id);
-    if (!domain) throw new Error('[PT] 领域不存在');
+    if (!domain) throw new DomainNotFoundError(id);
     const updated: Domain = { ...domain, terms: cleaned };
     return { user: user.map((d) => (d.id === id ? updated : d)), result: updated };
   });

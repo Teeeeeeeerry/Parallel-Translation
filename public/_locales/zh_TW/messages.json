@@ -263,5 +263,10 @@
   "siteRulesInvalidSelector": {
     "message": "第 $line$ 行不是有效的 CSS 選擇器：$selector$",
     "placeholders": { "line": { "content": "$1" }, "selector": { "content": "$2" } }
+  },
+  "domainSaveDeleted": { "message": "這個領域已被刪除，清單已重新整理" },
+  "domainSaveFailed": {
+    "message": "儲存失敗：$error$",
+    "placeholders": { "error": { "content": "$1" } }
   }
 }
