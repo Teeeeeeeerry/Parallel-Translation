@@ -338,7 +338,7 @@ describe('部分段落失败（#416）', () => {
     expect(result).toEqual({ ok: true, data: { translations: ['甲', '乙', ''], failedIndices: [2] } });
   });
 
-  test('重试遇到不可恢复的失败 → 立即返回已成功的部分', async () => {
+  test('重试遇到不可恢复的失败 → 立即返回已成功的部分，并带上失败类别与原因（#440）', async () => {
     const send = vi
       .fn()
       .mockResolvedValueOnce(partial(['甲', ''], [1]))
@@ -346,6 +346,23 @@ describe('部分段落失败（#416）', () => {
     const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
 
     expect(send).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        translations: ['甲', ''],
+        failedIndices: [1],
+        failure: { category: 'quota', error: '配额耗尽' },
+      },
+    });
+  });
+
+  test('重试时上下文失效 → 返回已成功的部分，不带失败类别', async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce(partial(['甲', ''], [1]))
+      .mockResolvedValueOnce({ ok: false, error: '上下文失效', invalidated: true });
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
     expect(result).toEqual({ ok: true, data: { translations: ['甲', ''], failedIndices: [1] } });
   });
 
@@ -358,5 +375,53 @@ describe('部分段落失败（#416）', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.aborted).toBe(true);
+  });
+});
+
+describe('部分失败带不可重试的失败原因（#440）', () => {
+  test('首次结果带 failure → 不重试，原样返回', async () => {
+    const sleep = vi.fn((_ms: number) => Promise.resolve());
+    const data = {
+      translations: ['甲', ''],
+      failedIndices: [1],
+      failure: { category: 'invalid-key' as const, error: 'API key 无效' },
+    };
+    const send = vi.fn().mockResolvedValue({ ok: true, data });
+    const result = await attemptBatchWithRetry(send, { sleep });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: true, data });
+  });
+
+  test('重试结果带 failure → 补上新成功的段落后不再重试，保留失败原因', async () => {
+    const failure = { category: 'invalid-key' as const, error: 'API key 无效' };
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, data: { translations: ['甲', '', ''], failedIndices: [1, 2] } })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { translations: ['甲2', '乙', ''], failedIndices: [2], failure },
+      });
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      ok: true,
+      data: { translations: ['甲', '乙', ''], failedIndices: [2], failure },
+    });
+  });
+
+  test('重试补齐了全部段落 → 不带失败原因', async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, data: { translations: ['甲', ''], failedIndices: [1] } })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { translations: ['甲2', '乙'], failure: { category: 'quota' as const, error: '配额耗尽' } },
+      });
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep });
+
+    expect(result).toEqual({ ok: true, data: { translations: ['甲', '乙'], failedIndices: [] } });
   });
 });

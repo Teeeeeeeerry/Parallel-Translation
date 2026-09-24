@@ -53,6 +53,9 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
   // #380: 每段原文命中的术语 —— 参与缓存 key，改了术语不命中旧译文
   const hits = await termHits(req);
 
+  // #440: 已有段落成功后遇到的不可重试错误 —— 结束引擎循环，随部分结果返回
+  let fatal: EngineError | null = null;
+
   for (const id of enginePriority) {
     const engine = REGISTRY[id];
     if (!engine) continue;
@@ -219,21 +222,27 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       const err =
         e instanceof EngineError ? e : new EngineError(id, true, e instanceof Error ? e.message : String(e));
       errors.push(err);
-      if (!err.retryable) throw err;
-      // retryable → 下一个引擎重试
+      if (err.retryable) continue; // retryable → 下一个引擎重试
+      // #440: 还没有任何段落取得译文（含缓存命中）时照旧抛出；否则不再
+      // 尝试后面的引擎，已成功的段落随部分失败结果返回
+      if (translations.every((t) => t === null)) throw err;
+      fatal = err;
+      break;
     }
   }
 
   const summary = errors.map((e) => `${e.engineId}(${e.message})`).join(', ');
 
   // #416: 最后一个引擎仍有失败段落时，已成功的段落照常返回，失败段落
-  // 经 failedIndices 标记（槽位填空串）；全部失败才抛聚合错误
+  // 经 failedIndices 标记（槽位填空串）；全部失败才抛聚合错误。#440: 因
+  // 不可重试错误提前结束时同样返回，并带上该错误的类别与原因
   const failedIndices = translations.flatMap((t, i) => (t === null ? [i] : []));
   if (failedIndices.length < translations.length) {
     console.warn('[PT] 部分段落在所有引擎上都失败', { failedIndices, errors: summary });
     return {
       translations: translations.map((t) => t ?? ''),
       failedIndices,
+      ...(fatal && { failure: { category: fatal.category, error: fatal.message } }),
     };
   }
 

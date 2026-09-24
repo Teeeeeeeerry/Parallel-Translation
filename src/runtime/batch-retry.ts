@@ -23,6 +23,9 @@
 // #416：引擎返回部分成功（failedIndices）时，已成功的段落先留下，整批
 // 按同一序列重试，只采用重试结果里原先失败的段落；重试用尽仍失败的
 // 段落留在 failedIndices 里交给调用方标记。
+//
+// #440：部分成功的结果带有 failure（不可重试的失败原因）时不再重试，
+// 直接交给调用方展示真实原因。
 
 import type { TranslateResponse, FailureCategory } from '~/src/engines/types';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
@@ -52,7 +55,10 @@ export interface BatchRetryOptions {
   shouldAbort?: () => boolean;
 }
 
-/** 用 next 补齐 prev 中失败的段落（#416）。 */
+/**
+ * 用 next 补齐 prev 中失败的段落（#416）。仍有段落失败时沿用 next 的
+ * 失败原因（#440）。
+ */
 function fillFailed(prev: TranslateResponse, next: TranslateResponse): TranslateResponse {
   const nextFailed = new Set(next.failedIndices ?? []);
   const translations = [...prev.translations];
@@ -62,7 +68,12 @@ function fillFailed(prev: TranslateResponse, next: TranslateResponse): Translate
     if (nextFailed.has(i) || typeof text !== 'string') failedIndices.push(i);
     else translations[i] = text;
   }
-  return { ...prev, translations, failedIndices };
+  return {
+    ...prev,
+    translations,
+    failedIndices,
+    ...(failedIndices.length > 0 && next.failure && { failure: next.failure }),
+  };
 }
 
 /**
@@ -102,6 +113,8 @@ export async function attemptBatchWithRetry(
     if (resp?.ok && resp.data) {
       const data: TranslateResponse = partial ? fillFailed(partial, resp.data) : resp.data;
       if (!data.failedIndices?.length) return { ok: true, data };
+      // #440: 失败段落是不可重试的错误造成的（key 无效、配额耗尽）—— 不再重试
+      if (data.failure) return { ok: true, data };
       partial = data;
       if (attempt >= BATCH_RETRY_LIMIT) break;
       await sleep(BATCH_RETRY_DELAYS_MS[attempt]!);
@@ -111,7 +124,14 @@ export async function attemptBatchWithRetry(
     // #416: 已有成功的段落时，不可恢复的失败只结束重试，已成功的照常返回
     const fatal =
       resp?.invalidated || resp?.category === 'invalid-key' || resp?.category === 'quota';
-    if (partial && fatal && !resp?.aborted) return { ok: true, data: partial };
+    if (partial && fatal && !resp?.aborted) {
+      // #440: key 无效、配额耗尽随部分结果带出，调用方展示真实原因
+      const failure =
+        resp.category === 'invalid-key' || resp.category === 'quota'
+          ? { category: resp.category, error: lastError }
+          : undefined;
+      return { ok: true, data: { ...partial, ...(failure && { failure }) } };
+    }
     // #111/#116: 上下文失效是类型化标志 —— 立即失败，不进入重试序列
     if (resp?.invalidated) {
       return {

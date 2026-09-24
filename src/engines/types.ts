@@ -36,6 +36,13 @@ export interface TranslateResponse {
    * route() 的返回值也用它标记所有引擎都失败的段落（#416），槽位为空串。
    */
   failedIndices?: number[];
+  /**
+   * failedIndices 段落的失败原因（#440）：route() 遇到不可重试的错误
+   * （key 无效、配额耗尽等）而已有段落成功时，不再抛出，改为返回已成功
+   * 的段落并在这里带上该错误的类别与原因文本，供调用方展示真实原因。
+   * 带有此字段的结果不应再重试。
+   */
+  failure?: { category: FailureCategory; error: string };
 }
 
 export interface TranslateEngine {

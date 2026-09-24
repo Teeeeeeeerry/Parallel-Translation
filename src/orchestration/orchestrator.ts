@@ -360,6 +360,13 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
             return;
           }
           allFailed = false;
+          // #440: 部分段落因 key 无效、配额耗尽失败 —— 同样展示真实原因。
+          // 有意不置 invalidated：其他批次照常翻译，已成功的段落照常渲染
+          const failure = result.data.failure;
+          if (failure) {
+            const decision = displayDecision(failure.category, failure.error);
+            if (decision.showRealReason) realReason = decision.reason ?? failure.error;
+          }
         } else {
           // #157: 中止（还原）与失败分开记账 —— 中止不算失败
           if (result.aborted) {
