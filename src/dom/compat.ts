@@ -4,11 +4,25 @@
 // 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
-// Phase 8 — 域名级采集补丁。
-// 仅在通用 walker 判断有误时才添加条目 —— 这是兜底层，不是主路径。
-// 每加一条都意味着一处通用逻辑的缺陷，先问“能不能改进通用规则”。
+// 站点页面规则的代码层（ADR-0003，docs/adr/0003-site-page-rules-as-data.md）。
 //
-// 补丁只做两件事：跳过(skip)、改指(take)。不在此处写翻译逻辑或 DOM 操作。
+// 站点页面规则以数据为主：能用选择器描述的排除、保留原文写进内置数据
+// （src/storage/builtin-site-rules.ts），经 src/storage/specialization.ts
+// 读取，不要加进本文件。这里只放选择器表达不了的逻辑。walker 的通用判定
+// 仍是主路径，规则只是修正它；判定顺序为：站点黑名单 → 限定范围 → 数据
+// 规则的排除与保留原文 → 本文件 → walker 通用判定。
+//
+// 现有几类处理：
+//   - 采集补丁（HANDLERS / applyCompat）：跳过（skip）或改指（take），
+//     只收选择器表达不了的判定，例如 take 改指。youtube.com、github.com
+//     的纯选择器 skip 补丁已由 #366、#367 迁为内置排除数据，目前为空
+//   - preserve 保留原文（PRESERVE_HANDLERS / shouldPreserveText）：
+//     github.com 的纯选择器部分已由 #369 迁为内置保留原文数据，目前为空
+//   - omit 剔除（OMIT_HANDLERS / shouldOmitText）：提取文本时剔除站点
+//     元数据，含 google.com 的域名补丁，以及跨站的通用行内角标检测
+//     （isGenericInlineBadge，按 +N 计数与 favicon 尺寸识别）
+//
+// 不在此处写翻译逻辑或 DOM 操作。
 
 import { INLINE_SET } from './classify';
 import { mainDomain } from './site-filter';
