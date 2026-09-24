@@ -1175,3 +1175,60 @@ describe('全页翻译携带当前领域（#379）', () => {
     expect(send.mock.calls[0]![0]).not.toHaveProperty('domainId');
   });
 });
+
+describe('逐段翻译与划词翻译携带当前领域（#383/#384）', () => {
+  /** 单文本入口（逐段翻译、划词翻译共用）发出的请求。 */
+  async function textRequest(host: string, to: string): Promise<TranslateRequest> {
+    const send = vi.fn(async (_req: TranslateRequest) => ({
+      ok: true,
+      data: { translations: ['译'] },
+    }));
+    const domains = await getEffectiveDomains();
+    const orch = createOrchestrator({
+      send,
+      getSettings: () => DEFAULT_SETTINGS,
+      getHostname: () => host,
+      getDomains: () => domains,
+    });
+    orch.start();
+    await orch.translateText('text-0', 'en', to);
+    orch.stop();
+    expect(send).toHaveBeenCalledTimes(1);
+    return send.mock.calls[0]![0];
+  }
+
+  test('网址命中领域 → 请求带上当前领域 ID', async () => {
+    const [dev] = await getEffectiveDomains();
+    expect((await textRequest('github.com', 'zh-CN')).domainId).toBe(dev!.id);
+  });
+
+  test('网址未命中任何领域 → 请求不含 domainId 字段', async () => {
+    expect(await textRequest('example.com', 'zh-CN')).not.toHaveProperty('domainId');
+  });
+
+  test('目标语言与领域不一致 → 请求不含 domainId 字段', async () => {
+    expect(await textRequest('github.com', 'ja')).not.toHaveProperty('domainId');
+  });
+
+  test('同一段原文经全页翻译与单文本入口发出的请求相同 —— 术语译法一致', async () => {
+    const send = vi.fn(async (req: TranslateRequest) => ({
+      ok: true,
+      data: { translations: req.texts.map(() => '译') },
+    }));
+    const domains = await getEffectiveDomains();
+    const orch = createOrchestrator({
+      send,
+      getSettings: () => DEFAULT_SETTINGS,
+      getHostname: () => 'github.com',
+      getDomains: () => domains,
+      hasTranslated: () => false,
+    });
+    orch.start();
+    await orch.translatePage(items(1), 'en', 'zh-CN');
+    await orch.translateText(items(1)[0]!.text, 'en', 'zh-CN');
+    orch.stop();
+    const [page, single] = send.mock.calls.map((c) => c[0]!);
+    expect(page!.domainId).toBeDefined();
+    expect(single).toEqual(page);
+  });
+});

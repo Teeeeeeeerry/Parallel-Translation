@@ -7,6 +7,7 @@
  *
  * #120：TC-E2E-31/32/33/39/40/41/42/43/45 由占位 skip 实现为真实用例。
  * #440：TC-E2E-64 覆盖下一个引擎 key 无效时保留已成功段落。
+ * #383/#384：TC-E2E-67 覆盖逐段翻译与划词翻译带上当前领域。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -429,5 +430,84 @@ test.describe('边界情况 @extended', () => {
     await paraBtn.click();
     await expect(firstP).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
     await expect(firstP.locator('.pt-trans').first()).not.toBeEmpty();
+  });
+
+  test('TC-E2E-67: 逐段翻译与划词翻译带上当前领域，排除区域内的文字划词后术语照样生效（#383/#384）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        // 首装时 background 会按浏览器界面语言把目标语言改成 en，这次写入
+        // 可能晚于种子设置落盘。两种目标语言各配一个同样术语的领域，
+        // 无论 to 最终是哪个，当前领域都存在
+        'pt-domains': {
+          user: ['zh-CN', 'en'].map((targetLang) => ({
+            id: `user:e2e-${targetLang}`,
+            name: `E2E ${targetLang}`,
+            targetLang,
+            sites: ['localhost'],
+            origin: 'user',
+            terms: [
+              { source: 'item', noTranslate: true },
+              { source: 'paragraph', noTranslate: true },
+            ],
+          })),
+          builtin: {},
+        },
+        // 列表整块排除：全页翻译与逐段翻译都不碰它，划词翻译不受影响
+        'pt-site-rules': { user: [{ site: 'localhost', scope: [], exclude: ['ul'], preserve: [] }] },
+      }),
+    );
+    // 记录发给 Google 的原文；带上 mock 层的标记，免得路由前被 mock 重新包在外层
+    await serviceWorker.evaluate(() => {
+      const inner = (self as any).fetch.bind(self);
+      (self as any).__ptQueries = [] as string[];
+      const recorder = async (input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
+        if (url.startsWith('https://translate.googleapis.com/')) {
+          (self as any).__ptQueries.push(new URL(url).searchParams.get('q') ?? '');
+        }
+        return inner(input, init);
+      };
+      (recorder as any).__ptMockStubbed = true;
+      (self as any).fetch = recorder;
+    });
+    const queries = () => serviceWorker.evaluate(() => [...(self as any).__ptQueries] as string[]);
+
+    await gotoFixture('basic');
+    await waitForBall(page);
+
+    // 排除规则已生效：列表项上不出逐段翻译按钮（同 TC-E2E-60）
+    await page.locator('li').first().hover();
+    await page.waitForTimeout(1_000);
+    await expect(page.locator('.pt-para-btn')).toBeHidden();
+
+    // 逐段翻译：命中的“不翻译”术语以占位符发出，译文里是原词
+    const lastP = page.locator('p').last();
+    await lastP.hover();
+    const paraBtn = page.locator('.pt-para-btn');
+    await expect(paraBtn).toBeVisible({ timeout: 5_000 });
+    await paraBtn.click();
+    await expect(lastP).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+    expect(await queries()).toContain('A final ⟦TM0⟧ to round out the basic test fixture.');
+    await expect(lastP.locator('.pt-trans')).toContainText('【译】A final paragraph');
+
+    // 划词翻译：选中排除区域（列表）里的文字，照样翻译，术语生效
+    const text = 'Second item that should also be translated';
+    await serviceWorker.evaluate(async (t: string) => {
+      for (const tab of await chrome.tabs.query({})) {
+        try {
+          await chrome.tabs.sendMessage(tab.id!, { type: 'pt:translate-selection', text: t });
+        } catch {
+          // 扩展页等没有 content script 的标签页
+        }
+      }
+    }, text);
+    await expect(page.locator('#pt-host-toast .pt-toast')).toContainText(`【译】${text}`, {
+      timeout: 20_000,
+    });
+    expect(await queries()).toContain('Second ⟦TM0⟧ that should also be translated');
   });
 });

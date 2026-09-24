@@ -142,6 +142,7 @@ export interface TranslationOrchestrator {
   /**
    * 单文本翻译入口（#312）—— 供逐段翻译与划词翻译使用。
    * 复用整页入口的准入判定（#311）：站点被屏蔽、总开关关闭均零请求；
+   * 请求与整页入口一样携带当前领域（#383/#384）；
    * 成功时返回译文（引擎结果逐字透传，模块不改写）。
    */
   translateText(
@@ -509,12 +510,15 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       const admission = admissionFrom(opts);
       if (admission !== 'allowed') return { admission, ok: false };
 
-      // 单文本单请求，与整页入口共用注入的消息层（#312）
+      // 单文本单请求，与整页入口共用注入的消息层（#312）。逐段翻译与
+      // 划词翻译同样携带当前领域，术语译法与全页翻译一致（#383/#384）
       const epochAtStart = epoch;
+      const domainId = currentDomainIdFrom(opts, to);
       const result = (await opts.send({
         texts: [text],
         from,
         to,
+        ...(domainId !== undefined && { domainId }),
       })) as TranslateBatchResult;
 
       // 在飞期间被中止（还原递增纪元）—— 不返回译文
