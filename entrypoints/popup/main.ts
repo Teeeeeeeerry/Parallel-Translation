@@ -131,19 +131,17 @@ async function onTranslatePageClick(): Promise<void> {
 }
 
 /**
- * 当前标签页的当前领域（#399）。问本页主文档的 content script ——
- * 与全页翻译实际携带的领域一致；页面不支持内容脚本（chrome:// 等）或
- * 没有命中时显示“无领域”。领域名是用户输入，只走 textContent。
- *
- * #429: 页面加载中打开 popup 时，content script 还没注册消息监听，询问
- * 会被拒绝 —— 按 DOMAIN_RETRY_DELAYS_MS 有界重试。重试期间界面不变
- * （初始为“无领域”），不支持内容脚本的页面因此没有延迟也没有闪烁。
+ * #429: content script 就绪前（页面加载中打开 popup）询问会被拒绝，
+ * 按这个序列有界重试，总共约 5 秒。
  */
-const DOMAIN_RETRY_DELAYS_MS = [200, 400, 800, 1600];
-/** 每次刷新递增；更新的一次刷新开始后，旧的重试不再写界面。 */
+const DOMAIN_RETRY_DELAYS_MS = [200, 400, 800, 1600, 2000];
+/** 每次刷新递增；后发起的刷新开始后，先前的重试不再写界面。 */
 let domainRefresh = 0;
 
-async function askCurrentDomain(tabId: number): Promise<{ name: string | null } | null> {
+type DomainAnswer = { name: string | null };
+
+/** 问一次当前领域；content script 未就绪或本页不支持时返回 null。 */
+async function askCurrentDomain(tabId: number): Promise<DomainAnswer | null> {
   try {
     const resp = await chrome.tabs.sendMessage(
       tabId,
@@ -152,11 +150,18 @@ async function askCurrentDomain(tabId: number): Promise<{ name: string | null } 
     );
     return { name: typeof resp?.name === 'string' ? resp.name : null };
   } catch {
-    // content script 未就绪或本页不支持
     return null;
   }
 }
 
+/**
+ * 当前标签页的当前领域（#399）。问本页主文档的 content script ——
+ * 与全页翻译实际携带的领域一致；页面不支持内容脚本（chrome:// 等）或
+ * 没有命中时显示“无领域”。领域名是用户输入，只走 textContent。
+ *
+ * 询问失败时有界重试（#429），重试期间界面不变（初始即为灰色的
+ * “无领域”），不支持内容脚本的页面因此没有延迟也没有闪烁。
+ */
 async function refreshDomain(): Promise<void> {
   const refresh = ++domainRefresh;
   let tabId: number | undefined;
@@ -166,12 +171,14 @@ async function refreshDomain(): Promise<void> {
   } catch {
     // 拿不到标签页：按无领域显示
   }
-  let answer: { name: string | null } | null = null;
-  for (let attempt = 0; tabId != null; attempt++) {
-    answer = await askCurrentDomain(tabId);
-    if (answer || attempt >= DOMAIN_RETRY_DELAYS_MS.length) break;
-    await sleep(DOMAIN_RETRY_DELAYS_MS[attempt]!);
-    if (refresh !== domainRefresh) return;
+  let answer: DomainAnswer | null = null;
+  if (tabId != null) {
+    for (let attempt = 0; ; attempt++) {
+      answer = await askCurrentDomain(tabId);
+      if (answer || attempt >= DOMAIN_RETRY_DELAYS_MS.length) break;
+      await sleep(DOMAIN_RETRY_DELAYS_MS[attempt]!);
+      if (refresh !== domainRefresh) return;
+    }
   }
   if (refresh !== domainRefresh) return;
   const name = answer?.name ?? null;
