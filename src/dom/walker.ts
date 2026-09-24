@@ -17,7 +17,8 @@
 // 决策表（#319）到遍历决策的映射：
 //   - R1 扩展自身 UI 整棵子树跳过（含其 shadowRoot）—— 遍历模块内建
 //   - S1 站点页面规则的排除（#366）整棵子树跳过；采集根落在排除区内
-//     （observer 增量补翻的新增节点）时直接返回空集
+//     （observer 增量补翻的新增节点，祖先越过 Shadow DOM 边界，#442）
+//     时直接返回空集
 //   - R2 SKIP_SET 整棵子树拒绝 —— 本回调返回 skip-subtree（根元素除外，
 //     根为 body 时按既有语义仍遍历其子树）
 //   - S2 站点页面规则的限定范围（#374）：范围外的元素跳过自身继续子树
@@ -34,6 +35,7 @@ import {
   isTranslationUnit,
   hasNonTextContent,
   inScope,
+  withinAny,
 } from './classify';
 import { applyCompat } from './compat';
 import { getSiteRules } from '~/src/storage/specialization';
@@ -64,7 +66,7 @@ export function collect(
   // S1 站点页面规则的排除：命中的元素整块不采集。划词翻译只拿选中
   // 文本、不经过本入口，因此不受站点页面规则影响。
   const { scope, exclude } = getSiteRules(location.hostname);
-  if (rootEl && exclude.some((sel) => rootEl.closest(sel))) return out;
+  if (rootEl && withinAny(rootEl, exclude)) return out;
 
   // skipTranslated: false —— 已翻译单元（data-pt="done"）的子树仍要访问：
   // 单元自身由 D6 跳过，但其内新增的段落（原文容器之外）仍被采集（#179）。

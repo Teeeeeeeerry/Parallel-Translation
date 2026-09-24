@@ -15,11 +15,30 @@
 import { getSiteRules } from '~/src/storage/specialization';
 
 /**
- * #374：el 是否在站点页面规则的限定范围内 —— 自身或祖先命中任一选择器。
- * 限定范围为空即不限定。采集入口与逐段翻译入口共用这一判定。
+ * #442：el 自身或祖先是否命中任一选择器，祖先链越过 Shadow DOM 边界 ——
+ * 到达 shadowRoot 时从它的宿主继续向上找，直到文档根。Web Component
+ * 里的内容与宿主同属一个区域。限定范围与排除的祖先判定共用它。
+ */
+export function withinAny(el: Element, selectors: string[]): boolean {
+  // 站点没有声明这类规则时不做祖先查找
+  if (selectors.length === 0) return false;
+  let cur: Element | null = el;
+  while (cur) {
+    const at: Element = cur;
+    if (selectors.some((sel) => at.closest(sel) !== null)) return true;
+    const root = at.getRootNode();
+    cur = root.nodeType === Node.DOCUMENT_FRAGMENT_NODE ? (root as ShadowRoot).host ?? null : null;
+  }
+  return false;
+}
+
+/**
+ * #374：el 是否在站点页面规则的限定范围内 —— 自身或祖先（越过 Shadow DOM
+ * 边界，#442）命中任一选择器。限定范围为空即不限定。采集入口与逐段翻译
+ * 入口共用这一判定。
  */
 export function inScope(el: Element, scope: string[]): boolean {
-  return scope.length === 0 || scope.some((sel) => el.closest(sel) !== null);
+  return scope.length === 0 || withinAny(el, scope);
 }
 
 /** 直接翻译的块级元素 */
@@ -289,7 +308,7 @@ function directTextLength(el: Element): number {
  * 每次 mouseover 上。
  *
  * #366：站点页面规则作用于逐段翻译 —— el 落在排除区内（自身或祖先命中
- * 排除选择器）时找不到单元，不出按钮也不翻译。向下降级只在含 el 的分支
+ * 排除选择器，祖先越过 Shadow DOM 边界，#442）时找不到单元，不出按钮也不翻译。向下降级只在含 el 的分支
  * 里找，结果必是 el 的祖先或自身，同样在排除区外，无需再判。
  *
  * #374：限定范围与采集入口一致 —— 找到的单元须在范围内。向上找时一旦
@@ -298,7 +317,7 @@ function directTextLength(el: Element): number {
  */
 export function closestUnit(el: Element): Element | null {
   const { scope, exclude } = getSiteRules(location.hostname);
-  if (exclude.some((sel) => el.closest(sel))) return null;
+  if (withinAny(el, exclude)) return null;
 
   let cur: Element | null = el;
   while (cur) {
