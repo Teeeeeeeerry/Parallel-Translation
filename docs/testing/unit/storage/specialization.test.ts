@@ -337,3 +337,85 @@ describe('保存时校验选择器（#372）', () => {
     ]);
   });
 });
+
+/**
+ * 限定范围全部无效时的提示（#443）：容错语义不变（ADR-0003，无效选择器
+ * 只跳过它自己，全部无效即退回不限定，不能重演 #93），但退回要让用户
+ * 看得见 —— 控制台记一条专门的警告；设置页用校验接口检查已保存的规则。
+ */
+describe('限定范围全部无效时的提示（#443）', () => {
+  type Spec = typeof import('~/src/storage/specialization');
+  const ALL_INVALID = '限定范围全部无效';
+
+  beforeEach(() => {
+    resetStorage();
+  });
+
+  /** 存储里直接写入站点卡片（例如导入的规则），再新打开一个页面 */
+  async function pageWithStored(user: unknown[]): Promise<Spec> {
+    await chrome.storage.local.set({ 'pt-site-rules': { user } });
+    vi.resetModules();
+    const page = await import('~/src/storage/specialization');
+    await page.siteRulesReady();
+    return page;
+  }
+
+  const warnings = (warn: ReturnType<typeof vi.spyOn>) =>
+    warn.mock.calls.map((args) => String(args[0])).filter((m) => m.includes(ALL_INVALID));
+
+  test('全部无效时限定范围为空（不限定），并记一条专门的警告，只记一次', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const page = await pageWithStored([{ site: 'example.com', scope: ['main,', 'div['] }]);
+    expect(page.getSiteRules('example.com').scope).toEqual([]);
+    expect(page.getSiteRules('docs.example.com').scope).toEqual([]);
+    const hints = warnings(warn);
+    expect(hints).toHaveLength(1);
+    expect(hints[0]).toContain('example.com');
+    expect(hints[0]).toContain('已按不限定处理');
+    warn.mockRestore();
+  });
+
+  test('部分无效时只剔除无效项，不记这条警告', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const page = await pageWithStored([{ site: 'example.com', scope: ['main,', '.post'] }]);
+    expect(page.getSiteRules('example.com').scope).toEqual(['.post']);
+    expect(warnings(warn)).toEqual([]);
+    warn.mockRestore();
+  });
+
+  test('没有声明限定范围时不记这条警告；只有空白行也算没有声明', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const page = await pageWithStored([
+      { site: 'example.com', exclude: ['.ad,'] },
+      { site: 'blank.com', scope: ['', '   '] },
+    ]);
+    expect(page.getSiteRules('example.com').scope).toEqual([]);
+    expect(page.getSiteRules('blank.com').scope).toEqual([]);
+    expect(warnings(warn)).toEqual([]);
+    // 设置页同样不把空白行当作无效行
+    expect(page.findInvalidSelectors({ scope: ['', '   '] })).toEqual([]);
+    warn.mockRestore();
+  });
+
+  test('校验接口对已保存的规则返回字段、行号与选择器，与保存时拒绝的结果一致', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const card = { site: 'example.com', scope: ['main,'], exclude: ['.ad', 'div['], preserve: ['>>'] };
+    const page = await pageWithStored([card]);
+    const [saved] = await page.getUserSiteRules();
+    const expected = [
+      { field: 'scope', line: 1, selector: 'main,' },
+      { field: 'exclude', line: 2, selector: 'div[' },
+      { field: 'preserve', line: 1, selector: '>>' },
+    ];
+    expect(page.findInvalidSelectors(saved!)).toEqual(expected);
+
+    const e = await page.saveUserSiteRules('example.com', card).then(
+      () => null,
+      (err: unknown) => err,
+    );
+    expect(e).toBeInstanceOf(page.InvalidSelectorsError);
+    expect((e as InstanceType<Spec['InvalidSelectorsError']>).invalid).toEqual(expected);
+    expect(page.findInvalidSelectors({ scope: ['main'], exclude: ['', ' .ad '] })).toEqual([]);
+    warn.mockRestore();
+  });
+});

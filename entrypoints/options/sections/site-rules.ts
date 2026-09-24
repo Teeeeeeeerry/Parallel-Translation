@@ -8,15 +8,17 @@
 // 每行写一个 CSS 选择器。用户规则逐字段追加在内置规则之上，保存后刷新
 // 该站点生效。字段按判定顺序排列：限定范围（#374）、排除、保留原文（#373）。
 // 保存时逐行校验选择器（#372），有无效行时整张卡片不保存，在对应文本框下
-// 列出行号与选择器，修改后提示消失。删除卡片等由后续 ticket 接入。
+// 列出行号与选择器，修改后提示消失。渲染卡片时对已保存的规则做同样的
+// 校验（#443）：导入等途径带进的无效行照样标出。删除卡片等由后续 ticket 接入。
 
 import {
   getUserSiteRules,
   saveUserSiteRules,
   onUserSiteRulesChanged,
+  findInvalidSelectors,
   InvalidSelectorsError,
 } from '~/src/storage/specialization';
-import type { SiteRules, UserSiteRules } from '~/src/storage/specialization';
+import type { InvalidSelector, SiteRules, UserSiteRules } from '~/src/storage/specialization';
 import { tf } from '~/src/i18n';
 import { showToast } from '../main';
 
@@ -49,6 +51,8 @@ interface Card {
   inputs: Map<Field, HTMLTextAreaElement>;
   /** 各字段已保存的文本 —— 文本框与它相同时说明该字段没有未保存的改动 */
   saved: Map<Field, string>;
+  /** 按无效选择器标出各字段：有则标红并逐行列出，没有则清除提示 */
+  showInvalid: (invalid: InvalidSelector[], fields?: Iterable<Field>) => void;
 }
 
 const toText = (sels: string[] = []) => sels.join('\n');
@@ -103,28 +107,28 @@ function siteCard(u: UserSiteRules): Card {
     saveUserSiteRules(u.site, rules)
       .then(() => showToast(tf('siteRulesSaved', '已保存，刷新该网站后生效')))
       .catch((e) => {
-        if (e instanceof InvalidSelectorsError) showInvalid(e);
+        if (e instanceof InvalidSelectorsError) showInvalid(e.invalid);
         else console.error('[PT] 保存站点规则失败:', e);
       });
   });
 
-  /** 无效选择器：标红对应文本框，逐行列出行号与选择器 */
-  function showInvalid(e: InvalidSelectorsError): void {
-    for (const [field, input] of inputs) {
-      const lines = e.invalid
+  /** 无效选择器：标红对应文本框，逐行列出行号与选择器；没有无效行的字段清除提示 */
+  function showInvalid(invalid: InvalidSelector[], fields: Iterable<Field> = inputs.keys()): void {
+    for (const field of fields) {
+      const input = inputs.get(field)!;
+      const error = errors.get(field)!;
+      const lines = invalid
         .filter((i) => i.field === field)
         .map((i) =>
           tf('siteRulesInvalidSelector', `第 ${i.line} 行不是有效的 CSS 选择器：${i.selector}`,
             String(i.line), i.selector),
         );
-      if (lines.length === 0) continue;
-      input.classList.add('pt-error');
-      const error = errors.get(field)!;
+      input.classList.toggle('pt-error', lines.length > 0);
       error.textContent = lines.join('\n');
-      error.classList.add('pt-visible');
+      error.classList.toggle('pt-visible', lines.length > 0);
     }
   }
-  return { el, inputs, saved: new Map() };
+  return { el, inputs, saved: new Map(), showInvalid };
 }
 
 export function initSiteRules(): void {
@@ -143,11 +147,18 @@ export function initSiteRules(): void {
         card = siteCard(u);
         cards.set(u.site, card);
       }
+      // #443：已保存的规则也逐行校验。只标没有未保存改动的字段 ——
+      // 行号对应的是已保存的文本
+      const clean: Field[] = [];
       for (const [field, input] of card.inputs) {
         const text = toText(u[field]);
-        if (input.value === (card.saved.get(field) ?? '')) input.value = text;
+        if (input.value === (card.saved.get(field) ?? '')) {
+          input.value = text;
+          clean.push(field);
+        }
         card.saved.set(field, text);
       }
+      card.showInvalid(findInvalidSelectors(u), clean);
       return card.el;
     });
     listEl.replaceChildren(...els);
