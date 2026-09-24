@@ -161,3 +161,22 @@ describe('限定范围越过 Shadow DOM 边界（#442）', () => {
     expect(closestUnit(root.getElementById('out-b')!)).toBeNull();
   });
 });
+
+describe('限定范围全部无效（#443）', () => {
+  test('存储里限定范围全部无效时按不限定处理：collect() 照常采集，closestUnit() 照常找到段落', async () => {
+    // 设置页保存时会拒绝无效选择器（#372）；存储里仍可能有（例如导入的规则）
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await chrome.storage.local.set({
+      'pt-site-rules': { user: [{ site: 'localhost', scope: ['.content,', 'div['] }] },
+    });
+    // 新打开的页面载入存储里的规则
+    vi.resetModules();
+    const walker = await import('~/src/dom/walker');
+    const classify = await import('~/src/dom/classify');
+    await (await import('~/src/storage/specialization')).siteRulesReady();
+    expect(ids(walker.collect())).toEqual(['head', 'intro', 'ad', 'thanks', 'tail']);
+    expect(classify.closestUnit(byId('head'))?.id).toBe('head');
+    expect(warn.mock.calls.some(([m]) => String(m).includes('限定范围全部无效'))).toBe(true);
+    warn.mockRestore();
+  });
+});

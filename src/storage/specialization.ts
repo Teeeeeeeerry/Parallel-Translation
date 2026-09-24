@@ -71,10 +71,17 @@ function isValidSelector(site: string, sel: string): boolean {
   return valid;
 }
 
+/** 已警告过“限定范围全部无效”的站点，每个站点只警告一次（#443）。 */
+const allScopeInvalidWarned = new Set<string>();
+
 /**
  * 按当前站点读取生效站点规则：内置规则在前，用户规则逐字段追加在后，
  * 已剔除无法解析的选择器。同步返回 —— walker 的采集入口是同步的，
  * 每次采集调用一次。用户规则须先 await siteRulesReady()，之前只有内置规则。
+ *
+ * #443：声明了限定范围、但全部无法解析时，限定范围为空即不限定 ——
+ * ADR-0003 的容错语义，不能退回整页不翻译（重演 #93）。这种退回用户
+ * 看不见，额外记一条专门的警告。
  */
 export function getSiteRules(host: string): SiteRules {
   const out: SiteRules = { scope: [], exclude: [], preserve: [] };
@@ -82,11 +89,22 @@ export function getSiteRules(host: string): SiteRules {
     ...Object.entries(BUILTIN_SITE_RULES),
     ...userSnapshot.map((u): [string, Partial<SiteRules>] => [u.site, u]),
   ];
+  const scopeSites: string[] = [];
   for (const [site, rules] of sources) {
     if (!siteMatches(host, site)) continue;
     const valid = (sels: string[] = []) =>
       sels.filter((sel) => isValidSelector(site, sel));
     for (const field of SITE_RULE_FIELDS) out[field].push(...valid(rules[field]));
+    if (rules.scope?.length) scopeSites.push(site);
+  }
+  if (scopeSites.length > 0 && out.scope.length === 0) {
+    const key = scopeSites.join(' ');
+    if (!allScopeInvalidWarned.has(key)) {
+      allScopeInvalidWarned.add(key);
+      console.warn(
+        `[PT] 站点页面规则的限定范围全部无效，已按不限定处理：${key}。请在设置页的站点规则里修正`,
+      );
+    }
   }
   return out;
 }
@@ -193,6 +211,22 @@ export class InvalidSelectorsError extends Error {
 }
 
 /**
+ * 逐行校验站点规则的选择器（#372 保存时、#443 设置页渲染已保存的卡片时）。
+ * 行号从 1 起，按传入的原始行计（含空行）；空行与首尾空白不算无效。
+ * 结果按字段、行号排列。需要 DOM（见 parses）。
+ */
+export function findInvalidSelectors(rules: Partial<SiteRules>): InvalidSelector[] {
+  const invalid: InvalidSelector[] = [];
+  for (const field of SITE_RULE_FIELDS) {
+    rules[field]?.forEach((raw, i) => {
+      const selector = raw.trim();
+      if (selector && !parses(selector)) invalid.push({ field, line: i + 1, selector });
+    });
+  }
+  return invalid;
+}
+
+/**
  * 读-改-写串行化：同一上下文里连续保存时，后一次基于前一次的结果改，
  * 不会互相覆盖（与 domains.ts 同一做法）。
  */
@@ -211,18 +245,13 @@ export function saveUserSiteRules(
   if (!SITE_RE.test(key)) {
     return Promise.reject(new Error(`[PT] 站点须为裸域名：${JSON.stringify(site)}`));
   }
+  const invalid = findInvalidSelectors(rules);
+  if (invalid.length > 0) return Promise.reject(new InvalidSelectorsError(invalid));
   const patch: Partial<SiteRules> = {};
-  const invalid: InvalidSelector[] = [];
   for (const field of SITE_RULE_FIELDS) {
     const sels = rules[field];
-    if (!sels) continue;
-    sels.forEach((raw, i) => {
-      const selector = raw.trim();
-      if (selector && !parses(selector)) invalid.push({ field, line: i + 1, selector });
-    });
-    patch[field] = sels.map((s) => s.trim()).filter(Boolean);
+    if (sels) patch[field] = sels.map((s) => s.trim()).filter(Boolean);
   }
-  if (invalid.length > 0) return Promise.reject(new InvalidSelectorsError(invalid));
 
   const next = writeChain.then(async () => {
     const user = await readUserSiteRules();

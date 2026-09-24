@@ -1285,4 +1285,43 @@ test.describe('站点页面规则', () => {
     await card.locator('button').click();
     await expect(page.locator('#pt-toast')).toBeVisible();
   });
+
+  test('@core TC-E2E-64: 存储里带无效行的站点卡片 → 打开设置页即标红并提示行号 → 改正后保存（#443）', async ({
+    page, serviceWorker,
+  }) => {
+    // 导入等途径不经保存时校验，直接写入 storage.local
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-site-rules': {
+          user: [{ site: 'localhost', scope: ['main,', '.post'], exclude: ['.ad'] }],
+        },
+      }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    const card = page.locator('.pt-site-rules-card', { hasText: 'localhost' });
+    const scope = card.locator('textarea[data-field="scope"]');
+    const error = card.locator('textarea[data-field="scope"] + .pt-site-rules-error');
+
+    // 与保存时的提示相同：标红，指出行号与选择器；有效的字段不标
+    await expect(scope).toHaveValue('main,\n.post');
+    await expect(scope).toHaveClass(/pt-error/);
+    await expect(error).toBeVisible();
+    await expect(error).toContainText('1');
+    await expect(error).toContainText('main,');
+    await expect(card.locator('textarea[data-field="exclude"]')).not.toHaveClass(/pt-error/);
+    await expect(card.locator('textarea[data-field="exclude"] + .pt-site-rules-error')).toBeHidden();
+
+    // 修改后提示消失；改正后保存，重新打开也不再提示
+    await scope.fill('main\n.post');
+    await expect(error).toBeHidden();
+    await card.locator('button').click();
+    await expect(page.locator('#pt-toast')).toBeVisible();
+    await page.reload();
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    await expect(scope).toHaveValue('main\n.post');
+    await expect(scope).not.toHaveClass(/pt-error/);
+    await expect(error).toBeHidden();
+  });
 });
