@@ -99,6 +99,8 @@ function termRow(onRemove: () => void, t?: Term, builtin = false): HTMLTableRowE
   source.value = t?.source ?? '';
   source.placeholder = tf('domainTermsSource', '原词');
   source.readOnly = builtin;
+  // 只读的原词不进 Tab 顺序，免得出现焦点框像是能编辑
+  if (builtin) source.tabIndex = -1;
 
   const target = document.createElement('input');
   target.className = 'pt-input pt-term-target';

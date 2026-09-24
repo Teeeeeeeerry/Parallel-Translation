@@ -199,6 +199,44 @@ describe('升级后（内置数据变化）', () => {
     expect((await devTerms()).find((t) => t.source === 'branch')!.target).toBe('分叉');
   });
 
+  test('用户改过的术语在新版内置里被删掉 → 作为新增照常生效，排在最后', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '支线' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    release([
+      { source: 'issue', noTranslate: true },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    expect(await devTerms()).toEqual([
+      { source: 'issue', noTranslate: true },
+      { source: 'merge', target: '合并' },
+      { source: 'branch', target: '支线' },
+    ]);
+  });
+
+  test('与内置只差大小写的术语不算用户修改，之后跟随新版内置', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'issue', noTranslate: true },
+      { source: 'Branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    release([
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分叉' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    expect((await devTerms()).find((t) => t.source.toLowerCase() === 'branch')).toEqual({
+      source: 'branch',
+      target: '分叉',
+    });
+  });
+
   test('新版内置加入了用户已新增的原词 → 以用户为准，不重复', async () => {
     await setDomainTerms(DEV, [
       { source: 'issue', noTranslate: true },
@@ -222,6 +260,17 @@ describe('升级后（内置数据变化）', () => {
 });
 
 describe('叠加层的存放', () => {
+  test('同时写入自建领域与叠加层不会互相覆盖', async () => {
+    const [law] = await Promise.all([
+      createDomain({ name: '法律', targetLang: 'zh-CN' }),
+      setDomainTerms(DEV, [{ source: 'branch', target: '支线' }]),
+    ]);
+
+    const domains = await getEffectiveDomains();
+    expect(domains.map((d) => d.id)).toContain(law.id);
+    expect(domains.find((d) => d.id === DEV)!.terms).toContainEqual({ source: 'branch', target: '支线' });
+  });
+
   test('叠加层与自建领域互不覆盖', async () => {
     const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
     await setDomainTerms(DEV, [{ source: 'branch', target: '支线' }]);
@@ -245,6 +294,15 @@ describe('叠加层的存放', () => {
     expect(await devTerms()).toEqual(builtin[0]!.terms);
 
     await chrome.storage.local.set({ 'pt-domains': { user: [], builtin: { [DEV]: 'bad' } } });
+    expect(await devTerms()).toEqual(builtin[0]!.terms);
+
+    // 译法类型不对、或既没译法也没标“不翻译”的条目，不顶掉同原词的内置术语
+    await chrome.storage.local.set({
+      'pt-domains': {
+        user: [],
+        builtin: { [DEV]: { terms: [{ source: 'branch', target: 42 }, { source: 'merge' }] } },
+      },
+    });
     expect(await devTerms()).toEqual(builtin[0]!.terms);
   });
 });

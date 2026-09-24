@@ -59,7 +59,21 @@ interface StoredDomains {
 }
 
 function isTerm(v: unknown): v is Term {
-  return typeof v === 'object' && v !== null && typeof (v as Term).source === 'string';
+  if (typeof v !== 'object' || v === null) return false;
+  const t = v as Partial<Term>;
+  return (
+    typeof t.source === 'string' &&
+    (t.target === undefined || typeof t.target === 'string') &&
+    (t.noTranslate === undefined || typeof t.noTranslate === 'boolean')
+  );
+}
+
+/**
+ * 叠加层里的术语还要能约束译文（#395）：原词非空，给了译法或标了“不翻译”。
+ * 否则跳过 —— 不让一条空术语顶掉同原词的内置术语。
+ */
+function isOverlayTerm(v: unknown): v is Term {
+  return isTerm(v) && v.source.trim() !== '' && (v.noTranslate === true || !!v.target?.trim());
 }
 
 /** 存储里的自建领域形状校验 —— 脏数据跳过，不影响其他领域。 */
@@ -90,14 +104,14 @@ async function readStored(): Promise<StoredDomains> {
       | Partial<StoredDomains>
       | undefined;
   } catch (e) {
-    console.warn('[PT] 读取自建领域失败:', e);
+    console.warn('[PT] 读取用户领域数据失败:', e);
   }
   const user = Array.isArray(stored?.user) ? stored.user : [];
   const builtin: Record<string, BuiltinOverlay> = {};
   if (typeof stored?.builtin === 'object' && stored.builtin !== null) {
     for (const [id, overlay] of Object.entries(stored.builtin)) {
       const terms = (overlay as Partial<BuiltinOverlay> | null)?.terms;
-      if (Array.isArray(terms)) builtin[id] = { terms: terms.filter(isTerm) };
+      if (Array.isArray(terms)) builtin[id] = { terms: terms.filter(isOverlayTerm) };
     }
   }
   return {
@@ -267,8 +281,11 @@ export async function setDomainTerms(id: string, terms: readonly Term[]): Promis
     const builtinTerms = new Map(base.terms.map((t) => [termKey(t), t]));
     const own = cleaned.filter((t) => !sameTerm(t, builtinTerms.get(termKey(t))));
     return updateStored((stored) => {
-      const { [id]: _, ...rest } = stored.builtin;
-      const builtin = own.length > 0 ? { ...rest, [id]: { terms: own } } : rest;
+      // 只替换术语部分，叠加层的其他记录原样保留；全部为空时删掉这一条
+      const { [id]: prev, ...rest } = stored.builtin;
+      const overlay: BuiltinOverlay = { ...prev, terms: own };
+      const empty = Object.values(overlay).every((v) => Array.isArray(v) && v.length === 0);
+      const builtin = empty ? rest : { ...rest, [id]: overlay };
       return { stored: { ...stored, builtin }, result: withOverlay(base, builtin[id]) };
     });
   }
@@ -290,11 +307,11 @@ export function isBuiltinTerm(domainId: string, source: string): boolean {
   return BUILTIN_DOMAINS.some((d) => d.id === domainId && d.terms.some((t) => termKey(t) === key));
 }
 
-/** 两条术语的原词、译法与“不翻译”标记都相同。 */
+/** 两条术语的原词（不区分大小写）、译法与“不翻译”标记都相同。 */
 function sameTerm(a: Term, b: Term | undefined): boolean {
   return (
     b !== undefined &&
-    a.source === b.source &&
+    termKey(a) === termKey(b) &&
     (a.target ?? '') === (b.target ?? '') &&
     (a.noTranslate === true) === (b.noTranslate === true)
   );
