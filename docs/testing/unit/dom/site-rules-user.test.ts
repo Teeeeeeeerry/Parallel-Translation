@@ -11,13 +11,16 @@
  * 排除命中段落里的行内元素时（#441），段落照常采集，该元素在提取送翻
  * 文本（translatableTextEx）时换成占位符，原文留在译文里。
  *
+ * 段落里的块级子元素命中排除时（#456），逐段翻译提取送翻文本时整块跳过，
+ * 与全页翻译的浅层提取（shallowTranslatableTextEx）一致。
+ *
  * jsdom 默认 location.hostname 为 localhost，站点卡片用 localhost。
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
-import { translatableTextEx, restorePreserves } from '~/src/dom/text';
+import { translatableTextEx, shallowTranslatableTextEx, restorePreserves } from '~/src/dom/text';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
 import type { SiteRules } from '~/src/storage/specialization';
 
@@ -212,5 +215,57 @@ describe('自定义元素当作行内元素（#455）', () => {
     const { text, preserves } = extract();
     expect(preserves.size).toBe(0);
     expect(text).toContain('Jane Doe');
+  });
+});
+
+describe('逐段翻译跳过段落里命中排除的块级元素（#456）', () => {
+  /** 空白折叠后的送翻文本 */
+  const flat = (t: string) => t.replace(/\s+/g, ' ').trim();
+
+  /** 逐段翻译（closestUnit + 完整提取）与全页翻译（collect + 浅层提取）的送翻文本 */
+  function bothEntries(id: string) {
+    const unit = closestUnit(document.getElementById(id)!)!;
+    expect(unit.id).toBe(id);
+    expect(ids(collect())).toContain(id);
+    const one = translatableTextEx(unit);
+    const page = shallowTranslatableTextEx(unit);
+    return { one, page };
+  }
+
+  test('排除命中段落里的块级子元素：逐段翻译不送它，与全页翻译一致', async () => {
+    document.body.innerHTML =
+      '<div id="outer">Opened by <div class="ad">Sponsored</div> in this thread.</div>';
+    await exclude('.ad');
+    const { one, page } = bothEntries('outer');
+    expect(one.text).not.toContain('Sponsored');
+    expect(one.preserves.size).toBe(0);
+    expect(flat(one.text)).toBe(flat(page.text));
+  });
+
+  test('嵌套两层的块级元素命中排除：同样不送', async () => {
+    document.body.innerHTML =
+      '<div id="outer">Opened by <div class="wrap"><div class="ad"><p>Sponsored content here</p></div></div> in this thread.</div>';
+    await exclude('.ad');
+    const { one, page } = bothEntries('outer');
+    expect(one.text).not.toContain('Sponsored');
+    expect(flat(one.text)).toBe(flat(page.text));
+  });
+
+  test('块级子元素没有命中排除：逐段翻译的送翻文本照旧包含它', async () => {
+    document.body.innerHTML =
+      '<div id="outer">Opened by <div class="note">Pinned note</div> in this thread.</div>';
+    await exclude('.ad');
+    const { one } = bothEntries('outer');
+    expect(one.text).toContain('Pinned note');
+  });
+
+  test('同段的行内元素命中排除时仍原文保留（#441）', async () => {
+    document.body.innerHTML =
+      '<div id="outer">Opened by <span class="ad">dependabot</span> <div class="ad">Sponsored</div> in this thread.</div>';
+    await exclude('.ad');
+    const { one, page } = bothEntries('outer');
+    expect(one.text).not.toContain('Sponsored');
+    expect([...one.preserves.values()]).toEqual(['dependabot']);
+    expect([...page.preserves.values()]).toEqual(['dependabot']);
   });
 });
