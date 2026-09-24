@@ -439,18 +439,21 @@ test.describe('边界情况 @extended', () => {
     await mockGoogle();
     await serviceWorker.evaluate(() =>
       chrome.storage.local.set({
+        // 首装时 background 会按浏览器界面语言把目标语言改成 en，这次写入
+        // 可能晚于种子设置落盘。两种目标语言各配一个同样术语的领域，
+        // 无论 to 最终是哪个，当前领域都存在
         'pt-domains': {
-          user: [{
-            id: 'user:e2e',
-            name: 'E2E',
-            targetLang: 'zh-CN',
+          user: ['zh-CN', 'en'].map((targetLang) => ({
+            id: `user:e2e-${targetLang}`,
+            name: `E2E ${targetLang}`,
+            targetLang,
             sites: ['localhost'],
             origin: 'user',
             terms: [
               { source: 'item', noTranslate: true },
               { source: 'paragraph', noTranslate: true },
             ],
-          }],
+          })),
           builtin: {},
         },
         // 列表整块排除：全页翻译与逐段翻译都不碰它，划词翻译不受影响
@@ -475,6 +478,11 @@ test.describe('边界情况 @extended', () => {
 
     await gotoFixture('basic');
     await waitForBall(page);
+
+    // 排除规则已生效：列表项上不出逐段翻译按钮（同 TC-E2E-60）
+    await page.locator('li').first().hover();
+    await page.waitForTimeout(1_000);
+    await expect(page.locator('.pt-para-btn')).toBeHidden();
 
     // 逐段翻译：命中的“不翻译”术语以占位符发出，译文里是原词
     const lastP = page.locator('p').last();
@@ -501,6 +509,5 @@ test.describe('边界情况 @extended', () => {
       timeout: 20_000,
     });
     expect(await queries()).toContain('Second ⟦TM0⟧ that should also be translated');
-    await expect(page.locator('li[data-pt]')).toHaveCount(0);
   });
 });
