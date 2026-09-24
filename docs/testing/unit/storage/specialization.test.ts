@@ -179,6 +179,34 @@ describe('用户规则（#370）', () => {
     expect((await rulesOnNewPage('bad.com')).exclude).toEqual([]);
   });
 
+  test('读取存储失败时只剩内置规则，不抛错', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await options.saveUserSiteRules('github.com', { exclude: ['.my-sidebar'] });
+    const page = await load();
+    vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
+    await page.siteRulesReady();
+    expect(page.getSiteRules('github.com')).toEqual(getSiteRules('github.com'));
+    warn.mockRestore();
+  });
+
+  test('用户规则变更时通知订阅者，其他键与 sync 的变更不通知', async () => {
+    await options.saveUserSiteRules('example.com', { exclude: ['.ad'] });
+    const stored = await chrome.storage.local.get(null);
+    const change = Object.fromEntries(
+      Object.entries(stored).map(([k, v]) => [k, { newValue: v }]),
+    );
+    const fn = vi.fn();
+    const off = options.onUserSiteRulesChanged(fn);
+    fireStorageChange({ 'pt-cache-index': { newValue: [] } }, 'local');
+    fireStorageChange(change, 'sync');
+    expect(fn).not.toHaveBeenCalled();
+    fireStorageChange(change, 'local');
+    expect(fn).toHaveBeenCalledTimes(1);
+    off();
+    fireStorageChange(change, 'local');
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
   test('用户规则里的无效选择器只跳过它自己', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await options.saveUserSiteRules('example.com', { exclude: ['.ad,', '.promo'] });
