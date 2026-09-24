@@ -5,8 +5,7 @@
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
 // 翻译领域分区（#391，父 #365）：列出内置与自建领域，新建与删除自建领域；
-// 编辑自建领域的适用网址（#392）。内置领域在本期只读；术语的编辑由后续
-// ticket 接入。
+// 编辑自建领域的适用网址（#392）与术语（#393）。内置领域在本期只读。
 
 import { LANG_LIST } from '~/src/storage/schema';
 import {
@@ -14,11 +13,13 @@ import {
   createDomain,
   deleteDomain,
   setDomainSites,
+  setDomainTerms,
   onDomainsChanged,
   InvalidSitesError,
+  InvalidTermsError,
 } from '~/src/storage/domains';
 import { getSettings } from '~/src/storage/settings';
-import type { Domain } from '~/src/storage/domains';
+import type { Domain, Term } from '~/src/storage/domains';
 import { tf } from '~/src/i18n';
 import { showToast } from '../main';
 
@@ -33,6 +34,9 @@ function langLabel(code: string): string {
 function sitesEditor(d: Domain): HTMLDetailsElement {
   const details = document.createElement('details');
   details.className = 'pt-domain-sites';
+  details.dataset.editor = 'sites';
+  // 已保存的内容，重绘时据此判断能否保留未保存的改动
+  details.dataset.saved = JSON.stringify(d.sites);
 
   const summary = document.createElement('summary');
   summary.textContent = tf('domainSitesSummary', `适用网址（${d.sites.length}）`, String(d.sites.length));
@@ -42,8 +46,7 @@ function sitesEditor(d: Domain): HTMLDetailsElement {
   textarea.rows = 4;
   textarea.spellcheck = false;
   textarea.placeholder = tf('domainSitesPlaceholder', '每行一个域名，例如 example.com');
-  // defaultValue 记下已保存的内容，重绘时据此判断有没有未保存的改动
-  textarea.defaultValue = d.sites.join('\n');
+  textarea.value = d.sites.join('\n');
 
   const error = document.createElement('p');
   error.className = 'pt-input-err pt-domain-sites-error';
@@ -63,8 +66,7 @@ function sitesEditor(d: Domain): HTMLDetailsElement {
       .catch((e) => {
         if (e instanceof InvalidSitesError) {
           textarea.classList.add('pt-error');
-          const sep = chrome.i18n.getUILanguage().startsWith('zh') ? '、' : ', ';
-          const list = e.invalid.join(sep);
+          const list = e.invalid.join(listSep());
           error.textContent = tf('domainSitesInvalid', `以下网址格式不正确：${list}`, list);
           error.classList.add('pt-visible');
         } else {
@@ -75,6 +77,164 @@ function sitesEditor(d: Domain): HTMLDetailsElement {
   textarea.addEventListener('input', clearError);
 
   details.append(summary, textarea, error, save);
+  return details;
+}
+
+/** 列表分隔符：中文界面用顿号。 */
+function listSep(): string {
+  return chrome.i18n.getUILanguage().startsWith('zh') ? '、' : ', ';
+}
+
+/** 术语表的一行：原词 / 译法 / 不翻译 / 删除。勾选“不翻译”后译法列禁用。 */
+function termRow(onRemove: () => void, t?: Term): HTMLTableRowElement {
+  const tr = document.createElement('tr');
+
+  const source = document.createElement('input');
+  source.className = 'pt-input pt-term-source';
+  source.value = t?.source ?? '';
+  source.placeholder = tf('domainTermsSource', '原词');
+
+  const target = document.createElement('input');
+  target.className = 'pt-input pt-term-target';
+  target.value = t?.target ?? '';
+  target.placeholder = tf('domainTermsTarget', '译法');
+
+  const noTranslate = document.createElement('input');
+  noTranslate.type = 'checkbox';
+  noTranslate.className = 'pt-term-no-translate';
+  noTranslate.checked = t?.noTranslate === true;
+  noTranslate.title = tf('domainTermsNoTranslate', '不翻译');
+  target.disabled = noTranslate.checked;
+  noTranslate.addEventListener('change', () => {
+    target.disabled = noTranslate.checked;
+  });
+
+  const del = document.createElement('button');
+  del.className = 'pt-site-remove';
+  del.textContent = '×';
+  del.title = tf('domainDelete', '删除');
+  del.addEventListener('click', () => {
+    tr.remove();
+    onRemove();
+  });
+
+  for (const el of [source, target, noTranslate, del]) {
+    const td = document.createElement('td');
+    td.append(el);
+    tr.append(td);
+  }
+  return tr;
+}
+
+/**
+ * 术语表格编辑（#393）：列为原词 / 译法 / 不翻译，可新增、修改、删除
+ * 行，保存时整体替换。重复的原词、缺译法或缺原词的行标红并在表格下方
+ * 说明，不写入。
+ */
+function termsEditor(d: Domain): HTMLDetailsElement {
+  const details = document.createElement('details');
+  details.className = 'pt-domain-terms';
+  details.dataset.editor = 'terms';
+  details.dataset.saved = JSON.stringify(d.terms);
+
+  const summary = document.createElement('summary');
+  summary.textContent = tf('domainTermsSummary', `术语（${d.terms.length}）`, String(d.terms.length));
+
+  const table = document.createElement('table');
+  table.className = 'pt-domain-terms-table';
+  const head = document.createElement('tr');
+  for (const [key, text] of [
+    ['domainTermsSource', '原词'],
+    ['domainTermsTarget', '译法'],
+    ['domainTermsNoTranslate', '不翻译'],
+    ['', ''],
+  ] as const) {
+    const th = document.createElement('th');
+    th.textContent = key ? tf(key, text) : '';
+    head.append(th);
+  }
+  const thead = document.createElement('thead');
+  thead.append(head);
+  const tbody = document.createElement('tbody');
+  tbody.append(...d.terms.map((t) => termRow(clearError, t)));
+  table.append(thead, tbody);
+
+  const error = document.createElement('p');
+  error.className = 'pt-input-err pt-domain-terms-error';
+
+  const add = document.createElement('button');
+  add.className = 'pt-btn pt-btn-secondary';
+  add.textContent = tf('domainTermsAdd', '添加一行');
+  add.addEventListener('click', () => {
+    const tr = termRow(clearError);
+    tbody.append(tr);
+    tr.querySelector('input')!.focus();
+  });
+
+  const save = document.createElement('button');
+  save.className = 'pt-btn';
+  save.textContent = tf('domainTermsSave', '保存');
+
+  function rows(): { tr: HTMLTableRowElement; term: Term }[] {
+    return [...tbody.rows].map((tr) => {
+      const [source, target, noTranslate] = tr.querySelectorAll('input');
+      return {
+        tr,
+        term: { source: source!.value, target: target!.value, noTranslate: noTranslate!.checked },
+      };
+    });
+  }
+
+  function clearError(): void {
+    tbody.querySelectorAll('.pt-error').forEach((el) => el.classList.remove('pt-error'));
+    error.classList.remove('pt-visible');
+  }
+
+  function showError(e: InvalidTermsError): void {
+    const sep = listSep();
+    for (const { tr, term } of rows()) {
+      // 与 setDomainTerms 同一口径：勾选“不翻译”的行不看译法
+      const source = term.source.trim();
+      const target = term.noTranslate ? '' : (term.target?.trim() ?? '');
+      const [sourceInput, targetInput] = tr.querySelectorAll('input');
+      if (source && e.duplicates.includes(source.toLowerCase())) sourceInput!.classList.add('pt-error');
+      if (source && !term.noTranslate && !target) targetInput!.classList.add('pt-error');
+      if (!source && target) sourceInput!.classList.add('pt-error');
+    }
+    const lines: string[] = [];
+    if (e.duplicates.length > 0) {
+      const list = e.duplicates.join(sep);
+      lines.push(tf('domainTermsDuplicate', `原词重复：${list}`, list));
+    }
+    if (e.missingTarget.length > 0) {
+      const list = e.missingTarget.join(sep);
+      lines.push(tf('domainTermsMissingTarget', `以下原词需要填写译法或勾选“不翻译”：${list}`, list));
+    }
+    if (e.missingSource.length > 0) {
+      const list = e.missingSource.join(sep);
+      lines.push(tf('domainTermsMissingSource', `以下译法缺少原词：${list}`, list));
+    }
+    error.textContent = lines.join('\n');
+    error.classList.add('pt-visible');
+  }
+
+  save.addEventListener('click', () => {
+    clearError();
+    setDomainTerms(d.id, rows().map((r) => r.term))
+      .then(() => showToast(tf('domainTermsSaved', '已保存术语')))
+      .catch((e) => {
+        if (e instanceof InvalidTermsError) showError(e);
+        else console.error('[PT] 保存术语失败:', e);
+      });
+  });
+  tbody.addEventListener('input', clearError);
+  tbody.addEventListener('change', clearError);
+
+  const actions = document.createElement('div');
+  actions.className = 'pt-domain-terms-actions';
+  actions.append(add, save);
+
+  details.append(summary, table, error, actions);
   return details;
 }
 
@@ -105,7 +265,7 @@ function domainItem(d: Domain, onDelete: (d: Domain) => void): HTMLLIElement {
     del.textContent = '×';
     del.title = tf('domainDelete', '删除');
     del.addEventListener('click', () => onDelete(d));
-    li.append(del, sitesEditor(d));
+    li.append(del, sitesEditor(d), termsEditor(d));
   }
   return li;
 }
@@ -124,21 +284,22 @@ export function initDomains(): void {
 
   async function render(): Promise<void> {
     const domains = await getEffectiveDomains();
-    // 任一领域变更都整表重绘：旧行换成新行，保留展开状态；已保存的网址
-    // 没变时，连同未保存的改动与错误提示一起保留
+    // 任一领域变更都整表重绘：旧行换成新行，保留各编辑框的展开状态；
+    // 编辑框对应的已保存内容没变时，连同未保存的改动与错误提示一起保留
     const old = new Map(
       [...listEl.querySelectorAll<HTMLElement>('.pt-domain-item')].map((li) => [li.dataset.id, li]),
     );
     const items = domains.map((d) => {
       const li = domainItem(d, remove);
-      const prev = old.get(d.id)?.querySelector('details');
-      const next = li.querySelector('details');
-      if (prev && next) {
+      const prevLi = old.get(d.id);
+      li.querySelectorAll('details').forEach((next) => {
+        const prev = prevLi?.querySelector<HTMLDetailsElement>(
+          `details[data-editor="${next.dataset.editor}"]`,
+        );
+        if (!prev) return;
         next.open = prev.open;
-        const prevInput = prev.querySelector('textarea')!;
-        const nextInput = next.querySelector('textarea')!;
-        if (prevInput.defaultValue === nextInput.defaultValue) next.replaceWith(prev);
-      }
+        if (prev.dataset.saved === next.dataset.saved) next.replaceWith(prev);
+      });
       return li;
     });
     listEl.replaceChildren(...items);

@@ -220,5 +220,27 @@
     "placeholders": { "list": { "content": "$1" } }
   },
   "domainPopupLabel": { "message": "当前领域" },
-  "domainPopupNone": { "message": "无领域" }
+  "domainPopupNone": { "message": "无领域" },
+  "domainTermsSummary": {
+    "message": "术语（$count$）",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "domainTermsSource": { "message": "原词" },
+  "domainTermsTarget": { "message": "译法" },
+  "domainTermsNoTranslate": { "message": "不翻译" },
+  "domainTermsAdd": { "message": "添加一行" },
+  "domainTermsSave": { "message": "保存" },
+  "domainTermsSaved": { "message": "已保存术语" },
+  "domainTermsDuplicate": {
+    "message": "原词重复：$list$",
+    "placeholders": { "list": { "content": "$1" } }
+  },
+  "domainTermsMissingTarget": {
+    "message": "以下原词需要填写译法或勾选“不翻译”：$list$",
+    "placeholders": { "list": { "content": "$1" } }
+  },
+  "domainTermsMissingSource": {
+    "message": "以下译法缺少原词：$list$",
+    "placeholders": { "list": { "content": "$1" } }
+  }
 }

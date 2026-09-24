@@ -186,6 +186,68 @@ export async function setDomainSites(id: string, sites: readonly string[]): Prom
 }
 
 /**
+ * 术语表里有不合法的行（#393），各项按输入顺序列出（去重）：
+ * duplicates 是重复的原词（小写），missingTarget 是没填译法也没勾选
+ * “不翻译”的原词，missingSource 是只填了译法的行的译法。
+ */
+export class InvalidTermsError extends Error {
+  constructor(
+    readonly duplicates: string[],
+    readonly missingTarget: string[],
+    readonly missingSource: string[],
+  ) {
+    super('[PT] 术语表有不合法的行');
+    this.name = 'InvalidTermsError';
+  }
+}
+
+/**
+ * 保存自建领域的术语（#393），整体替换原术语表。原词与译法去掉首尾
+ * 空格，两者都为空的行丢弃；勾选“不翻译”的行不保存译法。同一领域内
+ * 原词重复（不区分大小写）、缺译法或缺原词时抛 InvalidTermsError，
+ * 不写入。内置领域、不存在的领域抛错。返回保存后的领域。
+ */
+export async function setDomainTerms(id: string, terms: readonly Term[]): Promise<Domain> {
+  if (BUILTIN_DOMAINS.some((d) => d.id === id)) {
+    throw new Error('[PT] 内置领域的术语不能修改');
+  }
+  const cleaned: Term[] = [];
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  const missingTarget = new Set<string>();
+  const missingSource = new Set<string>();
+  for (const t of terms) {
+    const source = t.source.trim();
+    // 勾选“不翻译”的行不看译法：界面上译法列已禁用，残留的值不算数
+    const target = t.noTranslate ? '' : (t.target?.trim() ?? '');
+    if (!source) {
+      if (target) missingSource.add(target);
+      continue;
+    }
+    const key = source.toLowerCase();
+    if (seen.has(key)) duplicates.add(key);
+    seen.add(key);
+    if (t.noTranslate) {
+      cleaned.push({ source, noTranslate: true });
+    } else if (target) {
+      cleaned.push({ source, target });
+    } else {
+      missingTarget.add(source);
+    }
+  }
+  if (duplicates.size + missingTarget.size + missingSource.size > 0) {
+    throw new InvalidTermsError([...duplicates], [...missingTarget], [...missingSource]);
+  }
+
+  return updateUserDomains((user) => {
+    const domain = user.find((d) => d.id === id);
+    if (!domain) throw new Error('[PT] 领域不存在');
+    const updated: Domain = { ...domain, terms: cleaned };
+    return { user: user.map((d) => (d.id === id ? updated : d)), result: updated };
+  });
+}
+
+/**
  * 领域数据变更订阅（任一上下文新建、删除、修改后触发）。返回取消订阅函数。
  */
 export function onDomainsChanged(fn: () => void): () => void {

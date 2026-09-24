@@ -1504,8 +1504,88 @@ declare module "wxt/browser" {
       substitutions?: string | string[],
       options?: GetMessageOptions,
     ): string;
+    /**
+     * "术语（$count$）"
+     */
     getMessage(
-      messageName: "@@extension_id" | "@@ui_locale" | "@@bidi_dir" | "@@bidi_reversed_dir" | "@@bidi_start_edge" | "@@bidi_end_edge" | "extName" | "extDesc" | "translate" | "settings" | "popupReportIssue" | "navGeneral" | "navEngines" | "navAppearance" | "navHotkeys" | "navSites" | "navAdvanced" | "secGeneralDesc" | "cardSwitch" | "rowEnabled" | "cardLangs" | "rowFrom" | "rowTo" | "cardDefaultMode" | "rowDisplayMode" | "rowParaDisplayMode" | "modeBilingual" | "modeTranslationOnly" | "modeFollow" | "cardFloatingUi" | "rowFloatingBall" | "rowParagraphBtn" | "btnResetBallPos" | "toastBallPosReset" | "ballPosColHostname" | "ballPosColPosition" | "btnDelete" | "ballPosListEmpty" | "ballPosDefaultTag" | "secEnginesDesc" | "cardPriority" | "cardDisabled" | "cardDisabledDesc" | "cardDisabledEmpty" | "btnEnable" | "btnDisable" | "badgePrimary" | "engineLastOne" | "keyLabelSuffix" | "keyPlaceholder" | "modelLabel" | "btnTest" | "btnClear" | "testing" | "testOk" | "testOkUsage" | "keyInvalid" | "keyRequired" | "keyCleared" | "keySaved" | "keyClearedToast" | "netError" | "descOpenai" | "descDeepl" | "descGemini" | "secAppearanceDesc" | "cardStylePreset" | "rowPreset" | "styleDefault" | "styleDim" | "styleUnderline" | "styleBold" | "styleItalic" | "styleBorder" | "previewOrigin" | "previewTrans" | "cardCustomCss" | "cssNoSelector" | "cssNoUrl" | "secHotkeysDesc" | "cardBindings" | "recordTitle" | "recording" | "actionToggleTranslate" | "actionToggleMode" | "actionTranslateParagraph" | "actionToggleExtension" | "conflictReserved" | "conflictDuplicate" | "needModifier" | "secSitesDesc" | "cardListMode" | "rowMode" | "siteBlacklist" | "siteWhitelist" | "cardDomains" | "btnAdd" | "secAdvancedDesc" | "cardPerf" | "rowConcurrency" | "rowUseCache" | "cacheEntries" | "cacheUnknown" | "btnClearCache" | "cardConfig" | "configDesc" | "btnExport" | "btnImport" | "btnReset" | "toastCacheCleared" | "toastExported" | "toastImported" | "toastImportFail" | "toastReset" | "confirmReset" | "optionsLoadFail" | "popupStatus" | "popupMaster" | "popupTranslateThis" | "btnTranslate" | "popupEngine" | "popupLangs" | "popupDisplayMode" | "popupStyle" | "hintDisabled" | "hintNoElements" | "hintCantTranslate" | "hintSaveFail" | "hintInitFail" | "ctxTranslateSelection" | "ballGlyph" | "paraBtnGlyph" | "paraBtnLabel" | "paraBtnRestoreGlyph" | "paraBtnRestoreLabel" | "toastExtOn" | "toastExtOff" | "toastAllEnginesFail" | "toastTranslateFail" | "toastRenderRejected" | "toastAllRejected" | "toastNotTranslatable" | "toastSiteBlocked" | "welcomeTagline" | "welcomeReady" | "welcomeReadyDesc" | "welcomeHotkeys" | "welcomeHotkeysDesc" | "welcomeTargetLang" | "welcomeTargetLangDesc" | "welcomeInteractions" | "welcomeBall" | "welcomeBallDesc" | "welcomeParaBtn" | "welcomeParaBtnDesc" | "welcomeSelection" | "welcomeSelectionDesc" | "welcomeOpenSettings" | "welcomeClose" | "changelogTitle" | "changelogGroupFeature" | "changelogGroupImprove" | "changelogGroupFix" | "changelogGithub" | "changelogSocialDesc" | "changelogOk" | "changelogClose" | "domainNav" | "domainSecDesc" | "domainCardList" | "domainCardCreate" | "domainNamePlaceholder" | "domainRowLang" | "domainCreateBtn" | "domainBuiltinBadge" | "domainDelete" | "domainDeleteConfirm" | "domainCreated" | "domainSitesSummary" | "domainSitesPlaceholder" | "domainSitesSave" | "domainSitesSaved" | "domainSitesInvalid" | "domainPopupLabel" | "domainPopupNone",
+      messageName: "domainTermsSummary",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "原词"
+     */
+    getMessage(
+      messageName: "domainTermsSource",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "译法"
+     */
+    getMessage(
+      messageName: "domainTermsTarget",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "不翻译"
+     */
+    getMessage(
+      messageName: "domainTermsNoTranslate",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "添加一行"
+     */
+    getMessage(
+      messageName: "domainTermsAdd",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "保存"
+     */
+    getMessage(
+      messageName: "domainTermsSave",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "已保存术语"
+     */
+    getMessage(
+      messageName: "domainTermsSaved",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "原词重复：$list$"
+     */
+    getMessage(
+      messageName: "domainTermsDuplicate",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "以下原词需要填写译法或勾选“不翻译”：$list$"
+     */
+    getMessage(
+      messageName: "domainTermsMissingTarget",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "以下译法缺少原词：$list$"
+     */
+    getMessage(
+      messageName: "domainTermsMissingSource",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    getMessage(
+      messageName: "@@extension_id" | "@@ui_locale" | "@@bidi_dir" | "@@bidi_reversed_dir" | "@@bidi_start_edge" | "@@bidi_end_edge" | "extName" | "extDesc" | "translate" | "settings" | "popupReportIssue" | "navGeneral" | "navEngines" | "navAppearance" | "navHotkeys" | "navSites" | "navAdvanced" | "secGeneralDesc" | "cardSwitch" | "rowEnabled" | "cardLangs" | "rowFrom" | "rowTo" | "cardDefaultMode" | "rowDisplayMode" | "rowParaDisplayMode" | "modeBilingual" | "modeTranslationOnly" | "modeFollow" | "cardFloatingUi" | "rowFloatingBall" | "rowParagraphBtn" | "btnResetBallPos" | "toastBallPosReset" | "ballPosColHostname" | "ballPosColPosition" | "btnDelete" | "ballPosListEmpty" | "ballPosDefaultTag" | "secEnginesDesc" | "cardPriority" | "cardDisabled" | "cardDisabledDesc" | "cardDisabledEmpty" | "btnEnable" | "btnDisable" | "badgePrimary" | "engineLastOne" | "keyLabelSuffix" | "keyPlaceholder" | "modelLabel" | "btnTest" | "btnClear" | "testing" | "testOk" | "testOkUsage" | "keyInvalid" | "keyRequired" | "keyCleared" | "keySaved" | "keyClearedToast" | "netError" | "descOpenai" | "descDeepl" | "descGemini" | "secAppearanceDesc" | "cardStylePreset" | "rowPreset" | "styleDefault" | "styleDim" | "styleUnderline" | "styleBold" | "styleItalic" | "styleBorder" | "previewOrigin" | "previewTrans" | "cardCustomCss" | "cssNoSelector" | "cssNoUrl" | "secHotkeysDesc" | "cardBindings" | "recordTitle" | "recording" | "actionToggleTranslate" | "actionToggleMode" | "actionTranslateParagraph" | "actionToggleExtension" | "conflictReserved" | "conflictDuplicate" | "needModifier" | "secSitesDesc" | "cardListMode" | "rowMode" | "siteBlacklist" | "siteWhitelist" | "cardDomains" | "btnAdd" | "secAdvancedDesc" | "cardPerf" | "rowConcurrency" | "rowUseCache" | "cacheEntries" | "cacheUnknown" | "btnClearCache" | "cardConfig" | "configDesc" | "btnExport" | "btnImport" | "btnReset" | "toastCacheCleared" | "toastExported" | "toastImported" | "toastImportFail" | "toastReset" | "confirmReset" | "optionsLoadFail" | "popupStatus" | "popupMaster" | "popupTranslateThis" | "btnTranslate" | "popupEngine" | "popupLangs" | "popupDisplayMode" | "popupStyle" | "hintDisabled" | "hintNoElements" | "hintCantTranslate" | "hintSaveFail" | "hintInitFail" | "ctxTranslateSelection" | "ballGlyph" | "paraBtnGlyph" | "paraBtnLabel" | "paraBtnRestoreGlyph" | "paraBtnRestoreLabel" | "toastExtOn" | "toastExtOff" | "toastAllEnginesFail" | "toastTranslateFail" | "toastRenderRejected" | "toastAllRejected" | "toastNotTranslatable" | "toastSiteBlocked" | "welcomeTagline" | "welcomeReady" | "welcomeReadyDesc" | "welcomeHotkeys" | "welcomeHotkeysDesc" | "welcomeTargetLang" | "welcomeTargetLangDesc" | "welcomeInteractions" | "welcomeBall" | "welcomeBallDesc" | "welcomeParaBtn" | "welcomeParaBtnDesc" | "welcomeSelection" | "welcomeSelectionDesc" | "welcomeOpenSettings" | "welcomeClose" | "changelogTitle" | "changelogGroupFeature" | "changelogGroupImprove" | "changelogGroupFix" | "changelogGithub" | "changelogSocialDesc" | "changelogOk" | "changelogClose" | "domainNav" | "domainSecDesc" | "domainCardList" | "domainCardCreate" | "domainNamePlaceholder" | "domainRowLang" | "domainCreateBtn" | "domainBuiltinBadge" | "domainDelete" | "domainDeleteConfirm" | "domainCreated" | "domainSitesSummary" | "domainSitesPlaceholder" | "domainSitesSave" | "domainSitesSaved" | "domainSitesInvalid" | "domainPopupLabel" | "domainPopupNone" | "domainTermsSummary" | "domainTermsSource" | "domainTermsTarget" | "domainTermsNoTranslate" | "domainTermsAdd" | "domainTermsSave" | "domainTermsSaved" | "domainTermsDuplicate" | "domainTermsMissingTarget" | "domainTermsMissingSource",
       substitutions?: string | string[],
       options?: GetMessageOptions,
     ): string;

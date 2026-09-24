@@ -220,5 +220,27 @@
     "placeholders": { "list": { "content": "$1" } }
   },
   "domainPopupLabel": { "message": "Domain" },
-  "domainPopupNone": { "message": "No domain" }
+  "domainPopupNone": { "message": "No domain" },
+  "domainTermsSummary": {
+    "message": "Terms ($count$)",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "domainTermsSource": { "message": "Source" },
+  "domainTermsTarget": { "message": "Translation" },
+  "domainTermsNoTranslate": { "message": "Don't translate" },
+  "domainTermsAdd": { "message": "Add row" },
+  "domainTermsSave": { "message": "Save" },
+  "domainTermsSaved": { "message": "Terms saved" },
+  "domainTermsDuplicate": {
+    "message": "Duplicate source terms: $list$",
+    "placeholders": { "list": { "content": "$1" } }
+  },
+  "domainTermsMissingTarget": {
+    "message": "Enter a translation or check “Don't translate” for: $list$",
+    "placeholders": { "list": { "content": "$1" } }
+  },
+  "domainTermsMissingSource": {
+    "message": "Missing source term for: $list$",
+    "placeholders": { "list": { "content": "$1" } }
+  }
 }

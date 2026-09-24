@@ -3,7 +3,7 @@
  *
  * 只断言外部可观察的行为：生效领域列表的内容、给定网址与目标语言时
  * 解析出的当前领域；自建领域的新建、删除与存放位置（#391）；自建领域
- * 适用网址的编辑（#392）。
+ * 适用网址的编辑（#392）；自建领域术语的编辑（#393）。
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import {
@@ -13,6 +13,7 @@ import {
   deleteDomain,
   onDomainsChanged,
   setDomainSites,
+  setDomainTerms,
 } from '~/src/storage/domains';
 import { resetStorage, fireStorageChange } from '~/docs/testing/setup';
 import type { Domain } from '~/src/storage/domains';
@@ -264,5 +265,105 @@ describe('编辑自建领域的适用网址（#392）', () => {
   test('领域不存在 → 抛错，不新建领域', async () => {
     await expect(setDomainSites('user:missing', ['example.com'])).rejects.toThrow();
     expect(await getEffectiveDomains()).toHaveLength(1);
+  });
+});
+
+describe('编辑自建领域的术语（#393）', () => {
+  async function termsOf(id: string) {
+    return (await getEffectiveDomains()).find((d) => d.id === id)!.terms;
+  }
+
+  test('保存后术语出现在生效领域列表里：新增、修改、删除都是整体替换', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    await setDomainTerms(law.id, [
+      { source: 'plaintiff', target: '原告' },
+      { source: 'defendant', target: '被告' },
+    ]);
+    expect(await termsOf(law.id)).toEqual([
+      { source: 'plaintiff', target: '原告' },
+      { source: 'defendant', target: '被告' },
+    ]);
+
+    // 改一行、删一行、加一行
+    await setDomainTerms(law.id, [
+      { source: 'plaintiff', target: '起诉方' },
+      { source: 'tort', target: '侵权' },
+    ]);
+    expect(await termsOf(law.id)).toEqual([
+      { source: 'plaintiff', target: '起诉方' },
+      { source: 'tort', target: '侵权' },
+    ]);
+  });
+
+  test('勾选“不翻译”后不需要译法，填了也不保存', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    const saved = await setDomainTerms(law.id, [
+      { source: 'GDPR', noTranslate: true },
+      { source: 'HIPAA', target: '随便', noTranslate: true },
+    ]);
+    expect(saved.terms).toEqual([
+      { source: 'GDPR', noTranslate: true },
+      { source: 'HIPAA', noTranslate: true },
+    ]);
+    expect(await termsOf(law.id)).toEqual(saved.terms);
+  });
+
+  test('勾选“不翻译”、原词为空的行丢弃，残留的译法不算缺原词', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    const saved = await setDomainTerms(law.id, [
+      { source: 'tort', target: '侵权' },
+      { source: '', target: '残留', noTranslate: true },
+    ]);
+    expect(saved.terms).toEqual([{ source: 'tort', target: '侵权' }]);
+  });
+
+  test('去掉首尾空格；原词与译法都为空的行丢弃', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    const saved = await setDomainTerms(law.id, [
+      { source: '  plaintiff ', target: ' 原告 ' },
+      { source: ' ', target: '' },
+    ]);
+    expect(saved.terms).toEqual([{ source: 'plaintiff', target: '原告' }]);
+  });
+
+  test('同一领域内原词重复（不区分大小写）→ 拒绝保存，报出重复的原词', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    await setDomainTerms(law.id, [{ source: 'tort', target: '侵权' }]);
+    await expect(
+      setDomainTerms(law.id, [
+        { source: 'Plaintiff', target: '原告' },
+        { source: 'tort', target: '侵权' },
+        { source: 'plaintiff ', noTranslate: true },
+        { source: 'PLAINTIFF', target: '原告' },
+      ]),
+    ).rejects.toMatchObject({ duplicates: ['plaintiff'] });
+    expect(await termsOf(law.id)).toEqual([{ source: 'tort', target: '侵权' }]);
+  });
+
+  test('没勾选“不翻译”也没填译法、或只填了译法 → 拒绝保存，报出这些行', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    await expect(
+      setDomainTerms(law.id, [
+        { source: 'tort', target: '侵权' },
+        { source: 'plaintiff', target: '  ' },
+        { source: '', target: '被告' },
+      ]),
+    ).rejects.toMatchObject({ missingTarget: ['plaintiff'], missingSource: ['被告'] });
+    expect(await termsOf(law.id)).toEqual([]);
+  });
+
+  test('内置领域的术语不能修改；领域不存在时抛错', async () => {
+    const [dev] = await getEffectiveDomains();
+    await expect(setDomainTerms(dev!.id, [])).rejects.toThrow();
+    expect((await getEffectiveDomains())[0]!.terms).toEqual(dev!.terms);
+    await expect(setDomainTerms('user:missing', [])).rejects.toThrow();
+  });
+
+  test('只改术语不影响名称、目标语言与适用网址', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    await setDomainSites(law.id, ['example.com']);
+    await setDomainTerms(law.id, [{ source: 'tort', target: '侵权' }]);
+    const saved = (await getEffectiveDomains()).find((d) => d.id === law.id)!;
+    expect(saved).toMatchObject({ name: '法律', targetLang: 'zh-CN', sites: ['example.com'] });
   });
 });

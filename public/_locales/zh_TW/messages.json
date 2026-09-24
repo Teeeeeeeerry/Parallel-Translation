@@ -220,5 +220,27 @@
     "placeholders": { "list": { "content": "$1" } }
   },
   "domainPopupLabel": { "message": "目前領域" },
-  "domainPopupNone": { "message": "無領域" }
+  "domainPopupNone": { "message": "無領域" },
+  "domainTermsSummary": {
+    "message": "術語（$count$）",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "domainTermsSource": { "message": "原詞" },
+  "domainTermsTarget": { "message": "譯法" },
+  "domainTermsNoTranslate": { "message": "不翻譯" },
+  "domainTermsAdd": { "message": "新增一列" },
+  "domainTermsSave": { "message": "儲存" },
+  "domainTermsSaved": { "message": "已儲存術語" },
+  "domainTermsDuplicate": {
+    "message": "原詞重複：$list$",
+    "placeholders": { "list": { "content": "$1" } }
+  },
+  "domainTermsMissingTarget": {
+    "message": "以下原詞需要填寫譯法或勾選「不翻譯」：$list$",
+    "placeholders": { "list": { "content": "$1" } }
+  },
+  "domainTermsMissingSource": {
+    "message": "以下譯法缺少原詞：$list$",
+    "placeholders": { "list": { "content": "$1" } }
+  }
 }
