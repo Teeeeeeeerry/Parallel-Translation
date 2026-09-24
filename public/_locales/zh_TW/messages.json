@@ -201,7 +201,7 @@
   "domainNamePlaceholder": { "message": "領域名稱，例如「法律」" },
   "domainRowLang": { "message": "目標語言" },
   "domainCreateBtn": { "message": "新增" },
-  "domainBuiltinBadge": { "message": "內建 · 唯讀" },
+  "domainBuiltinBadge": { "message": "內建" },
   "domainDelete": { "message": "刪除" },
   "domainDeleteConfirm": {
     "message": "確定刪除領域「$name$」嗎？刪除後無法復原。",

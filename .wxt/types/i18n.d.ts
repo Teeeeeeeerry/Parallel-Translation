@@ -1417,7 +1417,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "内置 · 只读"
+     * "内置"
      */
     getMessage(
       messageName: "domainBuiltinBadge",

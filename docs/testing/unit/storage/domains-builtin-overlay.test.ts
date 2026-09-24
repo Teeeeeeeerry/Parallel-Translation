@@ -1,0 +1,250 @@
+/**
+ * storage/domains.ts — 内置领域叠加层：修改与新增（#395）
+ *
+ * 内置数据换成可变的测试数据，改动它来模拟一次扩展升级。只断言外部
+ * 可观察的行为：生效领域列表里内置领域的术语。
+ */
+import { describe, test, expect, beforeEach, vi } from 'vitest';
+import type { Domain, Term } from '~/src/storage/domains';
+import { resetStorage } from '~/docs/testing/setup';
+
+let builtin: Domain[] = [];
+vi.mock('~/src/storage/builtin-domains', () => ({
+  get BUILTIN_DOMAINS() {
+    return builtin;
+  },
+}));
+
+import {
+  getEffectiveDomains,
+  createDomain,
+  setDomainTerms,
+  setDomainSites,
+  isBuiltinTerm,
+} from '~/src/storage/domains';
+
+const DEV = 'builtin:dev';
+
+/** 当前版本的内置领域。 */
+function release(terms: Term[]): void {
+  builtin = [
+    {
+      id: DEV,
+      name: '软件开发',
+      targetLang: 'zh-CN',
+      sites: ['github.com'],
+      origin: 'builtin',
+      terms,
+    },
+  ];
+}
+
+async function devTerms(): Promise<Term[]> {
+  return (await getEffectiveDomains()).find((d) => d.id === DEV)!.terms;
+}
+
+beforeEach(() => {
+  resetStorage();
+  release([
+    { source: 'issue', noTranslate: true },
+    { source: 'branch', target: '分支' },
+    { source: 'merge', target: '合并' },
+  ]);
+});
+
+describe('修改与新增内置领域的术语', () => {
+  test('修改的术语以用户为准，位置不变；新增的术语排在内置术语之后', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'issue', target: '议题' },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+      { source: 'fork', noTranslate: true },
+    ]);
+
+    expect(await devTerms()).toEqual([
+      { source: 'issue', target: '议题' },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+      { source: 'fork', noTranslate: true },
+    ]);
+  });
+
+  test('返回保存后的生效领域；名称、目标语言与适用网址不变', async () => {
+    const saved = await setDomainTerms(DEV, [
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '支线' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    expect(saved).toMatchObject({ id: DEV, name: '软件开发', targetLang: 'zh-CN', sites: ['github.com'], origin: 'builtin' });
+    expect(saved.terms).toEqual(await devTerms());
+  });
+
+  test('提交时漏掉的内置术语仍然生效', async () => {
+    await setDomainTerms(DEV, [{ source: 'branch', target: '支线' }]);
+
+    expect(await devTerms()).toEqual([
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '支线' },
+      { source: 'merge', target: '合并' },
+    ]);
+  });
+
+  test('校验与自建领域一致：原词重复（不区分大小写）→ 拒绝保存，生效内容不变', async () => {
+    await expect(
+      setDomainTerms(DEV, [
+        { source: 'issue', noTranslate: true },
+        { source: 'Issue', target: '议题' },
+      ]),
+    ).rejects.toMatchObject({ duplicates: ['issue'] });
+    expect(await devTerms()).toEqual(builtin[0]!.terms);
+  });
+
+  test('只有当前版本内置的原词算内置术语（不区分大小写）', async () => {
+    await setDomainTerms(DEV, [{ source: 'fork', noTranslate: true }]);
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+
+    expect(isBuiltinTerm(DEV, 'Branch')).toBe(true);
+    expect(isBuiltinTerm(DEV, 'fork')).toBe(false);
+    expect(isBuiltinTerm(law.id, 'branch')).toBe(false);
+  });
+
+  test('内置领域的适用网址仍不能修改', async () => {
+    await expect(setDomainSites(DEV, ['example.com'])).rejects.toThrow();
+  });
+});
+
+describe('升级后（内置数据变化）', () => {
+  test('用户修改的术语仍以用户为准，即使新版内置改了该词译法', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '支线' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    release([
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分叉' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    expect((await devTerms()).find((t) => t.source === 'branch')).toEqual({
+      source: 'branch',
+      target: '支线',
+    });
+  });
+
+  test('用户新增的术语仍在，新版新增的内置术语也生效', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+      { source: 'fork', noTranslate: true },
+    ]);
+
+    release([
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+      { source: 'commit', noTranslate: true },
+    ]);
+
+    expect(await devTerms()).toEqual([
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+      { source: 'commit', noTranslate: true },
+      { source: 'fork', noTranslate: true },
+    ]);
+  });
+
+  test('用户没改过的内置术语跟随新版内置', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'issue', target: '议题' },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    release([
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分叉' },
+      { source: 'merge', target: '合入' },
+    ]);
+
+    expect(await devTerms()).toEqual([
+      { source: 'issue', target: '议题' },
+      { source: 'branch', target: '分叉' },
+      { source: 'merge', target: '合入' },
+    ]);
+  });
+
+  test('改回与内置相同的术语不再算用户修改，之后跟随新版内置', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '支线' },
+      { source: 'merge', target: '合并' },
+    ]);
+    await setDomainTerms(DEV, [
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    release([
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分叉' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    expect((await devTerms()).find((t) => t.source === 'branch')!.target).toBe('分叉');
+  });
+
+  test('新版内置加入了用户已新增的原词 → 以用户为准，不重复', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+      { source: 'fork', target: '复刻' },
+    ]);
+
+    release([
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+      { source: 'Fork', noTranslate: true },
+    ]);
+
+    const terms = await devTerms();
+    expect(terms.filter((t) => t.source.toLowerCase() === 'fork')).toEqual([
+      { source: 'fork', target: '复刻' },
+    ]);
+  });
+});
+
+describe('叠加层的存放', () => {
+  test('叠加层与自建领域互不覆盖', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    await setDomainTerms(DEV, [{ source: 'branch', target: '支线' }]);
+    await setDomainTerms(law.id, [{ source: 'tort', target: '侵权' }]);
+
+    const domains = await getEffectiveDomains();
+    expect(domains.find((d) => d.id === law.id)!.terms).toEqual([{ source: 'tort', target: '侵权' }]);
+    expect(domains.find((d) => d.id === DEV)!.terms).toContainEqual({ source: 'branch', target: '支线' });
+  });
+
+  test('叠加层存放在 storage.local，不占 storage.sync', async () => {
+    await setDomainTerms(DEV, [{ source: 'branch', target: '支线' }]);
+    expect(Object.keys(await chrome.storage.sync.get(null))).toEqual([]);
+    expect(JSON.stringify(await chrome.storage.local.get(null))).toContain('支线');
+  });
+
+  test('存储里叠加层的脏数据被忽略，内置术语照常生效', async () => {
+    await chrome.storage.local.set({
+      'pt-domains': { user: [], builtin: { [DEV]: { terms: [{ target: '没有原词' }, 42] } } },
+    });
+    expect(await devTerms()).toEqual(builtin[0]!.terms);
+
+    await chrome.storage.local.set({ 'pt-domains': { user: [], builtin: { [DEV]: 'bad' } } });
+    expect(await devTerms()).toEqual(builtin[0]!.terms);
+  });
+});
