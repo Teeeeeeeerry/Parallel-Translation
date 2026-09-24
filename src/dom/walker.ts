@@ -27,6 +27,7 @@
 //   - D1/D2 域名补丁 skip/take —— 仍在通用判定之前生效
 //   - D3 pre 切块 —— 切块自身被采集为独立单元
 //   - D4-D7 非单元 / 非文本容器 / 非视觉 / 不可见 —— 跳过自身继续子树
+//   - D8 去掉保留原文后没有可翻译的文字（#454）—— 跳过自身继续子树
 
 import {
   SKIP_SET,
@@ -40,6 +41,7 @@ import {
 import { applyCompat } from './compat';
 import { getSiteRules } from '~/src/storage/specialization';
 import { splitPre } from './pre-split';
+import { hasTranslatableText } from './text';
 import { walkShadowTree } from './shadow-walk';
 
 /**
@@ -118,6 +120,11 @@ export function collect(
           onHidden?.(el);
           return 'continue';
         }
+
+        // D8 #454：去掉保留原文后没有可翻译的文字 —— 不算翻译单元。放在
+        // 最后：只对已通过上面各项检查的候选段落做一次文本提取。隐藏单元
+        // 变为可见后经 observer 重新采集，届时同样判定
+        if (!hasTranslatableText(el)) return 'continue';
 
         out.push(el);
       } catch {

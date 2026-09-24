@@ -218,6 +218,27 @@ export function hasBlockTextChildren(el: Element): boolean {
   return false;
 }
 
+/** 可翻译的字符：不是空白、标点、符号或数字 */
+const TRANSLATABLE_CHAR_RE = /[^\s\p{P}\p{S}\p{N}]/u;
+
+/**
+ * #454：段落去掉保留原文后是否还有可翻译的文字。按全页翻译的提取方式
+ * 取送翻文本（含带文字的块级子元素时走浅层提取），去掉占位符后只剩
+ * 空白、标点、符号或数字即没有 —— 送去引擎只会原样回来，对照模式下
+ * 同一段文字显示两遍。采集入口与逐段翻译入口共用这一判定。
+ *
+ * 没有保留原文的段落不在本判定范围内，一律返回 true：纯数字等短文本
+ * 由通用判定（shouldSkipNonVisual）处理，.notranslate 与 compat omit
+ * 的语义不变。
+ */
+export function hasTranslatableText(el: Element): boolean {
+  const { text, preserves } = hasBlockTextChildren(el)
+    ? shallowTranslatableTextEx(el)
+    : translatableTextEx(el);
+  if (preserves.size === 0) return true;
+  return TRANSLATABLE_CHAR_RE.test(text.replace(PLACEHOLDER_RE, ''));
+}
+
 /**
  * 译文回填：将占位符替换回原文。
  *

@@ -14,6 +14,9 @@
  * 段落里的块级子元素命中排除时（#456），逐段翻译提取送翻文本时整块跳过，
  * 与全页翻译的浅层提取（shallowTranslatableTextEx）一致。
  *
+ * 段落去掉保留原文后没有可翻译的文字时（#454），不算翻译单元：全页翻译
+ * 不采集，逐段翻译找不到它、继续向上找。
+ *
  * jsdom 默认 location.hostname 为 localhost，站点卡片用 localhost。
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
@@ -267,5 +270,46 @@ describe('逐段翻译跳过段落里命中排除的块级元素（#456）', () 
     expect(one.text).not.toContain('Sponsored');
     expect([...one.preserves.values()]).toEqual(['dependabot']);
     expect([...page.preserves.values()]).toEqual(['dependabot']);
+  });
+});
+
+describe('去掉保留原文后没有可翻译文字的段落（#454）', () => {
+  test('段落只含一个命中排除的行内元素：不采集，逐段翻译找不到', async () => {
+    document.body.innerHTML =
+      '<p id="only"><span class="tag">feature/login-flow</span></p>' + PAGE;
+    await exclude('.tag');
+    expect(ids(collect())).toEqual(['side', 'body', 'more']);
+    expect(closestUnit(document.getElementById('only')!)).toBeNull();
+  });
+
+  test('段落只含一个命中保留原文的行内元素：同上', async () => {
+    document.body.innerHTML = '<p id="only"><b id="who">@octocat</b></p>' + PAGE;
+    await rules({ preserve: ['#who'] });
+    expect(ids(collect())).toEqual(['side', 'body', 'more']);
+    expect(closestUnit(document.getElementById('who')!)).toBeNull();
+  });
+
+  test('除了保留原文还有文字：照常采集并找到', async () => {
+    document.body.innerHTML =
+      '<p id="only">Thanks <b id="who">@octocat</b> for the review.</p>';
+    await rules({ preserve: ['#who'] });
+    expect(ids(collect())).toEqual(['only']);
+    expect(closestUnit(document.getElementById('who')!)?.id).toBe('only');
+  });
+
+  test('剩余只有标点或数字：不采集', async () => {
+    document.body.innerHTML =
+      '<p id="only"><b id="who">@octocat</b> (#123), 42.</p>';
+    await rules({ preserve: ['#who'] });
+    expect(collect()).toEqual([]);
+    expect(closestUnit(document.getElementById('only')!)).toBeNull();
+  });
+
+  test('逐段翻译遇到这类段落时继续向上找', async () => {
+    document.body.innerHTML =
+      '<ul><li id="item">Assigned to reviewers<p id="only"><b id="who">@octocat</b></p></li></ul>';
+    await rules({ preserve: ['#who'] });
+    expect(ids(collect())).toEqual(['item']);
+    expect(closestUnit(document.getElementById('who')!)?.id).toBe('item');
   });
 });
