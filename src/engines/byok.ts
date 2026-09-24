@@ -31,6 +31,8 @@ export interface ByokEngineSpec {
   supportedLangs: string[] | 'all';
   /** 把命中的术语注入请求（#419，见 TranslateEngine.injectsTerms）。 */
   injectsTerms?: boolean;
+  /** 用占位符落实“不翻译”术语（#388，见 TranslateEngine.masksNoTranslate）。 */
+  masksNoTranslate?: boolean;
   /** 模型名（有模型概念的引擎）；无则省略。 */
   model?: () => string;
   /**
@@ -67,6 +69,7 @@ export function createByokEngine(spec: ByokEngineSpec): TranslateEngine {
     requiresKey: true,
     supportedLangs: spec.supportedLangs,
     ...(spec.injectsTerms && { injectsTerms: true }),
+    ...(spec.masksNoTranslate && { masksNoTranslate: true }),
 
     async translate(req) {
       // #333: 闸门保持在最外层 —— 整个请求体（含取 key）都在闸门内
