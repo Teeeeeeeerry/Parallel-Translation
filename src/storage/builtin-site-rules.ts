@@ -21,7 +21,7 @@ export const BUILTIN_SITE_RULES: Record<string, Partial<SiteRules>> = {
   // 会命中行内元素的：#metadata-line span、时长角标里带
   // .ytd-thumbnail-overlay-time-status-renderer 的 span —— 播放量、时长
   // 本就不该翻，落在段落里时原文保留（#441）。另两条命中的是自定义元素，
-  // 不属于行内元素，仍整块不翻译
+  // 同样按行内元素处理（#455）：嵌在段落的行内元素里时原文保留
   'youtube.com': {
     exclude: [
       '.ytd-thumbnail-overlay-time-status-renderer', // 视频时长角标

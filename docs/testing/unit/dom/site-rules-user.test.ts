@@ -175,3 +175,42 @@ describe('排除命中段落内的行内元素（#441）', () => {
     expect([...translatableTextEx(unit).preserves.values()]).toEqual(['coding']);
   });
 });
+
+describe('自定义元素当作行内元素（#455）', () => {
+  beforeEach(() => {
+    document.body.innerHTML =
+      '<p id="cp">Posted by <span><x-name id="xn">Jane Doe</x-name></span> in the community forum.</p>';
+  });
+
+  /** 段落送去翻译的文本与保留的原文 */
+  const extract = () => translatableTextEx(collect().find((u) => u.id === 'cp')!);
+
+  test('span 里的自定义元素命中排除：不翻译，原文留在译文句子里', async () => {
+    await exclude('x-name');
+    expect(ids(collect())).toEqual(['cp']);
+    const { text, preserves } = extract();
+    expect(text).not.toContain('Jane Doe');
+    expect([...preserves.values()]).toEqual(['Jane Doe']);
+  });
+
+  test('命中保留原文：同样原文保留', async () => {
+    await rules({ preserve: ['#xn'] });
+    const { text, preserves } = extract();
+    expect(text).not.toContain('Jane Doe');
+    expect([...preserves.values()]).toEqual(['Jane Doe']);
+  });
+
+  test('嵌在多层行内元素里时同样生效', async () => {
+    document.body.innerHTML =
+      '<p id="cp">Posted by <a href="#"><b><x-name>Jane Doe</x-name></b></a> in the community forum.</p>';
+    await exclude('x-name');
+    expect([...extract().preserves.values()]).toEqual(['Jane Doe']);
+  });
+
+  test('没有命中规则的自定义元素照常翻译', async () => {
+    await exclude('.panel');
+    const { text, preserves } = extract();
+    expect(preserves.size).toBe(0);
+    expect(text).toContain('Jane Doe');
+  });
+});

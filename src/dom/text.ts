@@ -49,7 +49,18 @@ function makePlaceholder(idx: number): string {
 }
 
 /**
- * 元素应保留的原文，或 null 表示不保留。只对行内元素生效。
+ * 排除与保留原文在提取送翻文本时的行内元素判定：INLINE_SET 的标签，
+ * 加上自定义元素（#455，标签名含连字符）—— 浏览器默认按行内渲染
+ * 自定义元素，Web Component 渲染的用户名、频道名常写在句子中间。
+ * 翻译单元判定（哪些子元素阻断段落）仍只看 INLINE_SET。
+ */
+function isInline(el: Element): boolean {
+  const tag = el.tagName.toLowerCase();
+  return INLINE_SET.has(tag) || tag.includes('-');
+}
+
+/**
+ * 元素应保留的原文，或 null 表示不保留。只对行内元素生效（isInline）。
  * 判定顺序（ADR-0003）：站点页面规则的排除 → 保留原文 → compat 代码层。
  *
  * #441：段落里命中排除的行内元素同样原文保留 —— 段落照常采集，排除的
@@ -62,7 +73,7 @@ function preservedText(
   el: Element,
   rules: Pick<SiteRules, 'exclude' | 'preserve'>,
 ): string | null {
-  if (!INLINE_SET.has(el.tagName.toLowerCase())) return null;
+  if (!isInline(el)) return null;
   const hit = (sels: string[]) => sels.some((sel) => el.matches(sel));
   if (hit(rules.exclude) || hit(rules.preserve)) {
     return el.textContent?.trim() || null;
