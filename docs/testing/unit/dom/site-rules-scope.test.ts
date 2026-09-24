@@ -88,10 +88,17 @@ describe('collect（限定范围）', () => {
     expect(ids(collect(document.querySelector('.head')!))).toEqual([]);
   });
 
-  test('限定范围里的无效选择器只跳过它自己', async () => {
+  test('存储里限定范围的无效选择器只跳过它自己', async () => {
+    // 设置页保存时会拒绝无效选择器（#372）；存储里仍可能有（例如导入的规则）
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await rules({ scope: ['.content,', '#tail'] });
-    expect(ids(collect())).toEqual(['tail']);
+    await chrome.storage.local.set({
+      'pt-site-rules': { user: [{ site: 'localhost', scope: ['.content,', '#tail'] }] },
+    });
+    // 新打开的页面载入存储里的规则
+    vi.resetModules();
+    const page = await import('~/src/dom/walker');
+    await (await import('~/src/storage/specialization')).siteRulesReady();
+    expect(ids(page.collect())).toEqual(['tail']);
     warn.mockRestore();
   });
 });

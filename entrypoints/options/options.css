@@ -758,3 +758,10 @@ body {
   background: transparent;
   border-color: transparent;
 }
+
+/* 无效选择器提示：每条一行（#372） */
+.pt-site-rules-error {
+  margin: 0 0 6px;
+  font-family: inherit;
+  white-space: pre-line;
+}
