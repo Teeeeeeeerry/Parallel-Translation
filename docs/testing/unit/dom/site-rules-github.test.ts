@@ -29,6 +29,7 @@
  *   - 普通链接、空文本不保留；只对行内元素生效
  *   - 原 compat-github.test.ts 中 shouldPreserveText 的用例改在这里验证
  *   - 内置排除命中段落里的行内元素时同样原文保留（#441）
+ *   - 去掉保留原文后没有可翻译文字的段落不采集（#454）
  *
  * jsdom 的 location.hostname 是文件级选项，与其他域名的测试文件分离。
  */
@@ -210,5 +211,17 @@ describe('保留原文（github.com 内置规则，采集后提取文本）', ()
     const unit = closestUnit(document.getElementById('m')!)!;
     expect(unit.id).toBe('c');
     expect([...translatableTextEx(unit).preserves.values()]).toEqual(['@torvalds']);
+  });
+});
+
+describe('去掉保留原文后没有可翻译文字的段落（#454）', () => {
+  test('只含 .text-mono 的列表项、只含 @mention 的段落都不采集', () => {
+    document.body.innerHTML =
+      '<ul><li id="branch"><span class="text-mono">feature/login-flow</span></li></ul>' +
+      '<p id="mention"><a class="user-mention">@octocat</a></p>' +
+      '<p id="body">Thanks <a class="user-mention">@octocat</a> for the review.</p>';
+    expect(ids(collect())).toEqual(['body']);
+    expect(closestUnit(document.getElementById('branch')!)).toBeNull();
+    expect(closestUnit(document.getElementById('mention')!)).toBeNull();
   });
 });

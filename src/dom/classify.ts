@@ -13,6 +13,9 @@
 // 此三层分类是 TreeWalker 过滤逻辑的基础。
 
 import { getSiteRules } from '~/src/storage/specialization';
+// text.ts 也从本模块取 INLINE_SET：循环引用只在函数调用时解析，模块
+// 求值时双方都不使用对方的导出
+import { hasTranslatableText } from './text';
 
 /**
  * #442：el 自身或祖先是否命中任一选择器，祖先链越过 Shadow DOM 边界 ——
@@ -226,7 +229,8 @@ function findTextOnlyDescendant(
       el.contains(origin) &&
       isTranslationUnit(el) &&
       !hasNonTextContent(el) &&
-      !shouldSkip(el)
+      !shouldSkip(el) &&
+      hasTranslatableText(el)
     ) {
       // 越深越好 —— leaf-most text-only unit
       if (depth > bestDepth) {
@@ -314,6 +318,8 @@ function directTextLength(el: Element): number {
  * #374：限定范围与采集入口一致 —— 找到的单元须在范围内。向上找时一旦
  * 走出范围即停：范围外元素的祖先同样在范围外。向下降级的结果在 cur
  * 与 el 之间，cur 在范围内它也在。
+ *
+ * #454：与采集入口共用“去掉保留原文后是否还有可翻译文字”的判定。
  */
 export function closestUnit(el: Element): Element | null {
   const { scope, exclude } = getSiteRules(location.hostname);
@@ -322,7 +328,8 @@ export function closestUnit(el: Element): Element | null {
   let cur: Element | null = el;
   while (cur) {
     if (!inScope(cur, scope)) return null;
-    if (isTranslationUnit(cur) && !shouldSkip(cur)) {
+    // #454：去掉保留原文后没有可翻译文字的段落不算单元，继续向上找
+    if (isTranslationUnit(cur) && !shouldSkip(cur) && hasTranslatableText(cur)) {
       // #50：容器含媒体 / 交互控件时，向下降级到纯文本后代。
       // 否则用户看到一个注定失败的段落按钮，等一次网络往返后被 render() 拒绝。
       if (hasNonTextContent(cur)) {

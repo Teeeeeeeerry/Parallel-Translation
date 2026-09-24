@@ -17,7 +17,10 @@ import { mockAllBoundingRects, mockBoundingRect } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { applyCompat } from '~/src/dom/compat';
 
-vi.mock('~/src/dom/compat', () => ({
+// 只替换 applyCompat；其余导出（shouldPreserveText 等）保留真实实现 ——
+// 采集时会提取送翻文本判定是否还有可翻译文字（#454）
+vi.mock('~/src/dom/compat', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('~/src/dom/compat')>()),
   applyCompat: vi.fn(),
 }));
 
