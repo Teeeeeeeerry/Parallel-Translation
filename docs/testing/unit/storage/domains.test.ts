@@ -3,7 +3,8 @@
  *
  * 只断言外部可观察的行为：生效领域列表的内容、给定网址与目标语言时
  * 解析出的当前领域；自建领域的新建、删除与存放位置（#391）；自建领域
- * 适用网址的编辑（#392）；自建领域术语的编辑（#393）。内置领域叠加层见
+ * 适用网址的编辑（#392）；自建领域术语的编辑（#393）；生效领域列表的
+ * 变更订阅（#417）。内置领域叠加层见
  * domains-builtin-overlay.test.ts（#395）。
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
@@ -13,6 +14,7 @@ import {
   createDomain,
   deleteDomain,
   onDomainsChanged,
+  watchEffectiveDomains,
   setDomainSites,
   setDomainTerms,
 } from '~/src/storage/domains';
@@ -404,5 +406,68 @@ describe('编辑自建领域的术语（#393）', () => {
     await setDomainTerms(law.id, [{ source: 'tort', target: '侵权' }]);
     const saved = (await getEffectiveDomains()).find((d) => d.id === law.id)!;
     expect(saved).toMatchObject({ name: '法律', targetLang: 'zh-CN', sites: ['example.com'] });
+  });
+});
+
+describe('生效领域列表的变更订阅（#417）', () => {
+  /** 模拟另一个上下文（设置页）改完领域后的存储变更事件。 */
+  async function changedElsewhere(): Promise<void> {
+    fireStorageChange({ 'pt-domains': { newValue: {} } }, 'local');
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  test('领域变更后交付新的生效领域列表，新领域可成为当前领域', async () => {
+    const fn = vi.fn();
+    watchEffectiveDomains(fn);
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    await setDomainSites(law.id, ['example.com']);
+    await changedElsewhere();
+
+    const latest = fn.mock.lastCall![0] as Domain[];
+    expect(latest.map((d) => d.id)).toContain(law.id);
+    expect(currentDomain(latest, 'example.com', 'zh-CN')?.id).toBe(law.id);
+  });
+
+  test('删除领域后交付的列表里不再有它', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    const fn = vi.fn();
+    watchEffectiveDomains(fn);
+    await deleteDomain(law.id);
+    await changedElsewhere();
+
+    expect((fn.mock.lastCall![0] as Domain[]).map((d) => d.id)).not.toContain(law.id);
+  });
+
+  test('读取还没完成又发生变更 → 只交付最后一次读取的结果', async () => {
+    await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    const fn = vi.fn();
+    watchEffectiveDomains(fn);
+    fireStorageChange({ 'pt-domains': { newValue: {} } }, 'local');
+    fireStorageChange({ 'pt-domains': { newValue: {} } }, 'local');
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect((fn.mock.lastCall![0] as Domain[]).some((d) => d.name === '法律')).toBe(true);
+  });
+
+  test('取消订阅后不再交付，也不再占用存储监听器', async () => {
+    const fn = vi.fn();
+    const off = watchEffectiveDomains(fn);
+    const added = vi.mocked(chrome.storage.onChanged.addListener).mock.lastCall![0];
+    off();
+    await changedElsewhere();
+
+    expect(fn).not.toHaveBeenCalled();
+    expect(chrome.storage.onChanged.removeListener).toHaveBeenCalledWith(added);
+  });
+
+  test('变更事件发出后、读取完成前取消订阅 → 不交付', async () => {
+    const fn = vi.fn();
+    const off = watchEffectiveDomains(fn);
+    fireStorageChange({ 'pt-domains': { newValue: {} } }, 'local');
+    off();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(fn).not.toHaveBeenCalled();
   });
 });

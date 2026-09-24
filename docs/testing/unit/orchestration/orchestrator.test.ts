@@ -15,7 +15,14 @@ import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import type { TranslateRequest } from '~/src/engines/types';
 import type { Settings } from '~/src/storage/schema';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
-import { getEffectiveDomains } from '~/src/storage/domains';
+import {
+  getEffectiveDomains,
+  watchEffectiveDomains,
+  createDomain,
+  setDomainSites,
+} from '~/src/storage/domains';
+import type { Domain } from '~/src/storage/domains';
+import { resetStorage, fireStorageChange } from '~/docs/testing/setup';
 
 /** 冲刷微任务 + 一个宏任务，让异步链（send → retry → 回调）完整推进。 */
 async function flush(): Promise<void> {
@@ -1118,6 +1125,42 @@ describe('全页翻译携带当前领域（#379）', () => {
   test('目标语言与领域不一致 → 请求不含 domainId 字段', async () => {
     const reqs = await pageRequests('github.com', 'ja');
     for (const req of reqs) expect(req).not.toHaveProperty('domainId');
+  });
+
+  test('领域变更后，下一次全页翻译请求携带新的当前领域 ID（#417）', async () => {
+    resetStorage();
+    // 与 content 的装配同一做法：先订阅领域变更，再读一次生效领域列表
+    let domains: readonly Domain[] = [];
+    const off = watchEffectiveDomains((d) => {
+      domains = d;
+    });
+    domains = await getEffectiveDomains();
+    const send = vi.fn(async (_req: TranslateRequest) => ({
+      ok: true,
+      data: { translations: [] },
+    }));
+    const orch = createOrchestrator({
+      send,
+      getSettings: () => DEFAULT_SETTINGS,
+      getHostname: () => 'law.example.org',
+      getDomains: () => domains,
+    });
+    orch.start();
+    await orch.translatePage(items(1), 'en', 'zh-CN');
+    expect(send.mock.calls[0]![0]).not.toHaveProperty('domainId');
+
+    // 设置页新建领域并填上适用网址
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    await setDomainSites(law.id, ['example.org']);
+    fireStorageChange({ 'pt-domains': { newValue: {} } }, 'local');
+    await flush();
+
+    await orch.translatePage(items(1), 'en', 'zh-CN');
+    expect(send.mock.calls[1]![0].domainId).toBe(law.id);
+    orch.stop();
+    off();
+    // 本文件其他用例不重置存储，这里写入的领域不留给它们
+    resetStorage();
   });
 
   test('未注入领域列表 → 请求不含 domainId 字段', async () => {
