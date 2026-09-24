@@ -104,6 +104,12 @@ export interface Settings {
 
   /** BYOK 引擎的自定义模型名。阶段 7 使用。 */
   models: Partial<Record<EngineId, string>>;
+
+  /**
+   * 机翻引擎应用指定译法的术语（#390）。关闭时机翻引擎只落实“不翻译”
+   * 术语；打开后指定了译法的术语也经占位符替换，回填为指定译法。
+   */
+  mtApplyTermTargets: boolean;
 }
 
 export const ENGINE_LABELS: Record<EngineId, string> = {
@@ -175,4 +181,5 @@ export const DEFAULT_SETTINGS: Settings = {
   maxConcurrency: 6,
   useCache: true,
   models: {},
+  mtApplyTermTargets: false,
 };

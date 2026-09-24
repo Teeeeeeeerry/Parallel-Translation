@@ -30,13 +30,15 @@ const TERMS_HASH_VERSION = 2;
 /**
  * 本段实际生效术语的哈希（#380）：原词、译法、“不翻译”标记，外加口径
  * 版本（#419）。与术语顺序、所属领域无关 —— 两个站点命中相同术语时共用
- * 缓存。
+ * 缓存。机翻引擎“指定译法”开关（#390）打开时追加一个标记；关闭时哈希
+ * 输入与引入开关前相同，已有缓存继续有效。
  */
-function termsHash(terms: readonly Term[]): Promise<string> {
+function termsHash(terms: readonly Term[], mtTermTargets: boolean): Promise<string> {
   const canonical = terms
     .map((t) => JSON.stringify([t.source.trim(), t.target ?? '', t.noTranslate === true]))
     .sort();
-  return sha1hex(`v${TERMS_HASH_VERSION}[${canonical.join(',')}]`);
+  const input = `v${TERMS_HASH_VERSION}[${canonical.join(',')}]`;
+  return sha1hex(mtTermTargets ? `${input}mt-targets` : input);
 }
 
 /**
@@ -48,7 +50,8 @@ function termsHash(terms: readonly Term[]): Promise<string> {
  *
  * #380: 本段命中术语时追加术语哈希 —— 修改术语后不命中旧译文；
  * 没有命中时不追加，key 与引入术语前逐字节相同，现有缓存继续有效。
- * #419: 调用方只传该引擎实际生效的术语。
+ * #419: 调用方只传该引擎实际生效的术语；机翻引擎在“指定译法”开关
+ * （#390）打开时传 mtTermTargets = true，开关状态随之进术语哈希。
  */
 export async function cacheKey(
   engine: string,
@@ -57,9 +60,10 @@ export async function cacheKey(
   text: string,
   model = '',
   terms: readonly Term[] = [],
+  mtTermTargets = false,
 ): Promise<string> {
   const base = `${PREFIX}${engine}:${from}:${to}${model ? `:${model}` : ''}:${await sha1hex(text)}`;
-  return terms.length > 0 ? `${base}:${await termsHash(terms)}` : base;
+  return terms.length > 0 ? `${base}:${await termsHash(terms, mtTermTargets)}` : base;
 }
 
 // ---- Index 序列化链 ----

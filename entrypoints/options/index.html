@@ -231,6 +231,15 @@
             <button class="pt-btn" id="pt-domain-create-btn" data-i18n="domainCreateBtn">新建</button>
           </div>
         </div>
+        <!-- 机翻引擎“指定译法”开关（#390） -->
+        <div class="pt-card">
+          <div class="pt-card-label" data-i18n="domainCardMt">机翻引擎</div>
+          <div class="pt-row">
+            <span class="pt-row-label" data-i18n="domainMtTermTargets">机翻引擎应用指定译法的术语</span>
+            <button class="pt-toggle" id="pt-toggle-mt-term-targets"></button>
+          </div>
+          <p class="pt-section-desc" data-i18n="domainMtTermTargetsDesc">AI 引擎（OpenAI、Gemini）会把命中的术语写进请求，指定的译法和“不翻译”都生效。机翻引擎（Google、Bing、DeepL）默认只处理“不翻译”术语，原词原样保留在译文里；打开此开关后，指定了译法的术语也会直接替换为指定译法，但不会随上下文变形，句子可能读起来不够通顺。</p>
+        </div>
       </section>
 
       <!-- 站点规则（#370） -->

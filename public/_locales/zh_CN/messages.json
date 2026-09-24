@@ -268,5 +268,8 @@
   "domainSaveFailed": {
     "message": "保存失败：$error$",
     "placeholders": { "error": { "content": "$1" } }
-  }
+  },
+  "domainCardMt": { "message": "机翻引擎" },
+  "domainMtTermTargets": { "message": "机翻引擎应用指定译法的术语" },
+  "domainMtTermTargetsDesc": { "message": "AI 引擎（OpenAI、Gemini）会把命中的术语写进请求，指定的译法和“不翻译”都生效。机翻引擎（Google、Bing、DeepL）默认只处理“不翻译”术语，原词原样保留在译文里；打开此开关后，指定了译法的术语也会直接替换为指定译法，但不会随上下文变形，句子可能读起来不够通顺。" }
 }

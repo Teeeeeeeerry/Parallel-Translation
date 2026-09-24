@@ -6,7 +6,7 @@
 
 // 翻译领域分区（#391，父 #365）：列出内置与自建领域，新建与删除自建领域；
 // 编辑自建领域的适用网址（#392）与术语（#393）；编辑内置领域的术语
-// （#395），内置领域的适用网址在本期只读。
+// （#395），内置领域的适用网址在本期只读；机翻引擎“指定译法”开关（#390）。
 
 import { LANG_LIST } from '~/src/storage/schema';
 import {
@@ -21,7 +21,7 @@ import {
   DomainNotFoundError,
   isBuiltinTerm,
 } from '~/src/storage/domains';
-import { getSettings } from '~/src/storage/settings';
+import { getSettings, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import type { Domain, Term } from '~/src/storage/domains';
 import { tf } from '~/src/i18n';
 import { showToast } from '../main';
@@ -306,6 +306,7 @@ export function initDomains(): void {
   const nameInput = document.getElementById('pt-domain-name-input') as HTMLInputElement;
   const langSelect = document.getElementById('pt-domain-lang-select') as HTMLSelectElement;
   const createBtn = document.getElementById('pt-domain-create-btn')!;
+  const toggleMtTermTargets = document.getElementById('pt-toggle-mt-term-targets')!;
 
   langSelect.innerHTML = LANG_LIST.filter((l) => l.code !== 'auto')
     .map((l) => `<option value="${l.code}">${l.label}</option>`)
@@ -362,6 +363,16 @@ export function initDomains(): void {
   nameInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') create();
   });
+
+  // #390: 机翻引擎应用指定译法的术语
+  const syncMtTermTargets = () =>
+    toggleMtTermTargets.classList.toggle('pt-on', getSettings().mtApplyTermTargets);
+  toggleMtTermTargets.addEventListener('click', () => {
+    patchSettings({ mtApplyTermTargets: !getSettings().mtApplyTermTargets })
+      .catch((e) => console.error('[PT] 设置写入失败:', e));
+  });
+  syncMtTermTargets();
+  onSettingsChanged(syncMtTermTargets);
 
   const refresh = () => render().catch((e) => console.error('[PT] 读取领域失败:', e));
   refresh();
