@@ -268,5 +268,8 @@
   "domainSaveFailed": {
     "message": "Save failed: $error$",
     "placeholders": { "error": { "content": "$1" } }
-  }
+  },
+  "domainCardMt": { "message": "Machine translation engines" },
+  "domainMtTermTargets": { "message": "Apply term translations with machine translation engines" },
+  "domainMtTermTargetsDesc": { "message": "AI engines (OpenAI, Gemini) receive the matched terms with each request, so both term translations and “Don't translate” apply. Machine translation engines (Google, Bing, DeepL) only handle “Don't translate” terms by default, keeping the source word in the translation. With this on, terms that have a translation are also replaced with it, but the replacement is not adapted to the sentence, so the result may read less naturally." }
 }

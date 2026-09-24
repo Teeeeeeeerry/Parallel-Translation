@@ -13,7 +13,7 @@ import { DEFAULT_MODELS } from '~/src/storage/schema';
 import { cacheGet, cacheSet, cacheKey } from '~/src/storage/cache';
 import { getEffectiveDomains } from '~/src/storage/domains';
 import type { Term } from '~/src/storage/domains';
-import { matchTerms, uniqueTerms, maskNoTranslate, unmaskNoTranslate } from './terms';
+import { matchTerms, uniqueTerms, maskTerms, unmaskTerms } from './terms';
 import { googleWeb } from './google-web';
 import { bingEdge } from './bing-edge';
 import { openai } from './openai';
@@ -42,20 +42,25 @@ async function termHits(req: TranslateRequest): Promise<Term[][]> {
 }
 
 /**
- * 该引擎实际生效的术语（#419）：AI 引擎注入全部命中术语；Google 等机翻
- * 引擎只用占位符落实“不翻译”术语（#386）；其余引擎不处理术语。缓存 key
- * 的术语哈希只算这些术语 —— 不生效的术语改了也不该让缓存失效。
- * 机翻引擎“指定译法”开关（#390）打开后，占位符引擎也要算上指定译法的
- * 术语，开关状态一并进哈希。
+ * 该引擎实际生效的术语（#419）：AI 引擎注入全部命中术语；机翻引擎用
+ * 占位符落实“不翻译”术语（#386），“指定译法”开关（#390）打开后也落实
+ * 指定了译法的术语；其余引擎不处理术语。缓存 key 的术语哈希只算这些
+ * 术语 —— 不生效的术语改了也不该让缓存失效。
  */
-function effectiveTerms(engine: TranslateEngine, terms: readonly Term[]): Term[] {
+function effectiveTerms(
+  engine: TranslateEngine,
+  terms: readonly Term[],
+  mtApplyTermTargets: boolean,
+): Term[] {
   if (engine.injectsTerms) return [...terms];
-  if (engine.masksNoTranslate) return terms.filter((t) => t.noTranslate === true);
+  if (engine.masksNoTranslate) {
+    return mtApplyTermTargets ? [...terms] : terms.filter((t) => t.noTranslate === true);
+  }
   return [];
 }
 
 export async function route(req: TranslateRequest): Promise<TranslateResponse> {
-  const { enginePriority, useCache } = getSettings();
+  const { enginePriority, useCache, mtApplyTermTargets } = getSettings();
   const errors: EngineError[] = [];
 
   // 结果槽位，null 表示尚未取得
@@ -75,8 +80,12 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
 
     // #175: BYOK 引擎的模型名参与缓存 key —— 切换模型后不命中旧译文
     const model = getSettings().models?.[id] ?? DEFAULT_MODELS[id] ?? '';
-    // #419: 参与缓存 key 的只是本引擎实际生效的术语
-    const keyTerms = hits.map((h) => effectiveTerms(engine, h));
+    // #419: 参与缓存 key 的只是本引擎实际生效的术语；机翻引擎的
+    // “指定译法”开关状态一并进哈希（#390）
+    const keyTerms = hits.map((h) => effectiveTerms(engine, h, mtApplyTermTargets));
+    const mtTermTargets = !!engine.masksNoTranslate && mtApplyTermTargets;
+    const keyOf = (text: string, terms: readonly Term[] = []) =>
+      cacheKey(id, req.from, req.to, text, model, terms, mtTermTargets);
 
     if (
       engine.supportedLangs !== 'all' &&
@@ -94,7 +103,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       const cacheChecks = await Promise.all(
         req.texts.map(async (text, i) => {
           if (translations[i] !== null) return { i, cached: null, text };
-          const k = await cacheKey(id, req.from, req.to, text, model, keyTerms[i]);
+          const k = await keyOf(text, keyTerms[i]);
           const cached = await cacheGet(k);
           return { i, cached, text };
         }),
@@ -125,9 +134,10 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
     try {
       // #381: 只带本批（未命中缓存的段落）命中的术语，不发送整个领域
       const batchTerms = uniqueTerms(uncached.flatMap((u) => hits[u.idx]!));
-      // #386: 机翻引擎发送前把“不翻译”术语换成占位符
+      // #386: 机翻引擎发送前把生效的术语换成占位符 —— 默认只有“不翻译”
+      // 术语，开关打开后也包括指定了译法的术语（#390）
       const masks = engine.masksNoTranslate
-        ? uncached.map((u) => maskNoTranslate(u.text, hits[u.idx]!))
+        ? uncached.map((u) => maskTerms(u.text, keyTerms[u.idx]!))
         : null;
       const subReq: TranslateRequest = {
         texts: masks ? masks.map((m) => m.text) : uncached.map((u) => u.text),
@@ -150,8 +160,8 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
           if (!failed.includes(j)) failed.push(j);
           continue;
         }
-        // #386: 占位符换回原词；占位符被引擎改坏 → 不采用这份译文
-        const text = masks ? unmaskNoTranslate(raw, masks[j]!.originals) : raw;
+        // #386: 占位符换回原词或指定译法；占位符被引擎改坏 → 不采用这份译文
+        const text = masks ? unmaskTerms(raw, masks[j]!.replacements) : raw;
         if (text === null) {
           translations[uncached[j]!.idx] = null;
           corrupted.push(j);
@@ -165,7 +175,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       const plain = new Set<number>();
       if (corrupted.length > 0) {
         for (const j of corrupted) {
-          console.warn('[PT] “不翻译”术语占位符被引擎改坏，改用原文重译该段', {
+          console.warn('[PT] 术语占位符被引擎改坏，改用原文重译该段', {
             engine: id,
             index: uncached[j]!.idx,
           });
@@ -206,12 +216,12 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
             const val = translations[u.idx];
             // #171: 短数组下成功槽位必然有值，这里再做一次防御
             if (val === undefined || val === null) return;
-            const key = await cacheKey(id, req.from, req.to, u.text, model, keyTerms[u.idx]);
+            const key = await keyOf(u.text, keyTerms[u.idx]);
             if (!plain.has(j)) {
               await cacheSet(key, val);
               return;
             }
-            await cacheSet(await cacheKey(id, req.from, req.to, u.text, model), val);
+            await cacheSet(await keyOf(u.text), val);
             await cacheSet(key, val, { ignoresTerms: true });
           }),
         );

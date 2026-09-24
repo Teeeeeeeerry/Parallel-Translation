@@ -29,6 +29,11 @@ describe('merge / patchSettings', () => {
     expect(s.displayMode).toBe(DEFAULT_SETTINGS.displayMode);
   });
 
+  test('机翻引擎应用指定译法的术语：默认关闭（#390）', async () => {
+    const { settingsReady } = await import('~/src/storage/settings');
+    expect((await settingsReady()).mtApplyTermTargets).toBe(false);
+  });
+
   test('部分覆盖 → 其余保持默认', async () => {
     const { patchSettings } = await import('~/src/storage/settings');
     const { settingsReady, getSettings } = await import('~/src/storage/settings');
