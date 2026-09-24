@@ -108,11 +108,16 @@ describe('Google “不翻译”术语替换（#386）', () => {
     expect(queries()[0]).toBe('Hello world');
   });
 
-  test('占位符被引擎弄丢 → 该段不采用这份译文', async () => {
-    rewrite = () => '译文丢了占位符';
-    await expect(translate(['Open an issue'])).rejects.toMatchObject({
-      name: 'AllEnginesFailedError',
-    });
+  test('占位符被引擎弄丢 → 不采用这份译文，改用原文重译（#389）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      rewrite = (q) => (q.includes('⟦TM') ? '译文丢了占位符' : `译:${q}`);
+      const resp = await translate(['Open an issue']);
+      expect(queries()).toEqual(['Open an ⟦TM0⟧', 'Open an issue']);
+      expect(resp.translations).toEqual(['译:Open an issue']);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('缓存里存的是换回原词后的译文', async () => {
