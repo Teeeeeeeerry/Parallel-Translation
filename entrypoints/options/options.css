@@ -736,3 +736,18 @@ body {
   display: flex;
   gap: 8px;
 }
+
+/* ===== Site rules（#370） ===== */
+
+.pt-site-rules-site {
+  font-family: var(--pt-font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pt-forest);
+  overflow-wrap: anywhere;
+  margin-bottom: 12px;
+}
+
+.pt-site-rules-card textarea {
+  resize: vertical;
+}

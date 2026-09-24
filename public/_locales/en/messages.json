@@ -242,5 +242,14 @@
   "domainTermsMissingSource": {
     "message": "Missing source term for: $list$",
     "placeholders": { "list": { "content": "$1" } }
-  }
+  },
+
+  "siteRulesNav": { "message": "Site rules" },
+  "siteRulesSecDesc": { "message": "Adjust what gets translated on specific websites. Enter a bare domain (subdomains included); under “Exclude”, write one CSS selector per line — matching elements are left untranslated as a whole. Your rules are added on top of the built-in rules and take effect after you reload the site." },
+  "siteRulesCardAdd": { "message": "Add site" },
+  "siteRulesAddBtn": { "message": "Add" },
+  "siteRulesExclude": { "message": "Exclude" },
+  "siteRulesExcludePlaceholder": { "message": "One CSS selector per line; matching elements are not translated" },
+  "siteRulesSave": { "message": "Save" },
+  "siteRulesSaved": { "message": "Saved. Reload the site to apply." }
 }

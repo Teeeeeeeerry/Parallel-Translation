@@ -242,5 +242,14 @@
   "domainTermsMissingSource": {
     "message": "以下譯法缺少原詞：$list$",
     "placeholders": { "list": { "content": "$1" } }
-  }
+  },
+
+  "siteRulesNav": { "message": "網站規則" },
+  "siteRulesSecDesc": { "message": "為特定網站修正翻譯範圍。網址填裸網域，子網域一併生效；在「排除」裡每行寫一個 CSS 選擇器，命中的元素整塊不翻譯。你的規則會附加在內建規則之上，儲存後重新整理該網站生效。" },
+  "siteRulesCardAdd": { "message": "新增網站" },
+  "siteRulesAddBtn": { "message": "新增" },
+  "siteRulesExclude": { "message": "排除" },
+  "siteRulesExcludePlaceholder": { "message": "每行一個 CSS 選擇器，命中的元素整塊不翻譯" },
+  "siteRulesSave": { "message": "儲存" },
+  "siteRulesSaved": { "message": "已儲存，重新整理該網站後生效" }
 }

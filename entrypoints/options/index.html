@@ -25,6 +25,7 @@
       <button class="pt-nav-btn" data-section="sites" data-i18n="navSites">站点</button>
       <button class="pt-nav-btn" data-section="advanced" data-i18n="navAdvanced">高级</button>
       <button class="pt-nav-btn" data-section="domains" data-i18n="domainNav">翻译领域</button>
+      <button class="pt-nav-btn" data-section="site-rules" data-i18n="siteRulesNav">站点规则</button>
     </nav>
     <main class="pt-main">
       <!-- 通用 -->
@@ -228,6 +229,20 @@
             <input class="pt-input" id="pt-domain-name-input" type="text" maxlength="60" data-i18n-placeholder="domainNamePlaceholder" placeholder="领域名称，例如“法律”" />
             <select class="pt-select" id="pt-domain-lang-select" data-i18n-title="domainRowLang" title="目标语言"></select>
             <button class="pt-btn" id="pt-domain-create-btn" data-i18n="domainCreateBtn">新建</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 站点规则（#370） -->
+      <section class="pt-section" id="pt-section-site-rules">
+        <h2 data-i18n="siteRulesNav">站点规则</h2>
+        <p class="pt-section-desc" data-i18n="siteRulesSecDesc">为特定网站修正翻译范围。网址填裸域名，子域一并生效；在“排除”里每行写一个 CSS 选择器，命中的元素整块不翻译。你的规则追加在内置规则之上，保存后刷新该网站生效。</p>
+        <div id="pt-site-rules-list"></div>
+        <div class="pt-card">
+          <div class="pt-card-label" data-i18n="siteRulesCardAdd">新增站点</div>
+          <div class="pt-sites-add">
+            <input class="pt-input" id="pt-site-rules-site-input" type="text" placeholder="example.com" />
+            <button class="pt-btn" id="pt-site-rules-add-btn" data-i18n="siteRulesAddBtn">新增</button>
           </div>
         </div>
       </section>

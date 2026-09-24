@@ -23,6 +23,7 @@ import { initHotkeys } from './sections/hotkeys';
 import { initSites } from './sections/sites';
 import { initAdvanced } from './sections/advanced';
 import { initDomains } from './sections/domains';
+import { initSiteRules } from './sections/site-rules';
 
 // ---- Tab navigation ----
 
@@ -74,6 +75,7 @@ async function init(): Promise<void> {
   initSites();
   initAdvanced();
   initDomains();
+  initSiteRules();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

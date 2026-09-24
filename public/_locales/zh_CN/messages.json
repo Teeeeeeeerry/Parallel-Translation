@@ -242,5 +242,14 @@
   "domainTermsMissingSource": {
     "message": "以下译法缺少原词：$list$",
     "placeholders": { "list": { "content": "$1" } }
-  }
+  },
+
+  "siteRulesNav": { "message": "站点规则" },
+  "siteRulesSecDesc": { "message": "为特定网站修正翻译范围。网址填裸域名，子域一并生效；在“排除”里每行写一个 CSS 选择器，命中的元素整块不翻译。你的规则追加在内置规则之上，保存后刷新该网站生效。" },
+  "siteRulesCardAdd": { "message": "新增站点" },
+  "siteRulesAddBtn": { "message": "新增" },
+  "siteRulesExclude": { "message": "排除" },
+  "siteRulesExcludePlaceholder": { "message": "每行一个 CSS 选择器，命中的元素整块不翻译" },
+  "siteRulesSave": { "message": "保存" },
+  "siteRulesSaved": { "message": "已保存，刷新该网站后生效" }
 }

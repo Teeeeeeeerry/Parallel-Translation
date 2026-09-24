@@ -49,6 +49,7 @@ import {
 } from '~/src/storage/settings';
 import type { Settings } from '~/src/storage/schema';
 import { getEffectiveDomains, currentDomain } from '~/src/storage/domains';
+import { siteRulesReady } from '~/src/storage/specialization';
 import { tf } from '~/src/i18n';
 import { isSiteBlocked } from '~/src/dom/site-filter';
 import { decideShow } from '~/src/changelog/decide';
@@ -73,6 +74,8 @@ export default defineContentScript({
     const s = getSettings();
     // #379: 生效领域列表 —— 全页翻译据此选出当前领域，请求里带上领域 ID
     const domains = await getEffectiveDomains();
+    // #370: 载入用户站点规则 —— 之后全页翻译与逐段翻译同步读取生效站点规则
+    await siteRulesReady();
 
     // #242/#243/#255: UI 生命周期注册表 —— 悬浮球、段落按钮、划词拖拽、
     // 快捷键、observer 全部经注册表启停；设置变更由 ensure() 驱动，

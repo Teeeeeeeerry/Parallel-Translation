@@ -1127,3 +1127,48 @@ test.describe('引擎', () => {
     await expect(trans).toContainText('[BING]');
   });
 });
+
+// ================================================================
+// 站点页面规则（#365）
+// ================================================================
+
+test.describe('站点页面规则', () => {
+  test('@core TC-E2E-60: 设置页新增排除 → 刷新 → 元素不翻译（#370）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ showParagraphBtn: true });
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+
+    // 设置页：新增 localhost 站点卡片，排除列表
+    const extId = new URL(serviceWorker.url()).host;
+    const options = await page.context().newPage();
+    await options.goto(`chrome-extension://${extId}/options.html`);
+    await options.click('.pt-nav-btn[data-section="site-rules"]');
+    await options.fill('#pt-site-rules-site-input', 'localhost');
+    await options.click('#pt-site-rules-add-btn');
+    const card = options.locator('.pt-site-rules-card', { hasText: 'localhost' });
+    await card.locator('textarea').fill('ul');
+    await card.locator('button').click();
+    await expect(options.locator('#pt-toast')).toBeVisible();
+    await options.close();
+
+    // 刷新该站点
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const ball = await waitForBall(page);
+
+    // 逐段翻译：排除区内不出按钮，排除区外照常浮出
+    await page.locator('li').first().hover();
+    await page.waitForTimeout(1_000);
+    await expect(page.locator('.pt-para-btn')).toBeHidden();
+    await page.locator('p').first().hover();
+    await expect(page.locator('.pt-para-btn')).toBeVisible({ timeout: 5_000 });
+
+    // 全页翻译：段落照常翻译，列表项不翻译
+    await ball.click();
+    await expect(page.locator('p').last()).toHaveAttribute('data-pt', 'done', { timeout: 30_000 });
+    await expect(page.locator('li[data-pt]')).toHaveCount(0);
+    await expect(page.locator('li').first()).not.toContainText('【译】');
+  });
+});
