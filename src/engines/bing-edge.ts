@@ -62,6 +62,8 @@ export const bingEdge: TranslateEngine = {
   displayName: 'Microsoft',
   requiresKey: false,
   supportedLangs: 'all',
+  // #387: “不翻译”术语走占位符
+  masksNoTranslate: true,
 
   async translate({ texts, from, to }) {
     // #159: 整个请求体（含 JWT 获取）过闸门，限制并发在飞请求数
