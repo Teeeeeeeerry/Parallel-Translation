@@ -1208,4 +1208,46 @@ test.describe('站点页面规则', () => {
     await expect(page.locator('p[data-pt], h1[data-pt]')).toHaveCount(0);
     await expect(page.locator('p').first()).not.toContainText('【译】');
   });
+
+  test('@core TC-E2E-62: 设置页填写保留原文 → 刷新 → 行内元素原文留在译文里（#373）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('preserve');
+    await waitForBall(page);
+
+    await saveLocalhostRules(page, serviceWorker, { preserve: 'a.user-mention' });
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const ball = await waitForBall(page);
+
+    // mock 引擎原样回显原文，译文看不出差别 —— 记下送去引擎的文本。
+    // 记录层带上 mock 层标记，路由前的自愈安装不会再包一层
+    await serviceWorker.evaluate(() => {
+      const inner = (self as any).fetch;
+      const qs: string[] = [];
+      (self as any).__ptE2EQueries = qs;
+      const rec = (input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : input?.url ?? '';
+        if (url.startsWith('https://translate.googleapis.com/')) {
+          qs.push(new URL(url).searchParams.get('q') ?? '');
+        }
+        return inner(input, init);
+      };
+      rec.__ptMockStubbed = true;
+      (self as any).fetch = rec;
+    });
+
+    await ball.click();
+    const mention = page.locator('p', { hasText: '@alice' });
+    await expect(mention).toHaveAttribute('data-pt', 'done', { timeout: 30_000 });
+
+    // 送去引擎的是占位符，用户名不在其中；回填后译文里是原文
+    const sent = (await serviceWorker.evaluate(() => (self as any).__ptE2EQueries)) as string[];
+    expect(sent.join('\n')).toMatch(/⟦PT\d+⟧/);
+    expect(sent.join('\n')).not.toContain('@alice');
+    expect(sent.join('\n')).toContain('useful resource');
+    await expect(mention.locator('.pt-trans')).toContainText('@alice');
+  });
 });
