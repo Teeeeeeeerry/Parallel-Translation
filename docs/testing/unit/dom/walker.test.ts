@@ -10,8 +10,7 @@
  * - shadowRoot 递归穿透、pt-ui 拒绝、SKIP_SET 拒绝、pre 切分入口
  *
  * applyCompat 在本文件统一 mock：compat 自身的各站点逻辑由
- * compat.test.ts / compat-github.test.ts /
- * compat-google.test.ts 覆盖，这里只测 walker 对补丁结果的消费。
+ * compat.test.ts / compat-google.test.ts 覆盖，这里只测 walker 对补丁结果的消费。
  */
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { mockAllBoundingRects, mockBoundingRect } from '../../setup';

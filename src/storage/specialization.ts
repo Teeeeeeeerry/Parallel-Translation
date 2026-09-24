@@ -17,6 +17,8 @@ import { BUILTIN_SITE_RULES } from './builtin-site-rules';
 export interface SiteRules {
   /** 排除：命中的元素整块不翻译 */
   exclude: string[];
+  /** 保留原文：命中的行内元素不翻译，原文留在译文句子里 */
+  preserve: string[];
 }
 
 /** 选择器能否解析：按“站点 + 选择器”缓存，无效的只警告一次。 */
@@ -56,9 +58,13 @@ function isValidSelector(site: string, sel: string): boolean {
  */
 export function getSiteRules(host: string): SiteRules {
   const exclude: string[] = [];
+  const preserve: string[] = [];
   for (const [site, rules] of Object.entries(BUILTIN_SITE_RULES)) {
     if (!siteMatches(host, site)) continue;
-    exclude.push(...rules.exclude.filter((sel) => isValidSelector(site, sel)));
+    const valid = (sels: string[] = []) =>
+      sels.filter((sel) => isValidSelector(site, sel));
+    exclude.push(...valid(rules.exclude));
+    preserve.push(...valid(rules.preserve));
   }
-  return { exclude };
+  return { exclude, preserve };
 }

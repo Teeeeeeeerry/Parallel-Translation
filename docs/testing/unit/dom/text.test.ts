@@ -54,11 +54,11 @@ describe('translatableTextEx', () => {
   });
 
   // #58 占位符 —— 需要 location.hostname === 'github.com'
-  // 在 jsdom 中 hostname 为 'localhost'，故 shouldPreserveText 始终返回 null。
-  // 占位符机制的“端到端”行为在 compat.test.ts 中验证；
+  // 在 jsdom 中 hostname 为 'localhost'，没有保留原文规则。
+  // 占位符机制的“端到端”行为在 site-rules-github.test.ts 中验证；
   // 此处验证 translatableTextEx 本身的结构逻辑。
 
-  test('translatableTextEx 结构：preserves Map 由 shouldPreserveText 决定', () => {
+  test('translatableTextEx 结构：preserves Map 由保留原文规则决定', () => {
     const p = el('<p><span>normal text</span></p>');
     const result = translatableTextEx(p);
     // localhost 上没有 preserve handler

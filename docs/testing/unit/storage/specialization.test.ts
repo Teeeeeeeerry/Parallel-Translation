@@ -1,5 +1,5 @@
 /**
- * storage/specialization.ts — 领域与规则存储模块：生效站点规则（#366、#367）
+ * storage/specialization.ts — 领域与规则存储模块：生效站点规则（#366、#367、#369）
  *
  * 本期只有内置来源；按当前站点读取，网址匹配沿用站点黑白名单的
  * 裸域名语义（子域归入、主域名归一）。
@@ -36,15 +36,24 @@ describe('getSiteRules（生效站点规则）', () => {
     ]);
   });
 
+  test('github.com 返回迁自 compat 的内置保留原文（#369）', () => {
+    expect(getSiteRules('github.com').preserve).toEqual([
+      'a.user-mention',
+      '[data-hovercard-url^="/users/"]',
+      '[rel="author"]',
+      '[itemprop="author"]',
+    ]);
+  });
+
   test('子域归入：m.youtube.com 与 youtube.com 同一份规则', () => {
     expect(getSiteRules('m.youtube.com')).toEqual(getSiteRules('youtube.com'));
   });
 
   test('没有内置规则的站点返回空规则', () => {
-    expect(getSiteRules('example.com')).toEqual({ exclude: [] });
+    expect(getSiteRules('example.com')).toEqual({ exclude: [], preserve: [] });
   });
 
   test('仅后缀相同的域名不误命中', () => {
-    expect(getSiteRules('notyoutube.com')).toEqual({ exclude: [] });
+    expect(getSiteRules('notyoutube.com')).toEqual({ exclude: [], preserve: [] });
   });
 });

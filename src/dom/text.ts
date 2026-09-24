@@ -10,10 +10,12 @@
 // UI 元数据不是正文，混进译文就是“YouTube·Tech +2”这类噪声。规则分两层：
 // - .notranslate 类：HTML 标准约定（Google 翻译同样尊重），通用
 // - shouldOmitText()：域名补丁（compat.ts），站点的特定元数据
-// - shouldPreserveText()：#58 占位符机制，用户名等标识符不翻译但保留原文
+// - 保留原文：#58 占位符机制，用户名等标识符不翻译但保留原文。先按站点
+//   页面规则的保留原文选择器（数据，#369），再按 compat 代码层判定
 
 import { shouldOmitText, shouldPreserveText } from './compat';
 import { INLINE_SET } from './classify';
+import { getSiteRules } from '~/src/storage/specialization';
 
 /**
  * Preserve 占位符格式：⟦PT0⟧、⟦PT1⟧ ...
@@ -27,10 +29,32 @@ const PLACEHOLDER_SUFFIX = '⟧';
 interface PreserveMap {
   placeholders: Map<string, string>; // ⟦PT0⟧ → 原文
   nextIndex: number;
+  /** 当前站点的保留原文选择器，每次提取读一次 */
+  selectors: string[];
+}
+
+function makePreserveMap(): PreserveMap {
+  return {
+    placeholders: new Map(),
+    nextIndex: 0,
+    selectors: getSiteRules(location.hostname).preserve,
+  };
 }
 
 function makePlaceholder(idx: number): string {
   return `${PLACEHOLDER_PREFIX}${idx}${PLACEHOLDER_SUFFIX}`;
+}
+
+/**
+ * 元素应保留的原文，或 null 表示不保留。只对行内元素生效。
+ * 判定顺序（ADR-0003）：站点页面规则的保留原文 → compat 代码层。
+ */
+function preservedText(el: Element, selectors: string[]): string | null {
+  if (!INLINE_SET.has(el.tagName.toLowerCase())) return null;
+  if (selectors.some((sel) => el.matches(sel))) {
+    return el.textContent?.trim() || null;
+  }
+  return shouldPreserveText(el);
 }
 
 /**
@@ -44,7 +68,7 @@ export function translatableTextEx(el: Element): {
   text: string;
   preserves: Map<string, string>;
 } {
-  const pm: PreserveMap = { placeholders: new Map(), nextIndex: 0 };
+  const pm = makePreserveMap();
   const text = walkTranslatable(el, pm);
   return { text, preserves: pm.placeholders };
 }
@@ -69,7 +93,7 @@ function walkTranslatable(el: Element, pm: PreserveMap | null): string {
 
         // #58 preserve：不翻译但保留原文（用户名等标识符）
         if (pm) {
-          const preserved = shouldPreserveText(c);
+          const preserved = preservedText(c, pm.selectors);
           if (preserved) {
             const ph = makePlaceholder(pm.nextIndex);
             pm.placeholders.set(ph, preserved);
@@ -111,7 +135,7 @@ export function shallowTranslatableTextEx(el: Element): {
   text: string;
   preserves: Map<string, string>;
 } {
-  const pm: PreserveMap = { placeholders: new Map(), nextIndex: 0 };
+  const pm = makePreserveMap();
   const text = walkShallow(el, pm);
   return { text, preserves: pm.placeholders };
 }
@@ -130,7 +154,7 @@ function walkShallow(el: Element, pm: PreserveMap | null): string {
 
       // #58 preserve
       if (pm) {
-        const preserved = shouldPreserveText(c);
+        const preserved = preservedText(c, pm.selectors);
         if (preserved) {
           const ph = makePlaceholder(pm.nextIndex);
           pm.placeholders.set(ph, preserved);

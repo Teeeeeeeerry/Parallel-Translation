@@ -21,12 +21,25 @@
  *   - 排除区内找不到段落，不出按钮也不翻译
  *   - 排除区外的正文照常找到段落
  *
+ * 保留原文（#369，迁自 compat.ts 的 github.com preserve 补丁）——
+ * 采集单元（collect 或逐段翻译的 closestUnit）后提取文本
+ * （translatableTextEx，全页与逐段翻译共用）：
+ *   - @mention、hovercard 用户名链接、author 微数据换成占位符，
+ *     回填后原文留在译文句子里
+ *   - 普通链接、空文本不保留；只对行内元素生效
+ *   - 原 compat-github.test.ts 中 shouldPreserveText 的用例改在这里验证
+ *
  * jsdom 的 location.hostname 是文件级选项，与其他域名的测试文件分离。
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
+import {
+  translatableTextEx,
+  shallowTranslatableTextEx,
+  restorePreserves,
+} from '~/src/dom/text';
 
 let restore: () => void;
 beforeEach(() => {
@@ -101,5 +114,86 @@ describe('closestUnit（github.com 内置排除，逐段翻译入口）', () => 
     document.body.innerHTML =
       '<article class="markdown-body"><p id="readme">Run the <b id="bold">installer</b> first.</p></article>';
     expect(closestUnit(document.getElementById('bold')!)?.id).toBe('readme');
+  });
+});
+
+describe('保留原文（github.com 内置规则，采集后提取文本）', () => {
+  /** 放入页面、采集唯一的单元并提取文本 —— 与 content 发往引擎的内容一致 */
+  function extract(html: string) {
+    document.body.innerHTML = html;
+    const units = collect();
+    expect(units).toHaveLength(1);
+    return translatableTextEx(units[0]!);
+  }
+
+  test('评论里的 @mention：换成占位符，回填后原文留在译文句子里', () => {
+    const { text, preserves } = extract(
+      '<p>Thanks <a class="user-mention" href="/torvalds">@torvalds</a>, merged in the main branch.</p>',
+    );
+    expect(text).not.toContain('@torvalds');
+    expect([...preserves.values()]).toEqual(['@torvalds']);
+
+    const [ph] = [...preserves.keys()];
+    const restored = restorePreserves(`感谢 ${ph}，已合并到主分支。`, preserves, text);
+    expect(restored).toBe('感谢 @torvalds，已合并到主分支。');
+  });
+
+  test('hovercard 用户名链接（[data-hovercard-url^="/users/"]）保留原文', () => {
+    const { preserves } = extract(
+      '<p>Reviewed by <a data-hovercard-url="/users/torvalds/hovercard">torvalds</a> yesterday.</p>',
+    );
+    expect([...preserves.values()]).toEqual(['torvalds']);
+  });
+
+  test('author 微数据（[rel="author"] / [itemprop="author"]）保留原文', () => {
+    const { preserves } = extract(
+      '<p>Written by <a rel="author">Linus Torvalds</a> and <span itemprop="author">octocat</span> together.</p>',
+    );
+    expect([...preserves.values()]).toEqual(['Linus Torvalds', 'octocat']);
+  });
+
+  test('普通链接照常翻译，不保留', () => {
+    const { text, preserves } = extract(
+      '<p>See <a href="https://github.com/foo/bar">the foo project</a> for details.</p>',
+    );
+    expect(preserves.size).toBe(0);
+    expect(text).toContain('the foo project');
+  });
+
+  test('空文本的 @mention 不保留', () => {
+    const { preserves } = extract(
+      '<p>Thanks <a class="user-mention">  </a> for the quick review.</p>',
+    );
+    expect(preserves.size).toBe(0);
+  });
+
+  test('保留原文只对行内元素生效：块级子元素命中选择器也照常翻译', () => {
+    // 选择器须真能命中块级元素：a.user-mention 限定了 a，这里用 hovercard。
+    // 块级子元素只在逐段翻译的完整提取里出现（全页翻译对含块级子元素的
+    // 单元走浅层提取，直接跳过它们），所以经 closestUnit() 取段落
+    document.body.innerHTML =
+      '<div id="outer">Opened by <div data-hovercard-url="/users/octocat">@octocat</div> in this thread.</div>';
+    const unit = closestUnit(document.getElementById('outer')!)!;
+    expect(unit.id).toBe('outer');
+    const { text, preserves } = translatableTextEx(unit);
+    expect(preserves.size).toBe(0);
+    expect(text).toContain('@octocat');
+  });
+
+  test('含块级子项的段落走浅层提取，行内 @mention 同样换成占位符', () => {
+    document.body.innerHTML =
+      '<ul><li id="parent">Assigned to <a class="user-mention">@octocat</a> for review' +
+      '<ul><li id="child">Follow-up item for the next release</li></ul></li></ul>';
+    expect(ids(collect())).toEqual(['parent', 'child']);
+    const parent = document.getElementById('parent')!;
+    expect([...shallowTranslatableTextEx(parent).preserves.values()]).toEqual(['@octocat']);
+  });
+
+  test('逐段翻译：经 closestUnit() 找到段落后同样换成占位符', () => {
+    document.body.innerHTML =
+      '<p id="c">Thanks <a class="user-mention" id="m">@torvalds</a>, merged in the main branch.</p>';
+    const unit = closestUnit(document.getElementById('m')!)!;
+    expect(unit.id).toBe('c');
+    expect([...translatableTextEx(unit).preserves.values()]).toEqual(['@torvalds']);
   });
 });

@@ -10,7 +10,7 @@
  * pre 含子元素而拒切，整篇远超 MAX_TEXT / MAX_HTML，
  * 采集 0 个翻译单元 —— 翻译静默失败（[data-pt="done"] 永不出现）。
  *
- * 与 compat-github.test.ts 同原因分离：jsdom 的 location.hostname
+ * 与 site-rules-github.test.ts 同原因分离：jsdom 的 location.hostname
  * 需设为 github.com 页面，@vitest-environment-options 是文件级选项。
  */
 import { describe, test, expect } from 'vitest';

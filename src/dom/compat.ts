@@ -100,26 +100,10 @@ function isGenericInlineBadge(el: Element): boolean {
 
 // ---- preserve：不翻译但保留原文（用户名等标识符） ----
 
-const PRESERVE_HANDLERS: Record<string, PreserveHandler> = {
-  'github.com': (el: Element) => {
-    // 评论正文里的 @mention（a.user-mention）：最高频场景
-    if (el.matches('a.user-mention')) {
-      return el.textContent?.trim() || null;
-    }
-
-    // hovercard 机制多年未变，覆盖几乎所有用户名链接
-    if (el.matches('[data-hovercard-url^="/users/"]')) {
-      return el.textContent?.trim() || null;
-    }
-
-    // 微数据属性：author 关联
-    if (el.matches('[rel="author"], [itemprop="author"]')) {
-      return el.textContent?.trim() || null;
-    }
-
-    return null;
-  },
-};
+// #369：github.com 的 preserve 补丁已迁为内置保留原文数据
+// （src/storage/builtin-site-rules.ts）。本表只收选择器表达不了的逻辑，
+// 目前为空。
+const PRESERVE_HANDLERS: Record<string, PreserveHandler> = {};
 
 /**
  * 元素文本是否应保留原文、不参与翻译。
