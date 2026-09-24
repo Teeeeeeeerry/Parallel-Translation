@@ -122,3 +122,42 @@ describe('closestUnit（限定范围，逐段翻译入口）', () => {
     expect(closestUnit(byId('bold'))).toBeNull();
   });
 });
+
+/** 在 host 下挂一个 open shadowRoot，内容为 html */
+function shadow(host: Element, html: string): ShadowRoot {
+  const root = host.attachShadow({ mode: 'open' });
+  root.innerHTML = html;
+  return root;
+}
+
+describe('限定范围越过 Shadow DOM 边界（#442）', () => {
+  /** 在 parent 下挂一个 Web Component 宿主，shadow 里是 id 为 id 的段落 */
+  function component(parent: Element, id: string): ShadowRoot {
+    const host = document.createElement('x-card');
+    parent.append(host);
+    return shadow(host, `<p id="${id}">Rendered by a <b id="${id}-b">web</b> component.</p>`);
+  }
+
+  test('宿主在范围内：shadow 里的段落照常采集，逐段翻译照常找到', async () => {
+    const root = component(document.querySelector('.content')!, 'sp');
+    await rules({ scope: ['.content'] });
+    expect(ids(collect())).toContain('sp');
+    expect(closestUnit(root.getElementById('sp-b')!)?.id).toBe('sp');
+  });
+
+  test('嵌套两层 shadowRoot 时同样在范围内', async () => {
+    const outer = document.createElement('x-shell');
+    document.querySelector('.content')!.append(outer);
+    const root = component(shadow(outer, '<div id="inner"></div>').getElementById('inner')!, 'deep');
+    await rules({ scope: ['.content'] });
+    expect(ids(collect())).toContain('deep');
+    expect(closestUnit(root.getElementById('deep-b')!)?.id).toBe('deep');
+  });
+
+  test('宿主在范围外：shadow 里的段落不采集，逐段翻译找不到', async () => {
+    const root = component(document.querySelector('.head')!, 'out');
+    await rules({ scope: ['.content'] });
+    expect(ids(collect())).not.toContain('out');
+    expect(closestUnit(root.getElementById('out-b')!)).toBeNull();
+  });
+});

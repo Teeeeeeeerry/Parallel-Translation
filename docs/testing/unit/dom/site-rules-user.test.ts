@@ -105,3 +105,41 @@ describe('collect（用户保留原文规则，#373）', () => {
     expect(preserved('body')).toEqual(['coding']);
   });
 });
+
+describe('排除越过 Shadow DOM 边界（#442）', () => {
+  /** 在 parent 下挂一个 Web Component 宿主，shadow 里是 id 为 id 的段落 */
+  function component(parent: Element, id: string): ShadowRoot {
+    const host = document.createElement('x-card');
+    parent.append(host);
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = `<p id="${id}">Rendered by a <b id="${id}-b">web</b> component.</p>`;
+    return root;
+  }
+
+  test('宿主在排除区内：以 shadow 里的新增节点为采集根时不采集，逐段翻译找不到', async () => {
+    const root = component(document.querySelector('.panel')!, 'sp');
+    await exclude('.panel');
+    expect(ids(collect())).toEqual(['body', 'more']);
+    // observer 增量补翻：shadow 里新增的节点是采集根
+    expect(collect(root.getElementById('sp')!)).toEqual([]);
+    expect(closestUnit(root.getElementById('sp-b')!)).toBeNull();
+  });
+
+  test('嵌套两层 shadowRoot 时同样在排除区内', async () => {
+    const outer = document.createElement('x-shell');
+    document.querySelector('.panel')!.append(outer);
+    const outerRoot = outer.attachShadow({ mode: 'open' });
+    outerRoot.innerHTML = '<div id="inner"></div>';
+    const root = component(outerRoot.getElementById('inner')!, 'deep');
+    await exclude('.panel');
+    expect(collect(root.getElementById('deep')!)).toEqual([]);
+    expect(closestUnit(root.getElementById('deep-b')!)).toBeNull();
+  });
+
+  test('宿主在排除区外：shadow 里的段落照常采集与找到', async () => {
+    const root = component(document.getElementById('more')!.parentElement!, 'ok');
+    await exclude('.panel');
+    expect(ids(collect(root.getElementById('ok')!))).toEqual(['ok']);
+    expect(closestUnit(root.getElementById('ok-b')!)?.id).toBe('ok');
+  });
+});
