@@ -377,6 +377,26 @@ export function onDomainsChanged(fn: () => void): () => void {
 }
 
 /**
+ * 生效领域列表的变更订阅（#417）：任一上下文新建、删除、修改领域后，重新
+ * 读取生效领域列表交给 fn。连续变更时只交付最后一次读取的结果，先发起、
+ * 后返回的旧读取不会覆盖新列表。返回取消订阅函数，取消后不再交付。
+ */
+export function watchEffectiveDomains(fn: (domains: Domain[]) => void): () => void {
+  let latest = 0;
+  let active = true;
+  const off = onDomainsChanged(() => {
+    const seq = ++latest;
+    void getEffectiveDomains().then((domains) => {
+      if (active && seq === latest) fn(domains);
+    });
+  });
+  return () => {
+    active = false;
+    off();
+  };
+}
+
+/**
  * 当前领域：列表中第一个目标语言一致、且适用网址命中 host 的领域。
  * 目标语言不一致的领域不启用，继续看后面的领域；都不命中返回 null。
  */

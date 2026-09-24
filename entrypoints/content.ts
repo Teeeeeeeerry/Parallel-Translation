@@ -49,7 +49,8 @@ import {
   patchSettings,
 } from '~/src/storage/settings';
 import type { Settings } from '~/src/storage/schema';
-import { getEffectiveDomains, currentDomain } from '~/src/storage/domains';
+import { getEffectiveDomains, watchEffectiveDomains, currentDomain } from '~/src/storage/domains';
+import type { Domain } from '~/src/storage/domains';
 import { siteRulesReady } from '~/src/storage/specialization';
 import { tf } from '~/src/i18n';
 import { isSiteBlocked } from '~/src/dom/site-filter';
@@ -67,14 +68,23 @@ export default defineContentScript({
   matches: ['<all_urls>'],
   allFrames: true,
   runAt: 'document_end',
-  async main() {
+  async main(ctx) {
     await settingsReady();
     // #164: 必须等平台缓存就绪再注册快捷键 —— 否则首次按键按 'other'
     // 匹配（忽略 metaKey），Mac 用户加载后的第一次 ⌘⇧Y 静默无响应
     await detectOS();
     const s = getSettings();
-    // #379: 生效领域列表 —— 全页翻译据此选出当前领域，请求里带上领域 ID
-    const domains = await getEffectiveDomains();
+    // #379: 生效领域列表 —— 全页翻译据此选出当前领域，请求里带上领域 ID。
+    // #417: 设置页改了领域后随之刷新，已打开的标签页无需刷新页面；先订阅
+    // 再读取，读取期间的变更不会漏掉。content script 失效（扩展重载 /
+    // 更新）时退订
+    let domains: Domain[] = [];
+    ctx.onInvalidated(
+      watchEffectiveDomains((next) => {
+        domains = next;
+      }),
+    );
+    domains = await getEffectiveDomains();
     // #370: 载入用户站点规则 —— 之后全页翻译与逐段翻译同步读取生效站点规则
     await siteRulesReady();
 
