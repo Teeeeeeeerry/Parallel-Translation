@@ -1038,6 +1038,10 @@ test.describe('Fixture: iframe', () => {
     await seedSettings({});
     await mockGoogle();
     await gotoFixture('iframe');
+    // #439：先等主 frame 的 content script 就绪再发消息。悬浮球与消息监听在
+    // 初始化完成后的同一段同步代码里注册，悬浮球出现即说明监听已在。
+    // CI 机器慢时不等就发，sendMessage 会因没有监听者被拒绝。
+    await waitForBall(page);
 
     // 与 popup 同路径：SW 端 tabs.sendMessage 不带 frameId 广播到全部 frame。
     // 若子 frame 的 undefined 返回抢先决议，status 会是 undefined。
