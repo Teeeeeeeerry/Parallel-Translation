@@ -13,6 +13,7 @@
  * #394：TC-E2E-72 覆盖设置页调整领域顺序。
  * #396：TC-E2E-73 覆盖设置页删除内置领域的术语。
  * #397：TC-E2E-74 覆盖设置页增删内置领域的适用网址。
+ * #398：TC-E2E-75 覆盖设置页内置领域恢复默认。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -722,5 +723,60 @@ test.describe('设置页：翻译领域 @extended', () => {
     await page.click('.pt-nav-btn[data-section="domains"]');
     await sites.locator('summary').click();
     await expect(textarea).toHaveValue(after.join('\n'));
+  });
+
+  test('TC-E2E-75: 修改过的内置领域显示“恢复默认”，确认后术语与适用网址回到内置内容，自建领域不显示（#398）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [{ id: 'user:e2e', name: '我的开发', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }],
+          builtin: {},
+        },
+      }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' });
+    const mine = page.locator('.pt-domain-item', { hasText: '我的开发' });
+    const reset = builtin.locator(':scope > .pt-domain-reset');
+
+    // 没有修改：不显示；自建领域始终不显示
+    await expect(reset).toHaveCount(0);
+    await expect(mine.locator('.pt-domain-reset')).toHaveCount(0);
+
+    // 改一下适用网址后出现
+    const sites = builtin.locator('.pt-domain-sites');
+    await sites.locator('summary').click();
+    const textarea = sites.locator('.pt-domain-sites-input');
+    const original = await textarea.inputValue();
+    await textarea.fill(`${original}\ngitee.com`);
+    await sites.locator('.pt-btn').click();
+    await expect(reset).toBeVisible();
+
+    // 取消确认：存储里的修改还在
+    page.once('dialog', (d) => void d.dismiss());
+    await reset.click();
+    const overlay = () =>
+      serviceWorker.evaluate(async () => {
+        const stored = (await chrome.storage.local.get('pt-domains'))['pt-domains'] as {
+          builtin: Record<string, unknown>;
+        };
+        return stored.builtin['builtin:software-zh-CN'] ?? null;
+      });
+    expect(await overlay()).not.toBeNull();
+    await expect(reset).toBeVisible();
+
+    // 确认后恢复，按钮消失
+    page.once('dialog', (d) => void d.accept());
+    await reset.click();
+    await expect(page.locator('#pt-toast')).toHaveText('已恢复默认');
+    await expect(reset).toHaveCount(0);
+    await expect(textarea).toHaveValue(original);
+    expect(await overlay()).toBeNull();
+    // 焦点交还给同一领域的移动按钮
+    await expect(builtin.locator(':scope > .pt-domain-move:focus')).toHaveCount(1);
   });
 });

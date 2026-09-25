@@ -292,5 +292,15 @@
   "domainMoveFailed": {
     "message": "調整順序失敗：$error$",
     "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainReset": { "message": "還原預設" },
+  "domainResetConfirm": {
+    "message": "確定將領域「$name$」還原預設嗎？你對它的術語和適用網址所做的修改都會清除。",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainResetDone": { "message": "已還原預設" },
+  "domainResetFailed": {
+    "message": "還原預設失敗：$error$",
+    "placeholders": { "error": { "content": "$1" } }
   }
 }

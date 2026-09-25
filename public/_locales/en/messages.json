@@ -292,5 +292,15 @@
   "domainMoveFailed": {
     "message": "Failed to reorder: $error$",
     "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainReset": { "message": "Restore defaults" },
+  "domainResetConfirm": {
+    "message": "Restore domain \"$name$\" to its defaults? Your changes to its terms and sites will be cleared.",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainResetDone": { "message": "Defaults restored" },
+  "domainResetFailed": {
+    "message": "Failed to restore defaults: $error$",
+    "placeholders": { "error": { "content": "$1" } }
   }
 }

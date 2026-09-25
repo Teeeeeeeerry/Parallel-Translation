@@ -292,5 +292,15 @@
   "domainMoveFailed": {
     "message": "调整顺序失败：$error$",
     "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainReset": { "message": "恢复默认" },
+  "domainResetConfirm": {
+    "message": "确定把领域“$name$”恢复默认吗？你对它的术语和适用网址所做的修改都会清除。",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainResetDone": { "message": "已恢复默认" },
+  "domainResetFailed": {
+    "message": "恢复默认失败：$error$",
+    "placeholders": { "error": { "content": "$1" } }
   }
 }

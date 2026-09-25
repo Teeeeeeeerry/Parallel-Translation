@@ -447,6 +447,44 @@ export function isBuiltinTerm(domainId: string, source: string): boolean {
   return BUILTIN_DOMAINS.some((d) => d.id === domainId && d.terms.some((t) => termKey(t) === key));
 }
 
+/**
+ * 恢复默认（#398）：清空内置领域在叠加层上的全部修改 —— 术语的修改、新增、
+ * 删除与适用网址的增删，生效内容回到当前版本的内置内容。只动这一个领域，
+ * 领域顺序不变。自建领域抛错。返回恢复后的领域。
+ *
+ * 当前内置里已经没有的原词或网址，它们的删除记录也一并清掉：以后的版本
+ * 加回它们时照常生效。这是恢复默认有意为之，与 #396 的“不复活”不冲突。
+ */
+export async function resetBuiltinDomain(id: string): Promise<Domain> {
+  const base = BUILTIN_DOMAINS.find((d) => d.id === id);
+  if (!base) throw new Error('[PT] 只有内置领域可以恢复默认');
+  return updateStored((stored) => {
+    const { [id]: prev, ...rest } = stored.builtin;
+    const result = withOverlay(base, undefined);
+    // 本来就没有叠加层：不写入
+    if (!prev) return { stored: null, result };
+    return { stored: { ...stored, builtin: rest }, result };
+  });
+}
+
+/**
+ * 内置领域是否有用户修改（#398）：生效的术语或适用网址与当前版本的内置
+ * 内容不同。设置页据此决定是否显示“恢复默认”。自建领域一律返回 false。
+ *
+ * 只看生效内容：叠加层里只剩对当前内置已没有的原词或网址的删除记录时，
+ * 对用户没有可见影响，不算修改。
+ */
+export function isBuiltinModified(d: Domain): boolean {
+  const base = BUILTIN_DOMAINS.find((b) => b.id === d.id);
+  if (!base) return false;
+  return (
+    d.sites.length !== base.sites.length ||
+    d.sites.some((s, i) => s !== base.sites[i]) ||
+    d.terms.length !== base.terms.length ||
+    d.terms.some((t, i) => !sameTerm(t, base.terms[i]))
+  );
+}
+
 /** 两条术语的原词（不区分大小写）、译法与“不翻译”标记都相同。 */
 function sameTerm(a: Term, b: Term | undefined): boolean {
   return (

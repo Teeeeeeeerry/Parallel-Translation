@@ -7,7 +7,8 @@
 // 翻译领域分区（#391，父 #365）：列出内置与自建领域，新建与删除自建领域；
 // 编辑自建领域的适用网址（#392）与术语（#393）；编辑内置领域的术语
 // （#395）并可删除内置术语（#396），增删内置领域的适用网址（#397）；
-// 机翻引擎“指定译法”开关（#390）；上移、下移调整领域顺序（#394）。
+// 机翻引擎“指定译法”开关（#390）；上移、下移调整领域顺序（#394）；
+// 修改过的内置领域可以恢复默认（#398）。
 
 import { LANG_LIST } from '~/src/storage/schema';
 import {
@@ -22,6 +23,8 @@ import {
   InvalidTermsError,
   DomainNotFoundError,
   isBuiltinTerm,
+  isBuiltinModified,
+  resetBuiltinDomain,
 } from '~/src/storage/domains';
 import { getSettings, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import type { Domain, Term } from '~/src/storage/domains';
@@ -297,6 +300,7 @@ function domainItem(
   pos: { first: boolean; last: boolean },
   onMove: (d: Domain, direction: 'up' | 'down') => void,
   onDelete: (d: Domain) => void,
+  onReset: (d: Domain) => void,
   onGone: () => void,
 ): HTMLLIElement {
   const li = document.createElement('li');
@@ -322,7 +326,16 @@ function domainItem(
     const badge = document.createElement('span');
     badge.className = 'pt-domain-badge';
     badge.textContent = tf('domainBuiltinBadge', '内置');
-    li.append(badge, sitesEditor(d, onGone), termsEditor(d, onGone));
+    li.append(badge);
+    // #398: 有用户修改时才给“恢复默认”
+    if (isBuiltinModified(d)) {
+      const reset = document.createElement('button');
+      reset.className = 'pt-domain-reset';
+      reset.textContent = tf('domainReset', '恢复默认');
+      reset.addEventListener('click', () => onReset(d));
+      li.append(reset);
+    }
+    li.append(sitesEditor(d, onGone), termsEditor(d, onGone));
   } else {
     const del = document.createElement('button');
     del.className = 'pt-site-remove';
@@ -360,7 +373,7 @@ export function initDomains(): void {
     );
     const items = domains.map((d, i) => {
       const pos = { first: i === 0, last: i === domains.length - 1 };
-      const li = domainItem(d, pos, move, remove, refresh);
+      const li = domainItem(d, pos, move, remove, reset, refresh);
       const prevLi = old.get(d.id);
       li.querySelectorAll('details').forEach((next) => {
         const prev = prevLi?.querySelector<HTMLDetailsElement>(
@@ -373,18 +386,21 @@ export function initDomains(): void {
       return li;
     });
     // #394: 焦点在上移、下移按钮上时，重绘后交还给同一领域的同一按钮；
-    // 它移到端点后不可用，改给另一个方向的按钮，便于用键盘连续调整
+    // 它移到端点后不可用，改给另一个方向的按钮，便于用键盘连续调整。
+    // #398: 焦点在“恢复默认”上时，恢复后按钮消失，交给同一领域的移动按钮
     const focused = document.activeElement;
-    const focusedMove =
-      focused instanceof HTMLElement && focused.classList.contains('pt-domain-move')
+    const focusedBtn =
+      focused instanceof HTMLElement &&
+      (focused.classList.contains('pt-domain-move') || focused.classList.contains('pt-domain-reset'))
         ? { id: focused.closest<HTMLElement>('.pt-domain-item')?.dataset.id, dir: focused.dataset.direction }
         : null;
     listEl.replaceChildren(...items);
-    if (focusedMove) {
-      const li = items.find((el) => el.dataset.id === focusedMove.id);
+    if (focusedBtn) {
+      const li = items.find((el) => el.dataset.id === focusedBtn.id);
+      const reset = focusedBtn.dir ? null : li?.querySelector<HTMLButtonElement>(':scope > .pt-domain-reset');
       const buttons = [...(li?.querySelectorAll<HTMLButtonElement>(':scope > .pt-domain-move') ?? [])];
-      const same = buttons.find((b) => b.dataset.direction === focusedMove.dir);
-      (same && !same.disabled ? same : buttons.find((b) => !b.disabled))?.focus();
+      const same = buttons.find((b) => b.dataset.direction === focusedBtn.dir);
+      (reset ?? (same && !same.disabled ? same : buttons.find((b) => !b.disabled)))?.focus();
     }
   }
 
@@ -395,6 +411,23 @@ export function initDomains(): void {
       const reason = failReason(e);
       showToast(tf('domainMoveFailed', `调整顺序失败：${reason}`, reason), 4000);
     });
+  }
+
+  // #398: 确认后清空这个内置领域的全部修改，经存储变更整表重绘
+  function reset(d: Domain): void {
+    const msg = tf(
+      'domainResetConfirm',
+      `确定把领域“${d.name}”恢复默认吗？你对它的术语和适用网址所做的修改都会清除。`,
+      d.name,
+    );
+    if (!confirm(msg)) return;
+    resetBuiltinDomain(d.id)
+      .then(() => showToast(tf('domainResetDone', '已恢复默认')))
+      .catch((e) => {
+        console.error('[PT] 恢复默认失败:', e);
+        const reason = failReason(e);
+        showToast(tf('domainResetFailed', `恢复默认失败：${reason}`, reason), 4000);
+      });
   }
 
   function remove(d: Domain): void {
