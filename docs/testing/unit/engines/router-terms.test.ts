@@ -7,6 +7,8 @@
  *
  * #419：术语哈希只算该引擎实际生效的术语 —— Google 只替换“不翻译”术语，
  * AI 引擎注入全部命中术语，不处理术语的引擎一个都不算。
+ *
+ * #385：中日韩术语按子串匹配 —— 断言发给 Google 的原文里哪些术语换成了占位符。
  */
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import type { Domain, Term } from '~/src/storage/domains';
@@ -149,6 +151,51 @@ describe('术语匹配（拉丁字母整词、不区分大小写）', () => {
     expect(await keyWritten('pull requests pile up', 'dev')).toBe(
       await legacyKey('pull requests pile up'),
     );
+  });
+});
+
+describe('中日韩术语按子串匹配（#385）', () => {
+  /** 发给 Google 的原文：命中的“不翻译”术语换成了占位符。 */
+  async function sent(text: string, terms: Term[]): Promise<string> {
+    domains[0]!.terms = terms;
+    googleTranslate.mockClear();
+    await route({ texts: [text], from: 'en', to: 'zh-CN', domainId: 'dev' });
+    return googleTranslate.mock.calls[0]![0].texts[0]!;
+  }
+  const keep = (source: string): Term => ({ source, noTranslate: true });
+
+  test('中文原词：紧挨拉丁字母、数字或中文都命中', async () => {
+    expect(await sent('K8s集群扩容', [keep('集群')])).toBe('K8s⟦TM0⟧扩容');
+    expect(await sent('部署集群2号', [keep('集群')])).toBe('部署⟦TM0⟧2号');
+    expect(await sent('集群abc', [keep('集群')])).toBe('⟦TM0⟧abc');
+  });
+
+  test('日文原词（含长音符）：夹在拉丁字母之间也命中', async () => {
+    expect(await sent('Kubernetesクラスターmanager', [keep('クラスター')])).toBe(
+      'Kubernetes⟦TM0⟧manager',
+    );
+  });
+
+  test('韩文原词：紧挨拉丁字母也命中', async () => {
+    expect(await sent('Kubernetes클러스터', [keep('클러스터')])).toBe('Kubernetes⟦TM0⟧');
+  });
+
+  test('拉丁字母原词的整词匹配不受影响', async () => {
+    expect(await sent('the price is right', [keep('pr')])).toBe('the price is right');
+    expect(await sent('a.NET app', [keep('.NET')])).toBe('a.NET app');
+    expect(await sent('打开PR页面', [keep('PR')])).toBe('打开⟦TM0⟧页面');
+  });
+
+  test('混合原词“K8s 集群”：拉丁字母一侧按整词，中日韩文字一侧按子串', async () => {
+    const terms = [keep('K8s 集群')];
+    expect(await sent('部署K8s 集群化方案', terms)).toBe('部署⟦TM0⟧化方案');
+    expect(await sent('use K8s 集群', terms)).toBe('use ⟦TM0⟧');
+    // 左侧是拉丁字母边缘：紧挨字母时不命中
+    expect(await sent('EK8s 集群', terms)).toBe('EK8s 集群');
+  });
+
+  test('中文原词与更长的混合原词重叠时长的优先', async () => {
+    expect(await sent('K8s 集群扩容', [keep('集群'), keep('K8s 集群')])).toBe('⟦TM0⟧扩容');
   });
 });
 
