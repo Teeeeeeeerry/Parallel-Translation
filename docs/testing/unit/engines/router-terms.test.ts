@@ -194,8 +194,12 @@ describe('中日韩术语按子串匹配（#385）', () => {
     expect(await sent('EK8s 集群', terms)).toBe('EK8s 集群');
   });
 
-  test('中文原词与更长的混合原词重叠时长的优先', async () => {
-    expect(await sent('K8s 集群扩容', [keep('集群'), keep('K8s 集群')])).toBe('⟦TM0⟧扩容');
+  test('从同一位置开始的中文原词重叠时长的优先', async () => {
+    expect(await sent('集群化方案', [keep('集群'), keep('集群化')])).toBe('⟦TM0⟧方案');
+  });
+
+  test('拉丁字母原词紧挨日文长音符也算整词', async () => {
+    expect(await sent('ユーザーIDを入力', [keep('ID')])).toBe('ユーザー⟦TM0⟧を入力');
   });
 });
 
