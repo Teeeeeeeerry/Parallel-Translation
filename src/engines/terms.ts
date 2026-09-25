@@ -9,21 +9,38 @@
 // 不区分大小写；拉丁字母术语按整词匹配：术语两侧不能紧挨字母、数字
 // 或下划线，这样 PR 不会误命中 price 里的 pr。中日韩文字不算词内字符
 // —— 这些语言不用空格分词，“打开PR页面”里的 PR 照样命中。
+//
+// 中日韩术语按子串匹配（#385）：原词边缘是中日韩文字的一侧不检查词边界，
+// “K8s集群”里的“集群”照样命中。混合原词两侧分别看：“K8s 集群”左侧是
+// 拉丁字母，仍按整词，“EK8s 集群”不命中；右侧是中文，“K8s 集群化”命中。
 
 import type { Term } from '~/src/storage/domains';
 
+/**
+ * 中日韩文字。按 Script_Extensions 判定，长音符“ー”这类兼属多种文字的
+ * 字符也算在内（#385）。
+ */
+const CJK = '[\\p{scx=Han}\\p{scx=Hiragana}\\p{scx=Katakana}\\p{scx=Hangul}]';
+const CJK_CHAR = new RegExp(CJK, 'u');
+
 /** 词内字符：字母、数字、下划线，中日韩文字除外。 */
-const WORD_CHAR =
-  '(?:(?![\\p{sc=Han}\\p{sc=Hiragana}\\p{sc=Katakana}\\p{sc=Hangul}])[\\p{L}\\p{N}_])';
+const WORD_CHAR = `(?:(?!${CJK})[\\p{L}\\p{N}_])`;
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** 按整词边界匹配任一原词（不区分大小写）。 */
-function wholeWord(sources: readonly string[], flags: string): RegExp {
-  const body = sources.map(escapeRegExp).join('|');
-  return new RegExp(`(?<!${WORD_CHAR})(?:${body})(?!${WORD_CHAR})`, flags);
+/** 一个原词的匹配式：边缘不是中日韩文字的一侧要求词边界。 */
+function termPattern(source: string): string {
+  const chars = [...source];
+  const before = CJK_CHAR.test(chars[0]!) ? '' : `(?<!${WORD_CHAR})`;
+  const after = CJK_CHAR.test(chars[chars.length - 1]!) ? '' : `(?!${WORD_CHAR})`;
+  return `${before}${escapeRegExp(source)}${after}`;
+}
+
+/** 按词边界匹配任一原词（不区分大小写；中日韩文字一侧按子串，#385）。 */
+function termRegExp(sources: readonly string[], flags: string): RegExp {
+  return new RegExp(sources.map(termPattern).join('|'), flags);
 }
 
 /** 能约束译文的术语：给了译法，或标为“不翻译”。 */
@@ -36,7 +53,7 @@ function isEffective(t: Term): boolean {
  * （既没给译法、也没标“不翻译”）不算命中，不进缓存 key 也不发送。
  */
 export function matchTerms(terms: readonly Term[], text: string): Term[] {
-  return terms.filter((t) => isEffective(t) && wholeWord([t.source.trim()], 'iu').test(text));
+  return terms.filter((t) => isEffective(t) && termRegExp([t.source.trim()], 'iu').test(text));
 }
 
 /**
@@ -67,7 +84,7 @@ export function maskTerms(text: string, terms: readonly Term[]): MaskedText {
   if (sources.length === 0 || /⟦TM\d+⟧/.test(text)) return { text, replacements: [] };
 
   const replacements: string[] = [];
-  const masked = text.replace(wholeWord(sources, 'giu'), (m) => {
+  const masked = text.replace(termRegExp(sources, 'giu'), (m) => {
     const term = terms.find((t) => t.source.trim().toLowerCase() === m.toLowerCase());
     // 同时标了“不翻译”和译法时按“不翻译”处理
     const fill = term && !term.noTranslate && term.target?.trim() ? term.target.trim() : m;
