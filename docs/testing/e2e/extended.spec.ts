@@ -10,6 +10,7 @@
  * #383/#384：TC-E2E-67 覆盖逐段翻译与划词翻译带上当前领域。
  * #471：TC-E2E-70 覆盖跨域 iframe 里的文字按顶层页面判定当前领域。
  * #470：TC-E2E-71 覆盖设置页新建、删除领域失败时的提示。
+ * #394：TC-E2E-72 覆盖设置页调整领域顺序。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -623,5 +624,39 @@ test.describe('设置页：翻译领域 @extended', () => {
     await item.locator(':scope > .pt-site-remove').click();
     await expect(toast).toHaveText('删除领域失败：存储配额已满');
     await expect(item).toBeVisible();
+  });
+
+  test('TC-E2E-72: 领域列表上移、下移，顺序保存后重新打开设置页不变（#394）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [{ id: 'user:e2e', name: '我的开发', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }],
+          builtin: {},
+        },
+      }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const names = page.locator('.pt-domain-item .pt-domain-name');
+    await expect(names).toHaveText(['软件开发(简体中文)', '我的开发']);
+
+    // 两端的按钮不可用：第一个不能上移，最后一个不能下移
+    const first = page.locator('.pt-domain-item').first();
+    const last = page.locator('.pt-domain-item').last();
+    await expect(first.locator(':scope > .pt-domain-move[data-direction="up"]')).toBeDisabled();
+    await expect(last.locator(':scope > .pt-domain-move[data-direction="down"]')).toBeDisabled();
+
+    await last.locator(':scope > .pt-domain-move[data-direction="up"]').click();
+    await expect(names).toHaveText(['我的开发', '软件开发(简体中文)']);
+
+    await page.reload();
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    await expect(names).toHaveText(['我的开发', '软件开发(简体中文)']);
+
+    await page.locator('.pt-domain-item').first().locator(':scope > .pt-domain-move[data-direction="down"]').click();
+    await expect(names).toHaveText(['软件开发(简体中文)', '我的开发']);
   });
 });

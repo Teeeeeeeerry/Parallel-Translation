@@ -6,13 +6,15 @@
 
 // 翻译领域分区（#391，父 #365）：列出内置与自建领域，新建与删除自建领域；
 // 编辑自建领域的适用网址（#392）与术语（#393）；编辑内置领域的术语
-// （#395），内置领域的适用网址在本期只读；机翻引擎“指定译法”开关（#390）。
+// （#395），内置领域的适用网址在本期只读；机翻引擎“指定译法”开关（#390）；
+// 上移、下移调整领域顺序（#394）。
 
 import { LANG_LIST } from '~/src/storage/schema';
 import {
   getEffectiveDomains,
   createDomain,
   deleteDomain,
+  moveDomain,
   setDomainSites,
   setDomainTerms,
   onDomainsChanged,
@@ -269,9 +271,30 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
   return details;
 }
 
-/** 一行领域：名称、目标语言、内置标注或删除按钮。领域名是用户输入，只走 textContent。 */
+/**
+ * 上移或下移按钮（#394）。排在两端时对应的按钮不可用。
+ */
+function moveButton(
+  d: Domain,
+  direction: 'up' | 'down',
+  disabled: boolean,
+  onMove: (d: Domain, direction: 'up' | 'down') => void,
+): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.className = 'pt-domain-move';
+  btn.dataset.direction = direction;
+  btn.textContent = direction === 'up' ? '↑' : '↓';
+  btn.title = direction === 'up' ? tf('domainMoveUp', '上移') : tf('domainMoveDown', '下移');
+  btn.disabled = disabled;
+  btn.addEventListener('click', () => onMove(d, direction));
+  return btn;
+}
+
+/** 一行领域：名称、目标语言、上移下移、内置标注或删除按钮。领域名是用户输入，只走 textContent。 */
 function domainItem(
   d: Domain,
+  pos: { first: boolean; last: boolean },
+  onMove: (d: Domain, direction: 'up' | 'down') => void,
   onDelete: (d: Domain) => void,
   onGone: () => void,
 ): HTMLLIElement {
@@ -287,7 +310,12 @@ function domainItem(
   lang.className = 'pt-domain-lang';
   lang.textContent = langLabel(d.targetLang);
 
-  li.append(name, lang);
+  li.append(
+    name,
+    lang,
+    moveButton(d, 'up', pos.first, onMove),
+    moveButton(d, 'down', pos.last, onMove),
+  );
 
   if (d.origin === 'builtin') {
     const badge = document.createElement('span');
@@ -325,8 +353,9 @@ export function initDomains(): void {
     const old = new Map(
       [...listEl.querySelectorAll<HTMLElement>('.pt-domain-item')].map((li) => [li.dataset.id, li]),
     );
-    const items = domains.map((d) => {
-      const li = domainItem(d, remove, refresh);
+    const items = domains.map((d, i) => {
+      const pos = { first: i === 0, last: i === domains.length - 1 };
+      const li = domainItem(d, pos, move, remove, refresh);
       const prevLi = old.get(d.id);
       li.querySelectorAll('details').forEach((next) => {
         const prev = prevLi?.querySelector<HTMLDetailsElement>(
@@ -339,6 +368,15 @@ export function initDomains(): void {
       return li;
     });
     listEl.replaceChildren(...items);
+  }
+
+  // #394: 顺序写入后经存储变更整表重绘；失败时提示原因，列表保持原样
+  function move(d: Domain, direction: 'up' | 'down'): void {
+    moveDomain(d.id, direction).catch((e) => {
+      console.error('[PT] 调整领域顺序失败:', e);
+      const reason = failReason(e);
+      showToast(tf('domainMoveFailed', `调整顺序失败：${reason}`, reason), 4000);
+    });
   }
 
   function remove(d: Domain): void {
