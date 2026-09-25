@@ -95,10 +95,14 @@ function saveFailed(e: unknown, error: HTMLElement, onGone: () => void): void {
     onGone();
     return;
   }
-  // 内部错误的“[PT] ”日志前缀不给用户看
-  const reason = (e instanceof Error ? e.message : String(e)).replace(/^\[PT\]\s*/, '');
+  const reason = failReason(e);
   error.textContent = tf('domainSaveFailed', `保存失败：${reason}`, reason);
   error.classList.add('pt-visible');
+}
+
+/** 给用户看的失败原因：内部错误的“[PT] ”日志前缀不给用户看。 */
+function failReason(e: unknown): string {
+  return (e instanceof Error ? e.message : String(e)).replace(/^\[PT\]\s*/, '');
 }
 
 /** 列表分隔符：中文界面用顿号。 */
@@ -341,8 +345,12 @@ export function initDomains(): void {
     if (!confirm(tf('domainDeleteConfirm', `确定删除领域“${d.name}”吗？删除后无法恢复。`, d.name))) {
       return;
     }
-    deleteDomain(d.id)
-      .catch((e) => console.error('[PT] 删除领域失败:', e));
+    // #470: 失败时提示原因，列表以存储为准保持原样
+    deleteDomain(d.id).catch((e) => {
+      console.error('[PT] 删除领域失败:', e);
+      const reason = failReason(e);
+      showToast(tf('domainDeleteFailed', `删除领域失败：${reason}`, reason), 4000);
+    });
   }
 
   function create(): void {
@@ -355,7 +363,12 @@ export function initDomains(): void {
         nameInput.value = '';
         showToast(tf('domainCreated', '已新建领域'));
       })
-      .catch((e) => console.error('[PT] 新建领域失败:', e));
+      // #470: 失败时提示原因，名称留在输入框里方便重试
+      .catch((e) => {
+        console.error('[PT] 新建领域失败:', e);
+        const reason = failReason(e);
+        showToast(tf('domainCreateFailed', `新建领域失败：${reason}`, reason), 4000);
+      });
   }
 
   createBtn.addEventListener('click', create);

@@ -278,5 +278,13 @@
     "placeholders": { "site": { "content": "$1" } }
   },
   "siteRulesDeleted": { "message": "已刪除，重新整理該網站後生效" },
-  "siteRulesDisableBuiltin": { "message": "停用這個站點的內建規則" }
+  "siteRulesDisableBuiltin": { "message": "停用這個站點的內建規則" },
+  "domainCreateFailed": {
+    "message": "新增領域失敗：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainDeleteFailed": {
+    "message": "刪除領域失敗：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  }
 }

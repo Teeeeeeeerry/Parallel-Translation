@@ -8,6 +8,7 @@
  * #120：TC-E2E-31/32/33/39/40/41/42/43/45 由占位 skip 实现为真实用例。
  * #440：TC-E2E-64 覆盖下一个引擎 key 无效时保留已成功段落。
  * #383/#384：TC-E2E-67 覆盖逐段翻译与划词翻译带上当前领域。
+ * #470：TC-E2E-71 覆盖设置页新建、删除领域失败时的提示。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -506,5 +507,44 @@ test.describe('边界情况 @extended', () => {
       timeout: 20_000,
     });
     expect(await queries()).toContain('Second ⟦TM0⟧ that should also be translated');
+  });
+});
+
+test.describe('设置页：翻译领域 @extended', () => {
+  test('TC-E2E-71: 新建或删除领域写入失败 → toast 提示原因，名称留在输入框、领域留在列表（#470）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [{ id: 'user:e2e', name: '待删除', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }],
+          builtin: {},
+        },
+      }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const item = page.locator('.pt-domain-item', { hasText: '待删除' });
+    await expect(item).toBeVisible();
+
+    // 设置页里的存储写入被拒绝（同 #430 的手动验证做法）
+    await page.evaluate(() => {
+      (chrome.storage.local as any).set = () => Promise.reject(new Error('[PT] 存储配额已满'));
+    });
+    const toast = page.locator('#pt-toast');
+
+    // 新建失败：提示原因（不带“[PT] ”前缀），名称留在输入框，列表里没有新领域
+    await page.fill('#pt-domain-name-input', '法律');
+    await page.click('#pt-domain-create-btn');
+    await expect(toast).toHaveText('新建领域失败：存储配额已满');
+    await expect(page.locator('#pt-domain-name-input')).toHaveValue('法律');
+    await expect(page.locator('.pt-domain-item', { hasText: '法律' })).toHaveCount(0);
+
+    // 删除失败：提示原因，领域仍在列表里
+    page.once('dialog', (d) => void d.accept());
+    await item.locator('.pt-site-remove').click();
+    await expect(toast).toHaveText('删除领域失败：存储配额已满');
+    await expect(item).toBeVisible();
   });
 });

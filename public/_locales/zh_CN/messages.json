@@ -278,5 +278,13 @@
     "placeholders": { "site": { "content": "$1" } }
   },
   "siteRulesDeleted": { "message": "已删除，刷新该网站后生效" },
-  "siteRulesDisableBuiltin": { "message": "停用这个站点的内置规则" }
+  "siteRulesDisableBuiltin": { "message": "停用这个站点的内置规则" },
+  "domainCreateFailed": {
+    "message": "新建领域失败：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainDeleteFailed": {
+    "message": "删除领域失败：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  }
 }
