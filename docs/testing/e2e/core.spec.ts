@@ -6,6 +6,7 @@
  *
  * 翻译端点由 mockGoogle 拦截，完全确定性，不依赖外网。
  */
+import fs from 'fs';
 import { test, expect, waitForBall } from './fixtures';
 
 // ── 辅助：触发翻译并等待完成 ──
@@ -1406,5 +1407,34 @@ test.describe('站点页面规则', () => {
     await toggle.click();
     await expect(toggle).not.toHaveClass(/pt-on/);
     await expect.poll(cards).toContainEqual({ site: 'github.com', disableBuiltin: false });
+  });
+
+  test('@core TC-E2E-69: 设置页导出站点规则 → 下载 JSON 文件，只含用户规则（#376）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    await page.fill('#pt-site-rules-site-input', 'github.com');
+    await page.click('#pt-site-rules-add-btn');
+    const card = page.locator('.pt-site-rules-card', { hasText: 'github.com' });
+    await card.locator('textarea[data-field="exclude"]').fill('.my-sidebar');
+    await card.locator('.pt-site-rules-save').click();
+    await expect(page.locator('#pt-toast')).toBeVisible();
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.click('#pt-site-rules-export-btn'),
+    ]);
+    expect(download.suggestedFilename()).toBe('parallel-translation-site-rules.json');
+    const file = await download.path();
+    const json = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    expect(json).toEqual({
+      format: 'parallel-translation-site-rules',
+      version: 1,
+      sites: {
+        'github.com': { scope: [], exclude: ['.my-sidebar'], preserve: [], disableBuiltin: false },
+      },
+    });
   });
 });

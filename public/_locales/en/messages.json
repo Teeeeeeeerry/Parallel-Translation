@@ -302,5 +302,8 @@
   "domainResetFailed": {
     "message": "Failed to restore defaults: $error$",
     "placeholders": { "error": { "content": "$1" } }
-  }
+  },
+  "siteRulesCardBackup": { "message": "Backup and migration" },
+  "siteRulesExport": { "message": "Export JSON" },
+  "siteRulesExported": { "message": "Site rules exported" }
 }

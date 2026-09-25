@@ -302,5 +302,8 @@
   "domainResetFailed": {
     "message": "恢复默认失败：$error$",
     "placeholders": { "error": { "content": "$1" } }
-  }
+  },
+  "siteRulesCardBackup": { "message": "备份与迁移" },
+  "siteRulesExport": { "message": "导出 JSON" },
+  "siteRulesExported": { "message": "站点规则已导出" }
 }

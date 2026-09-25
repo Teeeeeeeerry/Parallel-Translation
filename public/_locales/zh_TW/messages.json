@@ -302,5 +302,8 @@
   "domainResetFailed": {
     "message": "還原預設失敗：$error$",
     "placeholders": { "error": { "content": "$1" } }
-  }
+  },
+  "siteRulesCardBackup": { "message": "備份與遷移" },
+  "siteRulesExport": { "message": "匯出 JSON" },
+  "siteRulesExported": { "message": "站點規則已匯出" }
 }

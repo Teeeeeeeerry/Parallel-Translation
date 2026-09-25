@@ -649,3 +649,70 @@ describe('停用开关只作用于卡片站点及其子域（#467）', () => {
     expect(options.hasBuiltinSiteRules('gist.example.com')).toBe(false);
   });
 });
+
+/**
+ * 站点规则 JSON 导出（#376）：把全部用户规则导出为一个 JSON 文件，用于
+ * 备份和迁移。按裸域名列出站点卡片，含三类选择器列表与停用内置规则
+ * 标记，带格式版本号。只含用户规则，不含内置规则。
+ */
+describe('站点规则 JSON 导出（#376）', () => {
+  type Spec = typeof import('~/src/storage/specialization');
+  let options: Spec;
+  beforeEach(async () => {
+    resetStorage();
+    vi.resetModules();
+    options = await import('~/src/storage/specialization');
+  });
+
+  const exported = async () => JSON.parse(await options.exportUserSiteRules());
+
+  test('没有用户规则时导出空列表，带格式标识与版本号', async () => {
+    expect(await exported()).toEqual({
+      format: 'parallel-translation-site-rules',
+      version: 1,
+      sites: {},
+    });
+  });
+
+  test('按裸域名导出每张站点卡片的三类选择器与停用内置规则标记', async () => {
+    await options.saveUserSiteRules('github.com', { exclude: ['.my-sidebar'], preserve: ['.user'] });
+    await options.setBuiltinSiteRulesDisabled('github.com', true);
+    await options.saveUserSiteRules('example.com', { scope: ['main', 'article'] });
+    expect((await exported()).sites).toEqual({
+      'github.com': {
+        scope: [],
+        exclude: ['.my-sidebar'],
+        preserve: ['.user'],
+        disableBuiltin: true,
+      },
+      'example.com': {
+        scope: ['main', 'article'],
+        exclude: [],
+        preserve: [],
+        disableBuiltin: false,
+      },
+    });
+  });
+
+  test('站点按新增顺序排列', async () => {
+    for (const site of ['c.com', 'a.com', 'b.com']) await options.saveUserSiteRules(site, {});
+    expect(Object.keys((await exported()).sites)).toEqual(['c.com', 'a.com', 'b.com']);
+  });
+
+  test('只含用户规则，不含内置规则', async () => {
+    await options.saveUserSiteRules('github.com', { exclude: ['.my-sidebar'] });
+    const { sites } = await exported();
+    expect(Object.keys(sites)).toEqual(['github.com']);
+    expect(sites['github.com'].exclude).toEqual(['.my-sidebar']);
+    expect(JSON.stringify(sites)).not.toContain('.blob-code');
+  });
+
+  test('存储里的脏卡片不导出', async () => {
+    await chrome.storage.local.set({
+      'pt-site-rules': {
+        user: [{ site: 'bad.com', exclude: 'oops' }, { site: 'ok.com', exclude: ['.ad'] }],
+      },
+    });
+    expect(Object.keys((await exported()).sites)).toEqual(['ok.com']);
+  });
+});

@@ -317,6 +317,45 @@ export function deleteUserSiteRules(site: string): Promise<void> {
   return next;
 }
 
+// ---- 导入导出（#376） ----
+
+/** 导出文件的格式标识：导入时据此认出站点规则文件 */
+export const SITE_RULES_EXPORT_FORMAT = 'parallel-translation-site-rules';
+/** 导出文件的格式版本号，格式演进时递增 */
+export const SITE_RULES_EXPORT_VERSION = 1;
+
+/** 导出文件里的一张站点卡片：三类选择器与停用内置规则标记，字段齐全 */
+export type ExportedSiteRules = SiteRules & { disableBuiltin: boolean };
+
+/** 站点规则导出文件。sites 以裸域名为键，按新增顺序排列。 */
+export interface SiteRulesExport {
+  format: typeof SITE_RULES_EXPORT_FORMAT;
+  version: number;
+  sites: Record<string, ExportedSiteRules>;
+}
+
+/**
+ * 把全部用户规则导出为 JSON 文本（#376），用于备份和迁移。只含用户
+ * 规则，不含内置规则；存储里形状不对的卡片不导出。
+ */
+export async function exportUserSiteRules(): Promise<string> {
+  const sites: Record<string, ExportedSiteRules> = {};
+  for (const u of await readUserSiteRules()) {
+    sites[u.site] = {
+      scope: u.scope ?? [],
+      exclude: u.exclude ?? [],
+      preserve: u.preserve ?? [],
+      disableBuiltin: u.disableBuiltin === true,
+    };
+  }
+  const out: SiteRulesExport = {
+    format: SITE_RULES_EXPORT_FORMAT,
+    version: SITE_RULES_EXPORT_VERSION,
+    sites,
+  };
+  return JSON.stringify(out, null, 2);
+}
+
 /**
  * 用户规则变更订阅（任一上下文保存或删除后触发）。返回取消订阅函数。
  */
