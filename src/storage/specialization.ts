@@ -16,7 +16,7 @@
 // 内存里留一份快照：content script 启动时 await siteRulesReady() 载入，
 // 之后随 storage.onChanged 更新。
 
-import { siteMatches } from '~/src/dom/site-filter';
+import { siteCovers, siteMatches } from '~/src/dom/site-filter';
 import { BUILTIN_SITE_RULES } from './builtin-site-rules';
 
 /** 一个站点的页面规则：CSS 选择器列表。 */
@@ -77,9 +77,9 @@ const allScopeInvalidWarned = new Set<string>();
 
 /**
  * 按当前站点读取生效站点规则：内置规则在前，用户规则逐字段追加在后，
- * 已剔除无法解析的选择器。命中当前站点的站点卡片停用了内置规则时
- * （#375），只剩用户规则。同步返回 —— walker 的采集入口是同步的，
- * 每次采集调用一次。用户规则须先 await siteRulesReady()，之前只有内置规则。
+ * 已剔除无法解析的选择器。当前站点是某张停用了内置规则的站点卡片的
+ * 站点本身或其子域时（#375、#467），只剩用户规则。同步返回 —— walker
+ * 的采集入口是同步的，每次采集调用一次。用户规则须先 await siteRulesReady()，之前只有内置规则。
  *
  * #443：声明了限定范围、但全部无法解析时，限定范围为空即不限定 ——
  * ADR-0003 的容错语义，不能退回整页不翻译（重演 #93）。这种退回用户
@@ -88,7 +88,7 @@ const allScopeInvalidWarned = new Set<string>();
 export function getSiteRules(host: string): SiteRules {
   const out: SiteRules = { scope: [], exclude: [], preserve: [] };
   const builtinDisabled = userSnapshot.some(
-    (u) => u.disableBuiltin && siteMatches(host, u.site),
+    (u) => u.disableBuiltin && siteCovers(host, u.site),
   );
   const sources: Array<[string, Partial<SiteRules>]> = [
     ...(builtinDisabled ? [] : Object.entries(BUILTIN_SITE_RULES)),
@@ -265,8 +265,9 @@ export function saveUserSiteRules(
 }
 
 /**
- * 站点卡片的“停用这个站点的内置规则”开关（#375）。打开后该站点只剩用户
- * 规则生效，关闭后恢复追加合并。站点卡片不存在时新增在末尾。
+ * 站点卡片的“停用这个站点的内置规则”开关（#375）。打开后该站点及其子域
+ * 只剩用户规则生效，主域名与兄弟子域不受影响（#467）；关闭后恢复追加
+ * 合并。站点卡片不存在时新增在末尾。
  */
 export function setBuiltinSiteRulesDisabled(site: string, disabled: boolean): Promise<void> {
   return writeCard(site.trim().toLowerCase(), { disableBuiltin: disabled });
@@ -274,10 +275,13 @@ export function setBuiltinSiteRulesDisabled(site: string, disabled: boolean): Pr
 
 /**
  * 站点是否有内置规则 —— 设置页据此决定卡片上是否显示停用开关（#375）。
- * 匹配语义与生效站点规则相同（子域归入、主域名归一）。
+ * 范围与停用开关相同（#467）：卡片站点本身有内置规则生效（内置规则按
+ * 裸域名语义生效，含主域名归一），或内置规则的站点就是卡片站点的子域。
  */
 export function hasBuiltinSiteRules(site: string): boolean {
-  return Object.keys(BUILTIN_SITE_RULES).some((b) => siteMatches(site, b));
+  return Object.keys(BUILTIN_SITE_RULES).some(
+    (b) => siteMatches(site, b) || siteCovers(b, site),
+  );
 }
 
 /** 写入一张站点卡片的部分字段：不存在时新增在末尾，已存在时更新传入的字段。 */

@@ -44,6 +44,19 @@ export function siteMatches(host: string, entry: string): boolean {
 }
 
 /**
+ * host 是否在条目本身或其子域之内（#467）：`www.` 前缀视同主域名，但
+ * 不做主域名归一 —— gist.github.com 不覆盖 github.com。站点卡片的
+ * “停用这个站点的内置规则”按它判断范围。IP 只做精确匹配。
+ */
+export function siteCovers(host: string, entry: string): boolean {
+  if (!entry) return false;
+  if (IPV4_RE.test(host) || IPV4_RE.test(entry)) return host === entry;
+  const h = host.replace(/^www\./, '');
+  const e = entry.replace(/^www\./, '');
+  return h === e || h.endsWith('.' + e);
+}
+
+/**
  * 当前站点是否应跳过翻译（返回 true = 不翻译）。
  * 黑名单：命中列表 → 跳过；白名单：未命中列表 → 跳过（空列表 = 全站跳过）。
  */

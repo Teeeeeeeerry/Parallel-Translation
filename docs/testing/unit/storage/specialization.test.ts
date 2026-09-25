@@ -574,3 +574,78 @@ describe('停用某个站点的内置规则（#375）', () => {
     expect(page.getSiteRules('example.com').exclude).toEqual(['.ad']);
   });
 });
+
+/**
+ * 停用开关的生效范围（#467）：只作用于卡片站点本身及其子域，`www.` 前缀
+ * 视同主域名。子域卡片打开停用，不波及主域名与兄弟子域。用户规则的
+ * 选择器仍按裸域名语义追加（含主域名归一），不在本组范围内。
+ */
+describe('停用开关只作用于卡片站点及其子域（#467）', () => {
+  type Spec = typeof import('~/src/storage/specialization');
+  async function load(): Promise<Spec> {
+    vi.resetModules();
+    return import('~/src/storage/specialization');
+  }
+
+  let options: Spec;
+  beforeEach(async () => {
+    resetStorage();
+    options = await load();
+  });
+
+  async function rulesOnNewPage(host: string) {
+    const page = await load();
+    await page.siteRulesReady();
+    return page.getSiteRules(host);
+  }
+
+  const builtinExclude = () => getSiteRules('github.com').exclude;
+
+  test('子域卡片停用后，该子域及其子域只剩用户规则', async () => {
+    await options.saveUserSiteRules('gist.github.com', { exclude: ['.gist-only'] });
+    await options.setBuiltinSiteRulesDisabled('gist.github.com', true);
+    const only = { scope: [], exclude: ['.gist-only'], preserve: [] };
+    expect(await rulesOnNewPage('gist.github.com')).toEqual(only);
+    expect(await rulesOnNewPage('www.gist.github.com')).toEqual(only);
+    expect(await rulesOnNewPage('raw.gist.github.com')).toEqual(only);
+  });
+
+  test('子域卡片停用后，主域名与兄弟子域的内置规则照常生效', async () => {
+    await options.saveUserSiteRules('gist.github.com', { exclude: ['.gist-only'] });
+    await options.setBuiltinSiteRulesDisabled('gist.github.com', true);
+    for (const host of ['github.com', 'www.github.com', 'api.github.com']) {
+      const rules = await rulesOnNewPage(host);
+      expect(rules.exclude.slice(0, builtinExclude().length)).toEqual(builtinExclude());
+      expect(rules.preserve).toEqual(getSiteRules('github.com').preserve);
+    }
+  });
+
+  test('www. 卡片与主域名卡片效果相同：主域名与各子域都只剩用户规则', async () => {
+    await options.saveUserSiteRules('www.github.com', { exclude: ['.mine'] });
+    await options.setBuiltinSiteRulesDisabled('www.github.com', true);
+    const only = { scope: [], exclude: ['.mine'], preserve: [] };
+    expect(await rulesOnNewPage('github.com')).toEqual(only);
+    expect(await rulesOnNewPage('www.github.com')).toEqual(only);
+    expect(await rulesOnNewPage('gist.github.com')).toEqual(only);
+  });
+
+  test('主域名卡片与子域卡片并存时，停用只在打开开关的卡片范围内生效', async () => {
+    await options.saveUserSiteRules('github.com', {});
+    await options.saveUserSiteRules('gist.github.com', {});
+    await options.setBuiltinSiteRulesDisabled('gist.github.com', true);
+    expect((await rulesOnNewPage('github.com')).exclude).toEqual(builtinExclude());
+    expect((await rulesOnNewPage('gist.github.com')).exclude).toEqual([]);
+  });
+
+  test('显示开关的站点，打开停用后该站点的内置规则确实被停用', async () => {
+    for (const site of ['github.com', 'www.github.com', 'gist.github.com']) {
+      resetStorage();
+      options = await load();
+      expect(options.hasBuiltinSiteRules(site)).toBe(true);
+      await options.setBuiltinSiteRulesDisabled(site, true);
+      expect((await rulesOnNewPage(site)).exclude).toEqual([]);
+    }
+    expect(options.hasBuiltinSiteRules('example.com')).toBe(false);
+    expect(options.hasBuiltinSiteRules('gist.example.com')).toBe(false);
+  });
+});
