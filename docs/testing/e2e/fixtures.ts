@@ -107,6 +107,11 @@ export const test = base.extend<
         headless: true,
         executablePath: chromium.executablePath(),
         viewport: { width: 1280, height: 720 },
+        // #469: 固定界面语言。首装时 background 按界面语言推导目标语言，
+        // 推导结果不是 zh-CN 就写一次设置；这次写入时机不定，晚于 seedSettings
+        // 落盘时会把种子设置整份覆盖回默认值。界面语言为 zh-CN 时首装不写设置。
+        // 只传 --lang 不够，Chromium 的界面语言仍会随机落到 en-US
+        locale: 'zh-CN',
         args: [
           `--disable-extensions-except=${EXTENSION_PATH}`,
           `--load-extension=${EXTENSION_PATH}`,

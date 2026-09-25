@@ -439,21 +439,18 @@ test.describe('边界情况 @extended', () => {
     await mockGoogle();
     await serviceWorker.evaluate(() =>
       chrome.storage.local.set({
-        // 首装时 background 会按浏览器界面语言把目标语言改成 en，这次写入
-        // 可能晚于种子设置落盘。两种目标语言各配一个同样术语的领域，
-        // 无论 to 最终是哪个，当前领域都存在
         'pt-domains': {
-          user: ['zh-CN', 'en'].map((targetLang) => ({
-            id: `user:e2e-${targetLang}`,
-            name: `E2E ${targetLang}`,
-            targetLang,
+          user: [{
+            id: 'user:e2e',
+            name: 'E2E',
+            targetLang: 'zh-CN',
             sites: ['localhost'],
             origin: 'user',
             terms: [
               { source: 'item', noTranslate: true },
               { source: 'paragraph', noTranslate: true },
             ],
-          })),
+          }],
           builtin: {},
         },
         // 列表整块排除：全页翻译与逐段翻译都不碰它，划词翻译不受影响
