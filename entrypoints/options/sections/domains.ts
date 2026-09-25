@@ -346,8 +346,12 @@ export function initDomains(): void {
   // 默认选中当前设置的目标语言 —— 新建的领域通常就是给它用的
   langSelect.value = getSettings().to;
 
+  let renderSeq = 0;
   async function render(): Promise<void> {
+    // 连续变更时只用最后一次读取的结果，先发起、后返回的旧读取不覆盖新列表
+    const seq = ++renderSeq;
     const domains = await getEffectiveDomains();
+    if (seq !== renderSeq) return;
     // 任一领域变更都整表重绘：旧行换成新行，保留各编辑框的展开状态；
     // 编辑框对应的已保存内容没变时，连同未保存的改动与错误提示一起保留
     const old = new Map(
@@ -367,7 +371,20 @@ export function initDomains(): void {
       });
       return li;
     });
+    // #394: 焦点在上移、下移按钮上时，重绘后交还给同一领域的同一按钮；
+    // 它移到端点后不可用，改给另一个方向的按钮，便于用键盘连续调整
+    const focused = document.activeElement;
+    const focusedMove =
+      focused instanceof HTMLElement && focused.classList.contains('pt-domain-move')
+        ? { id: focused.closest<HTMLElement>('.pt-domain-item')?.dataset.id, dir: focused.dataset.direction }
+        : null;
     listEl.replaceChildren(...items);
+    if (focusedMove) {
+      const li = items.find((el) => el.dataset.id === focusedMove.id);
+      const buttons = [...(li?.querySelectorAll<HTMLButtonElement>(':scope > .pt-domain-move') ?? [])];
+      const same = buttons.find((b) => b.dataset.direction === focusedMove.dir);
+      (same && !same.disabled ? same : buttons.find((b) => !b.disabled))?.focus();
+    }
   }
 
   // #394: 顺序写入后经存储变更整表重绘；失败时提示原因，列表保持原样

@@ -12,6 +12,7 @@ import {
   deleteDomain,
   moveDomain,
   setDomainSites,
+  setDomainTerms,
   DomainNotFoundError,
 } from '~/src/storage/domains';
 import { resetStorage } from '~/docs/testing/setup';
@@ -72,10 +73,24 @@ describe('领域排序（#394）', () => {
   test('顺序存放在 storage.local，不占 storage.sync', async () => {
     const a = await createDomain({ name: 'A', targetLang: 'zh-CN' });
     await moveDomain(a.id, 'up');
+    const moved = await ids();
+    expect(JSON.stringify(await chrome.storage.sync.get(null))).not.toContain(a.id);
+
+    // 只把 storage.local 的数据搬回一份干净的存储，顺序照样还原
     const local = await chrome.storage.local.get('pt-domains');
-    expect(JSON.stringify(local)).toContain(a.id);
-    const sync = await chrome.storage.sync.get(null);
-    expect(JSON.stringify(sync)).not.toContain(a.id);
+    resetStorage();
+    await chrome.storage.local.set(local);
+    expect(await ids()).toEqual(moved);
+  });
+
+  test('调整顺序后修改适用网址或术语，顺序不变', async () => {
+    const [dev] = await getEffectiveDomains();
+    const a = await createDomain({ name: 'A', targetLang: 'zh-CN' });
+    await moveDomain(a.id, 'up');
+    await setDomainSites(a.id, ['example.com']);
+    await setDomainTerms(a.id, [{ source: 'tort', target: '侵权' }]);
+    await setDomainTerms(dev!.id, [...dev!.terms, { source: 'monorepo', noTranslate: true }]);
+    expect(await ids()).toEqual([a.id, dev!.id]);
   });
 
   test('存储里的顺序含已不存在的 ID 或脏数据时忽略，其余照常排序', async () => {

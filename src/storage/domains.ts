@@ -136,11 +136,12 @@ async function readStored(): Promise<StoredDomains> {
 let writeChain: Promise<unknown> = Promise.resolve();
 
 function updateStored<T>(
-  fn: (stored: StoredDomains) => { stored: StoredDomains; result: T },
+  fn: (stored: StoredDomains) => { stored: StoredDomains | null; result: T },
 ): Promise<T> {
   const next = writeChain.then(async () => {
     const { stored, result } = fn(await readStored());
-    await chrome.storage.local.set({ [STORAGE_KEY]: stored });
+    // stored 为 null：没有改动，不写入
+    if (stored) await chrome.storage.local.set({ [STORAGE_KEY]: stored });
     return result;
   });
   writeChain = next.catch(() => {});
@@ -207,7 +208,9 @@ export async function moveDomain(id: string, direction: 'up' | 'down'): Promise<
     const from = list.findIndex((d) => d.id === id);
     if (from < 0) throw new DomainNotFoundError(id);
     const to = direction === 'up' ? from - 1 : from + 1;
-    if (to >= 0 && to < list.length) [list[from], list[to]] = [list[to]!, list[from]!];
+    // 已在两端：不写入，免得各标签页白白重读一次
+    if (to < 0 || to >= list.length) return { stored: null, result: list };
+    [list[from], list[to]] = [list[to]!, list[from]!];
     return { stored: { ...stored, order: list.map((d) => d.id) }, result: list };
   });
 }

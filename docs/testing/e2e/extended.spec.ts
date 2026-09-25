@@ -624,6 +624,11 @@ test.describe('设置页：翻译领域 @extended', () => {
     await item.locator(':scope > .pt-site-remove').click();
     await expect(toast).toHaveText('删除领域失败：存储配额已满');
     await expect(item).toBeVisible();
+
+    // 调整顺序失败（#394）：提示原因，顺序不变
+    await item.locator(':scope > .pt-domain-move[data-direction="up"]').click();
+    await expect(toast).toHaveText('调整顺序失败：存储配额已满');
+    await expect(page.locator('.pt-domain-item .pt-domain-name')).toHaveText(['软件开发(简体中文)', '待删除']);
   });
 
   test('TC-E2E-72: 领域列表上移、下移，顺序保存后重新打开设置页不变（#394）', async ({
@@ -651,6 +656,10 @@ test.describe('设置页：翻译领域 @extended', () => {
 
     await last.locator(':scope > .pt-domain-move[data-direction="up"]').click();
     await expect(names).toHaveText(['我的开发', '软件开发(简体中文)']);
+    // 焦点交还给同一领域：它已在最前，上移不可用，焦点落在下移按钮上
+    await expect(
+      page.locator('.pt-domain-item').first().locator(':scope > .pt-domain-move[data-direction="down"]'),
+    ).toBeFocused();
 
     await page.reload();
     await page.click('.pt-nav-btn[data-section="domains"]');
