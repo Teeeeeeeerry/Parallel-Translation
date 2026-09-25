@@ -184,7 +184,11 @@ export function initSiteRules(): void {
   /** 已渲染的卡片，按站点复用 —— 保存一张卡片时，其他卡片未保存的改动不丢 */
   const cards = new Map<string, Card>();
 
-  async function render(): Promise<void> {
+  /**
+   * 按存储重新渲染卡片。reset 为 true 时丢弃文本框里未保存的改动（#377
+   * 导入后）—— 否则再点保存会用旧文本覆盖刚导入的选择器。
+   */
+  async function render(reset = false): Promise<void> {
     const list = await getUserSiteRules();
     const els = list.map((u) => {
       let card = cards.get(u.site);
@@ -197,7 +201,7 @@ export function initSiteRules(): void {
       const clean: Field[] = [];
       for (const [field, input] of card.inputs) {
         const text = toText(u[field]);
-        if (input.value === (card.saved.get(field) ?? '')) {
+        if (reset || input.value === (card.saved.get(field) ?? '')) {
           input.value = text;
           clean.push(field);
         }
@@ -224,7 +228,7 @@ export function initSiteRules(): void {
       return;
     }
     deleteUserSiteRules(site)
-      .then(render)
+      .then(() => render())
       .then(() => showToast(tf('siteRulesDeleted', '已删除，刷新该网站后生效')))
       .catch((e) => console.error('[PT] 删除站点规则失败:', e));
   }
@@ -232,7 +236,7 @@ export function initSiteRules(): void {
   function add(): void {
     const site = siteInput.value.trim().toLowerCase();
     saveUserSiteRules(site, {})
-      .then(render)
+      .then(() => render())
       .then(() => {
         siteInput.value = '';
         cards.get(site)?.inputs.values().next().value?.focus();
@@ -269,7 +273,7 @@ export function initSiteRules(): void {
       .text()
       .then(importUserSiteRules)
       .then(async ({ imported }) => {
-        await render();
+        await render(true);
         showToast(
           tf('siteRulesImported', `已导入 ${imported} 个站点，刷新网站后生效`, String(imported)),
         );

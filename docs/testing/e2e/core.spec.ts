@@ -1450,6 +1450,9 @@ test.describe('站点页面规则', () => {
     await github.locator('textarea[data-field="exclude"]').fill('.a');
     await github.locator('.pt-site-rules-save').click();
     await expect(page.locator('#pt-toast')).toBeVisible();
+    // 未保存的改动在导入后丢弃，卡片显示合并后的规则 —— 否则再点保存会
+    // 用旧文本覆盖刚导入的选择器
+    await github.locator('textarea[data-field="exclude"]').fill('.unsaved');
 
     const json = JSON.stringify({
       format: 'parallel-translation-site-rules',
