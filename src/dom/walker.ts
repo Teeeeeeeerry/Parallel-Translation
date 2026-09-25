@@ -67,7 +67,9 @@ export function collect(
 
   // S1 站点页面规则的排除：命中的元素整块不采集。划词翻译只拿选中
   // 文本、不经过本入口，因此不受站点页面规则影响。
-  const { scope, exclude } = getSiteRules(location.hostname);
+  // #468：一次采集只读一次，这次采集里的所有判定都用它
+  const rules = getSiteRules(location.hostname);
+  const { scope, exclude } = rules;
   if (rootEl && withinAny(rootEl, exclude)) return out;
 
   // skipTranslated: false —— 已翻译单元（data-pt="done"）的子树仍要访问：
@@ -124,7 +126,7 @@ export function collect(
         // D8 #454：去掉保留原文后没有可翻译的文字 —— 不算翻译单元。放在
         // 最后：只对已通过上面各项检查的候选段落做一次文本提取。隐藏单元
         // 变为可见后经 observer 重新采集，届时同样判定
-        if (!hasTranslatableText(el)) return 'continue';
+        if (!hasTranslatableText(el, rules)) return 'continue';
 
         out.push(el);
       } catch {

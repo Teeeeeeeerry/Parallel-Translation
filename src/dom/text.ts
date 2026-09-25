@@ -28,15 +28,22 @@ const PLACEHOLDER_RE = /⟦PT\d+⟧/g;
 const PLACEHOLDER_PREFIX = '⟦PT';
 const PLACEHOLDER_SUFFIX = '⟧';
 
+/** 提取送翻文本用到的站点页面规则：排除与保留原文 */
+export type TextRules = Pick<SiteRules, 'exclude' | 'preserve'>;
+
 interface PreserveMap {
   placeholders: Map<string, string>; // ⟦PT0⟧ → 原文
   nextIndex: number;
-  /** 当前站点的排除与保留原文选择器，每次提取读一次 */
-  rules: Pick<SiteRules, 'exclude' | 'preserve'>;
+  /** 当前站点的排除与保留原文选择器 */
+  rules: TextRules;
 }
 
-function makePreserveMap(): PreserveMap {
-  const { exclude, preserve } = getSiteRules(location.hostname);
+/**
+ * rules 为调用方已读取的站点页面规则（#468：采集入口一次采集只读一次）；
+ * 不传时按当前站点读取一次。
+ */
+function makePreserveMap(rules?: TextRules): PreserveMap {
+  const { exclude, preserve } = rules ?? getSiteRules(location.hostname);
   return {
     placeholders: new Map(),
     nextIndex: 0,
@@ -86,13 +93,13 @@ function preservedText(
  * 返回占位符文本与原文映射表，供译文回填时替换。
  *
  * 遍历逻辑与 translatableText() 相同，额外在遇到 preserve 节点时
- * 写入占位符并记录映射。
+ * 写入占位符并记录映射。rules 见 makePreserveMap。
  */
-export function translatableTextEx(el: Element): {
+export function translatableTextEx(el: Element, rules?: TextRules): {
   text: string;
   preserves: Map<string, string>;
 } {
-  const pm = makePreserveMap();
+  const pm = makePreserveMap(rules);
   const text = walkTranslatable(el, pm);
   return { text, preserves: pm.placeholders };
 }
@@ -158,12 +165,12 @@ export function shallowTranslatableText(el: Element): string {
   return walkShallow(el, null);
 }
 
-/** 含 preserve 的浅层提取变体 */
-export function shallowTranslatableTextEx(el: Element): {
+/** 含 preserve 的浅层提取变体。rules 见 makePreserveMap。 */
+export function shallowTranslatableTextEx(el: Element, rules?: TextRules): {
   text: string;
   preserves: Map<string, string>;
 } {
-  const pm = makePreserveMap();
+  const pm = makePreserveMap(rules);
   const text = walkShallow(el, pm);
   return { text, preserves: pm.placeholders };
 }
@@ -230,11 +237,13 @@ const TRANSLATABLE_CHAR_RE = /[^\s\p{P}\p{S}\p{N}]/u;
  * 没有保留原文的段落不在本判定范围内，一律返回 true：纯数字等短文本
  * 由通用判定（shouldSkipNonVisual）处理，.notranslate 与 compat omit
  * 的语义不变。
+ *
+ * #468：两个入口把开头读取的站点页面规则传进来，逐段判定不再重复读取。
  */
-export function hasTranslatableText(el: Element): boolean {
+export function hasTranslatableText(el: Element, rules?: TextRules): boolean {
   const { text, preserves } = hasBlockTextChildren(el)
-    ? shallowTranslatableTextEx(el)
-    : translatableTextEx(el);
+    ? shallowTranslatableTextEx(el, rules)
+    : translatableTextEx(el, rules);
   if (preserves.size === 0) return true;
   return TRANSLATABLE_CHAR_RE.test(text.replace(PLACEHOLDER_RE, ''));
 }
