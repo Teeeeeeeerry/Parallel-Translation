@@ -95,6 +95,24 @@ export default defineContentScript({
 
     const isMainFrame = window.top === window;
 
+    /**
+     * 顶层页面的主机名（#471）：当前领域按它判定，一个标签页里所有 frame
+     * 得到同一个领域。跨域 iframe 读不到 window.top.location，改用
+     * ancestorOrigins 的最后一项（顶层页面的 origin）。取不到时（例如
+     * iframe 设了 referrerpolicy="no-referrer"，Chrome 会把祖先 origin
+     * 置为 "null"）回落到本 frame 的主机名。
+     */
+    const topHostname = ((): string => {
+      if (isMainFrame) return location.hostname;
+      const origins = location.ancestorOrigins;
+      const top = origins?.[origins.length - 1];
+      try {
+        return top ? new URL(top).hostname || location.hostname : location.hostname;
+      } catch {
+        return location.hostname;
+      }
+    })();
+
     // ── 注入 UI（仅主文档）──
     if (isMainFrame) {
       // #242: 悬浮球经注册表启停；showFloatingBall 决定是否启动
@@ -295,6 +313,8 @@ export default defineContentScript({
       // #311: 准入判定的当前主机名同样经注入提供
       getSettings,
       getHostname: () => location.hostname,
+      // #471: 当前领域按顶层页面判定；准入判定仍按本 frame 的主机名
+      getTopHostname: () => topHostname,
       getDomains: () => domains,
       // #325: 翻译态查询与还原动作经注入 —— 模块不直接访问 DOM
       hasTranslated,
@@ -627,11 +647,11 @@ export default defineContentScript({
 
       if (msg?.type === 'pt:current-domain') {
         // #399: popup 显示当前领域 —— 与全页翻译携带的领域同一口径
-        // （本页读到的领域列表 + 主文档主机名）；目标语言用 popup 当前
-        // 所选，避免设置刚改、本页还没收到变更时显示旧结果
+        // （本页读到的领域列表 + 顶层页面主机名，#471）；目标语言用 popup
+        // 当前所选，避免设置刚改、本页还没收到变更时显示旧结果
         if (!isMainFrame) return;
         const to = typeof msg.to === 'string' ? msg.to : getSettings().to;
-        sendResponse({ name: currentDomain(domains, location.hostname, to)?.name ?? null });
+        sendResponse({ name: currentDomain(domains, topHostname, to)?.name ?? null });
         return;
       }
 

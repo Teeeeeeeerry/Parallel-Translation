@@ -1232,3 +1232,61 @@ describe('逐段翻译与划词翻译携带当前领域（#383/#384）', () => {
     expect(single).toEqual(page);
   });
 });
+
+describe('当前领域按顶层页面判定（#471）', () => {
+  /** 模拟 iframe：本 frame 主机名与顶层页面主机名不同。 */
+  async function frameRequests(opts: {
+    frameHost: string;
+    topHost: string;
+    siteList?: Settings['siteList'];
+  }): Promise<{ page: TranslateRequest[]; text: TranslateRequest[] }> {
+    const send = vi.fn(async (req: TranslateRequest) => ({
+      ok: true,
+      data: { translations: req.texts.map(() => '译') },
+    }));
+    const domains = await getEffectiveDomains();
+    const orch = createOrchestrator({
+      send,
+      getSettings: () => ({
+        ...DEFAULT_SETTINGS,
+        ...(opts.siteList && { siteList: opts.siteList }),
+      }),
+      getHostname: () => opts.frameHost,
+      getTopHostname: () => opts.topHost,
+      getDomains: () => domains,
+      hasTranslated: () => false,
+    });
+    orch.start();
+    await orch.translatePage(items(1), 'en', 'zh-CN');
+    const pageCount = send.mock.calls.length;
+    await orch.translateText('text-0', 'en', 'zh-CN');
+    orch.stop();
+    const reqs = send.mock.calls.map((c) => c[0]!);
+    return { page: reqs.slice(0, pageCount), text: reqs.slice(pageCount) };
+  }
+
+  test('顶层页面命中领域、本 frame 不命中 → 全页翻译与单文本入口都带上顶层页面的领域', async () => {
+    const [dev] = await getEffectiveDomains();
+    const { page, text } = await frameRequests({ frameHost: 'example.com', topHost: 'github.com' });
+    expect(page).toHaveLength(1);
+    expect(page[0]!.domainId).toBe(dev!.id);
+    expect(text).toHaveLength(1);
+    expect(text[0]!.domainId).toBe(dev!.id);
+  });
+
+  test('本 frame 命中领域、顶层页面不命中 → 请求不含 domainId 字段', async () => {
+    const { page, text } = await frameRequests({ frameHost: 'github.com', topHost: 'example.com' });
+    expect(page[0]).not.toHaveProperty('domainId');
+    expect(text[0]).not.toHaveProperty('domainId');
+  });
+
+  test('站点名单的准入判定仍按本 frame 的主机名', async () => {
+    const { page, text } = await frameRequests({
+      frameHost: 'blocked.example',
+      topHost: 'github.com',
+      siteList: { mode: 'blacklist', list: ['blocked.example'] },
+    });
+    expect(page).toHaveLength(0);
+    expect(text).toHaveLength(0);
+  });
+});
