@@ -16,6 +16,7 @@ import { getSiteRules } from '~/src/storage/specialization';
 // text.ts 也从本模块取 INLINE_SET：循环引用只在函数调用时解析，模块
 // 求值时双方都不使用对方的导出
 import { hasTranslatableText } from './text';
+import type { TextRules } from './text';
 
 /**
  * #442：el 自身或祖先是否命中任一选择器，祖先链越过 Shadow DOM 边界 ——
@@ -218,6 +219,7 @@ export function hasNonTextContent(el: Element): boolean {
 function findTextOnlyDescendant(
   container: Element,
   origin: Element,
+  rules: TextRules,
 ): Element | null {
   let best: Element | null = null;
   let bestDepth = -1;
@@ -230,7 +232,7 @@ function findTextOnlyDescendant(
       isTranslationUnit(el) &&
       !hasNonTextContent(el) &&
       !shouldSkip(el) &&
-      hasTranslatableText(el)
+      hasTranslatableText(el, rules)
     ) {
       // 越深越好 —— leaf-most text-only unit
       if (depth > bestDepth) {
@@ -320,20 +322,22 @@ function directTextLength(el: Element): number {
  * 与 el 之间，cur 在范围内它也在。
  *
  * #454：与采集入口共用“去掉保留原文后是否还有可翻译文字”的判定。
+ * #468：站点页面规则只在开头读取一次，向上、向下找单元时都用它。
  */
 export function closestUnit(el: Element): Element | null {
-  const { scope, exclude } = getSiteRules(location.hostname);
+  const rules = getSiteRules(location.hostname);
+  const { scope, exclude } = rules;
   if (withinAny(el, exclude)) return null;
 
   let cur: Element | null = el;
   while (cur) {
     if (!inScope(cur, scope)) return null;
     // #454：去掉保留原文后没有可翻译文字的段落不算单元，继续向上找
-    if (isTranslationUnit(cur) && !shouldSkip(cur) && hasTranslatableText(cur)) {
+    if (isTranslationUnit(cur) && !shouldSkip(cur) && hasTranslatableText(cur, rules)) {
       // #50：容器含媒体 / 交互控件时，向下降级到纯文本后代。
       // 否则用户看到一个注定失败的段落按钮，等一次网络往返后被 render() 拒绝。
       if (hasNonTextContent(cur)) {
-        const descendant = findTextOnlyDescendant(cur, el);
+        const descendant = findTextOnlyDescendant(cur, el, rules);
         if (descendant) return descendant;
         // 无纯文本后代 —— 继续向上找，避免把含非文本内容的容器
         // 误判为可翻单元（它会回到这里再次尝试向下降级）。
