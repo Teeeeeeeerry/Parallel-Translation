@@ -42,13 +42,16 @@ export interface Domain {
 const STORAGE_KEY = 'pt-domains';
 
 /**
- * 内置领域的用户叠加层（#395）：按原词记录用户的修改与新增。生效内容 =
- * 当前版本的内置内容 + 叠加层，同一原词（不区分大小写）以叠加层为准，
- * 所以升级带来的新内置术语照样生效，用户改过的术语不被覆盖。
+ * 内置领域的用户叠加层（#395）：按原词记录用户的修改、新增与删除（#396）。
+ * 生效内容 = 当前版本的内置内容 + 叠加层，同一原词（不区分大小写）以
+ * 叠加层为准，所以升级带来的新内置术语照样生效，用户改过或删掉的术语
+ * 不被覆盖、不会复活。
  */
 interface BuiltinOverlay {
   /** 与内置不同的术语（修改）和内置没有的术语（新增），按保存顺序。 */
   terms: Term[];
+  /** 用户删掉的内置术语的原词（去掉首尾空格、小写，#396）。 */
+  removedTerms: string[];
 }
 
 interface StoredDomains {
@@ -115,8 +118,14 @@ async function readStored(): Promise<StoredDomains> {
   const builtin: Record<string, BuiltinOverlay> = {};
   if (typeof stored?.builtin === 'object' && stored.builtin !== null) {
     for (const [id, overlay] of Object.entries(stored.builtin)) {
-      const terms = (overlay as Partial<BuiltinOverlay> | null)?.terms;
-      if (Array.isArray(terms)) builtin[id] = { terms: terms.filter(isOverlayTerm) };
+      const { terms, removedTerms } = (overlay ?? {}) as Partial<BuiltinOverlay>;
+      if (!Array.isArray(terms) && !Array.isArray(removedTerms)) continue;
+      builtin[id] = {
+        terms: Array.isArray(terms) ? terms.filter(isOverlayTerm) : [],
+        removedTerms: Array.isArray(removedTerms)
+          ? removedTerms.filter((k): k is string => typeof k === 'string').map((k) => k.trim().toLowerCase())
+          : [],
+      };
     }
   }
   const order = Array.isArray(stored?.order)
@@ -162,13 +171,18 @@ function termKey(t: Term): string {
   return t.source.trim().toLowerCase();
 }
 
-/** 内置领域叠加用户的修改与新增（#395）：修改的术语留在原位，新增的排在最后。 */
+/**
+ * 内置领域叠加用户的修改、新增（#395）与删除（#396）：修改的术语留在原位，
+ * 新增的排在最后，删掉的不出现。
+ */
 function withOverlay(d: Domain, overlay: BuiltinOverlay | undefined): Domain {
   const own = new Map((overlay?.terms ?? []).map((t) => [termKey(t), t]));
-  const terms = d.terms.map((t) => {
+  const removed = new Set(overlay?.removedTerms ?? []);
+  const terms = d.terms.flatMap((t) => {
     const mine = own.get(termKey(t));
     own.delete(termKey(t));
-    return { ...(mine ?? t) };
+    if (!mine && removed.has(termKey(t))) return [];
+    return [{ ...(mine ?? t) }];
   });
   return {
     ...d,
@@ -337,8 +351,8 @@ export class InvalidTermsError extends Error {
  * 抛 DomainNotFoundError。返回保存后的生效领域。
  *
  * 自建领域（#393）直接替换。内置领域（#395）只在叠加层记下与内置不同
- * 的术语和新增的术语，与内置相同的不记，之后跟随新版内置；提交时漏掉的
- * 内置术语照常生效。
+ * 的术语和新增的术语，与内置相同的不记，之后跟随新版内置；提交时去掉的
+ * 内置术语记为已删除（#396），升级后也不复活。
  */
 export async function setDomainTerms(id: string, terms: readonly Term[]): Promise<Domain> {
   const cleaned = cleanTerms(terms);
@@ -347,10 +361,12 @@ export async function setDomainTerms(id: string, terms: readonly Term[]): Promis
   if (base) {
     const builtinTerms = new Map(base.terms.map((t) => [termKey(t), t]));
     const own = cleaned.filter((t) => !sameTerm(t, builtinTerms.get(termKey(t))));
+    const kept = new Set(cleaned.map(termKey));
+    const removedTerms = [...builtinTerms.keys()].filter((k) => !kept.has(k));
     return updateStored((stored) => {
       // 只替换术语部分，叠加层的其他记录原样保留；全部为空时删掉这一条
       const { [id]: prev, ...rest } = stored.builtin;
-      const overlay: BuiltinOverlay = { ...prev, terms: own };
+      const overlay: BuiltinOverlay = { ...prev, terms: own, removedTerms };
       const empty = Object.values(overlay).every((v) => Array.isArray(v) && v.length === 0);
       const builtin = empty ? rest : { ...rest, [id]: overlay };
       return { stored: { ...stored, builtin }, result: withOverlay(base, builtin[id]) };
@@ -367,7 +383,7 @@ export async function setDomainTerms(id: string, terms: readonly Term[]): Promis
 
 /**
  * 该原词是否为内置领域在当前版本内置的术语（#395）。设置页据此锁定这些
- * 行的原词、不提供删除。自建领域一律返回 false。
+ * 行的原词（#396 起可以删除）。自建领域一律返回 false。
  */
 export function isBuiltinTerm(domainId: string, source: string): boolean {
   const key = source.trim().toLowerCase();

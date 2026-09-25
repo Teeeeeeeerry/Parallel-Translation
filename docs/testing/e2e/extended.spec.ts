@@ -11,6 +11,7 @@
  * #471：TC-E2E-70 覆盖跨域 iframe 里的文字按顶层页面判定当前领域。
  * #470：TC-E2E-71 覆盖设置页新建、删除领域失败时的提示。
  * #394：TC-E2E-72 覆盖设置页调整领域顺序。
+ * #396：TC-E2E-73 覆盖设置页删除内置领域的术语。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -667,5 +668,33 @@ test.describe('设置页：翻译领域 @extended', () => {
 
     await page.locator('.pt-domain-item').first().locator(':scope > .pt-domain-move[data-direction="down"]').click();
     await expect(names).toHaveText(['软件开发(简体中文)', '我的开发']);
+  });
+
+  test('TC-E2E-73: 删除内置领域的术语，保存后重新打开设置页仍不在（#396）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' });
+    const terms = builtin.locator('.pt-domain-terms');
+    await terms.locator('summary').click();
+    const sources = terms.locator('.pt-term-source');
+    const values = () => sources.evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
+    const before = await values();
+    expect(before).toContain('issue');
+    const row = terms.locator('tbody tr').nth(before.indexOf('issue'));
+
+    // 内置术语的原词只读，但可以删除
+    await expect(row.locator('.pt-term-source')).toHaveAttribute('readonly', '');
+    await row.locator('.pt-site-remove').click();
+    await terms.locator('.pt-domain-terms-actions .pt-btn:not(.pt-btn-secondary)').click();
+    await expect(page.locator('#pt-toast')).toHaveText('已保存术语');
+
+    await page.reload();
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    await terms.locator('summary').click();
+    await expect(sources).toHaveCount(before.length - 1);
+    expect(await values()).toEqual(before.filter((v) => v !== 'issue'));
   });
 });

@@ -6,8 +6,8 @@
 
 // 翻译领域分区（#391，父 #365）：列出内置与自建领域，新建与删除自建领域；
 // 编辑自建领域的适用网址（#392）与术语（#393）；编辑内置领域的术语
-// （#395），内置领域的适用网址在本期只读；机翻引擎“指定译法”开关（#390）；
-// 上移、下移调整领域顺序（#394）。
+// （#395）并可删除内置术语（#396），内置领域的适用网址在本期只读；
+// 机翻引擎“指定译法”开关（#390）；上移、下移调整领域顺序（#394）。
 
 import { LANG_LIST } from '~/src/storage/schema';
 import {
@@ -114,7 +114,7 @@ function listSep(): string {
 
 /**
  * 术语表的一行：原词 / 译法 / 不翻译 / 删除。勾选“不翻译”后译法列禁用。
- * 内置术语（#395）只能改译法与“不翻译”：原词只读，没有删除按钮。
+ * 内置术语（#395）的原词只读，可以改译法与“不翻译”，也可以删除（#396）。
  */
 function termRow(onRemove: () => void, t?: Term, builtin = false): HTMLTableRowElement {
   const tr = document.createElement('tr');
@@ -151,9 +151,9 @@ function termRow(onRemove: () => void, t?: Term, builtin = false): HTMLTableRowE
     onRemove();
   });
 
-  for (const el of [source, target, noTranslate, builtin ? null : del]) {
+  for (const el of [source, target, noTranslate, del]) {
     const td = document.createElement('td');
-    if (el) td.append(el);
+    td.append(el);
     tr.append(td);
   }
   return tr;
