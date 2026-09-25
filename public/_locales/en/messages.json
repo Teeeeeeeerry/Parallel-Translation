@@ -278,5 +278,13 @@
     "placeholders": { "site": { "content": "$1" } }
   },
   "siteRulesDeleted": { "message": "Deleted. Reload the site to apply." },
-  "siteRulesDisableBuiltin": { "message": "Disable built-in rules for this site" }
+  "siteRulesDisableBuiltin": { "message": "Disable built-in rules for this site" },
+  "domainCreateFailed": {
+    "message": "Failed to create domain: $error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainDeleteFailed": {
+    "message": "Failed to delete domain: $error$",
+    "placeholders": { "error": { "content": "$1" } }
+  }
 }
