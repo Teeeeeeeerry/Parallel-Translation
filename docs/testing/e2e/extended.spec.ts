@@ -12,6 +12,7 @@
  * #470：TC-E2E-71 覆盖设置页新建、删除领域失败时的提示。
  * #394：TC-E2E-72 覆盖设置页调整领域顺序。
  * #396：TC-E2E-73 覆盖设置页删除内置领域的术语。
+ * #397：TC-E2E-74 覆盖设置页增删内置领域的适用网址。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -696,5 +697,30 @@ test.describe('设置页：翻译领域 @extended', () => {
     await terms.locator('summary').click();
     await expect(sources).toHaveCount(before.length - 1);
     expect(await values()).toEqual(before.filter((v) => v !== 'issue'));
+  });
+
+  test('TC-E2E-74: 内置领域的适用网址可以增删，保存后重新打开设置页仍在（#397）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' });
+    const sites = builtin.locator('.pt-domain-sites');
+    await sites.locator('summary').click();
+    const textarea = sites.locator('.pt-domain-sites-input');
+    const before = (await textarea.inputValue()).split('\n');
+    expect(before).toContain('gitlab.com');
+
+    // 删掉 gitlab.com，新增 gitee.com
+    const after = [...before.filter((s) => s !== 'gitlab.com'), 'gitee.com'];
+    await textarea.fill(after.join('\n'));
+    await sites.locator('.pt-btn').click();
+    await expect(page.locator('#pt-toast')).toHaveText('已保存适用网址');
+
+    await page.reload();
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    await sites.locator('summary').click();
+    await expect(textarea).toHaveValue(after.join('\n'));
   });
 });

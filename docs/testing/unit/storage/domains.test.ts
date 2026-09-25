@@ -260,12 +260,6 @@ describe('编辑自建领域的适用网址（#392）', () => {
     expect((await getEffectiveDomains()).find((d) => d.id === law.id)!.sites).toEqual(['example.com']);
   });
 
-  test('内置领域的适用网址不能修改', async () => {
-    const [dev] = await getEffectiveDomains();
-    await expect(setDomainSites(dev!.id, ['example.com'])).rejects.toThrow();
-    expect((await getEffectiveDomains())[0]!.sites).toEqual(dev!.sites);
-  });
-
   test('领域不存在 → 抛 DomainNotFoundError，不新建领域', async () => {
     await expect(setDomainSites('user:missing', ['example.com'])).rejects.toBeInstanceOf(
       DomainNotFoundError,

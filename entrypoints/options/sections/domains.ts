@@ -6,7 +6,7 @@
 
 // 翻译领域分区（#391，父 #365）：列出内置与自建领域，新建与删除自建领域；
 // 编辑自建领域的适用网址（#392）与术语（#393）；编辑内置领域的术语
-// （#395）并可删除内置术语（#396），内置领域的适用网址在本期只读；
+// （#395）并可删除内置术语（#396），增删内置领域的适用网址（#397）；
 // 机翻引擎“指定译法”开关（#390）；上移、下移调整领域顺序（#394）。
 
 import { LANG_LIST } from '~/src/storage/schema';
@@ -34,7 +34,8 @@ function langLabel(code: string): string {
 
 /**
  * 适用网址编辑（#392）：每行一个裸域名、localhost 或 IPv4 地址（#431），
- * 保存时整体替换。不合法的条目在输入框下方列出，不写入。
+ * 保存时整体替换。不合法的条目在输入框下方列出，不写入。内置领域
+ * （#397）同样可编辑，增删记在叠加层。
  */
 function sitesEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
   const details = document.createElement('details');
@@ -321,7 +322,7 @@ function domainItem(
     const badge = document.createElement('span');
     badge.className = 'pt-domain-badge';
     badge.textContent = tf('domainBuiltinBadge', '内置');
-    li.append(badge, termsEditor(d, onGone));
+    li.append(badge, sitesEditor(d, onGone), termsEditor(d, onGone));
   } else {
     const del = document.createElement('button');
     del.className = 'pt-site-remove';
