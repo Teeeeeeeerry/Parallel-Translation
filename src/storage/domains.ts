@@ -8,8 +8,8 @@
 // 见 specialization.ts。
 //
 // 设置页、popup、content、router 都只经这里读取领域。生效领域列表 =
-// 内置领域（叠加用户的修改与新增，#395）+ 自建领域（#391）；排序在后续
-// ticket 接入。
+// 内置领域（叠加用户的修改与新增，#395）+ 自建领域（#391），按用户
+// 调整的顺序排列（#394）。
 // 用户数据放在 storage.local（不占 sync 配额），跨设备迁移靠导入导出。
 
 import { siteMatches } from '~/src/dom/site-filter';
@@ -56,6 +56,11 @@ interface StoredDomains {
   user: Domain[];
   /** 内置领域的叠加层，按内置领域 ID（#395）。 */
   builtin: Record<string, BuiltinOverlay>;
+  /**
+   * 用户调整过的领域顺序，按领域 ID（#394）。不在其中的领域（之后新建的、
+   * 升级新增的内置领域）按默认顺序排在后面；已不存在的 ID 忽略。
+   */
+  order: string[];
 }
 
 function isTerm(v: unknown): v is Term {
@@ -114,9 +119,13 @@ async function readStored(): Promise<StoredDomains> {
       if (Array.isArray(terms)) builtin[id] = { terms: terms.filter(isOverlayTerm) };
     }
   }
+  const order = Array.isArray(stored?.order)
+    ? stored.order.filter((id): id is string => typeof id === 'string')
+    : [];
   return {
     user: user.filter(isUserDomain).map((d) => ({ ...d, origin: 'user' })),
     builtin,
+    order,
   };
 }
 
@@ -127,11 +136,12 @@ async function readStored(): Promise<StoredDomains> {
 let writeChain: Promise<unknown> = Promise.resolve();
 
 function updateStored<T>(
-  fn: (stored: StoredDomains) => { stored: StoredDomains; result: T },
+  fn: (stored: StoredDomains) => { stored: StoredDomains | null; result: T },
 ): Promise<T> {
   const next = writeChain.then(async () => {
     const { stored, result } = fn(await readStored());
-    await chrome.storage.local.set({ [STORAGE_KEY]: stored });
+    // stored 为 null：没有改动，不写入
+    if (stored) await chrome.storage.local.set({ [STORAGE_KEY]: stored });
     return result;
   });
   writeChain = next.catch(() => {});
@@ -168,12 +178,41 @@ function withOverlay(d: Domain, overlay: BuiltinOverlay | undefined): Domain {
 }
 
 /**
- * 生效领域列表 —— 内置领域在前（叠加用户的修改与新增），自建领域按新建
- * 顺序在后。调用方可随意改动返回值。
+ * 由存储数据得出生效领域列表：默认内置领域在前、自建领域按新建顺序在后；
+ * 用户调整过顺序（#394）时，顺序里的领域按它排在前面，其余保持默认顺序。
+ */
+function effectiveDomains({ user, builtin, order }: StoredDomains): Domain[] {
+  const list = [...BUILTIN_DOMAINS.map((d) => withOverlay(d, builtin[d.id])), ...user];
+  const rank = new Map(order.map((id, i) => [id, i]));
+  const ranked = list.filter((d) => rank.has(d.id));
+  ranked.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+  return [...ranked, ...list.filter((d) => !rank.has(d.id))];
+}
+
+/**
+ * 生效领域列表 —— 内置领域（叠加用户的修改与新增）与自建领域，按用户
+ * 调整的顺序排列（#394）。调用方可随意改动返回值。
  */
 export async function getEffectiveDomains(): Promise<Domain[]> {
-  const { user, builtin } = await readStored();
-  return [...BUILTIN_DOMAINS.map((d) => withOverlay(d, builtin[d.id])), ...user];
+  return effectiveDomains(await readStored());
+}
+
+/**
+ * 把领域上移或下移一位（#394）。多个领域同时命中一个网址时，排在前面的
+ * 成为当前领域。已在两端时不变。不存在的领域抛 DomainNotFoundError。
+ * 返回移动后的生效领域列表。
+ */
+export async function moveDomain(id: string, direction: 'up' | 'down'): Promise<Domain[]> {
+  return updateStored((stored) => {
+    const list = effectiveDomains(stored);
+    const from = list.findIndex((d) => d.id === id);
+    if (from < 0) throw new DomainNotFoundError(id);
+    const to = direction === 'up' ? from - 1 : from + 1;
+    // 已在两端：不写入，免得各标签页白白重读一次
+    if (to < 0 || to >= list.length) return { stored: null, result: list };
+    [list[from], list[to]] = [list[to]!, list[from]!];
+    return { stored: { ...stored, order: list.map((d) => d.id) }, result: list };
+  });
 }
 
 /**
@@ -207,8 +246,12 @@ export async function deleteDomain(id: string): Promise<void> {
   if (BUILTIN_DOMAINS.some((d) => d.id === id)) {
     throw new Error('[PT] 内置领域不能删除');
   }
-  await updateUserDomains((user) => ({
-    user: user.filter((d) => d.id !== id),
+  await updateStored((stored) => ({
+    stored: {
+      ...stored,
+      user: stored.user.filter((d) => d.id !== id),
+      order: stored.order.filter((o) => o !== id),
+    },
     result: undefined,
   }));
 }

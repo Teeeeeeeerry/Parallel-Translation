@@ -286,5 +286,11 @@
   "domainDeleteFailed": {
     "message": "Failed to delete domain: $error$",
     "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainMoveUp": { "message": "Move up" },
+  "domainMoveDown": { "message": "Move down" },
+  "domainMoveFailed": {
+    "message": "Failed to reorder: $error$",
+    "placeholders": { "error": { "content": "$1" } }
   }
 }

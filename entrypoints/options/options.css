@@ -770,3 +770,26 @@ body {
   font-family: inherit;
   white-space: pre-line;
 }
+
+/* ===== Domain order（#394） ===== */
+
+.pt-domain-move {
+  background: none;
+  border: none;
+  color: var(--pt-forest-40);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background .12s ease, color .12s ease;
+}
+
+.pt-domain-move:hover:not(:disabled) {
+  background: var(--pt-forest-08);
+  color: var(--pt-forest);
+}
+
+.pt-domain-move:disabled {
+  cursor: default;
+  opacity: .3;
+}

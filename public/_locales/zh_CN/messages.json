@@ -286,5 +286,11 @@
   "domainDeleteFailed": {
     "message": "删除领域失败：$error$",
     "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainMoveUp": { "message": "上移" },
+  "domainMoveDown": { "message": "下移" },
+  "domainMoveFailed": {
+    "message": "调整顺序失败：$error$",
+    "placeholders": { "error": { "content": "$1" } }
   }
 }
