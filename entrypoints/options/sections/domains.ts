@@ -100,7 +100,7 @@ function saveFailed(e: unknown, error: HTMLElement, onGone: () => void): void {
   error.classList.add('pt-visible');
 }
 
-/** 给用户看的失败原因：内部错误的“[PT] ”日志前缀不给用户看。 */
+/** 给用户看的失败原因：去掉内部日志用的“[PT] ”前缀。 */
 function failReason(e: unknown): string {
   return (e instanceof Error ? e.message : String(e)).replace(/^\[PT\]\s*/, '');
 }

@@ -543,7 +543,8 @@ test.describe('设置页：翻译领域 @extended', () => {
 
     // 删除失败：提示原因，领域仍在列表里
     page.once('dialog', (d) => void d.accept());
-    await item.locator('.pt-site-remove').click();
+    // 只取领域行自己的删除按钮，术语行里也有同名按钮
+    await item.locator(':scope > .pt-site-remove').click();
     await expect(toast).toHaveText('删除领域失败：存储配额已满');
     await expect(item).toBeVisible();
   });
