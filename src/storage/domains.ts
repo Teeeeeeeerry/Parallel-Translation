@@ -8,8 +8,8 @@
 // 见 specialization.ts。
 //
 // 设置页、popup、content、router 都只经这里读取领域。生效领域列表 =
-// 内置领域（叠加用户的修改与新增 #395、删除 #396）+ 自建领域（#391），按用户
-// 调整的顺序排列（#394）。
+// 内置领域（叠加用户对术语的修改与新增 #395、删除 #396，对适用网址的
+// 增删 #397）+ 自建领域（#391），按用户调整的顺序排列（#394）。
 // 用户数据放在 storage.local（不占 sync 配额），跨设备迁移靠导入导出。
 
 import { siteMatches } from '~/src/dom/site-filter';
@@ -42,10 +42,10 @@ export interface Domain {
 const STORAGE_KEY = 'pt-domains';
 
 /**
- * 内置领域的用户叠加层（#395）：按原词记录用户的修改、新增与删除（#396）。
- * 生效内容 = 当前版本的内置内容 + 叠加层，同一原词（不区分大小写）以
- * 叠加层为准，所以升级带来的新内置术语照样生效，用户改过或删掉的术语
- * 不被覆盖、不会复活。
+ * 内置领域的用户叠加层（#395）：按原词记录用户对术语的修改、新增与删除
+ * （#396），按网址记录用户对适用网址的增删（#397）。生效内容 = 当前版本
+ * 的内置内容 + 叠加层，同一原词（不区分大小写）或网址以叠加层为准，所以
+ * 升级带来的新内置术语和网址照样生效，用户改过或删掉的不被覆盖、不会复活。
  */
 interface BuiltinOverlay {
   /** 与内置不同的术语（修改）和内置没有的术语（新增），按保存顺序。 */
@@ -56,15 +56,6 @@ interface BuiltinOverlay {
   addedSites: string[];
   /** 用户删掉的内置适用网址（#397）。 */
   removedSites: string[];
-}
-
-/** 叠加层里的适用网址列表：只留格式合法的条目，去掉首尾空格并转小写。 */
-function overlaySites(v: unknown): string[] {
-  if (!Array.isArray(v)) return [];
-  return v
-    .filter((x): x is string => typeof x === 'string')
-    .map((x) => x.trim().toLowerCase())
-    .filter(isValidSite);
 }
 
 interface StoredDomains {
@@ -95,6 +86,19 @@ function isTerm(v: unknown): v is Term {
  */
 function isOverlayTerm(v: unknown): v is Term {
   return isTerm(v) && v.source.trim() !== '' && (v.noTranslate === true || !!v.target?.trim());
+}
+
+/** 叠加层里的适用网址列表（#397）：只留格式合法的条目，去掉首尾空格、转小写并去重。 */
+function overlaySites(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return [
+    ...new Set(
+      v
+        .filter((x): x is string => typeof x === 'string')
+        .map((x) => x.trim().toLowerCase())
+        .filter(isValidSite),
+    ),
+  ];
 }
 
 /** 存储里的自建领域形状校验 —— 脏数据跳过，不影响其他领域。 */
@@ -222,8 +226,8 @@ function effectiveDomains({ user, builtin, order }: StoredDomains): Domain[] {
 }
 
 /**
- * 生效领域列表 —— 内置领域（叠加用户的修改、新增与删除）与自建领域，按用户
- * 调整的顺序排列（#394）。调用方可随意改动返回值。
+ * 生效领域列表 —— 内置领域（叠加用户对术语和适用网址的修改）与自建领域，
+ * 按用户调整的顺序排列（#394）。调用方可随意改动返回值。
  */
 export async function getEffectiveDomains(): Promise<Domain[]> {
   return effectiveDomains(await readStored());
@@ -329,7 +333,8 @@ export class InvalidSitesError extends Error {
  * DomainNotFoundError。返回保存后的生效领域。
  *
  * 内置领域（#397）只在叠加层记下新增的网址和删掉的内置网址：删掉的
- * 升级后不复活，新增的保留，新版新增的内置网址照常生效。
+ * 升级后不复活，新增的保留，新版新增的内置网址照常生效。生效顺序固定为
+ * 内置网址（去掉删掉的）在前、新增的按保存顺序在后，不保留输入的顺序。
  */
 export async function setDomainSites(id: string, sites: readonly string[]): Promise<Domain> {
   const cleaned = [...new Set(sites.map((s) => s.trim().toLowerCase()).filter(Boolean))];

@@ -97,7 +97,6 @@ describe('修改与新增内置领域的术语', () => {
     expect(isBuiltinTerm(DEV, 'fork')).toBe(false);
     expect(isBuiltinTerm(law.id, 'branch')).toBe(false);
   });
-
 });
 
 describe('删除内置术语（#396）', () => {
