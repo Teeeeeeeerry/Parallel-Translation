@@ -305,5 +305,10 @@
   },
   "siteRulesCardBackup": { "message": "備份與遷移" },
   "siteRulesExport": { "message": "匯出 JSON" },
-  "siteRulesExported": { "message": "站點規則已匯出" }
+  "siteRulesExported": { "message": "站點規則已匯出" },
+  "siteRulesImport": { "message": "匯入 JSON" },
+  "siteRulesImported": {
+    "message": "已匯入 $count$ 個站點，重新整理網站後生效",
+    "placeholders": { "count": { "content": "$1" } }
+  }
 }

@@ -1437,4 +1437,49 @@ test.describe('站点页面规则', () => {
       },
     });
   });
+
+  test('@core TC-E2E-76: 设置页导入站点规则 JSON → 与已有卡片逐字段合并去重，新站点新增卡片（#377）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    await page.fill('#pt-site-rules-site-input', 'github.com');
+    await page.click('#pt-site-rules-add-btn');
+    const github = page.locator('.pt-site-rules-card', { hasText: 'github.com' });
+    await github.locator('textarea[data-field="exclude"]').fill('.a');
+    await github.locator('.pt-site-rules-save').click();
+    await expect(page.locator('#pt-toast')).toBeVisible();
+    // 未保存的改动在导入后丢弃，卡片显示合并后的规则 —— 否则再点保存会
+    // 用旧文本覆盖刚导入的选择器
+    await github.locator('textarea[data-field="exclude"]').fill('.unsaved');
+
+    const json = JSON.stringify({
+      format: 'parallel-translation-site-rules',
+      version: 1,
+      sites: {
+        'github.com': { scope: [], exclude: ['.a', '.b'], preserve: [], disableBuiltin: false },
+        'example.com': { scope: ['main'], exclude: [], preserve: [], disableBuiltin: false },
+      },
+    });
+    await page.setInputFiles('#pt-site-rules-import-file', {
+      name: 'parallel-translation-site-rules.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(json),
+    });
+
+    await expect(github.locator('textarea[data-field="exclude"]')).toHaveValue('.a\n.b');
+    const example = page.locator('.pt-site-rules-card', { hasText: 'example.com' });
+    await expect(example.locator('textarea[data-field="scope"]')).toHaveValue('main');
+    const cards = await serviceWorker.evaluate(async () => {
+      const stored = (await chrome.storage.local.get('pt-site-rules'))['pt-site-rules'] as {
+        user: unknown[];
+      };
+      return stored.user;
+    });
+    expect(cards).toEqual([
+      { site: 'github.com', scope: [], exclude: ['.a', '.b'], preserve: [] },
+      { site: 'example.com', scope: ['main'] },
+    ]);
+  });
 });

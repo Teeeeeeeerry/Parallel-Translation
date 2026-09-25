@@ -356,6 +356,41 @@ export async function exportUserSiteRules(): Promise<string> {
   return JSON.stringify(out, null, 2);
 }
 
+/** 导入结果。 */
+export interface ImportSiteRulesResult {
+  /** 导入的站点数 */
+  imported: number;
+}
+
+/**
+ * 导入 exportUserSiteRules() 导出的 JSON 文本（#377），与现有用户规则合并：
+ * 新站点新增在末尾；同一站点逐字段追加并去重。停用内置规则的标记只会被
+ * 导入打开，不会被导入关闭 —— 与“追加”一致，导入不削弱现有设置。选择器
+ * 与保存时一样去掉首尾空白、丢弃空行。一次写入，与保存共用读-改-写串行链。
+ */
+export function importUserSiteRules(json: string): Promise<ImportSiteRulesResult> {
+  const { sites } = JSON.parse(json) as SiteRulesExport;
+  const next = writeChain.then(async () => {
+    const user = await readUserSiteRules();
+    for (const [site, rules] of Object.entries(sites)) {
+      let card = user.find((u) => u.site === site);
+      if (!card) user.push((card = { site }));
+      for (const field of SITE_RULE_FIELDS) {
+        const sels = rules[field].map((s) => s.trim()).filter(Boolean);
+        const merged = [...new Set([...(card[field] ?? []), ...sels])];
+        if (merged.length > 0 || card[field]) card[field] = merged;
+      }
+      if (rules.disableBuiltin) card.disableBuiltin = true;
+    }
+    const stored: StoredSiteRules = { user };
+    await chrome.storage.local.set({ [STORAGE_KEY]: stored });
+    userSnapshot = user;
+    return { imported: Object.keys(sites).length };
+  });
+  writeChain = next.catch(() => {});
+  return next;
+}
+
 /**
  * 用户规则变更订阅（任一上下文保存或删除后触发）。返回取消订阅函数。
  */
