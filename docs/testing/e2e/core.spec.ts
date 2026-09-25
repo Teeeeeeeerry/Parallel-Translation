@@ -1286,7 +1286,7 @@ test.describe('站点页面规则', () => {
     await expect(page.locator('#pt-toast')).toBeVisible();
   });
 
-  test('@core TC-E2E-64: 存储里带无效行的站点卡片 → 打开设置页即标红并提示行号 → 改正后保存（#443）', async ({
+  test('@core TC-E2E-68: 存储里带无效行的站点卡片 → 打开设置页即标红并提示行号 → 改正后保存（#443）', async ({
     page, serviceWorker,
   }) => {
     // 导入等途径不经保存时校验，直接写入 storage.local
