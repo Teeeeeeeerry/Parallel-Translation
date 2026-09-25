@@ -8,7 +8,7 @@
 // 见 specialization.ts。
 //
 // 设置页、popup、content、router 都只经这里读取领域。生效领域列表 =
-// 内置领域（叠加用户的修改与新增，#395）+ 自建领域（#391），按用户
+// 内置领域（叠加用户的修改与新增 #395、删除 #396）+ 自建领域（#391），按用户
 // 调整的顺序排列（#394）。
 // 用户数据放在 storage.local（不占 sync 配额），跨设备迁移靠导入导出。
 
@@ -204,7 +204,7 @@ function effectiveDomains({ user, builtin, order }: StoredDomains): Domain[] {
 }
 
 /**
- * 生效领域列表 —— 内置领域（叠加用户的修改与新增）与自建领域，按用户
+ * 生效领域列表 —— 内置领域（叠加用户的修改、新增与删除）与自建领域，按用户
  * 调整的顺序排列（#394）。调用方可随意改动返回值。
  */
 export async function getEffectiveDomains(): Promise<Domain[]> {
@@ -362,10 +362,17 @@ export async function setDomainTerms(id: string, terms: readonly Term[]): Promis
     const builtinTerms = new Map(base.terms.map((t) => [termKey(t), t]));
     const own = cleaned.filter((t) => !sameTerm(t, builtinTerms.get(termKey(t))));
     const kept = new Set(cleaned.map(termKey));
-    const removedTerms = [...builtinTerms.keys()].filter((k) => !kept.has(k));
     return updateStored((stored) => {
       // 只替换术语部分，叠加层的其他记录原样保留；全部为空时删掉这一条
       const { [id]: prev, ...rest } = stored.builtin;
+      // 删除记录：本次去掉的内置术语，加上以前删掉、当前版本内置里暂时
+      // 没有的原词 —— 以后的版本加回它时仍不复活
+      const removedTerms = [
+        ...new Set([
+          ...(prev?.removedTerms ?? []).filter((k) => !builtinTerms.has(k) && !kept.has(k)),
+          ...[...builtinTerms.keys()].filter((k) => !kept.has(k)),
+        ]),
+      ];
       const overlay: BuiltinOverlay = { ...prev, terms: own, removedTerms };
       const empty = Object.values(overlay).every((v) => Array.isArray(v) && v.length === 0);
       const builtin = empty ? rest : { ...rest, [id]: overlay };

@@ -80,7 +80,6 @@ describe('修改与新增内置领域的术语', () => {
     expect(saved.terms).toEqual(await devTerms());
   });
 
-
   test('校验与自建领域一致：原词重复（不区分大小写）→ 拒绝保存，生效内容不变', async () => {
     await expect(
       setDomainTerms(DEV, [
@@ -178,6 +177,31 @@ describe('删除内置术语（#396）', () => {
     expect(await devTerms()).toEqual(builtin[0]!.terms);
   });
 
+  test('被删的术语在某一版内置里暂时去掉、期间保存过其他改动，之后加回也不复活', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+    release([
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+    await setDomainTerms(DEV, [
+      { source: 'branch', target: '支线' },
+      { source: 'merge', target: '合并' },
+    ]);
+    release([
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    expect(await devTerms()).toEqual([
+      { source: 'branch', target: '支线' },
+      { source: 'merge', target: '合并' },
+    ]);
+  });
+
   test('全部内置术语都可以删除', async () => {
     await setDomainTerms(DEV, []);
     expect(await devTerms()).toEqual([]);
@@ -189,12 +213,21 @@ describe('删除内置术语（#396）', () => {
     expect(JSON.stringify(await chrome.storage.local.get(null))).toContain('issue');
 
     await chrome.storage.local.set({
-      'pt-domains': { user: [], builtin: { [DEV]: { terms: [], removedTerms: [42, null, 'merge'] } } },
+      'pt-domains': { user: [], builtin: { [DEV]: { terms: [], removedTerms: [42, null, ' Merge '] } } },
     });
     expect(await devTerms()).toEqual([
       { source: 'issue', noTranslate: true },
       { source: 'branch', target: '分支' },
     ]);
+
+    // 同一原词既在删除记录里、又有用户填写的术语：以用户填写的为准
+    await chrome.storage.local.set({
+      'pt-domains': {
+        user: [],
+        builtin: { [DEV]: { terms: [{ source: 'merge', target: '合入' }], removedTerms: ['merge'] } },
+      },
+    });
+    expect((await devTerms())[2]).toEqual({ source: 'merge', target: '合入' });
 
     await chrome.storage.local.set({
       'pt-domains': { user: [], builtin: { [DEV]: { terms: [], removedTerms: 'merge' } } },
