@@ -756,11 +756,18 @@ test.describe('设置页：翻译领域 @extended', () => {
     await sites.locator('.pt-btn').click();
     await expect(reset).toBeVisible();
 
-    // 取消确认：什么都不变
+    // 取消确认：存储里的修改还在
     page.once('dialog', (d) => void d.dismiss());
     await reset.click();
+    const overlay = () =>
+      serviceWorker.evaluate(async () => {
+        const stored = (await chrome.storage.local.get('pt-domains'))['pt-domains'] as {
+          builtin: Record<string, unknown>;
+        };
+        return stored.builtin['builtin:software-zh-CN'] ?? null;
+      });
+    expect(await overlay()).not.toBeNull();
     await expect(reset).toBeVisible();
-    await expect(textarea).toHaveValue(`${original}\ngitee.com`);
 
     // 确认后恢复，按钮消失
     page.once('dialog', (d) => void d.accept());
@@ -768,5 +775,8 @@ test.describe('设置页：翻译领域 @extended', () => {
     await expect(page.locator('#pt-toast')).toHaveText('已恢复默认');
     await expect(reset).toHaveCount(0);
     await expect(textarea).toHaveValue(original);
+    expect(await overlay()).toBeNull();
+    // 焦点交还给同一领域的移动按钮
+    await expect(builtin.locator(':scope > .pt-domain-move:focus')).toHaveCount(1);
   });
 });

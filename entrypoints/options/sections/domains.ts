@@ -386,18 +386,21 @@ export function initDomains(): void {
       return li;
     });
     // #394: 焦点在上移、下移按钮上时，重绘后交还给同一领域的同一按钮；
-    // 它移到端点后不可用，改给另一个方向的按钮，便于用键盘连续调整
+    // 它移到端点后不可用，改给另一个方向的按钮，便于用键盘连续调整。
+    // #398: 焦点在“恢复默认”上时，恢复后按钮消失，交给同一领域的移动按钮
     const focused = document.activeElement;
-    const focusedMove =
-      focused instanceof HTMLElement && focused.classList.contains('pt-domain-move')
+    const focusedBtn =
+      focused instanceof HTMLElement &&
+      (focused.classList.contains('pt-domain-move') || focused.classList.contains('pt-domain-reset'))
         ? { id: focused.closest<HTMLElement>('.pt-domain-item')?.dataset.id, dir: focused.dataset.direction }
         : null;
     listEl.replaceChildren(...items);
-    if (focusedMove) {
-      const li = items.find((el) => el.dataset.id === focusedMove.id);
+    if (focusedBtn) {
+      const li = items.find((el) => el.dataset.id === focusedBtn.id);
+      const reset = focusedBtn.dir ? null : li?.querySelector<HTMLButtonElement>(':scope > .pt-domain-reset');
       const buttons = [...(li?.querySelectorAll<HTMLButtonElement>(':scope > .pt-domain-move') ?? [])];
-      const same = buttons.find((b) => b.dataset.direction === focusedMove.dir);
-      (same && !same.disabled ? same : buttons.find((b) => !b.disabled))?.focus();
+      const same = buttons.find((b) => b.dataset.direction === focusedBtn.dir);
+      (reset ?? (same && !same.disabled ? same : buttons.find((b) => !b.disabled)))?.focus();
     }
   }
 

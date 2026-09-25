@@ -100,6 +100,39 @@ describe('恢复默认（#398）', () => {
     expect(isBuiltinModified(await effective(DEV))).toBe(false);
   });
 
+  test('升级后：只剩对已不在内置里的术语的删除记录不算修改；新版加回它时算修改，恢复后它重新出现', async () => {
+    await setDomainTerms(DEV, [{ source: 'issue', noTranslate: true }]);
+    builtin[0] = { ...builtin[0]!, terms: [{ source: 'issue', noTranslate: true }] };
+    expect(isBuiltinModified(await effective(DEV))).toBe(false);
+
+    builtin[0] = {
+      ...builtin[0]!,
+      terms: [
+        { source: 'issue', noTranslate: true },
+        { source: 'branch', target: '分支' },
+      ],
+    };
+    expect(isBuiltinModified(await effective(DEV))).toBe(true);
+
+    await resetBuiltinDomain(DEV);
+    expect((await effective(DEV)).terms).toContainEqual({ source: 'branch', target: '分支' });
+  });
+
+  test('升级后内置译法恰好等于用户的修改 → 不算修改', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '支线' },
+    ]);
+    builtin[0] = {
+      ...builtin[0]!,
+      terms: [
+        { source: 'issue', noTranslate: true },
+        { source: 'branch', target: '支线' },
+      ],
+    };
+    expect(isBuiltinModified(await effective(DEV))).toBe(false);
+  });
+
   test('自建领域不能恢复默认', async () => {
     const mine = await createDomain({ name: '我的', targetLang: 'zh-CN' });
     await expect(resetBuiltinDomain(mine.id)).rejects.toThrow();
