@@ -11,7 +11,8 @@
 // 列出行号与选择器，修改后提示消失。渲染卡片时对已保存的规则做同样的
 // 校验（#443）：导入等途径带进的无效行照样标出。删除卡片（#371）前先确认，
 // 删除后该站点只剩内置规则生效。有内置规则的站点，卡片上显示“停用这个
-// 站点的内置规则”开关（#375），点击即保存。
+// 站点的内置规则”开关（#375），点击即保存。全部用户规则可导出为 JSON
+// 文件（#376），用于备份和迁移。
 
 import {
   getUserSiteRules,
@@ -20,6 +21,7 @@ import {
   setBuiltinSiteRulesDisabled,
   hasBuiltinSiteRules,
   onUserSiteRulesChanged,
+  exportUserSiteRules,
   findInvalidSelectors,
   InvalidSelectorsError,
 } from '~/src/storage/specialization';
@@ -174,6 +176,7 @@ export function initSiteRules(): void {
   const listEl = document.getElementById('pt-site-rules-list')!;
   const siteInput = document.getElementById('pt-site-rules-site-input') as HTMLInputElement;
   const addBtn = document.getElementById('pt-site-rules-add-btn')!;
+  const exportBtn = document.getElementById('pt-site-rules-export-btn')!;
 
   /** 已渲染的卡片，按站点复用 —— 保存一张卡片时，其他卡片未保存的改动不丢 */
   const cards = new Map<string, Card>();
@@ -238,7 +241,23 @@ export function initSiteRules(): void {
       });
   }
 
+  /** #376：导出全部用户规则，下载一个 JSON 文件 */
+  function exportJson(): void {
+    exportUserSiteRules()
+      .then((json) => {
+        const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'parallel-translation-site-rules.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast(tf('siteRulesExported', '站点规则已导出'));
+      })
+      .catch((e) => console.error('[PT] 导出站点规则失败:', e));
+  }
+
   addBtn.addEventListener('click', add);
+  exportBtn.addEventListener('click', exportJson);
   siteInput.addEventListener('input', () => siteInput.classList.remove('pt-error'));
   siteInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') add();
