@@ -64,6 +64,22 @@ function normalizeForUnit(el: Element, raw: string): string {
   return normalize(raw);
 }
 
+/**
+ * 子 frame 取顶层页面的主机名（#471）。跨域时读不到 window.top.location，
+ * Firefox 也没有 location.ancestorOrigins，改由 background 按消息发送方
+ * 所在标签页的网址告知。取不到时回落到本 frame 的主机名。
+ */
+async function requestTopHostname(): Promise<string> {
+  try {
+    const res: unknown = await chrome.runtime.sendMessage({ type: 'pt:top-hostname' });
+    const hostname = (res as { hostname?: unknown } | undefined)?.hostname;
+    if (typeof hostname === 'string' && hostname) return hostname;
+  } catch {
+    // background 没有响应：按本 frame 判定
+  }
+  return location.hostname;
+}
+
 export default defineContentScript({
   matches: ['<all_urls>'],
   allFrames: true,
@@ -94,6 +110,10 @@ export default defineContentScript({
     const registry = createLifecycleRegistry();
 
     const isMainFrame = window.top === window;
+
+    // #471: 顶层页面的主机名 —— 当前领域按它判定，一个标签页里所有 frame
+    // 得到同一个领域
+    const topHostname = isMainFrame ? location.hostname : await requestTopHostname();
 
     // ── 注入 UI（仅主文档）──
     if (isMainFrame) {
@@ -295,6 +315,8 @@ export default defineContentScript({
       // #311: 准入判定的当前主机名同样经注入提供
       getSettings,
       getHostname: () => location.hostname,
+      // #471: 当前领域按顶层页面判定；准入判定仍按本 frame 的主机名
+      getTopHostname: () => topHostname,
       getDomains: () => domains,
       // #325: 翻译态查询与还原动作经注入 —— 模块不直接访问 DOM
       hasTranslated,
@@ -627,11 +649,11 @@ export default defineContentScript({
 
       if (msg?.type === 'pt:current-domain') {
         // #399: popup 显示当前领域 —— 与全页翻译携带的领域同一口径
-        // （本页读到的领域列表 + 主文档主机名）；目标语言用 popup 当前
-        // 所选，避免设置刚改、本页还没收到变更时显示旧结果
+        // （本页读到的领域列表 + 顶层页面主机名，#471）；目标语言用 popup
+        // 当前所选，避免设置刚改、本页还没收到变更时显示旧结果
         if (!isMainFrame) return;
         const to = typeof msg.to === 'string' ? msg.to : getSettings().to;
-        sendResponse({ name: currentDomain(domains, location.hostname, to)?.name ?? null });
+        sendResponse({ name: currentDomain(domains, topHostname, to)?.name ?? null });
         return;
       }
 

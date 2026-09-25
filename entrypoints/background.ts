@@ -128,6 +128,19 @@ export default defineBackground(() => {
     return true; // 异步响应
   });
 
+  // #471: 子 frame 取顶层页面的主机名 —— 按发送方所在标签页的网址，
+  // 当前领域据此判定，一个标签页里所有 frame 得到同一个领域
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg?.type !== 'pt:top-hostname') return;
+    let hostname = '';
+    try {
+      hostname = new URL(sender.tab?.url ?? '').hostname;
+    } catch {
+      // 取不到标签页网址：content 回落到本 frame 的主机名
+    }
+    sendResponse({ hostname });
+  });
+
   // 健康检查（E2E 测试用于验证消息通道就绪）
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'pt:ping') {

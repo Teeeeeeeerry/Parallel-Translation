@@ -23,6 +23,7 @@ export const FIXTURES = [
   'shadow-collapse',
   'custom-elements',
   'iframe',
+  'iframe-cross',
   'infinite',
   'spa',
   'hostile',

@@ -8,6 +8,7 @@
  * #120：TC-E2E-31/32/33/39/40/41/42/43/45 由占位 skip 实现为真实用例。
  * #440：TC-E2E-64 覆盖下一个引擎 key 无效时保留已成功段落。
  * #383/#384：TC-E2E-67 覆盖逐段翻译与划词翻译带上当前领域。
+ * #471：TC-E2E-70 覆盖跨域 iframe 里的文字按顶层页面判定当前领域。
  * #470：TC-E2E-71 覆盖设置页新建、删除领域失败时的提示。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
@@ -507,6 +508,81 @@ test.describe('边界情况 @extended', () => {
       timeout: 20_000,
     });
     expect(await queries()).toContain('Second ⟦TM0⟧ that should also be translated');
+  });
+
+  test('TC-E2E-70: 跨域 iframe 里的文字按顶层页面判定当前领域，全页翻译与拖选划词的术语都生效（#471）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    // 领域只命中顶层页面（localhost），iframe 的主机名是 127.0.0.1
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [{
+            id: 'user:e2e',
+            name: 'E2E',
+            targetLang: 'zh-CN',
+            sites: ['localhost'],
+            origin: 'user',
+            terms: [
+              { source: 'item', noTranslate: true },
+              { source: 'paragraph', noTranslate: true },
+            ],
+          }],
+          builtin: {},
+        },
+      }),
+    );
+    // 记录发给 Google 的原文（同 TC-E2E-67）
+    await serviceWorker.evaluate(() => {
+      const inner = (self as any).fetch.bind(self);
+      (self as any).__ptQueries = [] as string[];
+      const recorder = async (input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
+        if (url.startsWith('https://translate.googleapis.com/')) {
+          (self as any).__ptQueries.push(new URL(url).searchParams.get('q') ?? '');
+        }
+        return inner(input, init);
+      };
+      (recorder as any).__ptMockStubbed = true;
+      (self as any).fetch = recorder;
+    });
+    const queries = () => serviceWorker.evaluate(() => [...(self as any).__ptQueries] as string[]);
+
+    await gotoFixture('iframe-cross');
+    await waitForBall(page);
+    // iframe 里的 content script 就绪：初始化时给根元素加上样式类，
+    // 与消息监听、拖选监听在同一段同步代码里注册
+    const frame = page.frameLocator('#frame1');
+    await expect(frame.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
+
+    // 拖选划词：在 iframe 里按住修饰键拖选一整行。先于全页翻译做，
+    // 这时这段文字还没发过请求，记录到的原文只可能来自划词
+    const box = (await frame.locator('#drag').boundingBox())!;
+    const y = box.y + box.height / 2;
+    await page.keyboard.down('Alt');
+    await page.mouse.move(box.x + 1, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 2, y, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.up('Alt');
+    await expect(frame.locator('#pt-host-toast .pt-toast')).toContainText('【译】', { timeout: 20_000 });
+    expect(await queries()).toEqual(['One more ⟦TM0⟧ selected inside the frame.']);
+
+    // 全页翻译：与 popup 同路径，广播到全部 frame，iframe 也翻译。
+    // 段落按钮只在主文档注册，iframe 里没有逐段翻译入口
+    await serviceWorker.evaluate(async () => {
+      for (const tab of await chrome.tabs.query({})) {
+        try {
+          await chrome.tabs.sendMessage(tab.id!, { type: 'pt:toggle-translate' });
+        } catch {
+          // 扩展页等没有 content script 的标签页
+        }
+      }
+    });
+    await expect(frame.locator('#full')).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+    expect(await queries()).toContain('Every ⟦TM0⟧ in this frame ⟦TM1⟧ is translated with the page.');
   });
 });
 

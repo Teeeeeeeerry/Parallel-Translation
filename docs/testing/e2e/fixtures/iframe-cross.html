@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Cross-Origin Iframe Test</title></head>
+<body>
+  <h1>Main Document</h1>
+  <p>This paragraph is in the main document and should be translated.</p>
+  <!-- 顶层页面是 localhost，iframe 用 127.0.0.1：主机名不同、跨域 -->
+  <iframe id="frame1" src="http://127.0.0.1:4173/iframe-cross-child.html" style="width:100%;height:200px"></iframe>
+</body>
+</html>

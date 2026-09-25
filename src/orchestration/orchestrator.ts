@@ -224,6 +224,12 @@ export interface OrchestratorOptions {
    */
   getHostname?: () => string;
   /**
+   * 读取顶层页面的主机名（#471）：当前领域按顶层页面判定，一个标签页里
+   * 所有 frame 得到同一个领域。站点名单的准入判定不用它，仍按
+   * getHostname。未注入时回落到 getHostname（主文档二者相同）。
+   */
+  getTopHostname?: () => string;
+  /**
    * 读取生效领域列表（#379）：全页翻译按当前主机名与目标语言从中
    * 选出当前领域，把领域 ID 放进翻译请求；未注入视同没有领域。
    */
@@ -559,12 +565,16 @@ function admissionFrom(opts: OrchestratorOptions): Admission {
   return 'allowed';
 }
 
-/** 当前领域 ID（#379）—— 生效领域与主机名均经注入提供。 */
+/**
+ * 当前领域 ID（#379）—— 生效领域与主机名均经注入提供。
+ * #471: 按顶层页面的主机名判定，iframe 里与主文档得到同一个领域。
+ */
 function currentDomainIdFrom(
   opts: OrchestratorOptions,
   to: string,
 ): string | undefined {
   const domains = opts.getDomains?.();
   if (!domains) return undefined;
-  return currentDomain(domains, opts.getHostname?.() ?? '', to)?.id;
+  const host = (opts.getTopHostname ?? opts.getHostname)?.() ?? '';
+  return currentDomain(domains, host, to)?.id;
 }
