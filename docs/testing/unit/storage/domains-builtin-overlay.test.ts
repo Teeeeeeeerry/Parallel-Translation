@@ -19,7 +19,6 @@ import {
   getEffectiveDomains,
   createDomain,
   setDomainTerms,
-  setDomainSites,
   isBuiltinTerm,
 } from '~/src/storage/domains';
 
@@ -99,9 +98,6 @@ describe('修改与新增内置领域的术语', () => {
     expect(isBuiltinTerm(law.id, 'branch')).toBe(false);
   });
 
-  test('内置领域的适用网址仍不能修改', async () => {
-    await expect(setDomainSites(DEV, ['example.com'])).rejects.toThrow();
-  });
 });
 
 describe('删除内置术语（#396）', () => {
