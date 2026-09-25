@@ -554,14 +554,24 @@ test.describe('边界情况 @extended', () => {
     await waitForBall(page);
     // iframe 里的 content script 就绪：初始化时给根元素加上样式类，
     // 与消息监听、拖选监听在同一段同步代码里注册
-    const child = page.frame({ url: /127\.0\.0\.1/ });
-    expect(child).not.toBeNull();
-    await expect
-      .poll(() => child!.evaluate(() => document.documentElement.className), { timeout: 30_000 })
-      .toContain('pt-style-');
     const frame = page.frameLocator('#frame1');
+    await expect(frame.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
 
-    // 全页翻译：与 popup 同路径，广播到全部 frame，iframe 也翻译
+    // 拖选划词：在 iframe 里按住修饰键拖选一整行。先于全页翻译做，
+    // 这时这段文字还没发过请求，记录到的原文只可能来自划词
+    const box = (await frame.locator('#drag').boundingBox())!;
+    const y = box.y + box.height / 2;
+    await page.keyboard.down('Alt');
+    await page.mouse.move(box.x + 1, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 2, y, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.up('Alt');
+    await expect(frame.locator('#pt-host-toast .pt-toast')).toContainText('【译】', { timeout: 20_000 });
+    expect(await queries()).toEqual(['One more ⟦TM0⟧ selected inside the frame.']);
+
+    // 全页翻译：与 popup 同路径，广播到全部 frame，iframe 也翻译。
+    // 段落按钮只在主文档注册，iframe 里没有逐段翻译入口
     await serviceWorker.evaluate(async () => {
       for (const tab of await chrome.tabs.query({})) {
         try {
@@ -573,18 +583,6 @@ test.describe('边界情况 @extended', () => {
     });
     await expect(frame.locator('#full')).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
     expect(await queries()).toContain('Every ⟦TM0⟧ in this frame ⟦TM1⟧ is translated with the page.');
-
-    // 拖选划词：在 iframe 里按住修饰键拖选一整行
-    const box = (await frame.locator('#drag').boundingBox())!;
-    const y = box.y + box.height / 2;
-    await page.keyboard.down('Alt');
-    await page.mouse.move(box.x + 1, y);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width - 2, y, { steps: 5 });
-    await page.mouse.up();
-    await page.keyboard.up('Alt');
-    await expect(frame.locator('#pt-host-toast .pt-toast')).toContainText('【译】', { timeout: 20_000 });
-    expect(await queries()).toContain('One more ⟦TM0⟧ selected inside the frame.');
   });
 });
 

@@ -64,6 +64,22 @@ function normalizeForUnit(el: Element, raw: string): string {
   return normalize(raw);
 }
 
+/**
+ * 子 frame 取顶层页面的主机名（#471）。跨域时读不到 window.top.location，
+ * Firefox 也没有 location.ancestorOrigins，改由 background 按消息发送方
+ * 所在标签页的网址告知。取不到时回落到本 frame 的主机名。
+ */
+async function requestTopHostname(): Promise<string> {
+  try {
+    const res: unknown = await chrome.runtime.sendMessage({ type: 'pt:top-hostname' });
+    const hostname = (res as { hostname?: unknown } | undefined)?.hostname;
+    if (typeof hostname === 'string' && hostname) return hostname;
+  } catch {
+    // background 没有响应：按本 frame 判定
+  }
+  return location.hostname;
+}
+
 export default defineContentScript({
   matches: ['<all_urls>'],
   allFrames: true,
@@ -95,23 +111,9 @@ export default defineContentScript({
 
     const isMainFrame = window.top === window;
 
-    /**
-     * 顶层页面的主机名（#471）：当前领域按它判定，一个标签页里所有 frame
-     * 得到同一个领域。跨域 iframe 读不到 window.top.location，改用
-     * ancestorOrigins 的最后一项（顶层页面的 origin）。取不到时（例如
-     * iframe 设了 referrerpolicy="no-referrer"，Chrome 会把祖先 origin
-     * 置为 "null"）回落到本 frame 的主机名。
-     */
-    const topHostname = ((): string => {
-      if (isMainFrame) return location.hostname;
-      const origins = location.ancestorOrigins;
-      const top = origins?.[origins.length - 1];
-      try {
-        return top ? new URL(top).hostname || location.hostname : location.hostname;
-      } catch {
-        return location.hostname;
-      }
-    })();
+    // #471: 顶层页面的主机名 —— 当前领域按它判定，一个标签页里所有 frame
+    // 得到同一个领域
+    const topHostname = isMainFrame ? location.hostname : await requestTopHostname();
 
     // ── 注入 UI（仅主文档）──
     if (isMainFrame) {
