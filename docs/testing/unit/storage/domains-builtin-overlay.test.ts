@@ -1,5 +1,5 @@
 /**
- * storage/domains.ts — 内置领域叠加层：修改与新增（#395）
+ * storage/domains.ts — 内置领域叠加层：修改与新增（#395）、删除（#396）
  *
  * 内置数据换成可变的测试数据，改动它来模拟一次扩展升级。只断言外部
  * 可观察的行为：生效领域列表里内置领域的术语。
@@ -80,16 +80,6 @@ describe('修改与新增内置领域的术语', () => {
     expect(saved.terms).toEqual(await devTerms());
   });
 
-  test('提交时漏掉的内置术语仍然生效', async () => {
-    await setDomainTerms(DEV, [{ source: 'branch', target: '支线' }]);
-
-    expect(await devTerms()).toEqual([
-      { source: 'issue', noTranslate: true },
-      { source: 'branch', target: '支线' },
-      { source: 'merge', target: '合并' },
-    ]);
-  });
-
   test('校验与自建领域一致：原词重复（不区分大小写）→ 拒绝保存，生效内容不变', async () => {
     await expect(
       setDomainTerms(DEV, [
@@ -111,6 +101,138 @@ describe('修改与新增内置领域的术语', () => {
 
   test('内置领域的适用网址仍不能修改', async () => {
     await expect(setDomainSites(DEV, ['example.com'])).rejects.toThrow();
+  });
+});
+
+describe('删除内置术语（#396）', () => {
+  test('保存时去掉的内置术语从生效内容中消失，其余不变', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'branch', target: '支线' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    expect(await devTerms()).toEqual([
+      { source: 'branch', target: '支线' },
+      { source: 'merge', target: '合并' },
+    ]);
+  });
+
+  test('升级后被删的术语仍不出现，即使新版改了它的译法；新版新增的内置术语照常生效', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    release([
+      { source: 'Issue', target: '议题' },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+      { source: 'commit', noTranslate: true },
+    ]);
+
+    expect(await devTerms()).toEqual([
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+      { source: 'commit', noTranslate: true },
+    ]);
+  });
+
+  test('删掉后再加回同一原词 → 以用户填写的为准，之后不再算删除', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+    await setDomainTerms(DEV, [
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+      { source: 'issue', target: '议题' },
+    ]);
+
+    expect(await devTerms()).toEqual([
+      { source: 'issue', target: '议题' },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    // 加回的内容与内置相同：跟随新版内置
+    await setDomainTerms(DEV, [
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+    release([
+      { source: 'issue', target: '事项' },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+    expect((await devTerms())[0]).toEqual({ source: 'issue', target: '事项' });
+  });
+
+  test('删除用户新增的术语：直接消失，不影响内置术语', async () => {
+    await setDomainTerms(DEV, [
+      ...builtin[0]!.terms,
+      { source: 'fork', noTranslate: true },
+    ]);
+    await setDomainTerms(DEV, builtin[0]!.terms);
+    expect(await devTerms()).toEqual(builtin[0]!.terms);
+  });
+
+  test('被删的术语在某一版内置里暂时去掉、期间保存过其他改动，之后加回也不复活', async () => {
+    await setDomainTerms(DEV, [
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+    release([
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+    await setDomainTerms(DEV, [
+      { source: 'branch', target: '支线' },
+      { source: 'merge', target: '合并' },
+    ]);
+    release([
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分支' },
+      { source: 'merge', target: '合并' },
+    ]);
+
+    expect(await devTerms()).toEqual([
+      { source: 'branch', target: '支线' },
+      { source: 'merge', target: '合并' },
+    ]);
+  });
+
+  test('全部内置术语都可以删除', async () => {
+    await setDomainTerms(DEV, []);
+    expect(await devTerms()).toEqual([]);
+  });
+
+  test('删除记录存放在 storage.local；脏数据被忽略，内置术语照常生效', async () => {
+    await setDomainTerms(DEV, [{ source: 'branch', target: '分支' }]);
+    expect(Object.keys(await chrome.storage.sync.get(null))).toEqual([]);
+    expect(JSON.stringify(await chrome.storage.local.get(null))).toContain('issue');
+
+    await chrome.storage.local.set({
+      'pt-domains': { user: [], builtin: { [DEV]: { terms: [], removedTerms: [42, null, ' Merge '] } } },
+    });
+    expect(await devTerms()).toEqual([
+      { source: 'issue', noTranslate: true },
+      { source: 'branch', target: '分支' },
+    ]);
+
+    // 同一原词既在删除记录里、又有用户填写的术语：以用户填写的为准
+    await chrome.storage.local.set({
+      'pt-domains': {
+        user: [],
+        builtin: { [DEV]: { terms: [{ source: 'merge', target: '合入' }], removedTerms: ['merge'] } },
+      },
+    });
+    expect((await devTerms())[2]).toEqual({ source: 'merge', target: '合入' });
+
+    await chrome.storage.local.set({
+      'pt-domains': { user: [], builtin: { [DEV]: { terms: [], removedTerms: 'merge' } } },
+    });
+    expect(await devTerms()).toEqual(builtin[0]!.terms);
   });
 });
 
