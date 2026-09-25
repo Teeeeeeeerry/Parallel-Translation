@@ -305,5 +305,10 @@
   },
   "siteRulesCardBackup": { "message": "备份与迁移" },
   "siteRulesExport": { "message": "导出 JSON" },
-  "siteRulesExported": { "message": "站点规则已导出" }
+  "siteRulesExported": { "message": "站点规则已导出" },
+  "siteRulesImport": { "message": "导入 JSON" },
+  "siteRulesImported": {
+    "message": "已导入 $count$ 个站点，刷新网站后生效",
+    "placeholders": { "count": { "content": "$1" } }
+  }
 }

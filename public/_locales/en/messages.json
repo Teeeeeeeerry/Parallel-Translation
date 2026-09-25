@@ -305,5 +305,10 @@
   },
   "siteRulesCardBackup": { "message": "Backup and migration" },
   "siteRulesExport": { "message": "Export JSON" },
-  "siteRulesExported": { "message": "Site rules exported" }
+  "siteRulesExported": { "message": "Site rules exported" },
+  "siteRulesImport": { "message": "Import JSON" },
+  "siteRulesImported": {
+    "message": "Imported $count$ site(s). Reload the site to apply.",
+    "placeholders": { "count": { "content": "$1" } }
+  }
 }

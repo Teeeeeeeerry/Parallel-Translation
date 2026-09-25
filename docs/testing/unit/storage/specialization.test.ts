@@ -716,3 +716,99 @@ describe('站点规则 JSON 导出（#376）', () => {
     expect(Object.keys((await exported()).sites)).toEqual(['ok.com']);
   });
 });
+
+/**
+ * 站点规则 JSON 导入（#377）：导入 #376 导出的文件，与现有用户规则合并 ——
+ * 新站点新增在末尾；同一站点逐字段追加并去重，停用内置规则的标记只会
+ * 打开、不会被导入关闭。本组只处理格式正确的文件（容错见 #378）。
+ */
+describe('站点规则 JSON 导入（#377）', () => {
+  type Spec = typeof import('~/src/storage/specialization');
+  async function load(): Promise<Spec> {
+    vi.resetModules();
+    return import('~/src/storage/specialization');
+  }
+
+  let options: Spec;
+  beforeEach(async () => {
+    resetStorage();
+    options = await load();
+  });
+
+  const file = (sites: Record<string, unknown>) =>
+    JSON.stringify({ format: 'parallel-translation-site-rules', version: 1, sites });
+
+  test('导出再导入到空白设备后，用户规则与导出前一致', async () => {
+    await options.saveUserSiteRules('github.com', { exclude: ['.my-sidebar'], preserve: ['.user'] });
+    await options.setBuiltinSiteRulesDisabled('github.com', true);
+    await options.saveUserSiteRules('example.com', { scope: ['main'] });
+    const json = await options.exportUserSiteRules();
+    const before = {
+      github: options.getSiteRules('github.com'),
+      example: options.getSiteRules('example.com'),
+    };
+
+    resetStorage();
+    options = await load();
+    await options.importUserSiteRules(json);
+    expect(await options.exportUserSiteRules()).toBe(json);
+    const page = await load();
+    await page.siteRulesReady();
+    expect(page.getSiteRules('github.com')).toEqual(before.github);
+    expect(page.getSiteRules('example.com')).toEqual(before.example);
+  });
+
+  test('导出再导入到同一设备，用户规则不变（去重）', async () => {
+    await options.saveUserSiteRules('github.com', { exclude: ['.a', '.b'] });
+    const json = await options.exportUserSiteRules();
+    await options.importUserSiteRules(json);
+    expect(await options.exportUserSiteRules()).toBe(json);
+  });
+
+  test('同一站点已有规则时逐字段追加并去重，新站点新增在末尾', async () => {
+    await options.saveUserSiteRules('github.com', { exclude: ['.a'], preserve: ['.p'] });
+    await options.importUserSiteRules(
+      file({
+        'github.com': { scope: ['main'], exclude: ['.a', '.b'], preserve: [], disableBuiltin: false },
+        'example.com': { scope: [], exclude: ['.ad'], preserve: [], disableBuiltin: false },
+      }),
+    );
+    expect(JSON.parse(await options.exportUserSiteRules()).sites).toEqual({
+      'github.com': { scope: ['main'], exclude: ['.a', '.b'], preserve: ['.p'], disableBuiltin: false },
+      'example.com': { scope: [], exclude: ['.ad'], preserve: [], disableBuiltin: false },
+    });
+  });
+
+  test('停用内置规则的标记：导入打开的会打开，导入关闭的不改变现有设置', async () => {
+    await options.setBuiltinSiteRulesDisabled('github.com', true);
+    await options.importUserSiteRules(
+      file({
+        'github.com': { scope: [], exclude: [], preserve: [], disableBuiltin: false },
+        'youtube.com': { scope: [], exclude: [], preserve: [], disableBuiltin: true },
+      }),
+    );
+    const { sites } = JSON.parse(await options.exportUserSiteRules());
+    expect(sites['github.com'].disableBuiltin).toBe(true);
+    expect(sites['youtube.com'].disableBuiltin).toBe(true);
+  });
+
+  test('导入后规则生效：设置所在的上下文立即生效，页面刷新后同样生效', async () => {
+    await options.importUserSiteRules(
+      file({ 'example.com': { scope: [], exclude: ['.ad'], preserve: [], disableBuiltin: false } }),
+    );
+    expect(options.getSiteRules('example.com').exclude).toEqual(['.ad']);
+    const page = await load();
+    await page.siteRulesReady();
+    expect(page.getSiteRules('example.com').exclude).toEqual(['.ad']);
+  });
+
+  test('返回导入的站点数', async () => {
+    const result = await options.importUserSiteRules(
+      file({
+        'a.com': { scope: [], exclude: ['.x'], preserve: [], disableBuiltin: false },
+        'b.com': { scope: [], exclude: [], preserve: [], disableBuiltin: false },
+      }),
+    );
+    expect(result.imported).toBe(2);
+  });
+});

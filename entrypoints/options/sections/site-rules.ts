@@ -12,7 +12,7 @@
 // 校验（#443）：导入等途径带进的无效行照样标出。删除卡片（#371）前先确认，
 // 删除后该站点只剩内置规则生效。有内置规则的站点，卡片上显示“停用这个
 // 站点的内置规则”开关（#375），点击即保存。全部用户规则可导出为 JSON
-// 文件（#376），用于备份和迁移。
+// 文件（#376），用于备份和迁移；导入的文件与现有用户规则合并（#377）。
 
 import {
   getUserSiteRules,
@@ -22,6 +22,7 @@ import {
   hasBuiltinSiteRules,
   onUserSiteRulesChanged,
   exportUserSiteRules,
+  importUserSiteRules,
   findInvalidSelectors,
   InvalidSelectorsError,
 } from '~/src/storage/specialization';
@@ -177,6 +178,8 @@ export function initSiteRules(): void {
   const siteInput = document.getElementById('pt-site-rules-site-input') as HTMLInputElement;
   const addBtn = document.getElementById('pt-site-rules-add-btn')!;
   const exportBtn = document.getElementById('pt-site-rules-export-btn')!;
+  const importBtn = document.getElementById('pt-site-rules-import-btn')!;
+  const importFile = document.getElementById('pt-site-rules-import-file') as HTMLInputElement;
 
   /** 已渲染的卡片，按站点复用 —— 保存一张卡片时，其他卡片未保存的改动不丢 */
   const cards = new Map<string, Card>();
@@ -256,8 +259,28 @@ export function initSiteRules(): void {
       .catch((e) => console.error('[PT] 导出站点规则失败:', e));
   }
 
+  /** #377：导入 JSON 文件，与现有用户规则合并后重新渲染卡片 */
+  function importJson(): void {
+    const file = importFile.files?.[0];
+    // 清空选择：再次选同一个文件也会触发 change
+    importFile.value = '';
+    if (!file) return;
+    file
+      .text()
+      .then(importUserSiteRules)
+      .then(async ({ imported }) => {
+        await render();
+        showToast(
+          tf('siteRulesImported', `已导入 ${imported} 个站点，刷新网站后生效`, String(imported)),
+        );
+      })
+      .catch((e) => console.error('[PT] 导入站点规则失败:', e));
+  }
+
   addBtn.addEventListener('click', add);
   exportBtn.addEventListener('click', exportJson);
+  importBtn.addEventListener('click', () => importFile.click());
+  importFile.addEventListener('change', importJson);
   siteInput.addEventListener('input', () => siteInput.classList.remove('pt-error'));
   siteInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') add();
