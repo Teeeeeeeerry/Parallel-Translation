@@ -354,7 +354,7 @@
     "placeholders": { "line": { "content": "$1" } }
   },
   "domainTermsSkipMissingTarget": {
-    "message": "第 $line$ 行：沒有譯法，也沒有標為不翻譯",
+    "message": "第 $line$ 行：沒有譯法，也沒有勾選「不翻譯」",
     "placeholders": { "line": { "content": "$1" } }
   },
   "domainTermsSkipNoTranslate": {

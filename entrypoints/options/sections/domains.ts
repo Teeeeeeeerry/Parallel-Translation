@@ -30,7 +30,7 @@ import {
   importDomainTermsCsv,
 } from '~/src/storage/domains';
 import { getSettings, patchSettings, onSettingsChanged } from '~/src/storage/settings';
-import type { Domain, Term, TermsCsvSkipReason } from '~/src/storage/domains';
+import type { Domain, Term, TermsCsvSkip } from '~/src/storage/domains';
 import { tf } from '~/src/i18n';
 import { showToast } from '../main';
 
@@ -167,7 +167,7 @@ function termRow(onRemove: () => void, t?: Term, builtin = false): HTMLTableRowE
 }
 
 /** 导入时跳过一行的说明（#404）。 */
-function skipLine({ line, reason }: { line: number; reason: TermsCsvSkipReason }): string {
+function skipLine({ line, reason }: TermsCsvSkip): string {
   const n = String(line);
   switch (reason) {
     case 'columns':
@@ -175,7 +175,7 @@ function skipLine({ line, reason }: { line: number; reason: TermsCsvSkipReason }
     case 'missingSource':
       return tf('domainTermsSkipMissingSource', `第 ${n} 行：原词为空`, n);
     case 'missingTarget':
-      return tf('domainTermsSkipMissingTarget', `第 ${n} 行：没有译法，也没有标为不翻译`, n);
+      return tf('domainTermsSkipMissingTarget', `第 ${n} 行：没有译法，也没有勾选“不翻译”`, n);
     case 'noTranslate':
       return tf('domainTermsSkipNoTranslate', `第 ${n} 行：不翻译列应为 true 或 false`, n);
     case 'quote':
@@ -361,8 +361,13 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
       .then((csv) => importDomainTermsCsv(d.id, csv))
       .then(({ imported, skipped }) => {
         const n = String(imported);
+        const current = document.querySelector<HTMLDetailsElement>(
+          `details[data-editor="terms"][data-domain-id="${CSS.escape(d.id)}"]`,
+        );
         if (skipped.length === 0) {
+          // 存储没变时列表不重绘：上一次导入的说明要在这里收起
           importReports.delete(d.id);
+          current?.querySelector('.pt-domain-terms-error')?.classList.remove('pt-visible');
           showToast(tf('domainTermsImported', `已导入 ${imported} 条术语`, n));
           return;
         }
@@ -371,9 +376,7 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
         const more = String(skipped.length - SKIP_LIST_MAX);
         if (skipped.length > SKIP_LIST_MAX) lines.push(tf('domainTermsSkipMore', `另有 ${more} 行没有导入`, more));
         importReports.set(d.id, lines.join('\n'));
-        showImportReport(document.querySelector<HTMLDetailsElement>(
-          `details[data-editor="terms"][data-domain-id="${CSS.escape(d.id)}"]`,
-        ));
+        showImportReport(current);
         const m = String(skipped.length);
         showToast(tf('domainTermsImportedSkipped', `已导入 ${imported} 条术语，跳过 ${m} 行`, n, m), 4000);
       })

@@ -2001,7 +2001,7 @@ declare module "wxt/browser" {
       options?: GetMessageOptions,
     ): string;
     /**
-     * "第 $line$ 行：没有译法，也没有标为不翻译"
+     * "第 $line$ 行：没有译法，也没有勾选“不翻译”"
      */
     getMessage(
       messageName: "domainTermsSkipMissingTarget",

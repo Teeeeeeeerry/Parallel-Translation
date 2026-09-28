@@ -354,7 +354,7 @@
     "placeholders": { "line": { "content": "$1" } }
   },
   "domainTermsSkipMissingTarget": {
-    "message": "Line $line$: no translation and not marked “do not translate”",
+    "message": "Line $line$: no translation and “do not translate” not checked",
     "placeholders": { "line": { "content": "$1" } }
   },
   "domainTermsSkipNoTranslate": {

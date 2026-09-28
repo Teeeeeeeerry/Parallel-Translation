@@ -639,8 +639,8 @@ interface CsvRecord {
 }
 
 /**
- * 按 RFC 4180 把 CSV 文本拆成记录（#403）：引号内可含逗号、换行与写两遍
- * 的双引号；行尾 CRLF、LF 或单独的 CR 都认；开头的 BOM 去掉，结尾的空行
+ * 按 RFC 4180 把 CSV 文本拆成记录（#403）：字段开头的双引号起引号，引号内
+ * 可含逗号、换行与写两遍的双引号；行尾 CRLF、LF 或单独的 CR 都认；开头的 BOM 去掉，结尾的空行
  * 不算。引号没有闭合时，从那条记录起到文件结尾合成一条，标为未闭合。
  */
 function parseCsv(text: string): CsvRecord[] {
@@ -663,7 +663,8 @@ function parseCsv(text: string): CsvRecord[] {
         field += '"';
         i++;
       } else quoted = false;
-    } else if (c === '"') {
+    } else if (c === '"' && field === '') {
+      // 只有字段开头的双引号才起引号；字段中间的（如英寸号 5"）按普通字符
       quoted = true;
     } else if (c === ',') {
       fields.push(field);
@@ -690,6 +691,12 @@ function parseCsv(text: string): CsvRecord[] {
  */
 export type TermsCsvSkipReason = 'columns' | 'missingSource' | 'missingTarget' | 'noTranslate' | 'quote';
 
+/** 导入时跳过的一行（#404）：文件里的物理行号（从 1 起）与原因。 */
+export interface TermsCsvSkip {
+  line: number;
+  reason: TermsCsvSkipReason;
+}
+
 /**
  * 把 CSV 文件里的术语导入到领域（#403），格式与 exportDomainTermsCsv 相同：
  * 首行是表头 source,target,noTranslate 时跳过；不翻译列为 true / 1 时勾选，
@@ -704,7 +711,7 @@ export type TermsCsvSkipReason = 'columns' | 'missingSource' | 'missingTarget' |
 export async function importDomainTermsCsv(
   id: string,
   csv: string,
-): Promise<{ imported: number; skipped: { line: number; reason: TermsCsvSkipReason }[] }> {
+): Promise<{ imported: number; skipped: TermsCsvSkip[] }> {
   const records = parseCsv(csv);
   const header = TERMS_CSV_HEADER.join(',').toLowerCase();
   const first = records[0];
@@ -712,7 +719,7 @@ export async function importDomainTermsCsv(
     records.shift();
   }
   const incoming: Term[] = [];
-  const skipped: { line: number; reason: TermsCsvSkipReason }[] = [];
+  const skipped: TermsCsvSkip[] = [];
   for (const { fields, line, unclosed } of records) {
     if (unclosed) {
       skipped.push({ line, reason: 'quote' });

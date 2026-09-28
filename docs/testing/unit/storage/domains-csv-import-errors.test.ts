@@ -74,6 +74,24 @@ describe('术语 CSV 导入的容错（#404）', () => {
     expect(skipped).toEqual([{ line: 3, reason: 'missingSource' }]);
   });
 
+  test('行号在单独的 CR、引号内的 CRLF、带 BOM 时都按物理行计', async () => {
+    const { skipped } = await importDomainTermsCsv(
+      lawId,
+      '\uFEFFsource,target,noTranslate\ra,"x\r\ny",false\r\n,缺原词,false\n',
+    );
+    expect(skipped).toEqual([{ line: 4, reason: 'missingSource' }]);
+  });
+
+  test('字段中间的双引号按普通字符：不吞掉后面的行', async () => {
+    const { imported, skipped } = await importDomainTermsCsv(
+      lawId,
+      `${HEADER}5" screen,五英寸屏,false\r\nquote "x",引号,false\r\n`,
+    );
+    expect(imported).toBe(2);
+    expect(skipped).toEqual([]);
+    expect((await terms()).map((t) => t.source)).toEqual(['tort', '5" screen', 'quote "x"']);
+  });
+
   test('引号没有闭合：从这一行起到文件结尾都跳过，前面的行照常导入', async () => {
     const { imported, skipped } = await importDomainTermsCsv(
       lawId,
@@ -99,7 +117,7 @@ describe('术语 CSV 导入的规模（#404）', () => {
   const big = () =>
     HEADER +
     Array.from({ length: N }, (_, i) =>
-      i % 2 ? `term-${i},译法 ${i}，含逗号,false\r\n` : `"term, ${i}",,true\r\n`,
+      i % 2 ? `term-${i},"译法 ${i}, 含逗号",false\r\n` : `"term, ${i}",,true\r\n`,
     ).join('');
 
   test('5000 条术语导入后可正常读取与保存', async () => {
@@ -110,7 +128,7 @@ describe('术语 CSV 导入的规模（#404）', () => {
     const list = await terms();
     expect(list).toHaveLength(N + 1);
     expect(list[1]).toEqual({ source: 'term, 0', noTranslate: true });
-    expect(list[N]).toEqual({ source: `term-${N - 1}`, target: `译法 ${N - 1}，含逗号` });
+    expect(list[N]).toEqual({ source: `term-${N - 1}`, target: `译法 ${N - 1}, 含逗号` });
 
     // 在此基础上再保存一次整表
     await setDomainTerms(lawId, [...list, { source: 'extra', target: '额外' }]);
