@@ -631,72 +631,118 @@ export async function exportDomainTermsCsv(id: string): Promise<string> {
   return '\uFEFF' + rows.map((r) => r.map(csvField).join(',') + '\r\n').join('');
 }
 
+/** CSV 的一条记录（#404）：字段、在文件里起始的物理行号（从 1 起），引号是否没有闭合。 */
+interface CsvRecord {
+  fields: string[];
+  line: number;
+  unclosed?: boolean;
+}
+
 /**
- * 按 RFC 4180 把 CSV 文本拆成行与字段（#403）：引号内可含逗号、换行与
- * 写两遍的双引号；行尾 CRLF 或 LF 都认；开头的 BOM 去掉，结尾的空行不算。
+ * 按 RFC 4180 把 CSV 文本拆成记录（#403）：引号内可含逗号、换行与写两遍
+ * 的双引号；行尾 CRLF、LF 或单独的 CR 都认；开头的 BOM 去掉，结尾的空行
+ * 不算。引号没有闭合时，从那条记录起到文件结尾合成一条，标为未闭合。
  */
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
+function parseCsv(text: string): CsvRecord[] {
+  const records: CsvRecord[] = [];
+  let fields: string[] = [];
   let field = '';
   let quoted = false;
+  /** 当前物理行与当前记录的起始行（#404 报错用）。 */
+  let line = 1;
+  let start = 1;
   const src = text.replace(/^\uFEFF/, '');
   for (let i = 0; i < src.length; i++) {
     const c = src[i]!;
     if (quoted) {
-      if (c !== '"') field += c;
-      else if (src[i + 1] === '"') {
+      if (c !== '"') {
+        field += c;
+        // 引号内的换行也占物理行；CRLF 只算一次
+        if (c === '\n' || (c === '\r' && src[i + 1] !== '\n')) line++;
+      } else if (src[i + 1] === '"') {
         field += '"';
         i++;
       } else quoted = false;
     } else if (c === '"') {
       quoted = true;
     } else if (c === ',') {
-      row.push(field);
+      fields.push(field);
       field = '';
     } else if (c === '\n' || c === '\r') {
       if (c === '\r' && src[i + 1] === '\n') i++;
-      row.push(field);
-      rows.push(row);
-      row = [];
+      records.push({ fields: [...fields, field], line: start });
+      fields = [];
       field = '';
+      start = ++line;
     } else {
       field += c;
     }
   }
-  if (field !== '' || row.length > 0) rows.push([...row, field]);
-  return rows;
+  if (quoted) records.push({ fields: [...fields, field], line: start, unclosed: true });
+  else if (field !== '' || fields.length > 0) records.push({ fields: [...fields, field], line: start });
+  return records;
 }
 
 /**
+ * 导入时跳过的行的原因（#404）：列数不是 3 列、原词为空、没勾“不翻译”
+ * 也没有译法、不翻译列不是 true / false、引号没有闭合（从这一行到文件
+ * 结尾都跳过）。
+ */
+export type TermsCsvSkipReason = 'columns' | 'missingSource' | 'missingTarget' | 'noTranslate' | 'quote';
+
+/**
  * 把 CSV 文件里的术语导入到领域（#403），格式与 exportDomainTermsCsv 相同：
- * 首行是表头 source,target,noTranslate 时跳过；不翻译列为 true 或 1（不区分
- * 大小写）时勾选。与现有术语合并：同一原词（不区分大小写）以导入为准、
- * 留在原位，新原词追加在后，文件里没有的术语不动；文件里同一原词出现
- * 多次时后出现的为准。内置领域写入叠加层。返回导入的行数，空行不算；
- * 没有可导入的行时不写入。
+ * 首行是表头 source,target,noTranslate 时跳过；不翻译列为 true / 1 时勾选，
+ * false / 0 / 空时不勾选（不区分大小写）。与现有术语合并：同一原词（不区分
+ * 大小写）以导入为准、留在原位，新原词追加在后，文件里没有的术语不动；
+ * 文件里同一原词出现多次时后出现的为准。内置领域写入叠加层。
  *
- * 合并后的术语表按 setDomainTerms 的规则校验，有不合法的行时抛
- * InvalidTermsError，不写入。不存在的领域抛 DomainNotFoundError。
+ * 格式错误的行跳过（#404），按文件里的物理行号列在 skipped 里，其他行
+ * 照常导入。返回导入的行数，空行不算；没有可导入的行时不写入。不存在
+ * 的领域抛 DomainNotFoundError。
  */
 export async function importDomainTermsCsv(
   id: string,
   csv: string,
-): Promise<{ imported: number }> {
-  const rows = parseCsv(csv);
+): Promise<{ imported: number; skipped: { line: number; reason: TermsCsvSkipReason }[] }> {
+  const records = parseCsv(csv);
   const header = TERMS_CSV_HEADER.join(',').toLowerCase();
-  if (rows[0]?.map((f) => f.trim().toLowerCase()).join(',') === header) rows.shift();
-  const incoming: Term[] = rows
+  const first = records[0];
+  if (first && !first.unclosed && first.fields.map((f) => f.trim().toLowerCase()).join(',') === header) {
+    records.shift();
+  }
+  const incoming: Term[] = [];
+  const skipped: { line: number; reason: TermsCsvSkipReason }[] = [];
+  for (const { fields, line, unclosed } of records) {
+    if (unclosed) {
+      skipped.push({ line, reason: 'quote' });
+      continue;
+    }
     // 空行（文件中间或结尾多出的换行）不算
-    .filter((fields) => fields.some((f) => f.trim() !== ''))
-    .map(([source = '', target = '', noTranslate = '']) =>
-      /^(true|1)$/i.test(noTranslate.trim()) ? { source, noTranslate: true } : { source, target },
-    );
+    if (fields.every((f) => f.trim() === '')) continue;
+    if (fields.length !== TERMS_CSV_HEADER.length) {
+      skipped.push({ line, reason: 'columns' });
+      continue;
+    }
+    const [source, target, flag] = fields as [string, string, string];
+    const noTranslate = flag.trim().toLowerCase();
+    if (!['true', '1', 'false', '0', ''].includes(noTranslate)) {
+      skipped.push({ line, reason: 'noTranslate' });
+    } else if (!source.trim()) {
+      skipped.push({ line, reason: 'missingSource' });
+    } else if (noTranslate === 'true' || noTranslate === '1') {
+      incoming.push({ source, noTranslate: true });
+    } else if (!target.trim()) {
+      skipped.push({ line, reason: 'missingTarget' });
+    } else {
+      incoming.push({ source, target });
+    }
+  }
   return updateStored((stored) => {
     const domain = effectiveDomains(stored).find((d) => d.id === id);
     if (!domain) throw new DomainNotFoundError(id);
     // 没有可导入的行：不写入
-    if (incoming.length === 0) return { stored: null, result: { imported: 0 } };
+    if (incoming.length === 0) return { stored: null, result: { imported: 0, skipped } };
     const merged = [...domain.terms];
     const at = new Map(merged.map((t, i) => [termKey(t), i]));
     for (const t of incoming) {
@@ -704,8 +750,9 @@ export async function importDomainTermsCsv(
       if (i === undefined) at.set(termKey(t), merged.push(t) - 1);
       else merged[i] = t;
     }
+    // 逐行校验过，这里只做整理（去首尾空格），不会再有不合法的行
     const { stored: next } = withTerms(stored, id, cleanTerms(merged));
-    return { stored: next, result: { imported: incoming.length } };
+    return { stored: next, result: { imported: incoming.length, skipped } };
   });
 }
 

@@ -18,6 +18,7 @@
  * #402：TC-E2E-78 覆盖设置页导出领域术语 CSV。
  * #401：TC-E2E-79 覆盖 popup 勾选“以后在此站点都使用”。
  * #403：TC-E2E-80 覆盖设置页导入领域术语 CSV。
+ * #404：TC-E2E-81 覆盖术语 CSV 导入的错误行与 5000 条规模。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -701,6 +702,64 @@ test.describe('设置页：翻译领域 @extended', () => {
     await terms.locator('.pt-domain-terms-import').click();
     expect(message).toBe('术语表有未保存的修改，导入后会被替换。继续导入吗？');
     await expect(terms.locator('.pt-term-target').first()).toHaveValue('改了没保存');
+  });
+
+  test('TC-E2E-81: 导入带错误行的术语 CSV → 列出行号与原因、其他行照常导入；5000 条术语导入后可保存，通用设置照常保存（#404）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [{ id: 'user:e2e', name: '法律', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }],
+          builtin: {},
+        },
+      }),
+    );
+    const stored = () =>
+      serviceWorker.evaluate(async () => (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any);
+    const csv = (body: string) => ({
+      name: 'terms.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(`source,target,noTranslate\r\n${body}`, 'utf-8'),
+    });
+
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms');
+    await terms.locator('summary').click();
+
+    // 错误行跳过，行号按文件里的物理行（表头是第 1 行）
+    await terms.locator('input[type="file"]').setInputFiles(
+      csv('tort,侵权,false\r\nonly-two,列\r\n,被告,false\r\nEsq.,,true\r\n'),
+    );
+    await expect(page.locator('#pt-toast')).toHaveText('已导入 2 条术语，跳过 2 行');
+    await expect(terms.locator('.pt-domain-terms-error')).toHaveText(
+      '第 3 行：列数不对，应为 3 列\n第 4 行：原词为空',
+    );
+    expect((await stored()).user[0].terms).toEqual([
+      { source: 'tort', target: '侵权' },
+      { source: 'Esq.', noTranslate: true },
+    ]);
+
+    // 5000 条：导入、再整表保存
+    const N = 5000;
+    await terms.locator('input[type="file"]').setInputFiles(
+      csv(Array.from({ length: N }, (_, i) => `term-${i},译法 ${i},false\r\n`).join('')),
+    );
+    await expect(page.locator('#pt-toast')).toHaveText(`已导入 ${N} 条术语`, { timeout: 30_000 });
+    await expect(terms.locator('.pt-domain-terms-error')).toBeHidden();
+    await expect(terms.locator('tbody tr')).toHaveCount(N + 2, { timeout: 30_000 });
+    await terms.locator('.pt-domain-terms-actions .pt-btn:not(.pt-btn-secondary)').click();
+    await expect(page.locator('#pt-toast')).toHaveText('已保存术语', { timeout: 30_000 });
+    expect((await stored()).user[0].terms).toHaveLength(N + 2);
+
+    // 通用设置照常保存
+    await page.click('.pt-nav-btn[data-section="general"]');
+    await page.selectOption('#pt-select-to', 'ja');
+    await expect
+      .poll(() => serviceWorker.evaluate(async () => ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any)?.to))
+      .toBe('ja');
   });
 
   test('TC-E2E-71: 新建或删除领域写入失败 → toast 提示原因，名称留在输入框、领域留在列表（#470）', async ({

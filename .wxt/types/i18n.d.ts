@@ -1976,8 +1976,64 @@ declare module "wxt/browser" {
       substitutions?: string | string[],
       options?: GetMessageOptions,
     ): string;
+    /**
+     * "已导入 $count$ 条术语，跳过 $skipped$ 行"
+     */
     getMessage(
-      messageName: "@@extension_id" | "@@ui_locale" | "@@bidi_dir" | "@@bidi_reversed_dir" | "@@bidi_start_edge" | "@@bidi_end_edge" | "extName" | "extDesc" | "translate" | "settings" | "popupReportIssue" | "navGeneral" | "navEngines" | "navAppearance" | "navHotkeys" | "navSites" | "navAdvanced" | "secGeneralDesc" | "cardSwitch" | "rowEnabled" | "cardLangs" | "rowFrom" | "rowTo" | "cardDefaultMode" | "rowDisplayMode" | "rowParaDisplayMode" | "modeBilingual" | "modeTranslationOnly" | "modeFollow" | "cardFloatingUi" | "rowFloatingBall" | "rowParagraphBtn" | "btnResetBallPos" | "toastBallPosReset" | "ballPosColHostname" | "ballPosColPosition" | "btnDelete" | "ballPosListEmpty" | "ballPosDefaultTag" | "secEnginesDesc" | "cardPriority" | "cardDisabled" | "cardDisabledDesc" | "cardDisabledEmpty" | "btnEnable" | "btnDisable" | "badgePrimary" | "engineLastOne" | "keyLabelSuffix" | "keyPlaceholder" | "modelLabel" | "btnTest" | "btnClear" | "testing" | "testOk" | "testOkUsage" | "keyInvalid" | "keyRequired" | "keyCleared" | "keySaved" | "keyClearedToast" | "netError" | "descOpenai" | "descDeepl" | "descGemini" | "secAppearanceDesc" | "cardStylePreset" | "rowPreset" | "styleDefault" | "styleDim" | "styleUnderline" | "styleBold" | "styleItalic" | "styleBorder" | "previewOrigin" | "previewTrans" | "cardCustomCss" | "cssNoSelector" | "cssNoUrl" | "secHotkeysDesc" | "cardBindings" | "recordTitle" | "recording" | "actionToggleTranslate" | "actionToggleMode" | "actionTranslateParagraph" | "actionToggleExtension" | "conflictReserved" | "conflictDuplicate" | "needModifier" | "secSitesDesc" | "cardListMode" | "rowMode" | "siteBlacklist" | "siteWhitelist" | "cardDomains" | "btnAdd" | "secAdvancedDesc" | "cardPerf" | "rowConcurrency" | "rowUseCache" | "cacheEntries" | "cacheUnknown" | "btnClearCache" | "cardConfig" | "configDesc" | "btnExport" | "btnImport" | "btnReset" | "toastCacheCleared" | "toastExported" | "toastImported" | "toastImportFail" | "toastReset" | "confirmReset" | "optionsLoadFail" | "popupStatus" | "popupMaster" | "popupTranslateThis" | "btnTranslate" | "popupEngine" | "popupLangs" | "popupDisplayMode" | "popupStyle" | "hintDisabled" | "hintNoElements" | "hintCantTranslate" | "hintSaveFail" | "hintInitFail" | "ctxTranslateSelection" | "ballGlyph" | "paraBtnGlyph" | "paraBtnLabel" | "paraBtnRestoreGlyph" | "paraBtnRestoreLabel" | "toastExtOn" | "toastExtOff" | "toastAllEnginesFail" | "toastTranslateFail" | "toastRenderRejected" | "toastAllRejected" | "toastNotTranslatable" | "toastSiteBlocked" | "welcomeTagline" | "welcomeReady" | "welcomeReadyDesc" | "welcomeHotkeys" | "welcomeHotkeysDesc" | "welcomeTargetLang" | "welcomeTargetLangDesc" | "welcomeInteractions" | "welcomeBall" | "welcomeBallDesc" | "welcomeParaBtn" | "welcomeParaBtnDesc" | "welcomeSelection" | "welcomeSelectionDesc" | "welcomeOpenSettings" | "welcomeClose" | "changelogTitle" | "changelogGroupFeature" | "changelogGroupImprove" | "changelogGroupFix" | "changelogGithub" | "changelogSocialDesc" | "changelogOk" | "changelogClose" | "domainNav" | "domainSecDesc" | "domainCardList" | "domainCardCreate" | "domainNamePlaceholder" | "domainRowLang" | "domainCreateBtn" | "domainBuiltinBadge" | "domainDelete" | "domainDeleteConfirm" | "domainCreated" | "domainSitesSummary" | "domainSitesPlaceholder" | "domainSitesSave" | "domainSitesSaved" | "domainSitesInvalid" | "domainPopupLabel" | "domainPopupNone" | "domainTermsSummary" | "domainTermsSource" | "domainTermsTarget" | "domainTermsNoTranslate" | "domainTermsAdd" | "domainTermsSave" | "domainTermsSaved" | "domainTermsDuplicate" | "domainTermsMissingTarget" | "domainTermsMissingSource" | "siteRulesNav" | "siteRulesSecDesc" | "siteRulesCardAdd" | "siteRulesAddBtn" | "siteRulesExclude" | "siteRulesExcludePlaceholder" | "siteRulesSave" | "siteRulesSaved" | "domainPartialFail" | "siteRulesScope" | "siteRulesScopePlaceholder" | "siteRulesPreserve" | "siteRulesPreservePlaceholder" | "siteRulesInvalidSelector" | "domainSaveDeleted" | "domainSaveFailed" | "domainCardMt" | "domainMtTermTargets" | "domainMtTermTargetsDesc" | "siteRulesDelete" | "siteRulesDeleteConfirm" | "siteRulesDeleted" | "siteRulesDisableBuiltin" | "domainCreateFailed" | "domainDeleteFailed" | "domainMoveUp" | "domainMoveDown" | "domainMoveFailed" | "domainReset" | "domainResetConfirm" | "domainResetDone" | "domainResetFailed" | "siteRulesCardBackup" | "siteRulesExport" | "siteRulesExported" | "siteRulesImport" | "siteRulesImported" | "domainPopupAuto" | "domainTermsExport" | "domainTermsExported" | "domainTermsExportFailed" | "domainPopupRemember" | "domainPopupRemembered" | "domainPopupRememberShadowed" | "domainPopupRememberInvalid" | "domainTermsImport" | "domainTermsImported" | "domainTermsImportFailed" | "domainTermsImportDiscard",
+      messageName: "domainTermsImportedSkipped",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "第 $line$ 行：列数不对，应为 3 列"
+     */
+    getMessage(
+      messageName: "domainTermsSkipColumns",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "第 $line$ 行：原词为空"
+     */
+    getMessage(
+      messageName: "domainTermsSkipMissingSource",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "第 $line$ 行：没有译法，也没有标为不翻译"
+     */
+    getMessage(
+      messageName: "domainTermsSkipMissingTarget",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "第 $line$ 行：不翻译列应为 true 或 false"
+     */
+    getMessage(
+      messageName: "domainTermsSkipNoTranslate",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "第 $line$ 行：引号没有闭合，这一行到文件结尾都没有导入"
+     */
+    getMessage(
+      messageName: "domainTermsSkipQuote",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    /**
+     * "另有 $count$ 行没有导入"
+     */
+    getMessage(
+      messageName: "domainTermsSkipMore",
+      substitutions?: string | string[],
+      options?: GetMessageOptions,
+    ): string;
+    getMessage(
+      messageName: "@@extension_id" | "@@ui_locale" | "@@bidi_dir" | "@@bidi_reversed_dir" | "@@bidi_start_edge" | "@@bidi_end_edge" | "extName" | "extDesc" | "translate" | "settings" | "popupReportIssue" | "navGeneral" | "navEngines" | "navAppearance" | "navHotkeys" | "navSites" | "navAdvanced" | "secGeneralDesc" | "cardSwitch" | "rowEnabled" | "cardLangs" | "rowFrom" | "rowTo" | "cardDefaultMode" | "rowDisplayMode" | "rowParaDisplayMode" | "modeBilingual" | "modeTranslationOnly" | "modeFollow" | "cardFloatingUi" | "rowFloatingBall" | "rowParagraphBtn" | "btnResetBallPos" | "toastBallPosReset" | "ballPosColHostname" | "ballPosColPosition" | "btnDelete" | "ballPosListEmpty" | "ballPosDefaultTag" | "secEnginesDesc" | "cardPriority" | "cardDisabled" | "cardDisabledDesc" | "cardDisabledEmpty" | "btnEnable" | "btnDisable" | "badgePrimary" | "engineLastOne" | "keyLabelSuffix" | "keyPlaceholder" | "modelLabel" | "btnTest" | "btnClear" | "testing" | "testOk" | "testOkUsage" | "keyInvalid" | "keyRequired" | "keyCleared" | "keySaved" | "keyClearedToast" | "netError" | "descOpenai" | "descDeepl" | "descGemini" | "secAppearanceDesc" | "cardStylePreset" | "rowPreset" | "styleDefault" | "styleDim" | "styleUnderline" | "styleBold" | "styleItalic" | "styleBorder" | "previewOrigin" | "previewTrans" | "cardCustomCss" | "cssNoSelector" | "cssNoUrl" | "secHotkeysDesc" | "cardBindings" | "recordTitle" | "recording" | "actionToggleTranslate" | "actionToggleMode" | "actionTranslateParagraph" | "actionToggleExtension" | "conflictReserved" | "conflictDuplicate" | "needModifier" | "secSitesDesc" | "cardListMode" | "rowMode" | "siteBlacklist" | "siteWhitelist" | "cardDomains" | "btnAdd" | "secAdvancedDesc" | "cardPerf" | "rowConcurrency" | "rowUseCache" | "cacheEntries" | "cacheUnknown" | "btnClearCache" | "cardConfig" | "configDesc" | "btnExport" | "btnImport" | "btnReset" | "toastCacheCleared" | "toastExported" | "toastImported" | "toastImportFail" | "toastReset" | "confirmReset" | "optionsLoadFail" | "popupStatus" | "popupMaster" | "popupTranslateThis" | "btnTranslate" | "popupEngine" | "popupLangs" | "popupDisplayMode" | "popupStyle" | "hintDisabled" | "hintNoElements" | "hintCantTranslate" | "hintSaveFail" | "hintInitFail" | "ctxTranslateSelection" | "ballGlyph" | "paraBtnGlyph" | "paraBtnLabel" | "paraBtnRestoreGlyph" | "paraBtnRestoreLabel" | "toastExtOn" | "toastExtOff" | "toastAllEnginesFail" | "toastTranslateFail" | "toastRenderRejected" | "toastAllRejected" | "toastNotTranslatable" | "toastSiteBlocked" | "welcomeTagline" | "welcomeReady" | "welcomeReadyDesc" | "welcomeHotkeys" | "welcomeHotkeysDesc" | "welcomeTargetLang" | "welcomeTargetLangDesc" | "welcomeInteractions" | "welcomeBall" | "welcomeBallDesc" | "welcomeParaBtn" | "welcomeParaBtnDesc" | "welcomeSelection" | "welcomeSelectionDesc" | "welcomeOpenSettings" | "welcomeClose" | "changelogTitle" | "changelogGroupFeature" | "changelogGroupImprove" | "changelogGroupFix" | "changelogGithub" | "changelogSocialDesc" | "changelogOk" | "changelogClose" | "domainNav" | "domainSecDesc" | "domainCardList" | "domainCardCreate" | "domainNamePlaceholder" | "domainRowLang" | "domainCreateBtn" | "domainBuiltinBadge" | "domainDelete" | "domainDeleteConfirm" | "domainCreated" | "domainSitesSummary" | "domainSitesPlaceholder" | "domainSitesSave" | "domainSitesSaved" | "domainSitesInvalid" | "domainPopupLabel" | "domainPopupNone" | "domainTermsSummary" | "domainTermsSource" | "domainTermsTarget" | "domainTermsNoTranslate" | "domainTermsAdd" | "domainTermsSave" | "domainTermsSaved" | "domainTermsDuplicate" | "domainTermsMissingTarget" | "domainTermsMissingSource" | "siteRulesNav" | "siteRulesSecDesc" | "siteRulesCardAdd" | "siteRulesAddBtn" | "siteRulesExclude" | "siteRulesExcludePlaceholder" | "siteRulesSave" | "siteRulesSaved" | "domainPartialFail" | "siteRulesScope" | "siteRulesScopePlaceholder" | "siteRulesPreserve" | "siteRulesPreservePlaceholder" | "siteRulesInvalidSelector" | "domainSaveDeleted" | "domainSaveFailed" | "domainCardMt" | "domainMtTermTargets" | "domainMtTermTargetsDesc" | "siteRulesDelete" | "siteRulesDeleteConfirm" | "siteRulesDeleted" | "siteRulesDisableBuiltin" | "domainCreateFailed" | "domainDeleteFailed" | "domainMoveUp" | "domainMoveDown" | "domainMoveFailed" | "domainReset" | "domainResetConfirm" | "domainResetDone" | "domainResetFailed" | "siteRulesCardBackup" | "siteRulesExport" | "siteRulesExported" | "siteRulesImport" | "siteRulesImported" | "domainPopupAuto" | "domainTermsExport" | "domainTermsExported" | "domainTermsExportFailed" | "domainPopupRemember" | "domainPopupRemembered" | "domainPopupRememberShadowed" | "domainPopupRememberInvalid" | "domainTermsImport" | "domainTermsImported" | "domainTermsImportFailed" | "domainTermsImportDiscard" | "domainTermsImportedSkipped" | "domainTermsSkipColumns" | "domainTermsSkipMissingSource" | "domainTermsSkipMissingTarget" | "domainTermsSkipNoTranslate" | "domainTermsSkipQuote" | "domainTermsSkipMore",
       substitutions?: string | string[],
       options?: GetMessageOptions,
     ): string;

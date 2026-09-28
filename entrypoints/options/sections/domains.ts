@@ -30,7 +30,7 @@ import {
   importDomainTermsCsv,
 } from '~/src/storage/domains';
 import { getSettings, patchSettings, onSettingsChanged } from '~/src/storage/settings';
-import type { Domain, Term } from '~/src/storage/domains';
+import type { Domain, Term, TermsCsvSkipReason } from '~/src/storage/domains';
 import { tf } from '~/src/i18n';
 import { showToast } from '../main';
 
@@ -166,6 +166,33 @@ function termRow(onRemove: () => void, t?: Term, builtin = false): HTMLTableRowE
   return tr;
 }
 
+/** 导入时跳过一行的说明（#404）。 */
+function skipLine({ line, reason }: { line: number; reason: TermsCsvSkipReason }): string {
+  const n = String(line);
+  switch (reason) {
+    case 'columns':
+      return tf('domainTermsSkipColumns', `第 ${n} 行：列数不对，应为 3 列`, n);
+    case 'missingSource':
+      return tf('domainTermsSkipMissingSource', `第 ${n} 行：原词为空`, n);
+    case 'missingTarget':
+      return tf('domainTermsSkipMissingTarget', `第 ${n} 行：没有译法，也没有标为不翻译`, n);
+    case 'noTranslate':
+      return tf('domainTermsSkipNoTranslate', `第 ${n} 行：不翻译列应为 true 或 false`, n);
+    case 'quote':
+      return tf('domainTermsSkipQuote', `第 ${n} 行：引号没有闭合，这一行到文件结尾都没有导入`, n);
+  }
+}
+
+/** 跳过的行最多列出这么多条，其余只给条数。 */
+const SKIP_LIST_MAX = 20;
+
+/**
+ * 最近一次导入跳过的行（#404），按领域 ID。导入后列表会重绘、换掉术语
+ * 编辑区，新的编辑区从这里取回说明；在该编辑区里改动、保存或再次导入
+ * 时清掉。
+ */
+const importReports = new Map<string, string>();
+
 /**
  * 术语表格编辑（#393）：列为原词 / 译法 / 不翻译，可新增、修改、删除
  * 行，保存时整体替换。重复的原词、缺译法或缺原词的行标红并在表格下方
@@ -175,6 +202,7 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
   const details = document.createElement('details');
   details.className = 'pt-domain-terms';
   details.dataset.editor = 'terms';
+  details.dataset.domainId = d.id;
   details.dataset.saved = JSON.stringify(d.terms);
 
   const summary = document.createElement('summary');
@@ -230,6 +258,7 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
 
   function edited(): void {
     dirty = true;
+    importReports.delete(d.id);
     clearError();
   }
 
@@ -268,6 +297,7 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
 
   save.addEventListener('click', () => {
     clearError();
+    importReports.delete(d.id);
     setDomainTerms(d.id, rows().map((r) => r.term))
       .then(() => showToast(tf('domainTermsSaved', '已保存术语')))
       .catch((e) => {
@@ -329,8 +359,23 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
     file
       .text()
       .then((csv) => importDomainTermsCsv(d.id, csv))
-      .then(({ imported }) => {
-        showToast(tf('domainTermsImported', `已导入 ${imported} 条术语`, String(imported)));
+      .then(({ imported, skipped }) => {
+        const n = String(imported);
+        if (skipped.length === 0) {
+          importReports.delete(d.id);
+          showToast(tf('domainTermsImported', `已导入 ${imported} 条术语`, n));
+          return;
+        }
+        // #404：跳过的行列在编辑区下方；列表可能已经重绘，写到当前的编辑区
+        const lines = skipped.slice(0, SKIP_LIST_MAX).map(skipLine);
+        const more = String(skipped.length - SKIP_LIST_MAX);
+        if (skipped.length > SKIP_LIST_MAX) lines.push(tf('domainTermsSkipMore', `另有 ${more} 行没有导入`, more));
+        importReports.set(d.id, lines.join('\n'));
+        showImportReport(document.querySelector<HTMLDetailsElement>(
+          `details[data-editor="terms"][data-domain-id="${CSS.escape(d.id)}"]`,
+        ));
+        const m = String(skipped.length);
+        showToast(tf('domainTermsImportedSkipped', `已导入 ${imported} 条术语，跳过 ${m} 行`, n, m), 4000);
       })
       .catch((e) => {
         console.error('[PT] 导入术语失败:', e);
@@ -349,7 +394,17 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
   actions.append(add, save, exportBtn, importBtn, importFile);
 
   details.append(summary, table, error, actions);
+  showImportReport(details);
   return details;
+}
+
+/** 在术语编辑区下方显示最近一次导入跳过的行（#404），没有则不动。 */
+function showImportReport(details: HTMLDetailsElement | null): void {
+  const report = importReports.get(details?.dataset.domainId ?? '');
+  const error = details?.querySelector<HTMLElement>('.pt-domain-terms-error');
+  if (!report || !error) return;
+  error.textContent = report;
+  error.classList.add('pt-visible');
 }
 
 /**
