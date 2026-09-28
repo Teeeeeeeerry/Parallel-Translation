@@ -1,8 +1,9 @@
 /**
  * storage/specialization.ts — 领域与规则存储模块：生效站点规则（#366、#367、#369、#370、#372、#373、#374）
  *
- * 来源为内置规则与用户规则（#370）；按当前站点读取，网址匹配沿用
- * 站点黑白名单的裸域名语义（子域归入、主域名归一、IP 精确匹配）。
+ * 来源为内置规则与用户规则（#370）；按当前站点读取。内置规则的网址
+ * 匹配沿用站点黑白名单的裸域名语义（子域归入、主域名归一、IP 精确匹配）；
+ * 用户规则只作用于卡片站点本身及其子域（#491）。
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { getSiteRules } from '~/src/storage/specialization';
@@ -104,7 +105,8 @@ describe('用户规则（#370）', () => {
     });
   });
 
-  test('站点匹配沿用裸域名语义：子域归入、主域名归一', async () => {
+  // #491 起用户规则不再做主域名归一；www. 卡片与主域名等价，仍命中 example.org
+  test('站点匹配按裸域名：子域归入，www. 视同主域名', async () => {
     await options.saveUserSiteRules('example.com', { exclude: ['.ad'] });
     await options.saveUserSiteRules('www.example.org', { exclude: ['.promo'] });
     expect((await rulesOnNewPage('docs.example.com')).exclude).toEqual(['.ad']);
@@ -578,7 +580,7 @@ describe('停用某个站点的内置规则（#375）', () => {
 /**
  * 停用开关的生效范围（#467）：只作用于卡片站点本身及其子域，`www.` 前缀
  * 视同主域名。子域卡片打开停用，不波及主域名与兄弟子域。用户规则的
- * 选择器仍按裸域名语义追加（含主域名归一），不在本组范围内。
+ * 选择器的生效范围见 #491 一组。
  */
 describe('停用开关只作用于卡片站点及其子域（#467）', () => {
   type Spec = typeof import('~/src/storage/specialization');
@@ -647,6 +649,70 @@ describe('停用开关只作用于卡片站点及其子域（#467）', () => {
     }
     expect(options.hasBuiltinSiteRules('example.com')).toBe(false);
     expect(options.hasBuiltinSiteRules('gist.example.com')).toBe(false);
+  });
+});
+
+/**
+ * #491：一张站点卡片的用户规则只作用于卡片站点本身及其子域，与停用开关
+ * 的范围相同（#467）。`www.` 前缀视同主域名；不做主域名归一，子域卡片
+ * 不再波及主域名与兄弟子域。内置规则的匹配不变。
+ */
+describe('用户规则只作用于卡片站点及其子域（#491）', () => {
+  type Spec = typeof import('~/src/storage/specialization');
+  async function load(): Promise<Spec> {
+    vi.resetModules();
+    return import('~/src/storage/specialization');
+  }
+
+  let options: Spec;
+  beforeEach(async () => {
+    resetStorage();
+    options = await load();
+  });
+
+  async function excludeOnNewPage(host: string) {
+    const page = await load();
+    await page.siteRulesReady();
+    return page.getSiteRules(host).exclude;
+  }
+
+  test('子域卡片的规则只在该子域及其子域生效', async () => {
+    await options.saveUserSiteRules('gist.example.com', { exclude: ['.file'] });
+    expect(await excludeOnNewPage('gist.example.com')).toEqual(['.file']);
+    expect(await excludeOnNewPage('www.gist.example.com')).toEqual(['.file']);
+    expect(await excludeOnNewPage('raw.gist.example.com')).toEqual(['.file']);
+    expect(await excludeOnNewPage('example.com')).toEqual([]);
+    expect(await excludeOnNewPage('www.example.com')).toEqual([]);
+    expect(await excludeOnNewPage('api.example.com')).toEqual([]);
+  });
+
+  test('主域名卡片的规则在主域名与各子域都生效', async () => {
+    await options.saveUserSiteRules('example.com', { exclude: ['.ad'] });
+    for (const host of ['example.com', 'www.example.com', 'gist.example.com', 'a.b.example.com']) {
+      expect(await excludeOnNewPage(host)).toEqual(['.ad']);
+    }
+  });
+
+  test('www. 卡片与主域名卡片效果相同', async () => {
+    await options.saveUserSiteRules('www.example.com', { exclude: ['.ad'] });
+    for (const host of ['example.com', 'www.example.com', 'gist.example.com']) {
+      expect(await excludeOnNewPage(host)).toEqual(['.ad']);
+    }
+  });
+
+  test('主域名卡片与子域卡片并存：子域上两张都生效，主域名上只有主域名卡片', async () => {
+    await options.saveUserSiteRules('example.com', { exclude: ['.ad'] });
+    await options.saveUserSiteRules('gist.example.com', { exclude: ['.file'] });
+    expect(await excludeOnNewPage('gist.example.com')).toEqual(['.ad', '.file']);
+    expect(await excludeOnNewPage('example.com')).toEqual(['.ad']);
+    expect(await excludeOnNewPage('api.example.com')).toEqual(['.ad']);
+  });
+
+  test('子域卡片不影响主域名上的内置规则，内置规则照常覆盖子域', async () => {
+    const builtin = getSiteRules('github.com').exclude;
+    await options.saveUserSiteRules('gist.github.com', { exclude: ['.gist-only'] });
+    expect(await excludeOnNewPage('github.com')).toEqual(builtin);
+    expect(await excludeOnNewPage('gist.github.com')).toEqual([...builtin, '.gist-only']);
   });
 });
 
