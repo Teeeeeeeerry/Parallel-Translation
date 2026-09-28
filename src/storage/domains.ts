@@ -597,15 +597,39 @@ export function watchEffectiveDomains(
 }
 
 /**
+ * 用户在 popup 里为当前标签页临时选的领域（#400）：自动（按网址判定）、
+ * 无领域（临时关闭术语约束），或指定某个领域。只在该标签页内有效，
+ * 刷新或关闭后回到自动。
+ */
+export type DomainChoice = { kind: 'auto' } | { kind: 'none' } | { kind: 'domain'; id: string };
+
+/** 校验跨上下文传来的临时领域选择（#400）；形状不对返回 null。 */
+export function parseDomainChoice(v: unknown): DomainChoice | null {
+  const c = v as Partial<{ kind: unknown; id: unknown }> | null | undefined;
+  if (c?.kind === 'auto' || c?.kind === 'none') return { kind: c.kind };
+  if (c?.kind === 'domain' && typeof c.id === 'string') return { kind: 'domain', id: c.id };
+  return null;
+}
+
+/**
  * 当前领域：列表中第一个目标语言一致、且适用网址命中 host 的领域。
  * 目标语言不一致的领域不启用，继续看后面的领域；都不命中返回 null。
+ *
+ * 带上临时选择（#400）时：选“无领域”返回 null；指定的领域网址不命中也
+ * 用它；指定的领域已被删除或不服务这个目标语言时，退回自动判定。
  */
 export function currentDomain(
   domains: readonly Domain[],
   host: string,
   targetLang: string,
+  choice: DomainChoice = { kind: 'auto' },
 ): Domain | null {
   const lang = targetLang.toLowerCase();
+  if (choice.kind === 'none') return null;
+  if (choice.kind === 'domain') {
+    const chosen = domains.find((d) => d.id === choice.id && d.targetLang.toLowerCase() === lang);
+    if (chosen) return chosen;
+  }
   return (
     domains.find(
       (d) =>

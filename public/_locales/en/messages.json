@@ -310,5 +310,9 @@
   "siteRulesImported": {
     "message": "Imported $count$ site(s). Reload the site to apply.",
     "placeholders": { "count": { "content": "$1" } }
+  },
+  "domainPopupAuto": {
+    "message": "Auto ($name$)",
+    "placeholders": { "name": { "content": "$1" } }
   }
 }

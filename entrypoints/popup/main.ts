@@ -13,6 +13,8 @@ import {
 import { applyI18n, tf } from '~/src/i18n';
 import { logoMarkSvg } from '~/src/ui/logo';
 import { sleep } from '~/src/runtime/sleep';
+import { parseDomainChoice } from '~/src/storage/domains';
+import type { DomainChoice } from '~/src/storage/domains';
 import {
   settingsReady,
   getSettings,
@@ -30,7 +32,7 @@ const modeSelect = document.getElementById('pt-mode-select') as HTMLSelectElemen
 const styleSelect = document.getElementById('pt-style-select') as HTMLSelectElement;
 const settingsBtn = document.getElementById('pt-settings-btn')!;
 const reportBtn = document.getElementById('pt-report-btn')!;
-const domainEl = document.getElementById('pt-domain-current')!;
+const domainSelect = document.getElementById('pt-domain-select') as HTMLSelectElement;
 
 /** 汇报问题的落点。GitHub 的新建 issue 页，带模板选择。 */
 const ISSUE_URL = 'https://github.com/Teeeeeeeerry/Parallel-Translation/issues/new';
@@ -138,7 +140,26 @@ const DOMAIN_RETRY_DELAYS_MS = [200, 400, 800, 1600, 2000];
 /** 每次刷新递增；后发起的刷新开始后，先前的重试不再写界面。 */
 let domainRefresh = 0;
 
-type DomainAnswer = { name: string | null };
+/** 本页主文档回复的领域状态（#399、#400）。 */
+interface DomainAnswer {
+  /** 自动判定会选中的领域名，没有命中为 null。 */
+  autoName: string | null;
+  /** 本标签页的临时选择。 */
+  choice: DomainChoice;
+  /** 可切换到的领域：服务当前目标语言的领域，按领域列表顺序。 */
+  options: { id: string; name: string }[];
+}
+
+function parseDomainAnswer(resp: unknown): DomainAnswer | null {
+  const r = resp as Partial<Record<keyof DomainAnswer, unknown>> | undefined;
+  const choice = parseDomainChoice(r?.choice);
+  if (!r || !choice || !Array.isArray(r.options)) return null;
+  return {
+    autoName: typeof r.autoName === 'string' ? r.autoName : null,
+    choice,
+    options: r.options.filter((o) => typeof o?.id === 'string' && typeof o?.name === 'string'),
+  };
+}
 
 /** 问一次当前领域；content script 未就绪或本页不支持时返回 null。 */
 async function askCurrentDomain(tabId: number): Promise<DomainAnswer | null> {
@@ -148,18 +169,49 @@ async function askCurrentDomain(tabId: number): Promise<DomainAnswer | null> {
       { type: 'pt:current-domain', to: getSettings().to },
       { frameId: 0 },
     );
-    return { name: typeof resp?.name === 'string' ? resp.name : null };
+    return parseDomainAnswer(resp);
   } catch {
     return null;
   }
 }
 
 /**
+ * 领域下拉（#400）：第一项“自动”带上自动判定的结果，然后是可切换到的
+ * 领域，最后是“无领域”。本页不支持内容脚本时只显示禁用的“无领域”。
+ * 领域名是用户输入，只走 textContent。
+ */
+function renderDomainSelect(answer: DomainAnswer | null): void {
+  const option = (value: string, label: string) => {
+    const el = document.createElement('option');
+    el.value = value;
+    el.textContent = label;
+    return el;
+  };
+  const none = tf('domainPopupNone', '无领域');
+  if (!answer) {
+    domainSelect.replaceChildren(option('auto', none));
+    domainSelect.disabled = true;
+    return;
+  }
+  const autoName = answer.autoName ?? none;
+  domainSelect.replaceChildren(
+    option('auto', tf('domainPopupAuto', `自动（${autoName}）`, autoName)),
+    ...answer.options.map((o) => option(o.id, o.name)),
+    option('none', none),
+  );
+  const { choice } = answer;
+  const value = choice.kind === 'domain' ? choice.id : choice.kind;
+  // 选中的领域已不在可选列表里（被删除、目标语言已改）：按自动显示
+  domainSelect.value = [...domainSelect.options].some((o) => o.value === value) ? value : 'auto';
+  domainSelect.disabled = false;
+}
+
+/**
  * 当前标签页的当前领域（#399）。问本页主文档的 content script ——
- * 与全页翻译实际携带的领域一致；页面不支持内容脚本（chrome:// 等）或
- * 没有命中时显示“无领域”。领域名是用户输入，只走 textContent。
+ * 与全页翻译实际携带的领域一致；页面不支持内容脚本（chrome:// 等）时
+ * 显示禁用的“无领域”。
  *
- * 询问失败时有界重试（#429），重试期间界面不变（初始即为灰色的
+ * 询问失败时有界重试（#429），重试期间界面不变（初始即为禁用的
  * “无领域”），不支持内容脚本的页面因此没有延迟也没有闪烁。
  */
 async function refreshDomain(): Promise<void> {
@@ -181,9 +233,33 @@ async function refreshDomain(): Promise<void> {
     }
   }
   if (refresh !== domainRefresh) return;
-  const name = answer?.name ?? null;
-  domainEl.textContent = name ?? tf('domainPopupNone', '无领域');
-  domainEl.classList.toggle('pt-muted', name === null);
+  renderDomainSelect(answer);
+}
+
+/**
+ * 临时切换当前标签页的领域（#400）：广播到本页全部 frame，iframe 里的
+ * 翻译请求与主文档带同一个领域；主文档回复切换后的状态。只影响之后的
+ * 翻译请求，已经显示的译文不变。
+ */
+async function onDomainChange(): Promise<void> {
+  // 切换后不再采用切换前发起的询问结果
+  const refresh = ++domainRefresh;
+  const v = domainSelect.value;
+  const choice: DomainChoice =
+    v === 'auto' || v === 'none' ? { kind: v } : { kind: 'domain', id: v };
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id == null) throw new Error('no active tab');
+    const resp = await chrome.tabs.sendMessage(tab.id, {
+      type: 'pt:set-domain',
+      choice,
+      to: getSettings().to,
+    });
+    if (refresh === domainRefresh) renderDomainSelect(parseDomainAnswer(resp));
+  } catch {
+    showHint(tf('hintCantTranslate', '当前页面无法翻译'));
+    void refreshDomain();
+  }
 }
 
 function showHint(msg: string): void {
@@ -249,6 +325,7 @@ async function init(): Promise<void> {
   toSelect.addEventListener('change', onToChange);
   modeSelect.addEventListener('change', onModeChange);
   styleSelect.addEventListener('change', onStyleChange);
+  domainSelect.addEventListener('change', () => void onDomainChange());
 
   refreshDomain();
 

@@ -14,10 +14,11 @@
  * #396：TC-E2E-73 覆盖设置页删除内置领域的术语。
  * #397：TC-E2E-74 覆盖设置页增删内置领域的适用网址。
  * #398：TC-E2E-75 覆盖设置页内置领域恢复默认。
+ * #400：TC-E2E-77 覆盖 popup 临时切换领域与“无领域”。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
-import { test, expect, fixtureFileUrl, waitForBall } from './fixtures';
+import { test, expect, fixtureFileUrl, fixtureUrl, waitForBall } from './fixtures';
 import type { Page, Worker } from '@playwright/test';
 
 // ── 辅助：在 SW 内 stub Bing 两个端点（与 core.spec.ts TC-E2E-16 同法）──
@@ -778,5 +779,109 @@ test.describe('设置页：翻译领域 @extended', () => {
     expect(await overlay()).toBeNull();
     // 焦点交还给同一领域的移动按钮
     await expect(builtin.locator(':scope > .pt-domain-move:focus')).toHaveCount(1);
+  });
+});
+
+test.describe('popup：翻译领域 @extended', () => {
+  test('TC-E2E-77: popup 临时切换领域与“无领域” → 只影响本标签页之后的翻译，刷新后回到自动（#400）', async ({
+    page, context, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    // “站内”按网址命中 localhost；“手选”不命中任何网址，只能手动切换
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [
+            {
+              id: 'user:e2e-site', name: '站内', targetLang: 'zh-CN', sites: ['localhost'],
+              origin: 'user', terms: [{ source: 'fox', noTranslate: true }],
+            },
+            {
+              id: 'user:e2e-manual', name: '手选', targetLang: 'zh-CN', sites: [],
+              origin: 'user', terms: [{ source: 'paragraph', noTranslate: true }],
+            },
+          ],
+          builtin: {},
+        },
+      }),
+    );
+    // 记录发给 Google 的原文（同 TC-E2E-67）
+    await serviceWorker.evaluate(() => {
+      const inner = (self as any).fetch.bind(self);
+      (self as any).__ptQueries = [] as string[];
+      const recorder = async (input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
+        if (url.startsWith('https://translate.googleapis.com/')) {
+          (self as any).__ptQueries.push(new URL(url).searchParams.get('q') ?? '');
+        }
+        return inner(input, init);
+      };
+      (recorder as any).__ptMockStubbed = true;
+      (self as any).fetch = recorder;
+    });
+    const sent = async (text: string) =>
+      (await serviceWorker.evaluate(() => [...(self as any).__ptQueries] as string[])).some((q) =>
+        q.includes(text),
+      );
+    const MANUAL = 'Another ⟦TM0⟧ with different content. The quick brown fox';
+    const SITE = 'Another paragraph with different content. The quick brown ⟦TM0⟧ jumps';
+    const PLAIN = 'Another paragraph with different content. The quick brown fox jumps';
+
+    await gotoFixture('basic');
+    await waitForBall(page);
+
+    // popup 开在后台标签页里：它操作的“当前标签页”是前台的测试页
+    const extId = new URL(serviceWorker.url()).host;
+    const popup = await context.newPage();
+    await page.bringToFront();
+    await popup.goto(`chrome-extension://${extId}/popup.html`);
+    const select = popup.locator('#pt-domain-select');
+    await expect(select).toBeEnabled({ timeout: 10_000 });
+    await expect(select).toHaveValue('auto');
+    await expect(select.locator('option')).toHaveText([
+      '自动（站内）', '软件开发(简体中文)', '站内', '手选', '无领域',
+    ]);
+
+    // 切换到“手选”后翻译本页：请求带它的术语
+    await select.selectOption('user:e2e-manual');
+    await expect(select).toHaveValue('user:e2e-manual');
+    // 切换之后才加载的跨域 iframe 也用“手选”
+    await page.evaluate(() => {
+      const iframe = document.createElement('iframe');
+      iframe.id = 'late';
+      iframe.src = 'http://127.0.0.1:4173/iframe-cross-child.html';
+      document.body.append(iframe);
+    });
+    const late = page.frameLocator('#late');
+    await expect(late.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
+    await popup.locator('#pt-translate-page-btn').click();
+    await expect(page.locator('p').nth(1)).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+    expect(await sent(MANUAL)).toBe(true);
+    await expect(late.locator('#full')).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+    expect(await sent('Every item in this frame ⟦TM0⟧ is translated with the page.')).toBe(true);
+
+    // 另一个标签页不受影响：仍按网址自动选中“站内”
+    const other = await context.newPage();
+    await other.goto(fixtureUrl('basic'), { waitUntil: 'domcontentloaded' });
+    await waitForBall(other);
+    await popup.reload();
+    await expect(select).toHaveValue('auto', { timeout: 10_000 });
+    await popup.locator('#pt-translate-page-btn').click();
+    await expect(other.locator('p').nth(1)).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+    expect(await sent(SITE)).toBe(true);
+
+    // 刷新后回到自动；选“无领域”后翻译不带术语
+    await page.bringToFront();
+    await page.reload();
+    await waitForBall(page);
+    await popup.reload();
+    await expect(select).toBeEnabled({ timeout: 10_000 });
+    await expect(select).toHaveValue('auto');
+    await select.selectOption('none');
+    await expect(select).toHaveValue('none');
+    await popup.locator('#pt-translate-page-btn').click();
+    await expect(page.locator('p').nth(1)).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+    expect(await sent(PLAIN)).toBe(true);
   });
 });
