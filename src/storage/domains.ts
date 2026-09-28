@@ -175,18 +175,29 @@ async function readStored(): Promise<StoredDomains> {
  * 读-改-写串行化：同一上下文里连续新建 / 删除 / 修改时，后一次基于前一次的
  * 结果改，不会互相覆盖（与 cache.ts 的 index 链同一做法）。读取失败时抛错、
  * 不写入（#484），存储里原有的数据保持不变。
+ *
+ * 跨页面（#485）：多个设置页标签页同时修改时，读-改-写这一段再包一层
+ * Web Locks 的同名锁 —— 扩展页面与 service worker 同源，锁在它们之间共享，
+ * 后一次写入基于前一次写入之后的数据。拿不到锁接口的环境只有页面内串行。
  */
 let writeChain: Promise<unknown> = Promise.resolve();
+
+/** 领域数据读-改-写的跨页面锁名。 */
+const LOCK_NAME = 'pt-domains-write';
 
 function updateStored<T>(
   fn: (stored: StoredDomains) => { stored: StoredDomains | null; result: T },
 ): Promise<T> {
-  const next = writeChain.then(async () => {
+  const readModifyWrite = async (): Promise<T> => {
     const { stored, result } = fn(await readStoredStrict());
     // stored 为 null：没有改动，不写入
     if (stored) await chrome.storage.local.set({ [STORAGE_KEY]: stored });
     return result;
-  });
+  };
+  const locks = globalThis.navigator?.locks;
+  const next = writeChain.then(async () =>
+    locks ? await locks.request(LOCK_NAME, readModifyWrite) : readModifyWrite(),
+  );
   writeChain = next.catch(() => {});
   return next;
 }
