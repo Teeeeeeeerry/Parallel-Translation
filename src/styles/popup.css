@@ -254,3 +254,17 @@ body {
   color: var(--pt-forest-40);
   cursor: default;
 }
+
+/* “以后在此站点都使用”（#401）：只在选了具体领域时可勾选 */
+.pt-domain-remember {
+  cursor: pointer;
+}
+
+.pt-domain-remember:has(input:disabled) .pt-option-label {
+  color: var(--pt-forest-40);
+}
+
+.pt-domain-remember input {
+  accent-color: var(--pt-forest);
+  margin: 0;
+}

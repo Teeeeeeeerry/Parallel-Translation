@@ -320,5 +320,15 @@
   "domainTermsExportFailed": {
     "message": "Could not export terms: $reason$",
     "placeholders": { "reason": { "content": "$1" } }
-  }
+  },
+  "domainPopupRemember": { "message": "Always use on this site" },
+  "domainPopupRemembered": {
+    "message": "“$name$” will be used on this site",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainPopupRememberShadowed": {
+    "message": "Site added, but “$name$” comes first. Reorder domains in Settings.",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainPopupRememberInvalid": { "message": "This address can’t be added to the domain" }
 }

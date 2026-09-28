@@ -664,6 +664,8 @@ export default defineContentScript({
     function domainState(to: string) {
       const lang = to.toLowerCase();
       return {
+        // #401: “以后在此站点都使用”按顶层页面的主机名记住
+        host: topHostname,
         autoName: currentDomain(domains, topHostname, to)?.name ?? null,
         choice: domainChoice,
         // 可切换到的领域：一个领域只服务一种目标语言

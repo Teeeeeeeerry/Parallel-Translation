@@ -16,6 +16,7 @@
  * #398：TC-E2E-75 覆盖设置页内置领域恢复默认。
  * #400：TC-E2E-77 覆盖 popup 临时切换领域与“无领域”。
  * #402：TC-E2E-78 覆盖设置页导出领域术语 CSV。
+ * #401：TC-E2E-79 覆盖 popup 勾选“以后在此站点都使用”。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -924,5 +925,61 @@ test.describe('popup：翻译领域 @extended', () => {
     await popup.locator('#pt-translate-page-btn').click();
     await expect(page.locator('p').nth(1)).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
     expect(await sent(PLAIN)).toBe(true);
+  });
+
+  test('TC-E2E-79: popup 勾选“以后在此站点都使用” → 站点写入所选领域的适用网址，内置领域写入叠加层，排在后面时提示调整顺序（#401）', async ({
+    page, context, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [
+            { id: 'user:e2e-site', name: '站内', targetLang: 'zh-CN', sites: ['localhost'], origin: 'user', terms: [] },
+            { id: 'user:e2e-manual', name: '手选', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] },
+          ],
+          builtin: {},
+          // “手选”排在最前，“站内”在内置领域之前
+          order: ['user:e2e-manual', 'user:e2e-site'],
+        },
+      }),
+    );
+    const stored = () =>
+      serviceWorker.evaluate(async () => (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any);
+
+    await gotoFixture('basic');
+    await waitForBall(page);
+    const extId = new URL(serviceWorker.url()).host;
+    const popup = await context.newPage();
+    await page.bringToFront();
+    await popup.goto(`chrome-extension://${extId}/popup.html`);
+    const select = popup.locator('#pt-domain-select');
+    const remember = popup.locator('#pt-domain-remember');
+    const hint = popup.locator('#pt-hint');
+    await expect(select).toBeEnabled({ timeout: 10_000 });
+    // 自动选择时不能勾选
+    await expect(remember).toBeDisabled();
+
+    // 自建领域排在最前：写入后它就是这个站点的当前领域
+    await select.selectOption('user:e2e-manual');
+    await expect(remember).toBeEnabled();
+    await remember.check();
+    await expect(hint).toHaveText('以后在此站点都使用“手选”');
+    let data = await stored();
+    expect(data.user.find((d: any) => d.id === 'user:e2e-manual').sites).toEqual(['localhost']);
+    // 原先命中这个站点的领域不改
+    expect(data.user.find((d: any) => d.id === 'user:e2e-site').sites).toEqual(['localhost']);
+
+    // 换到别的领域时取消勾选：不会顺带写进新领域
+    await select.selectOption('builtin:software-zh-CN');
+    await expect(remember).not.toBeChecked();
+    await expect(remember).toBeEnabled();
+    expect((await stored()).builtin).toEqual({});
+
+    // 内置领域排在后面：写入叠加层，并提示调整顺序
+    await remember.check();
+    await expect(hint).toHaveText('已加入适用网址，但“手选”排在前面，可在设置页调整顺序');
+    data = await stored();
+    expect(data.builtin['builtin:software-zh-CN'].addedSites).toEqual(['localhost']);
   });
 });

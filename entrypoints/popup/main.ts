@@ -13,7 +13,11 @@ import {
 import { applyI18n, tf } from '~/src/i18n';
 import { logoMarkSvg } from '~/src/ui/logo';
 import { sleep } from '~/src/runtime/sleep';
-import { parseDomainChoice } from '~/src/storage/domains';
+import {
+  parseDomainChoice,
+  rememberDomainForSite,
+  InvalidSitesError,
+} from '~/src/storage/domains';
 import type { DomainChoice } from '~/src/storage/domains';
 import {
   settingsReady,
@@ -33,6 +37,7 @@ const styleSelect = document.getElementById('pt-style-select') as HTMLSelectElem
 const settingsBtn = document.getElementById('pt-settings-btn')!;
 const reportBtn = document.getElementById('pt-report-btn')!;
 const domainSelect = document.getElementById('pt-domain-select') as HTMLSelectElement;
+const domainRemember = document.getElementById('pt-domain-remember') as HTMLInputElement;
 
 /** 汇报问题的落点。GitHub 的新建 issue 页，带模板选择。 */
 const ISSUE_URL = 'https://github.com/Teeeeeeeerry/Parallel-Translation/issues/new';
@@ -139,9 +144,13 @@ async function onTranslatePageClick(): Promise<void> {
 const DOMAIN_RETRY_DELAYS_MS = [200, 400, 800, 1600, 2000];
 /** 每次刷新递增；后发起的刷新开始后，先前的重试不再写界面。 */
 let domainRefresh = 0;
+/** 下拉当前显示的领域状态（#401 据此取站点与所选领域）。 */
+let shownDomain: DomainAnswer | null = null;
 
 /** 本页主文档回复的领域状态（#399、#400）。 */
 interface DomainAnswer {
+  /** 顶层页面的主机名（#401）。 */
+  host: string;
   /** 自动判定会选中的领域名，没有命中为 null。 */
   autoName: string | null;
   /** 本标签页的临时选择。 */
@@ -155,6 +164,7 @@ function parseDomainAnswer(resp: unknown): DomainAnswer | null {
   const choice = parseDomainChoice(r?.choice);
   if (!r || !choice || !Array.isArray(r.options)) return null;
   return {
+    host: typeof r.host === 'string' ? r.host : '',
     autoName: typeof r.autoName === 'string' ? r.autoName : null,
     choice,
     options: r.options.filter((o) => typeof o?.id === 'string' && typeof o?.name === 'string'),
@@ -188,9 +198,11 @@ function renderDomainSelect(answer: DomainAnswer | null): void {
     return el;
   };
   const none = tf('domainPopupNone', '无领域');
+  shownDomain = answer;
   if (!answer) {
     domainSelect.replaceChildren(option('auto', none));
     domainSelect.disabled = true;
+    domainRemember.disabled = true;
     return;
   }
   const autoName = answer.autoName ?? none;
@@ -204,6 +216,44 @@ function renderDomainSelect(answer: DomainAnswer | null): void {
   // 选中的领域已不在可选列表里（被删除、目标语言已改）：按自动显示
   domainSelect.value = [...domainSelect.options].some((o) => o.value === value) ? value : 'auto';
   domainSelect.disabled = false;
+  // #401: 只有选了具体领域时才能“以后在此站点都使用”
+  domainRemember.disabled = domainSelect.value === 'auto' || domainSelect.value === 'none';
+  if (domainRemember.disabled) domainRemember.checked = false;
+}
+
+/**
+ * “以后在此站点都使用”（#401）：选了具体领域后勾选，把本页顶层站点
+ * 写入该领域的适用网址（内置领域写入叠加层）。该站点原先命中的其他
+ * 领域不改；排在前面的领域也命中时，提示用户到设置页调整顺序。
+ *
+ * 这是一次性的动作：取消勾选不撤销，重新打开 popup 时不勾选；要撤销
+ * 到设置页删掉这条适用网址。
+ */
+async function rememberSite(): Promise<void> {
+  const answer = shownDomain;
+  if (!domainRemember.checked || domainRemember.disabled) return;
+  if (!answer || answer.choice.kind !== 'domain') return;
+  const { id } = answer.choice;
+  const name = answer.options.find((o) => o.id === id)?.name ?? '';
+  try {
+    const { current } = await rememberDomainForSite(id, answer.host);
+    if (current?.id === id) {
+      showHint(tf('domainPopupRemembered', `以后在此站点都使用“${name}”`, name));
+    } else {
+      const first = current?.name ?? '';
+      showHint(
+        tf('domainPopupRememberShadowed', `已加入适用网址，但“${first}”排在前面，可在设置页调整顺序`, first),
+        4000,
+      );
+    }
+  } catch (e) {
+    console.error('[PT] 记住站点领域失败:', e);
+    showHint(
+      e instanceof InvalidSitesError
+        ? tf('domainPopupRememberInvalid', '这个网址不能加入适用网址')
+        : tf('hintSaveFail', '设置保存失败'),
+    );
+  }
 }
 
 /**
@@ -244,6 +294,9 @@ async function refreshDomain(): Promise<void> {
 async function onDomainChange(): Promise<void> {
   // 切换后不再采用切换前发起的询问结果
   const refresh = ++domainRefresh;
+  // #401: 勾选只作用于勾选时所选的领域；切换期间不能勾选，免得写进旧领域
+  domainRemember.checked = false;
+  domainRemember.disabled = true;
   const v = domainSelect.value;
   const choice: DomainChoice =
     v === 'auto' || v === 'none' ? { kind: v } : { kind: 'domain', id: v };
@@ -262,7 +315,7 @@ async function onDomainChange(): Promise<void> {
   }
 }
 
-function showHint(msg: string): void {
+function showHint(msg: string, ms = 2000): void {
   const hint = document.getElementById('pt-hint');
   if (hint) {
     hint.textContent = msg;
@@ -270,7 +323,7 @@ function showHint(msg: string): void {
     clearTimeout((hint as any)._timeout);
     (hint as any)._timeout = setTimeout(() => {
       hint.style.display = 'none';
-    }, 2000);
+    }, ms);
   }
 }
 
@@ -326,6 +379,7 @@ async function init(): Promise<void> {
   modeSelect.addEventListener('change', onModeChange);
   styleSelect.addEventListener('change', onStyleChange);
   domainSelect.addEventListener('change', () => void onDomainChange());
+  domainRemember.addEventListener('change', () => void rememberSite());
 
   refreshDomain();
 
