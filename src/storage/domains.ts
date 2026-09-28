@@ -177,7 +177,7 @@ async function readStored(): Promise<StoredDomains> {
  * 不写入（#484），存储里原有的数据保持不变。
  *
  * 跨页面（#485）：多个设置页标签页同时修改时，读-改-写这一段再包一层
- * Web Locks 的同名锁 —— 扩展页面与 service worker 同源，锁在它们之间共享，
+ * Web Locks 的同名锁 —— 扩展页面与后台同源，锁在它们之间共享，
  * 后一次写入基于前一次写入之后的数据。拿不到锁接口的环境只有页面内串行。
  */
 let writeChain: Promise<unknown> = Promise.resolve();

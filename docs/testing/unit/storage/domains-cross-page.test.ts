@@ -3,8 +3,8 @@
  *
  * 只断言外部可观察的行为：两个互不共享模块内存状态的页面（各自加载一份
  * 领域存储模块，共用同一份 storage.local）交错写入后，生效领域列表里
- * 两边的改动都在。测试环境没有 Web Locks，这里提供一个同名锁排队执行
- * 的替身，行为与浏览器一致。
+ * 两边的改动都在。测试环境没有 Web Locks，这里提供一个替身，只模拟
+ * 用到的语义：同名锁按请求顺序排队执行，回调出错时照样放锁。
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { resetStorage } from '~/docs/testing/setup';
@@ -85,7 +85,7 @@ describe('两个设置页标签页同时修改领域（#485）', () => {
     expect(dev.sites).toEqual(['example.org']);
   });
 
-  test('一边写入失败不影响另一边之后的写入', async () => {
+  test('一边写入报错 → 错误交给调用方，另一边和之后的写入照常', async () => {
     await expect(
       Promise.all([
         a.setDomainTerms('user:missing', []),
