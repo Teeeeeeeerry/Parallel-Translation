@@ -118,18 +118,18 @@ function isUserDomain(v: unknown): v is Domain {
 }
 
 /**
- * 读取用户领域数据（自建领域与叠加层）。读取失败时退回空数据（只剩内置
- * 领域的内置内容）并记日志 —— 翻译路径每次请求都会读，存储故障不该让
- * 整次翻译失败。形状不对的条目跳过。
+ * 读取用户领域数据（自建领域与叠加层），读取失败时抛错。存储里还没有
+ * 数据（首次使用）不算失败，得到空数据。形状不对的条目跳过。
  */
-async function readStored(): Promise<StoredDomains> {
+async function readStoredStrict(): Promise<StoredDomains> {
   let stored: Partial<StoredDomains> | undefined;
   try {
     stored = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY] as
       | Partial<StoredDomains>
       | undefined;
   } catch (e) {
-    console.warn('[PT] 读取用户领域数据失败:', e);
+    // 设置页的失败提示显示去掉“[PT] ”前缀的原因
+    throw new Error('[PT] 读取领域数据失败，未作改动', { cause: e });
   }
   const user = Array.isArray(stored?.user) ? stored.user : [];
   const builtin: Record<string, BuiltinOverlay> = {};
@@ -158,8 +158,23 @@ async function readStored(): Promise<StoredDomains> {
 }
 
 /**
+ * 读取路径用：读取失败时退回空数据（只剩内置领域的内置内容）并记日志 ——
+ * 翻译路径每次请求都会读，存储故障不该让整次翻译失败。写入路径不用它
+ * （#484）：把空数据当作现有数据写回会清掉用户的全部领域。
+ */
+async function readStored(): Promise<StoredDomains> {
+  try {
+    return await readStoredStrict();
+  } catch (e) {
+    console.warn('[PT] 读取用户领域数据失败:', e);
+    return { user: [], builtin: {}, order: [] };
+  }
+}
+
+/**
  * 读-改-写串行化：同一上下文里连续新建 / 删除 / 修改时，后一次基于前一次的
- * 结果改，不会互相覆盖（与 cache.ts 的 index 链同一做法）。
+ * 结果改，不会互相覆盖（与 cache.ts 的 index 链同一做法）。读取失败时抛错、
+ * 不写入（#484），存储里原有的数据保持不变。
  */
 let writeChain: Promise<unknown> = Promise.resolve();
 
@@ -167,7 +182,7 @@ function updateStored<T>(
   fn: (stored: StoredDomains) => { stored: StoredDomains | null; result: T },
 ): Promise<T> {
   const next = writeChain.then(async () => {
-    const { stored, result } = fn(await readStored());
+    const { stored, result } = fn(await readStoredStrict());
     // stored 为 null：没有改动，不写入
     if (stored) await chrome.storage.local.set({ [STORAGE_KEY]: stored });
     return result;
