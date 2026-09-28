@@ -50,7 +50,7 @@ import {
 } from '~/src/storage/settings';
 import type { Settings } from '~/src/storage/schema';
 import { watchEffectiveDomains, currentDomain } from '~/src/storage/domains';
-import type { Domain } from '~/src/storage/domains';
+import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { siteRulesReady } from '~/src/storage/specialization';
 import { tf } from '~/src/i18n';
 import { isSiteBlocked } from '~/src/dom/site-filter';
@@ -119,6 +119,10 @@ export default defineContentScript({
     // #471: 顶层页面的主机名 —— 当前领域按它判定，一个标签页里所有 frame
     // 得到同一个领域
     const topHostname = isMainFrame ? location.hostname : await requestTopHostname();
+
+    // #400: 用户在 popup 里为本标签页临时选的领域。只存在本页内存里：
+    // 刷新或关闭标签页后回到自动，其他标签页不受影响
+    let domainChoice: DomainChoice = { kind: 'auto' };
 
     // ── 注入 UI（仅主文档）──
     if (isMainFrame) {
@@ -323,6 +327,7 @@ export default defineContentScript({
       // #471: 当前领域按顶层页面判定；准入判定仍按本 frame 的主机名
       getTopHostname: () => topHostname,
       getDomains: () => domains,
+      getDomainChoice: () => domainChoice,
       // #325: 翻译态查询与还原动作经注入 —— 模块不直接访问 DOM
       hasTranslated,
       restore: doRestore,
@@ -637,6 +642,22 @@ export default defineContentScript({
       toast(result.translation!);
     }
 
+    /**
+     * popup 显示用的领域状态（#399、#400）：自动判定会选中的领域、本标签页
+     * 的临时选择，以及可切换到的领域。
+     */
+    function domainState(to: string) {
+      const lang = to.toLowerCase();
+      return {
+        autoName: currentDomain(domains, topHostname, to)?.name ?? null,
+        choice: domainChoice,
+        // 可切换到的领域：一个领域只服务一种目标语言
+        options: domains
+          .filter((d) => d.targetLang.toLowerCase() === lang)
+          .map((d) => ({ id: d.id, name: d.name })),
+      };
+    }
+
     // ── 监听 popup / background 消息 ──
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg?.type === 'pt:toggle-translate') {
@@ -658,7 +679,19 @@ export default defineContentScript({
         // 当前所选，避免设置刚改、本页还没收到变更时显示旧结果
         if (!isMainFrame) return;
         const to = typeof msg.to === 'string' ? msg.to : getSettings().to;
-        sendResponse({ name: currentDomain(domains, topHostname, to)?.name ?? null });
+        sendResponse(domainState(to));
+        return;
+      }
+
+      if (msg?.type === 'pt:set-domain') {
+        // #400: popup 临时切换领域。广播到全部 frame，iframe 里的翻译请求
+        // 与主文档带同一个领域；只有主文档回复
+        const choice = parseDomainChoice(msg.choice);
+        if (!choice) return;
+        domainChoice = choice;
+        if (!isMainFrame) return;
+        const to = typeof msg.to === 'string' ? msg.to : getSettings().to;
+        sendResponse(domainState(to));
         return;
       }
 
@@ -674,3 +707,11 @@ export default defineContentScript({
     });
   },
 });
+
+/** 校验 popup 发来的临时领域选择（#400）；形状不对返回 null。 */
+function parseDomainChoice(v: unknown): DomainChoice | null {
+  const c = v as Partial<{ kind: string; id: unknown }> | null;
+  if (c?.kind === 'auto' || c?.kind === 'none') return { kind: c.kind };
+  if (c?.kind === 'domain' && typeof c.id === 'string') return { kind: 'domain', id: c.id };
+  return null;
+}

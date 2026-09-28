@@ -310,5 +310,9 @@
   "siteRulesImported": {
     "message": "已导入 $count$ 个站点，刷新网站后生效",
     "placeholders": { "count": { "content": "$1" } }
+  },
+  "domainPopupAuto": {
+    "message": "自动（$name$）",
+    "placeholders": { "name": { "content": "$1" } }
   }
 }

@@ -241,17 +241,16 @@ body {
   animation: pt-pop .15s ease;
 }
 
-/* ===== 当前领域（#399） ===== */
+/* ===== 当前领域（#399），可临时切换（#400） ===== */
 
-.pt-option-value {
-  font-size: 11px;
-  color: var(--pt-forest);
+.pt-domain-select {
   max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.pt-option-value.pt-muted {
+.pt-domain-select:disabled {
   color: var(--pt-forest-40);
+  cursor: default;
 }

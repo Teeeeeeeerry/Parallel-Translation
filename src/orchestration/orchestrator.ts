@@ -23,7 +23,7 @@ import type {
 } from '~/src/engines/types';
 import type { Settings } from '~/src/storage/schema';
 import { currentDomain } from '~/src/storage/domains';
-import type { Domain } from '~/src/storage/domains';
+import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { isSiteBlocked } from '~/src/dom/site-filter';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
@@ -234,6 +234,11 @@ export interface OrchestratorOptions {
    * 选出当前领域，把领域 ID 放进翻译请求；未注入视同没有领域。
    */
   getDomains?: () => readonly Domain[];
+  /**
+   * 读取本标签页的临时领域选择（#400）：用户在 popup 里切换的领域或
+   * “无领域”。未注入视同自动选择。
+   */
+  getDomainChoice?: () => DomainChoice;
   /**
    * 翻译态查询（#325）：页面是否已有译文 —— 开关入口据此决定翻译
    * 还是还原，模块不直接访问 DOM。
@@ -568,6 +573,7 @@ function admissionFrom(opts: OrchestratorOptions): Admission {
 /**
  * 当前领域 ID（#379）—— 生效领域与主机名均经注入提供。
  * #471: 按顶层页面的主机名判定，iframe 里与主文档得到同一个领域。
+ * #400: 用户在 popup 里临时切换过领域时以它为准。
  */
 function currentDomainIdFrom(
   opts: OrchestratorOptions,
@@ -576,5 +582,5 @@ function currentDomainIdFrom(
   const domains = opts.getDomains?.();
   if (!domains) return undefined;
   const host = (opts.getTopHostname ?? opts.getHostname)?.() ?? '';
-  return currentDomain(domains, host, to)?.id;
+  return currentDomain(domains, host, to, opts.getDomainChoice?.())?.id;
 }
