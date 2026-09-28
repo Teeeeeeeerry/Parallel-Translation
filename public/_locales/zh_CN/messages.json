@@ -320,5 +320,15 @@
   "domainTermsExportFailed": {
     "message": "导出术语失败：$reason$",
     "placeholders": { "reason": { "content": "$1" } }
-  }
+  },
+  "domainPopupRemember": { "message": "以后在此站点都使用" },
+  "domainPopupRemembered": {
+    "message": "以后在此站点都使用“$name$”",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainPopupRememberShadowed": {
+    "message": "已加入适用网址，但“$name$”排在前面，可在设置页调整顺序",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainPopupRememberInvalid": { "message": "这个网址不能加入适用网址" }
 }

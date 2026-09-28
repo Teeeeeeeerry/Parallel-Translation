@@ -368,39 +368,78 @@ export async function setDomainSites(id: string, sites: readonly string[]): Prom
     ...new Set(sites.map((s) => s.trim()).filter((s) => s && !isValidSite(s.toLowerCase()))),
   ];
   if (invalid.length > 0) throw new InvalidSitesError(invalid);
+  return updateStored((stored) => {
+    const { stored: next, domain } = withSites(stored, id, cleaned);
+    return { stored: next, result: domain };
+  });
+}
 
+/**
+ * 把领域的适用网址整体换成 sites（已整理、合法）：内置领域记在叠加层
+ * （#397），自建领域直接替换。不存在的领域抛 DomainNotFoundError。
+ */
+function withSites(
+  stored: StoredDomains,
+  id: string,
+  sites: readonly string[],
+): { stored: StoredDomains; domain: Domain } {
   const base = BUILTIN_DOMAINS.find((d) => d.id === id);
   if (base) {
-    return updateStored((stored) => {
-      // 只替换网址部分，叠加层的其他记录原样保留；全部为空时删掉这一条
-      const { [id]: prev, ...rest } = stored.builtin;
-      // 删掉的网址：本次去掉的内置网址，加上以前删掉、当前版本内置里暂时
-      // 没有的网址 —— 以后的版本加回它时仍不复活
-      const removedSites = [
-        ...new Set([
-          ...(prev?.removedSites ?? []).filter((s) => !base.sites.includes(s) && !cleaned.includes(s)),
-          ...base.sites.filter((s) => !cleaned.includes(s)),
-        ]),
-      ];
-      const addedSites = cleaned.filter((s) => !base.sites.includes(s));
-      const overlay: BuiltinOverlay = {
-        terms: [],
-        removedTerms: [],
-        ...prev,
-        addedSites,
-        removedSites,
-      };
-      const empty = Object.values(overlay).every((v) => Array.isArray(v) && v.length === 0);
-      const builtin = empty ? rest : { ...rest, [id]: overlay };
-      return { stored: { ...stored, builtin }, result: withOverlay(base, builtin[id]) };
-    });
+    // 只替换网址部分，叠加层的其他记录原样保留；全部为空时删掉这一条
+    const { [id]: prev, ...rest } = stored.builtin;
+    // 删掉的网址：本次去掉的内置网址，加上以前删掉、当前版本内置里暂时
+    // 没有的网址 —— 以后的版本加回它时仍不复活
+    const removedSites = [
+      ...new Set([
+        ...(prev?.removedSites ?? []).filter((s) => !base.sites.includes(s) && !sites.includes(s)),
+        ...base.sites.filter((s) => !sites.includes(s)),
+      ]),
+    ];
+    const addedSites = sites.filter((s) => !base.sites.includes(s));
+    const overlay: BuiltinOverlay = {
+      terms: [],
+      removedTerms: [],
+      ...prev,
+      addedSites,
+      removedSites,
+    };
+    const empty = Object.values(overlay).every((v) => Array.isArray(v) && v.length === 0);
+    const builtin = empty ? rest : { ...rest, [id]: overlay };
+    return { stored: { ...stored, builtin }, domain: withOverlay(base, builtin[id]) };
   }
 
-  return updateUserDomains((user) => {
-    const target = user.find((d) => d.id === id);
-    if (!target) throw new DomainNotFoundError(id);
-    const updated: Domain = { ...target, sites: cleaned };
-    return { user: user.map((d) => (d.id === id ? updated : d)), result: updated };
+  const target = stored.user.find((d) => d.id === id);
+  if (!target) throw new DomainNotFoundError(id);
+  const updated: Domain = { ...target, sites: [...sites] };
+  return {
+    stored: { ...stored, user: stored.user.map((d) => (d.id === id ? updated : d)) },
+    domain: updated,
+  };
+}
+
+/**
+ * “以后在此站点都使用”（#401）：把站点的裸域名（主机名转小写、去掉
+ * www. 前缀）追加到领域的适用网址。内置领域记在叠加层，升级后保留。
+ * 适用网址已命中这个站点时不写入；原先命中它的其他领域不改。
+ *
+ * 返回加入后按领域列表顺序判定的当前领域（按目标领域的目标语言）——
+ * 排在前面的领域也命中时不是目标领域，调用方据此提示用户调整顺序。
+ * 站点不是合法的网址条目时抛 InvalidSitesError，不存在的领域抛
+ * DomainNotFoundError，都不写入。
+ */
+export async function rememberDomainForSite(
+  id: string,
+  host: string,
+): Promise<{ current: Domain | null }> {
+  const site = host.trim().toLowerCase().replace(/^www\./, '');
+  if (!isValidSite(site)) throw new InvalidSitesError([host]);
+  return updateStored((stored) => {
+    const domain = effectiveDomains(stored).find((d) => d.id === id);
+    if (!domain) throw new DomainNotFoundError(id);
+    const covered = domain.sites.some((entry) => siteMatches(site, entry));
+    const next = covered ? stored : withSites(stored, id, [...domain.sites, site]).stored;
+    const current = currentDomain(effectiveDomains(next), site, domain.targetLang);
+    return { stored: covered ? null : next, result: { current } };
   });
 }
 

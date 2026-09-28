@@ -320,5 +320,15 @@
   "domainTermsExportFailed": {
     "message": "匯出術語失敗：$reason$",
     "placeholders": { "reason": { "content": "$1" } }
-  }
+  },
+  "domainPopupRemember": { "message": "以後在此網站都使用" },
+  "domainPopupRemembered": {
+    "message": "以後在此網站都使用「$name$」",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainPopupRememberShadowed": {
+    "message": "已加入適用網址，但「$name$」排在前面，可在設定頁調整順序",
+    "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainPopupRememberInvalid": { "message": "這個網址不能加入適用網址" }
 }
