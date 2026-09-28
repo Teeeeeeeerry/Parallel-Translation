@@ -553,6 +553,31 @@ function cleanTerms(terms: readonly Term[]): Term[] {
   return cleaned;
 }
 
+/** 术语 CSV 的表头（#402）：列为原词、译法、不翻译，与 Term 的字段同名，不随界面语言变化。 */
+const TERMS_CSV_HEADER = ['source', 'target', 'noTranslate'];
+
+/** CSV 字段（RFC 4180）：含逗号、双引号或换行时加引号，双引号写两遍。 */
+function csvField(v: string): string {
+  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+/**
+ * 把领域的术语导出为 CSV（#402）：UTF-8 带 BOM（表格软件据此按 UTF-8
+ * 打开），首行表头，行尾 CRLF。不翻译列写 true / false。内置领域导出
+ * 生效内容，含用户的修改、新增与删除。不存在的领域抛 DomainNotFoundError，
+ * 读取失败时抛错。
+ */
+export async function exportDomainTermsCsv(id: string): Promise<string> {
+  // 读取失败时抛错：退回空数据会把内置领域的原样内容当成用户的术语导出
+  const domain = effectiveDomains(await readStoredStrict()).find((d) => d.id === id);
+  if (!domain) throw new DomainNotFoundError(id);
+  const rows = [
+    TERMS_CSV_HEADER,
+    ...domain.terms.map((t) => [t.source, t.target ?? '', String(t.noTranslate === true)]),
+  ];
+  return '\uFEFF' + rows.map((r) => r.map(csvField).join(',') + '\r\n').join('');
+}
+
 /**
  * 领域数据变更订阅（任一上下文新建、删除、修改后触发）。返回取消订阅函数。
  */

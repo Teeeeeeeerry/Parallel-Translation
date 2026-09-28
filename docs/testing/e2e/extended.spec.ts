@@ -15,9 +15,11 @@
  * #397：TC-E2E-74 覆盖设置页增删内置领域的适用网址。
  * #398：TC-E2E-75 覆盖设置页内置领域恢复默认。
  * #400：TC-E2E-77 覆盖 popup 临时切换领域与“无领域”。
+ * #402：TC-E2E-78 覆盖设置页导出领域术语 CSV。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
+import fs from 'fs';
 import { test, expect, fixtureFileUrl, fixtureUrl, waitForBall } from './fixtures';
 import type { Page, Worker } from '@playwright/test';
 
@@ -592,6 +594,45 @@ test.describe('边界情况 @extended', () => {
 });
 
 test.describe('设置页：翻译领域 @extended', () => {
+  test('TC-E2E-78: 领域卡片导出术语 CSV → 带 BOM 与表头，含逗号与引号的字段转义（#402）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [{
+            id: 'user:e2e', name: '法律/合同', targetLang: 'zh-CN', sites: [], origin: 'user',
+            terms: [
+              { source: 'terms, conditions', target: '条款，条件' },
+              { source: 'the "Act"', target: '“该法”' },
+              { source: 'Esq.', noTranslate: true },
+            ],
+          }],
+          builtin: {},
+        },
+      }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const terms = page.locator('.pt-domain-item', { hasText: '法律/合同' }).locator('.pt-domain-terms');
+    await terms.locator('summary').click();
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      terms.locator('.pt-domain-terms-export').click(),
+    ]);
+    // 文件名里不能出现路径分隔符
+    expect(download.suggestedFilename()).toBe('parallel-translation-terms-法律_合同.csv');
+    expect(fs.readFileSync(await download.path(), 'utf-8')).toBe(
+      '﻿source,target,noTranslate\r\n' +
+        '"terms, conditions",条款，条件,false\r\n' +
+        '"the ""Act""",“该法”,false\r\n' +
+        'Esq.,,true\r\n',
+    );
+    await expect(page.locator('#pt-toast')).toHaveText('术语已导出');
+  });
+
   test('TC-E2E-71: 新建或删除领域写入失败 → toast 提示原因，名称留在输入框、领域留在列表（#470）', async ({
     page, serviceWorker,
   }) => {

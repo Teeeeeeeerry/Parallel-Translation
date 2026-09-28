@@ -314,5 +314,11 @@
   "domainPopupAuto": {
     "message": "自动（$name$）",
     "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainTermsExport": { "message": "导出 CSV" },
+  "domainTermsExported": { "message": "术语已导出" },
+  "domainTermsExportFailed": {
+    "message": "导出术语失败：$reason$",
+    "placeholders": { "reason": { "content": "$1" } }
   }
 }
