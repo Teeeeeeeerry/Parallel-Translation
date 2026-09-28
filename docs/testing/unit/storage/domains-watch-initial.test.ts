@@ -7,13 +7,16 @@
  * 尚未返回的初始读取也不交付。
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
-import { createDomain, watchEffectiveDomains } from '~/src/storage/domains';
+import { watchEffectiveDomains } from '~/src/storage/domains';
 import { resetStorage, fireStorageChange, localStoreSnapshot } from '~/docs/testing/setup';
 import type { Domain } from '~/src/storage/domains';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-/** 让下一次 storage.local 读取停住，直到调用返回的函数，并以调用时刻之前的数据返回。 */
+/**
+ * 让下一次 storage.local 读取停住，直到调用返回的函数，并以调用时刻之前的
+ * 数据返回。用例里订阅之前不再有别的读取，下一次读取就是初始读取。
+ */
 function holdNextRead(): () => void {
   const snapshot = structuredClone(localStoreSnapshot());
   let release!: () => void;
@@ -29,9 +32,18 @@ function names(fn: ReturnType<typeof vi.fn>): string[] {
   return (fn.mock.lastCall![0] as Domain[]).map((d) => d.name);
 }
 
+function userDomain(name: string): Domain {
+  return { id: `user:${name}`, name, targetLang: 'zh-CN', sites: [], terms: [], origin: 'user' };
+}
+
+/** 模拟设置页写入领域数据（直接写存储，不经模块的读取）。 */
+async function storeDomains(...list: string[]): Promise<void> {
+  await chrome.storage.local.set({ 'pt-domains': { user: list.map(userDomain), builtin: {} } });
+}
+
 beforeEach(async () => {
   resetStorage();
-  await createDomain({ name: '法律', targetLang: 'zh-CN' });
+  await storeDomains('法律');
 });
 
 describe('生效领域列表订阅的初始交付（#486）', () => {
@@ -58,7 +70,7 @@ describe('生效领域列表订阅的初始交付（#486）', () => {
     watchEffectiveDomains(fn, { initial: true });
 
     // 初始读取停住期间，设置页新建了领域
-    await createDomain({ name: '医学', targetLang: 'zh-CN' });
+    await storeDomains('法律', '医学');
     fireStorageChange({ 'pt-domains': { newValue: {} } }, 'local');
     await flush();
     expect(names(fn)).toContain('医学');
@@ -71,14 +83,19 @@ describe('生效领域列表订阅的初始交付（#486）', () => {
     expect(names(fn)).toContain('医学');
   });
 
-  test('取消订阅后，尚未返回的初始读取不交付', async () => {
-    const release = holdNextRead();
-    const fn = vi.fn();
-    const off = watchEffectiveDomains(fn, { initial: true });
+  test('取消订阅后，尚未返回的初始读取不交付；未取消的照常交付', async () => {
+    const releaseKept = holdNextRead();
+    const releaseOff = holdNextRead();
+    const kept = vi.fn();
+    const cancelled = vi.fn();
+    watchEffectiveDomains(kept, { initial: true });
+    const off = watchEffectiveDomains(cancelled, { initial: true });
     off();
-    release();
+    releaseKept();
+    releaseOff();
     await flush();
 
-    expect(fn).not.toHaveBeenCalled();
+    expect(kept).toHaveBeenCalledTimes(1);
+    expect(cancelled).not.toHaveBeenCalled();
   });
 });

@@ -588,7 +588,6 @@ export function watchEffectiveDomains(
       if (active && seq === latest) fn(domains);
     });
   };
-  // 先订阅再读取：初始读取期间的变更不会漏掉
   const off = onDomainsChanged(load);
   if (initial) load();
   return () => {
