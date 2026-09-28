@@ -950,3 +950,54 @@ describe('纯数字站点名（#490）', () => {
     expect(result.imported).toBe(2);
   });
 });
+
+/**
+ * #493：保存、删除、导入共用同一个读-改-写串行链。整理前后行为不变：
+ * 连续写入不互相覆盖，某次写入失败不影响之后的写入，没有变化时不写入。
+ */
+describe('用户规则的写入（#493）', () => {
+  type Spec = typeof import('~/src/storage/specialization');
+  async function load(): Promise<Spec> {
+    vi.resetModules();
+    return import('~/src/storage/specialization');
+  }
+
+  let options: Spec;
+  beforeEach(async () => {
+    resetStorage();
+    options = await load();
+  });
+
+  const file = (sites: Record<string, unknown>) =>
+    JSON.stringify({ format: 'parallel-translation-site-rules', version: 1, sites });
+
+  test('不等待前一次完成就连续保存、导入、删除，结果按调用顺序叠加', async () => {
+    const entry = { scope: [], exclude: ['.b'], preserve: [], disableBuiltin: false };
+    await Promise.all([
+      options.saveUserSiteRules('example.com', { exclude: ['.a'] }),
+      options.importUserSiteRules(file({ 'example.com': entry, 'example.org': entry })),
+      options.setBuiltinSiteRulesDisabled('github.com', true),
+      options.deleteUserSiteRules('example.org'),
+    ]);
+    expect(await options.getUserSiteRules()).toEqual([
+      { site: 'example.com', exclude: ['.a', '.b'] },
+      { site: 'github.com', disableBuiltin: true },
+    ]);
+  });
+
+  test('某次写入失败只让这一次失败，之后的写入照常', async () => {
+    vi.mocked(chrome.storage.local.set).mockRejectedValueOnce(new Error('quota'));
+    const failed = options.saveUserSiteRules('example.com', { exclude: ['.a'] });
+    const ok = options.saveUserSiteRules('example.org', { exclude: ['.b'] });
+    await expect(failed).rejects.toThrow('quota');
+    await ok;
+    expect(await options.getUserSiteRules()).toEqual([{ site: 'example.org', exclude: ['.b'] }]);
+  });
+
+  test('删除不存在的站点卡片时不写入存储', async () => {
+    await options.saveUserSiteRules('example.com', { exclude: ['.a'] });
+    vi.mocked(chrome.storage.local.set).mockClear();
+    await options.deleteUserSiteRules('example.org');
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+  });
+});

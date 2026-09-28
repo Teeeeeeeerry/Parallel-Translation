@@ -80,7 +80,8 @@ const allScopeInvalidWarned = new Set<string>();
  * 已剔除无法解析的选择器。一张站点卡片的用户规则只作用于卡片站点本身
  * 及其子域（#491）。当前站点是某张停用了内置规则的站点卡片的
  * 站点本身或其子域时（#375、#467），只剩用户规则。同步返回 —— walker
- * 的采集入口是同步的，每次采集调用一次。用户规则须先 await siteRulesReady()，之前只有内置规则。
+ * 的采集入口是同步的，每次采集调用一次。用户规则须先 await
+ * siteRulesReady()，之前只有内置规则。
  *
  * #443：声明了限定范围、但全部无法解析时，限定范围为空即不限定 ——
  * ADR-0003 的容错语义，不能退回整页不翻译（重演 #93）。这种退回用户
@@ -261,6 +262,33 @@ export function findInvalidSelectors(rules: Partial<SiteRules>): InvalidSelector
  */
 let writeChain: Promise<unknown> = Promise.resolve();
 
+/** 修改函数的结果：要写入的用户规则（null 表示没有变化、不写入）与带给调用方的值。 */
+interface UserSiteRulesChange<T> {
+  user: UserSiteRules[] | null;
+  result: T;
+}
+
+/**
+ * 读-改-写用户规则（#493）：保存、删除、导入都经这里写入。挂到写入链上
+ * 串行执行，读取当前用户规则交给 change，写入它返回的新列表并更新本
+ * 上下文的快照，返回 change 带出的值。某一次失败不会让链断掉。
+ */
+function updateUserSiteRules<T>(
+  change: (user: UserSiteRules[]) => UserSiteRulesChange<T>,
+): Promise<T> {
+  const next = writeChain.then(async () => {
+    const { user, result } = change(await readUserSiteRules());
+    if (user) {
+      const stored: StoredSiteRules = { user };
+      await chrome.storage.local.set({ [STORAGE_KEY]: stored });
+      userSnapshot = user;
+    }
+    return result;
+  });
+  writeChain = next.catch(() => {});
+  return next;
+}
+
 /**
  * 保存一张站点卡片：站点不存在时新增在末尾，已存在时更新传入的字段。
  * 每个选择器去掉首尾空白，空行不保存。站点不是裸域名时抛错；有选择器
@@ -306,17 +334,12 @@ export function hasBuiltinSiteRules(site: string): boolean {
 
 /** 写入一张站点卡片的部分字段：不存在时新增在末尾，已存在时更新传入的字段。 */
 function writeCard(key: string, patch: Omit<Partial<UserSiteRules>, 'site'>): Promise<void> {
-  const next = writeChain.then(async () => {
-    const user = await readUserSiteRules();
+  return updateUserSiteRules((user) => {
     const i = user.findIndex((u) => u.site === key);
     if (i === -1) user.push({ site: key, ...patch });
     else user[i] = { ...user[i]!, ...patch };
-    const stored: StoredSiteRules = { user };
-    await chrome.storage.local.set({ [STORAGE_KEY]: stored });
-    userSnapshot = user;
+    return { user, result: undefined };
   });
-  writeChain = next.catch(() => {});
-  return next;
 }
 
 /**
@@ -325,16 +348,10 @@ function writeCard(key: string, patch: Omit<Partial<UserSiteRules>, 'site'>): Pr
  */
 export function deleteUserSiteRules(site: string): Promise<void> {
   const key = site.trim().toLowerCase();
-  const next = writeChain.then(async () => {
-    const user = await readUserSiteRules();
+  return updateUserSiteRules((user) => {
     const rest = user.filter((u) => u.site !== key);
-    if (rest.length === user.length) return;
-    const stored: StoredSiteRules = { user: rest };
-    await chrome.storage.local.set({ [STORAGE_KEY]: stored });
-    userSnapshot = rest;
+    return { user: rest.length === user.length ? null : rest, result: undefined };
   });
-  writeChain = next.catch(() => {});
-  return next;
 }
 
 // ---- 导入导出（#376） ----
@@ -391,8 +408,7 @@ export interface ImportSiteRulesResult {
  */
 export function importUserSiteRules(json: string): Promise<ImportSiteRulesResult> {
   const { sites } = JSON.parse(json) as SiteRulesExport;
-  const next = writeChain.then(async () => {
-    const user = await readUserSiteRules();
+  return updateUserSiteRules((user) => {
     let imported = 0;
     for (const [site, rules] of Object.entries(sites)) {
       if (!isBareSite(site)) continue;
@@ -406,13 +422,8 @@ export function importUserSiteRules(json: string): Promise<ImportSiteRulesResult
       }
       if (rules.disableBuiltin) card.disableBuiltin = true;
     }
-    const stored: StoredSiteRules = { user };
-    await chrome.storage.local.set({ [STORAGE_KEY]: stored });
-    userSnapshot = user;
-    return { imported };
+    return { user, result: { imported } };
   });
-  writeChain = next.catch(() => {});
-  return next;
 }
 
 /**
