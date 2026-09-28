@@ -145,15 +145,26 @@ interface StoredSiteRules {
 /** 裸域名：小写、无协议与路径；localhost 与 IP 也在其中。 */
 const SITE_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
 
+/**
+ * 站点卡片的站点名是否为裸域名。纯数字（如 `123`）不算（#490）：不是
+ * 有效主机名，任何页面上都不会生效；导出文件以站点名为键，形如整数的
+ * 键会被排到最前，打乱新增顺序。IPv4 带点，不受影响。保存、导入与读取
+ * 存储都用它校验。
+ */
+function isBareSite(site: string): boolean {
+  return SITE_RE.test(site) && !/^\d+$/.test(site);
+}
+
 const isStringList = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((x) => typeof x === 'string');
 
-/** 存储里的站点卡片形状校验 —— 脏数据跳过，不影响其他卡片。 */
+/** 存储里的站点卡片校验：形状不对或站点名不是裸域名的脏数据跳过，不影响其他卡片。 */
 function isUserSiteRules(v: unknown): v is UserSiteRules {
   if (typeof v !== 'object' || v === null) return false;
   const u = v as Partial<UserSiteRules>;
   return (
     typeof u.site === 'string' &&
+    isBareSite(u.site) &&
     SITE_RULE_FIELDS.every((f) => u[f] === undefined || isStringList(u[f])) &&
     (u.disableBuiltin === undefined || typeof u.disableBuiltin === 'boolean')
   );
@@ -260,7 +271,7 @@ export function saveUserSiteRules(
   rules: Partial<SiteRules>,
 ): Promise<void> {
   const key = site.trim().toLowerCase();
-  if (!SITE_RE.test(key)) {
+  if (!isBareSite(key)) {
     return Promise.reject(new Error(`[PT] 站点须为裸域名：${JSON.stringify(site)}`));
   }
   const invalid = findInvalidSelectors(rules);
@@ -367,7 +378,7 @@ export async function exportUserSiteRules(): Promise<string> {
 
 /** 导入结果。 */
 export interface ImportSiteRulesResult {
-  /** 导入的站点数 */
+  /** 导入的站点数，不含站点名不是裸域名而跳过的条目 */
   imported: number;
 }
 
@@ -375,13 +386,17 @@ export interface ImportSiteRulesResult {
  * 导入 exportUserSiteRules() 导出的 JSON 文本（#377），与现有用户规则合并：
  * 新站点新增在末尾；同一站点逐字段追加并去重。停用内置规则的标记只会被
  * 导入打开，不会被导入关闭 —— 与“追加”一致，导入不削弱现有设置。选择器
- * 与保存时一样去掉首尾空白、丢弃空行。一次写入，与保存共用读-改-写串行链。
+ * 与保存时一样去掉首尾空白、丢弃空行。站点名与保存时走同一个裸域名校验，
+ * 不通过的条目跳过（#490）。一次写入，与保存共用读-改-写串行链。
  */
 export function importUserSiteRules(json: string): Promise<ImportSiteRulesResult> {
   const { sites } = JSON.parse(json) as SiteRulesExport;
   const next = writeChain.then(async () => {
     const user = await readUserSiteRules();
+    let imported = 0;
     for (const [site, rules] of Object.entries(sites)) {
+      if (!isBareSite(site)) continue;
+      imported++;
       let card = user.find((u) => u.site === site);
       if (!card) user.push((card = { site }));
       for (const field of SITE_RULE_FIELDS) {
@@ -394,7 +409,7 @@ export function importUserSiteRules(json: string): Promise<ImportSiteRulesResult
     const stored: StoredSiteRules = { user };
     await chrome.storage.local.set({ [STORAGE_KEY]: stored });
     userSnapshot = user;
-    return { imported: Object.keys(sites).length };
+    return { imported };
   });
   writeChain = next.catch(() => {});
   return next;

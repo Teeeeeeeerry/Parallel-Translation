@@ -878,3 +878,75 @@ describe('站点规则 JSON 导入（#377）', () => {
     expect(result.imported).toBe(2);
   });
 });
+
+/**
+ * #490：纯数字的站点名（如 `123`）不是有效主机名，任何页面上都不会生效；
+ * 导出文件以站点名为键，形如整数的键会被排到最前，打乱新增顺序。保存与
+ * 导入走同一个裸域名校验，拒绝纯数字；存储里已有的纯数字卡片读取与导出
+ * 时跳过。
+ */
+describe('纯数字站点名（#490）', () => {
+  type Spec = typeof import('~/src/storage/specialization');
+  async function load(): Promise<Spec> {
+    vi.resetModules();
+    return import('~/src/storage/specialization');
+  }
+
+  let options: Spec;
+  beforeEach(async () => {
+    resetStorage();
+    options = await load();
+  });
+
+  const card = (site: string) => ({ site, exclude: ['.ad'] });
+
+  test('纯数字站点名保存时被拒绝，不写入存储', async () => {
+    for (const bad of ['123', ' 0 ', '8080']) {
+      await expect(options.saveUserSiteRules(bad, { exclude: ['.ad'] })).rejects.toThrow();
+    }
+    expect(await options.getUserSiteRules()).toEqual([]);
+  });
+
+  test('IPv4、localhost 与带数字的域名照常保存', async () => {
+    for (const site of ['192.168.1.1', 'localhost', '123.com', '1password.com']) {
+      await options.saveUserSiteRules(site, { exclude: ['.ad'] });
+    }
+    expect((await options.getUserSiteRules()).map((u) => u.site)).toEqual([
+      '192.168.1.1',
+      'localhost',
+      '123.com',
+      '1password.com',
+    ]);
+  });
+
+  test('存储里已有纯数字卡片时，读取与导出都跳过它，其余卡片按新增顺序排列', async () => {
+    await chrome.storage.local.set({
+      'pt-site-rules': { user: [card('example.com'), card('123'), card('192.168.1.1')] },
+    });
+    options = await load();
+    expect((await options.getUserSiteRules()).map((u) => u.site)).toEqual([
+      'example.com',
+      '192.168.1.1',
+    ]);
+    const { sites } = JSON.parse(await options.exportUserSiteRules());
+    expect(Object.keys(sites)).toEqual(['example.com', '192.168.1.1']);
+    await options.siteRulesReady();
+    expect(options.getSiteRules('123').exclude).toEqual([]);
+  });
+
+  test('导入时跳过纯数字站点名的条目，其他站点照常导入', async () => {
+    const entry = { scope: [], exclude: ['.ad'], preserve: [], disableBuiltin: false };
+    const result = await options.importUserSiteRules(
+      JSON.stringify({
+        format: 'parallel-translation-site-rules',
+        version: 1,
+        sites: { 'example.com': entry, '123': entry, 'example.org': entry },
+      }),
+    );
+    expect((await options.getUserSiteRules()).map((u) => u.site)).toEqual([
+      'example.com',
+      'example.org',
+    ]);
+    expect(result.imported).toBe(2);
+  });
+});
