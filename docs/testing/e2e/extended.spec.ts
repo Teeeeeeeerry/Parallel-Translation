@@ -846,9 +846,20 @@ test.describe('popup：翻译领域 @extended', () => {
     // 切换到“手选”后翻译本页：请求带它的术语
     await select.selectOption('user:e2e-manual');
     await expect(select).toHaveValue('user:e2e-manual');
+    // 切换之后才加载的跨域 iframe 也用“手选”
+    await page.evaluate(() => {
+      const iframe = document.createElement('iframe');
+      iframe.id = 'late';
+      iframe.src = 'http://127.0.0.1:4173/iframe-cross-child.html';
+      document.body.append(iframe);
+    });
+    const late = page.frameLocator('#late');
+    await expect(late.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
     await popup.locator('#pt-translate-page-btn').click();
     await expect(page.locator('p').nth(1)).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
     expect(await sent(MANUAL)).toBe(true);
+    await expect(late.locator('#full')).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+    expect(await sent('Every item in this frame ⟦TM0⟧ is translated with the page.')).toBe(true);
 
     // 另一个标签页不受影响：仍按网址自动选中“站内”
     const other = await context.newPage();

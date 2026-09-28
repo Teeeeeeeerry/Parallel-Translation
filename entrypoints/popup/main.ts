@@ -13,6 +13,7 @@ import {
 import { applyI18n, tf } from '~/src/i18n';
 import { logoMarkSvg } from '~/src/ui/logo';
 import { sleep } from '~/src/runtime/sleep';
+import { parseDomainChoice } from '~/src/storage/domains';
 import type { DomainChoice } from '~/src/storage/domains';
 import {
   settingsReady,
@@ -150,13 +151,12 @@ interface DomainAnswer {
 }
 
 function parseDomainAnswer(resp: unknown): DomainAnswer | null {
-  const r = resp as Partial<DomainAnswer> | undefined;
-  if (!r || typeof r.choice !== 'object' || r.choice === null || !Array.isArray(r.options)) {
-    return null;
-  }
+  const r = resp as Partial<Record<keyof DomainAnswer, unknown>> | undefined;
+  const choice = parseDomainChoice(r?.choice);
+  if (!r || !choice || !Array.isArray(r.options)) return null;
   return {
     autoName: typeof r.autoName === 'string' ? r.autoName : null,
-    choice: r.choice,
+    choice,
     options: r.options.filter((o) => typeof o?.id === 'string' && typeof o?.name === 'string'),
   };
 }

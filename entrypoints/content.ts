@@ -49,7 +49,7 @@ import {
   patchSettings,
 } from '~/src/storage/settings';
 import type { Settings } from '~/src/storage/schema';
-import { watchEffectiveDomains, currentDomain } from '~/src/storage/domains';
+import { watchEffectiveDomains, currentDomain, parseDomainChoice } from '~/src/storage/domains';
 import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { siteRulesReady } from '~/src/storage/specialization';
 import { tf } from '~/src/i18n';
@@ -78,6 +78,19 @@ async function requestTopHostname(): Promise<string> {
     // background 没有响应：按本 frame 判定
   }
   return location.hostname;
+}
+
+/**
+ * #400: 子 frame 向主文档要本标签页的临时领域选择（经 background 转问
+ * frameId 0）。取不到时返回 null，按自动判定。
+ */
+async function requestTopDomainChoice(): Promise<DomainChoice | null> {
+  try {
+    const res: unknown = await chrome.runtime.sendMessage({ type: 'pt:top-domain-choice' });
+    return parseDomainChoice((res as { choice?: unknown } | undefined)?.choice);
+  } catch {
+    return null;
+  }
 }
 
 export default defineContentScript({
@@ -123,6 +136,8 @@ export default defineContentScript({
     // #400: 用户在 popup 里为本标签页临时选的领域。只存在本页内存里：
     // 刷新或关闭标签页后回到自动，其他标签页不受影响
     let domainChoice: DomainChoice = { kind: 'auto' };
+    /** 本 frame 是否已收到过切换广播 —— 收到过就不再采用启动时问来的选择。 */
+    let choiceBroadcast = false;
 
     // ── 注入 UI（仅主文档）──
     if (isMainFrame) {
@@ -689,9 +704,17 @@ export default defineContentScript({
         const choice = parseDomainChoice(msg.choice);
         if (!choice) return;
         domainChoice = choice;
+        choiceBroadcast = true;
         if (!isMainFrame) return;
         const to = typeof msg.to === 'string' ? msg.to : getSettings().to;
         sendResponse(domainState(to));
+        return;
+      }
+
+      if (msg?.type === 'pt:get-domain-choice') {
+        // #400: 子 frame 启动时经 background 来问（见 requestTopDomainChoice）
+        if (!isMainFrame) return;
+        sendResponse({ choice: domainChoice });
         return;
       }
 
@@ -705,13 +728,13 @@ export default defineContentScript({
         return;
       }
     });
+
+    // #400: 切换之后才加载的 iframe 向主文档要当前的临时选择；期间已收到
+    // 切换广播的，以广播为准
+    if (!isMainFrame) {
+      void requestTopDomainChoice().then((choice) => {
+        if (choice && !choiceBroadcast) domainChoice = choice;
+      });
+    }
   },
 });
-
-/** 校验 popup 发来的临时领域选择（#400）；形状不对返回 null。 */
-function parseDomainChoice(v: unknown): DomainChoice | null {
-  const c = v as Partial<{ kind: string; id: unknown }> | null;
-  if (c?.kind === 'auto' || c?.kind === 'none') return { kind: c.kind };
-  if (c?.kind === 'domain' && typeof c.id === 'string') return { kind: 'domain', id: c.id };
-  return null;
-}

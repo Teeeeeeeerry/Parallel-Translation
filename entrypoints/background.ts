@@ -141,6 +141,18 @@ export default defineBackground(() => {
     sendResponse({ hostname });
   });
 
+  // #400: 子 frame 启动时要本标签页的临时领域选择 —— 转问该标签页的
+  // 主文档（frameId 0），切换之后才加载的 iframe 与主文档带同一个领域
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg?.type !== 'pt:top-domain-choice') return;
+    const tabId = sender.tab?.id;
+    if (tabId == null) return;
+    chrome.tabs
+      .sendMessage(tabId, { type: 'pt:get-domain-choice' }, { frameId: 0 })
+      .then(sendResponse, () => sendResponse(undefined));
+    return true;
+  });
+
   // 健康检查（E2E 测试用于验证消息通道就绪）
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'pt:ping') {

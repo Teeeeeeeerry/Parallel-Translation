@@ -603,6 +603,14 @@ export function watchEffectiveDomains(
  */
 export type DomainChoice = { kind: 'auto' } | { kind: 'none' } | { kind: 'domain'; id: string };
 
+/** 校验跨上下文传来的临时领域选择（#400）；形状不对返回 null。 */
+export function parseDomainChoice(v: unknown): DomainChoice | null {
+  const c = v as Partial<{ kind: unknown; id: unknown }> | null | undefined;
+  if (c?.kind === 'auto' || c?.kind === 'none') return { kind: c.kind };
+  if (c?.kind === 'domain' && typeof c.id === 'string') return { kind: 'domain', id: c.id };
+  return null;
+}
+
 /**
  * 当前领域：列表中第一个目标语言一致、且适用网址命中 host 的领域。
  * 目标语言不一致的领域不启用，继续看后面的领域；都不命中返回 null。
