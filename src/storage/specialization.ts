@@ -77,7 +77,8 @@ const allScopeInvalidWarned = new Set<string>();
 
 /**
  * 按当前站点读取生效站点规则：内置规则在前，用户规则逐字段追加在后，
- * 已剔除无法解析的选择器。当前站点是某张停用了内置规则的站点卡片的
+ * 已剔除无法解析的选择器。一张站点卡片的用户规则只作用于卡片站点本身
+ * 及其子域（#491）。当前站点是某张停用了内置规则的站点卡片的
  * 站点本身或其子域时（#375、#467），只剩用户规则。同步返回 —— walker
  * 的采集入口是同步的，每次采集调用一次。用户规则须先 await siteRulesReady()，之前只有内置规则。
  *
@@ -90,13 +91,18 @@ export function getSiteRules(host: string): SiteRules {
   const builtinDisabled = userSnapshot.some(
     (u) => u.disableBuiltin && siteCovers(host, u.site),
   );
+  // 内置规则按站点黑白名单语义匹配；用户规则只作用于卡片站点本身及其
+  // 子域（#491），与停用开关的范围相同
   const sources: Array<[string, Partial<SiteRules>]> = [
-    ...(builtinDisabled ? [] : Object.entries(BUILTIN_SITE_RULES)),
-    ...userSnapshot.map((u): [string, Partial<SiteRules>] => [u.site, u]),
+    ...(builtinDisabled ? [] : Object.entries(BUILTIN_SITE_RULES)).filter(([site]) =>
+      siteMatches(host, site),
+    ),
+    ...userSnapshot
+      .filter((u) => siteCovers(host, u.site))
+      .map((u): [string, Partial<SiteRules>] => [u.site, u]),
   ];
   const scopeSites: string[] = [];
   for (const [site, rules] of sources) {
-    if (!siteMatches(host, site)) continue;
     const valid = (sels: string[] = []) =>
       sels.filter((sel) => isValidSelector(site, sel));
     for (const field of SITE_RULE_FIELDS) out[field].push(...valid(rules[field]));
@@ -119,7 +125,10 @@ export function getSiteRules(host: string): SiteRules {
 
 /** 用户规则：设置页的一张站点卡片，裸域名加各字段的选择器。 */
 export interface UserSiteRules extends Partial<SiteRules> {
-  /** 裸域名，语义与站点黑白名单相同。 */
+  /**
+   * 裸域名。规则只作用于这个站点本身及其子域（#491），`www.` 视同主域名，
+   * 不做主域名归一：`gist.github.com` 的规则不作用于 `github.com`。
+   */
   site: string;
   /** 停用这个站点的内置规则（#375）：打开后该站点只剩用户规则生效 */
   disableBuiltin?: boolean;
