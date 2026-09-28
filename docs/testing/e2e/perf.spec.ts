@@ -16,7 +16,14 @@ test.describe('性能基准 @perf', () => {
   test('PERF-02: 翻译-还原循环 ×100 后 DOM 节点数无增长', async ({ page }) => {
     await page.goto(fixtureFileUrl('basic'));
 
-    const countBefore = await page.evaluate(() => document.querySelectorAll('*').length);
+    // #488: content script 同样注入 file:// 页面，悬浮球与段落按钮的宿主
+    // 可能在第一次计数之后才出现。只数页面自身的节点：跳过带 data-pt-ui
+    // 标记的扩展界面宿主及其子树。
+    const countPageNodes = () =>
+      page.evaluate(
+        () => [...document.querySelectorAll('*')].filter((el) => !el.closest('[data-pt-ui]')).length,
+      );
+    const countBefore = await countPageNodes();
 
     // 模拟 100 次 render/unrender 循环
     for (let i = 0; i < 100; i++) {
@@ -46,7 +53,7 @@ test.describe('性能基准 @perf', () => {
       }, i);
     }
 
-    const countAfter = await page.evaluate(() => document.querySelectorAll('*').length);
+    const countAfter = await countPageNodes();
     expect(countAfter).toBe(countBefore);
   });
 

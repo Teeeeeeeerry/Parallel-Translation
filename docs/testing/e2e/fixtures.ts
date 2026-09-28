@@ -46,9 +46,9 @@ export function fixtureUrl(name: FixtureName): string {
 /**
  * 获取 fixture 页面的 file:// URL（#88）。
  *
- * 用于不需要 content script 注入的自包含用例（如纯 DOM 逻辑验证）：
- * 经 HTTP 加载时 content script 会注入并可能干扰页面 DOM 计数等断言，
- * 因此这类用例直接以 file:// 打开本地 fixture。
+ * 用于不依赖本地 HTTP 服务的自包含用例（如纯 DOM 逻辑验证）。
+ * 注意 content script 同样会注入 file:// 页面（#488），悬浮球等界面宿主
+ * 随时可能出现：数 DOM 节点的断言须跳过带 data-pt-ui 标记的子树。
  * spec 以 ES module 运行，__dirname 不存在，须用 import.meta.url 推导目录。
  */
 export function fixtureFileUrl(name: FixtureName): string {
