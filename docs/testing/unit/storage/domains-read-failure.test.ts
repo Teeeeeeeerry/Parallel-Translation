@@ -3,7 +3,8 @@
  *
  * 只断言外部可观察的行为：存储读取失败时各写操作抛错、存储里原有的
  * 自建领域、叠加层与顺序保持原样，恢复读取后生效领域列表与之前一致；
- * 读取路径仍退回只有内置领域、不抛错；存储里本来没有数据时照常写入。
+ * 存储里本来没有数据时照常写入。读取路径退回只有内置领域、不抛错的
+ * 用例见 domains.test.ts。
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import {
@@ -56,6 +57,7 @@ describe('读取存储失败时写操作不落盘（#484）', () => {
     // 不能误报成“领域不存在”：设置页会据此提示已被删除并刷新列表
     expect(err).toBeInstanceOf(Error);
     expect(err).not.toBeInstanceOf(DomainNotFoundError);
+    expect((err as Error).message).toBe('[PT] 读取领域数据失败，未作改动');
     expect(chrome.storage.local.set).not.toHaveBeenCalled();
     expect(localStoreSnapshot()).toEqual(snapshot);
     expect(await getEffectiveDomains()).toEqual(before);
@@ -69,13 +71,6 @@ describe('读取存储失败时写操作不落盘（#484）', () => {
     const names = (await getEffectiveDomains()).map((d) => d.name);
     expect(names).toContain('法律');
     expect(names).toContain(med.name);
-  });
-
-  test('读取失败时生效领域列表只剩内置领域，不抛错', async () => {
-    vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
-    const domains = await getEffectiveDomains();
-    expect(domains.map((d) => d.origin)).toEqual(['builtin']);
-    expect(domains[0]!.sites).not.toContain('example.org');
   });
 
   test('存储里本来没有数据（首次使用）不算失败，照常写入', async () => {

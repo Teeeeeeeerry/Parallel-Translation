@@ -122,9 +122,15 @@ function isUserDomain(v: unknown): v is Domain {
  * 数据（首次使用）不算失败，得到空数据。形状不对的条目跳过。
  */
 async function readStoredStrict(): Promise<StoredDomains> {
-  const stored = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY] as
-    | Partial<StoredDomains>
-    | undefined;
+  let stored: Partial<StoredDomains> | undefined;
+  try {
+    stored = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY] as
+      | Partial<StoredDomains>
+      | undefined;
+  } catch (e) {
+    // 设置页的失败提示显示去掉“[PT] ”前缀的原因
+    throw new Error('[PT] 读取领域数据失败，未作改动', { cause: e });
+  }
   const user = Array.isArray(stored?.user) ? stored.user : [];
   const builtin: Record<string, BuiltinOverlay> = {};
   if (typeof stored?.builtin === 'object' && stored.builtin !== null) {
