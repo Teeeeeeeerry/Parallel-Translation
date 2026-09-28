@@ -330,5 +330,15 @@
     "message": "Site added, but “$name$” comes first. Reorder domains in Settings.",
     "placeholders": { "name": { "content": "$1" } }
   },
-  "domainPopupRememberInvalid": { "message": "This address can’t be added to the domain" }
+  "domainPopupRememberInvalid": { "message": "This address can’t be added to the domain" },
+  "domainTermsImport": { "message": "Import CSV" },
+  "domainTermsImported": {
+    "message": "Imported $count$ term(s)",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "domainTermsImportFailed": {
+    "message": "Could not import terms: $reason$",
+    "placeholders": { "reason": { "content": "$1" } }
+  },
+  "domainTermsImportDiscard": { "message": "The term table has unsaved changes that will be replaced by the import. Continue?" }
 }

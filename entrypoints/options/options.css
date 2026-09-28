@@ -734,6 +734,7 @@ body {
 
 .pt-domain-terms-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
