@@ -144,6 +144,8 @@ async function onTranslatePageClick(): Promise<void> {
 const DOMAIN_RETRY_DELAYS_MS = [200, 400, 800, 1600, 2000];
 /** 每次刷新递增；后发起的刷新开始后，先前的重试不再写界面。 */
 let domainRefresh = 0;
+/** 下拉当前显示的领域状态（#401 据此取站点与所选领域）。 */
+let shownDomain: DomainAnswer | null = null;
 
 /** 本页主文档回复的领域状态（#399、#400）。 */
 interface DomainAnswer {
@@ -216,19 +218,21 @@ function renderDomainSelect(answer: DomainAnswer | null): void {
   domainSelect.disabled = false;
   // #401: 只有选了具体领域时才能“以后在此站点都使用”
   domainRemember.disabled = domainSelect.value === 'auto' || domainSelect.value === 'none';
+  if (domainRemember.disabled) domainRemember.checked = false;
 }
 
-/** 下拉当前显示的领域状态（#401 据此取站点与所选领域）。 */
-let shownDomain: DomainAnswer | null = null;
-
 /**
- * “以后在此站点都使用”（#401）：勾选且选了具体领域时，把本页顶层站点
+ * “以后在此站点都使用”（#401）：选了具体领域后勾选，把本页顶层站点
  * 写入该领域的适用网址（内置领域写入叠加层）。该站点原先命中的其他
  * 领域不改；排在前面的领域也命中时，提示用户到设置页调整顺序。
+ *
+ * 这是一次性的动作：取消勾选不撤销，重新打开 popup 时不勾选；要撤销
+ * 到设置页删掉这条适用网址。
  */
 async function rememberSite(): Promise<void> {
   const answer = shownDomain;
-  if (!domainRemember.checked || !answer || answer.choice.kind !== 'domain') return;
+  if (!domainRemember.checked || domainRemember.disabled) return;
+  if (!answer || answer.choice.kind !== 'domain') return;
   const { id } = answer.choice;
   const name = answer.options.find((o) => o.id === id)?.name ?? '';
   try {
@@ -290,6 +294,9 @@ async function refreshDomain(): Promise<void> {
 async function onDomainChange(): Promise<void> {
   // 切换后不再采用切换前发起的询问结果
   const refresh = ++domainRefresh;
+  // #401: 勾选只作用于勾选时所选的领域；切换期间不能勾选，免得写进旧领域
+  domainRemember.checked = false;
+  domainRemember.disabled = true;
   const v = domainSelect.value;
   const choice: DomainChoice =
     v === 'auto' || v === 'none' ? { kind: v } : { kind: 'domain', id: v };
@@ -302,7 +309,6 @@ async function onDomainChange(): Promise<void> {
       to: getSettings().to,
     });
     if (refresh === domainRefresh) renderDomainSelect(parseDomainAnswer(resp));
-    await rememberSite();
   } catch {
     showHint(tf('hintCantTranslate', '当前页面无法翻译'));
     void refreshDomain();

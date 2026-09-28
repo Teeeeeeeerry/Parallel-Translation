@@ -970,8 +970,14 @@ test.describe('popup：翻译领域 @extended', () => {
     // 原先命中这个站点的领域不改
     expect(data.user.find((d: any) => d.id === 'user:e2e-site').sites).toEqual(['localhost']);
 
-    // 内置领域排在后面：写入叠加层，并提示调整顺序
+    // 换到别的领域时取消勾选：不会顺带写进新领域
     await select.selectOption('builtin:software-zh-CN');
+    await expect(remember).not.toBeChecked();
+    await expect(remember).toBeEnabled();
+    expect((await stored()).builtin).toEqual({});
+
+    // 内置领域排在后面：写入叠加层，并提示调整顺序
+    await remember.check();
     await expect(hint).toHaveText('已加入适用网址，但“手选”排在前面，可在设置页调整顺序');
     data = await stored();
     expect(data.builtin['builtin:software-zh-CN'].addedSites).toEqual(['localhost']);
