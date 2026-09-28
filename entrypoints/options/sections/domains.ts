@@ -8,7 +8,7 @@
 // 编辑自建领域的适用网址（#392）与术语（#393）；编辑内置领域的术语
 // （#395）并可删除内置术语（#396），增删内置领域的适用网址（#397）；
 // 机翻引擎“指定译法”开关（#390）；上移、下移调整领域顺序（#394）；
-// 修改过的内置领域可以恢复默认（#398）。
+// 修改过的内置领域可以恢复默认（#398）；术语可导出为 CSV（#402）。
 
 import { LANG_LIST } from '~/src/storage/schema';
 import {
@@ -25,6 +25,7 @@ import {
   isBuiltinTerm,
   isBuiltinModified,
   resetBuiltinDomain,
+  exportDomainTermsCsv,
 } from '~/src/storage/domains';
 import { getSettings, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import type { Domain, Term } from '~/src/storage/domains';
@@ -267,9 +268,37 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
   tbody.addEventListener('input', clearError);
   tbody.addEventListener('change', clearError);
 
+  // #402：导出已保存的术语（不含未保存的编辑）为 CSV 文件
+  const exportBtn = document.createElement('button');
+  exportBtn.className = 'pt-btn pt-btn-secondary pt-domain-terms-export';
+  exportBtn.textContent = tf('domainTermsExport', '导出 CSV');
+  exportBtn.addEventListener('click', () => {
+    exportDomainTermsCsv(d.id)
+      .then((csv) => {
+        const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `parallel-translation-terms-${d.name.replace(/[\\/:*?"<>|]/g, '_')}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast(tf('domainTermsExported', '术语已导出'));
+      })
+      .catch((e) => {
+        console.error('[PT] 导出术语失败:', e);
+        // 领域已在别处被删除：与保存失败同样提示并刷新列表（#430）
+        if (e instanceof DomainNotFoundError) {
+          showToast(tf('domainSaveDeleted', '这个领域已被删除，列表已刷新'), 4000);
+          onGone();
+          return;
+        }
+        const reason = failReason(e);
+        showToast(tf('domainTermsExportFailed', `导出术语失败：${reason}`, reason), 4000);
+      });
+  });
+
   const actions = document.createElement('div');
   actions.className = 'pt-domain-terms-actions';
-  actions.append(add, save);
+  actions.append(add, save, exportBtn);
 
   details.append(summary, table, error, actions);
   return details;

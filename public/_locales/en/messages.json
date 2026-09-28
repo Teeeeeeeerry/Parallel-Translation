@@ -314,5 +314,11 @@
   "domainPopupAuto": {
     "message": "Auto ($name$)",
     "placeholders": { "name": { "content": "$1" } }
+  },
+  "domainTermsExport": { "message": "Export CSV" },
+  "domainTermsExported": { "message": "Terms exported" },
+  "domainTermsExportFailed": {
+    "message": "Could not export terms: $reason$",
+    "placeholders": { "reason": { "content": "$1" } }
   }
 }
