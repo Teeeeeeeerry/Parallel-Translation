@@ -339,5 +339,6 @@
   "domainTermsImportFailed": {
     "message": "Could not import terms: $reason$",
     "placeholders": { "reason": { "content": "$1" } }
-  }
+  },
+  "domainTermsImportDiscard": { "message": "The term table has unsaved changes that will be replaced by the import. Continue?" }
 }

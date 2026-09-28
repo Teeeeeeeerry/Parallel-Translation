@@ -132,6 +132,21 @@ describe('术语 CSV 导入（#403）', () => {
     expect((await termsOf(DEV)).map((t) => t.source)).toEqual(['issue', 'fork', 'monorepo']);
   });
 
+  test('空行不算导入的条数；只有表头时不写入', async () => {
+    const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
+    const { imported } = await importDomainTermsCsv(
+      law.id,
+      `${HEADER}tort,侵权,false\r\n\r\nplaintiff,原告,false\r\n\r\n`,
+    );
+    expect(imported).toBe(2);
+    expect((await termsOf(law.id)).map((t) => t.source)).toEqual(['tort', 'plaintiff']);
+
+    vi.mocked(chrome.storage.local.set).mockClear();
+    expect((await importDomainTermsCsv(law.id, HEADER)).imported).toBe(0);
+    expect((await importDomainTermsCsv(law.id, '')).imported).toBe(0);
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+  });
+
   test('领域不存在时抛 DomainNotFoundError', async () => {
     await expect(importDomainTermsCsv('user:missing', HEADER)).rejects.toBeInstanceOf(
       DomainNotFoundError,

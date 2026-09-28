@@ -339,5 +339,6 @@
   "domainTermsImportFailed": {
     "message": "匯入術語失敗：$reason$",
     "placeholders": { "reason": { "content": "$1" } }
-  }
+  },
+  "domainTermsImportDiscard": { "message": "術語表有未儲存的修改，匯入後會被取代。要繼續匯入嗎？" }
 }

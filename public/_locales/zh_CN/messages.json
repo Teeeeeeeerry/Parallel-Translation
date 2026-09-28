@@ -339,5 +339,6 @@
   "domainTermsImportFailed": {
     "message": "导入术语失败：$reason$",
     "placeholders": { "reason": { "content": "$1" } }
-  }
+  },
+  "domainTermsImportDiscard": { "message": "术语表有未保存的修改，导入后会被替换。继续导入吗？" }
 }

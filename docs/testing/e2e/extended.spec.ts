@@ -657,7 +657,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     const csv = (body: string) => ({
       name: 'terms.csv',
       mimeType: 'text/csv',
-      buffer: Buffer.from(`﻿source,target,noTranslate\r\n${body}`, 'utf-8'),
+      buffer: Buffer.from(`\uFEFFsource,target,noTranslate\r\n${body}`, 'utf-8'),
     });
 
     const extId = new URL(serviceWorker.url()).host;
@@ -690,6 +690,17 @@ test.describe('设置页：翻译领域 @extended', () => {
     expect((await stored()).builtin['builtin:software-zh-CN'].terms).toEqual([
       { source: 'monorepo', target: '单仓库' },
     ]);
+
+    // 表格里有未保存的修改时，导入前先确认；取消则不导入
+    await terms.locator('.pt-term-target').first().fill('改了没保存');
+    let message = '';
+    page.once('dialog', (d) => {
+      message = d.message();
+      void d.dismiss();
+    });
+    await terms.locator('.pt-domain-terms-import').click();
+    expect(message).toBe('术语表有未保存的修改，导入后会被替换。继续导入吗？');
+    await expect(terms.locator('.pt-term-target').first()).toHaveValue('改了没保存');
   });
 
   test('TC-E2E-71: 新建或删除领域写入失败 → toast 提示原因，名称留在输入框、领域留在列表（#470）', async ({

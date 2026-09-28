@@ -673,7 +673,8 @@ function parseCsv(text: string): string[][] {
  * 首行是表头 source,target,noTranslate 时跳过；不翻译列为 true 或 1（不区分
  * 大小写）时勾选。与现有术语合并：同一原词（不区分大小写）以导入为准、
  * 留在原位，新原词追加在后，文件里没有的术语不动；文件里同一原词出现
- * 多次时后出现的为准。内置领域写入叠加层。返回导入的行数。
+ * 多次时后出现的为准。内置领域写入叠加层。返回导入的行数，空行不算；
+ * 没有可导入的行时不写入。
  *
  * 合并后的术语表按 setDomainTerms 的规则校验，有不合法的行时抛
  * InvalidTermsError，不写入。不存在的领域抛 DomainNotFoundError。
@@ -685,17 +686,23 @@ export async function importDomainTermsCsv(
   const rows = parseCsv(csv);
   const header = TERMS_CSV_HEADER.join(',').toLowerCase();
   if (rows[0]?.map((f) => f.trim().toLowerCase()).join(',') === header) rows.shift();
-  const incoming: Term[] = rows.map(([source = '', target = '', noTranslate = '']) =>
-    /^(true|1)$/i.test(noTranslate.trim()) ? { source, noTranslate: true } : { source, target },
-  );
+  const incoming: Term[] = rows
+    // 空行（文件中间或结尾多出的换行）不算
+    .filter((fields) => fields.some((f) => f.trim() !== ''))
+    .map(([source = '', target = '', noTranslate = '']) =>
+      /^(true|1)$/i.test(noTranslate.trim()) ? { source, noTranslate: true } : { source, target },
+    );
   return updateStored((stored) => {
     const domain = effectiveDomains(stored).find((d) => d.id === id);
     if (!domain) throw new DomainNotFoundError(id);
+    // 没有可导入的行：不写入
+    if (incoming.length === 0) return { stored: null, result: { imported: 0 } };
     const merged = [...domain.terms];
+    const at = new Map(merged.map((t, i) => [termKey(t), i]));
     for (const t of incoming) {
-      const at = merged.findIndex((m) => termKey(m) === termKey(t));
-      if (at < 0) merged.push(t);
-      else merged[at] = t;
+      const i = at.get(termKey(t));
+      if (i === undefined) at.set(termKey(t), merged.push(t) - 1);
+      else merged[i] = t;
     }
     const { stored: next } = withTerms(stored, id, cleanTerms(merged));
     return { stored: next, result: { imported: incoming.length } };
