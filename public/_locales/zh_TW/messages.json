@@ -330,5 +330,14 @@
     "message": "已加入適用網址，但「$name$」排在前面，可在設定頁調整順序",
     "placeholders": { "name": { "content": "$1" } }
   },
-  "domainPopupRememberInvalid": { "message": "這個網址不能加入適用網址" }
+  "domainPopupRememberInvalid": { "message": "這個網址不能加入適用網址" },
+  "domainTermsImport": { "message": "匯入 CSV" },
+  "domainTermsImported": {
+    "message": "已匯入 $count$ 條術語",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "domainTermsImportFailed": {
+    "message": "匯入術語失敗：$reason$",
+    "placeholders": { "reason": { "content": "$1" } }
+  }
 }

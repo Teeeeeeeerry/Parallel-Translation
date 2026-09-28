@@ -8,7 +8,8 @@
 // 编辑自建领域的适用网址（#392）与术语（#393）；编辑内置领域的术语
 // （#395）并可删除内置术语（#396），增删内置领域的适用网址（#397）；
 // 机翻引擎“指定译法”开关（#390）；上移、下移调整领域顺序（#394）；
-// 修改过的内置领域可以恢复默认（#398）；术语可导出为 CSV（#402）。
+// 修改过的内置领域可以恢复默认（#398）；术语可导出为 CSV（#402），
+// 也可从 CSV 导入并与现有术语合并（#403）。
 
 import { LANG_LIST } from '~/src/storage/schema';
 import {
@@ -26,6 +27,7 @@ import {
   isBuiltinModified,
   resetBuiltinDomain,
   exportDomainTermsCsv,
+  importDomainTermsCsv,
 } from '~/src/storage/domains';
 import { getSettings, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import type { Domain, Term } from '~/src/storage/domains';
@@ -296,9 +298,41 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
       });
   });
 
+  // #403：导入 CSV，与已保存的术语合并（同一原词以导入为准）
+  const importFile = document.createElement('input');
+  importFile.type = 'file';
+  importFile.accept = '.csv,text/csv';
+  importFile.hidden = true;
+  const importBtn = document.createElement('button');
+  importBtn.className = 'pt-btn pt-btn-secondary pt-domain-terms-import';
+  importBtn.textContent = tf('domainTermsImport', '导入 CSV');
+  importBtn.addEventListener('click', () => importFile.click());
+  importFile.addEventListener('change', () => {
+    const file = importFile.files?.[0];
+    // 清空选择：再次选同一个文件也会触发 change
+    importFile.value = '';
+    if (!file) return;
+    file
+      .text()
+      .then((csv) => importDomainTermsCsv(d.id, csv))
+      .then(({ imported }) => {
+        showToast(tf('domainTermsImported', `已导入 ${imported} 条术语`, String(imported)));
+      })
+      .catch((e) => {
+        console.error('[PT] 导入术语失败:', e);
+        if (e instanceof DomainNotFoundError) {
+          showToast(tf('domainSaveDeleted', '这个领域已被删除，列表已刷新'), 4000);
+          onGone();
+          return;
+        }
+        const reason = failReason(e);
+        showToast(tf('domainTermsImportFailed', `导入术语失败：${reason}`, reason), 4000);
+      });
+  });
+
   const actions = document.createElement('div');
   actions.className = 'pt-domain-terms-actions';
-  actions.append(add, save, exportBtn);
+  actions.append(add, save, exportBtn, importBtn, importFile);
 
   details.append(summary, table, error, actions);
   return details;

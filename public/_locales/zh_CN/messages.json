@@ -330,5 +330,14 @@
     "message": "已加入适用网址，但“$name$”排在前面，可在设置页调整顺序",
     "placeholders": { "name": { "content": "$1" } }
   },
-  "domainPopupRememberInvalid": { "message": "这个网址不能加入适用网址" }
+  "domainPopupRememberInvalid": { "message": "这个网址不能加入适用网址" },
+  "domainTermsImport": { "message": "导入 CSV" },
+  "domainTermsImported": {
+    "message": "已导入 $count$ 条术语",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "domainTermsImportFailed": {
+    "message": "导入术语失败：$reason$",
+    "placeholders": { "reason": { "content": "$1" } }
+  }
 }

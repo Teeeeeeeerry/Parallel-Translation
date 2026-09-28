@@ -471,36 +471,50 @@ export class InvalidTermsError extends Error {
  */
 export async function setDomainTerms(id: string, terms: readonly Term[]): Promise<Domain> {
   const cleaned = cleanTerms(terms);
+  return updateStored((stored) => {
+    const { stored: next, domain } = withTerms(stored, id, cleaned);
+    return { stored: next, result: domain };
+  });
+}
 
+/**
+ * 把领域的术语整体换成 terms（已按 cleanTerms 整理）：自建领域直接替换；
+ * 内置领域只在叠加层记下与内置不同的和新增的术语（#395），去掉的内置
+ * 术语记为已删除（#396）。不存在的领域抛 DomainNotFoundError。
+ */
+function withTerms(
+  stored: StoredDomains,
+  id: string,
+  terms: readonly Term[],
+): { stored: StoredDomains; domain: Domain } {
   const base = BUILTIN_DOMAINS.find((d) => d.id === id);
   if (base) {
     const builtinTerms = new Map(base.terms.map((t) => [termKey(t), t]));
-    const own = cleaned.filter((t) => !sameTerm(t, builtinTerms.get(termKey(t))));
-    const kept = new Set(cleaned.map(termKey));
-    return updateStored((stored) => {
-      // 只替换术语部分，叠加层的其他记录原样保留；全部为空时删掉这一条
-      const { [id]: prev, ...rest } = stored.builtin;
-      // 删除记录：本次去掉的内置术语，加上以前删掉、当前版本内置里暂时
-      // 没有的原词 —— 以后的版本加回它时仍不复活
-      const removedTerms = [
-        ...new Set([
-          ...(prev?.removedTerms ?? []).filter((k) => !builtinTerms.has(k) && !kept.has(k)),
-          ...[...builtinTerms.keys()].filter((k) => !kept.has(k)),
-        ]),
-      ];
-      const overlay: BuiltinOverlay = { addedSites: [], removedSites: [], ...prev, terms: own, removedTerms };
-      const empty = Object.values(overlay).every((v) => Array.isArray(v) && v.length === 0);
-      const builtin = empty ? rest : { ...rest, [id]: overlay };
-      return { stored: { ...stored, builtin }, result: withOverlay(base, builtin[id]) };
-    });
+    const own = terms.filter((t) => !sameTerm(t, builtinTerms.get(termKey(t))));
+    const kept = new Set(terms.map(termKey));
+    // 只替换术语部分，叠加层的其他记录原样保留；全部为空时删掉这一条
+    const { [id]: prev, ...rest } = stored.builtin;
+    // 删除记录：本次去掉的内置术语，加上以前删掉、当前版本内置里暂时
+    // 没有的原词 —— 以后的版本加回它时仍不复活
+    const removedTerms = [
+      ...new Set([
+        ...(prev?.removedTerms ?? []).filter((k) => !builtinTerms.has(k) && !kept.has(k)),
+        ...[...builtinTerms.keys()].filter((k) => !kept.has(k)),
+      ]),
+    ];
+    const overlay: BuiltinOverlay = { addedSites: [], removedSites: [], ...prev, terms: own, removedTerms };
+    const empty = Object.values(overlay).every((v) => Array.isArray(v) && v.length === 0);
+    const builtin = empty ? rest : { ...rest, [id]: overlay };
+    return { stored: { ...stored, builtin }, domain: withOverlay(base, builtin[id]) };
   }
 
-  return updateUserDomains((user) => {
-    const domain = user.find((d) => d.id === id);
-    if (!domain) throw new DomainNotFoundError(id);
-    const updated: Domain = { ...domain, terms: cleaned };
-    return { user: user.map((d) => (d.id === id ? updated : d)), result: updated };
-  });
+  const domain = stored.user.find((d) => d.id === id);
+  if (!domain) throw new DomainNotFoundError(id);
+  const updated: Domain = { ...domain, terms: [...terms] };
+  return {
+    stored: { ...stored, user: stored.user.map((d) => (d.id === id ? updated : d)) },
+    domain: updated,
+  };
 }
 
 /**
@@ -615,6 +629,77 @@ export async function exportDomainTermsCsv(id: string): Promise<string> {
     ...domain.terms.map((t) => [t.source, t.target ?? '', String(t.noTranslate === true)]),
   ];
   return '\uFEFF' + rows.map((r) => r.map(csvField).join(',') + '\r\n').join('');
+}
+
+/**
+ * 按 RFC 4180 把 CSV 文本拆成行与字段（#403）：引号内可含逗号、换行与
+ * 写两遍的双引号；行尾 CRLF 或 LF 都认；开头的 BOM 去掉，结尾的空行不算。
+ */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let quoted = false;
+  const src = text.replace(/^\uFEFF/, '');
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i]!;
+    if (quoted) {
+      if (c !== '"') field += c;
+      else if (src[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else quoted = false;
+    } else if (c === '"') {
+      quoted = true;
+    } else if (c === ',') {
+      row.push(field);
+      field = '';
+    } else if (c === '\n' || c === '\r') {
+      if (c === '\r' && src[i + 1] === '\n') i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else {
+      field += c;
+    }
+  }
+  if (field !== '' || row.length > 0) rows.push([...row, field]);
+  return rows;
+}
+
+/**
+ * 把 CSV 文件里的术语导入到领域（#403），格式与 exportDomainTermsCsv 相同：
+ * 首行是表头 source,target,noTranslate 时跳过；不翻译列为 true 或 1（不区分
+ * 大小写）时勾选。与现有术语合并：同一原词（不区分大小写）以导入为准、
+ * 留在原位，新原词追加在后，文件里没有的术语不动；文件里同一原词出现
+ * 多次时后出现的为准。内置领域写入叠加层。返回导入的行数。
+ *
+ * 合并后的术语表按 setDomainTerms 的规则校验，有不合法的行时抛
+ * InvalidTermsError，不写入。不存在的领域抛 DomainNotFoundError。
+ */
+export async function importDomainTermsCsv(
+  id: string,
+  csv: string,
+): Promise<{ imported: number }> {
+  const rows = parseCsv(csv);
+  const header = TERMS_CSV_HEADER.join(',').toLowerCase();
+  if (rows[0]?.map((f) => f.trim().toLowerCase()).join(',') === header) rows.shift();
+  const incoming: Term[] = rows.map(([source = '', target = '', noTranslate = '']) =>
+    /^(true|1)$/i.test(noTranslate.trim()) ? { source, noTranslate: true } : { source, target },
+  );
+  return updateStored((stored) => {
+    const domain = effectiveDomains(stored).find((d) => d.id === id);
+    if (!domain) throw new DomainNotFoundError(id);
+    const merged = [...domain.terms];
+    for (const t of incoming) {
+      const at = merged.findIndex((m) => termKey(m) === termKey(t));
+      if (at < 0) merged.push(t);
+      else merged[at] = t;
+    }
+    const { stored: next } = withTerms(stored, id, cleanTerms(merged));
+    return { stored: next, result: { imported: incoming.length } };
+  });
 }
 
 /**

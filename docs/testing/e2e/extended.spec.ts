@@ -17,6 +17,7 @@
  * #400：TC-E2E-77 覆盖 popup 临时切换领域与“无领域”。
  * #402：TC-E2E-78 覆盖设置页导出领域术语 CSV。
  * #401：TC-E2E-79 覆盖 popup 勾选“以后在此站点都使用”。
+ * #403：TC-E2E-80 覆盖设置页导入领域术语 CSV。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -632,6 +633,63 @@ test.describe('设置页：翻译领域 @extended', () => {
         'Esq.,,true\r\n',
     );
     await expect(page.locator('#pt-toast')).toHaveText('术语已导出');
+  });
+
+  test('TC-E2E-80: 领域卡片导入术语 CSV → 与已有术语合并，同一原词以导入为准；导入到内置领域写入叠加层（#403）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [{
+            id: 'user:e2e', name: '法律', targetLang: 'zh-CN', sites: [], origin: 'user',
+            terms: [
+              { source: 'tort', target: '侵权' },
+              { source: 'Esq.', noTranslate: true },
+            ],
+          }],
+          builtin: {},
+        },
+      }),
+    );
+    const stored = () =>
+      serviceWorker.evaluate(async () => (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any);
+    const csv = (body: string) => ({
+      name: 'terms.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(`﻿source,target,noTranslate\r\n${body}`, 'utf-8'),
+    });
+
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms');
+    await terms.locator('summary').click();
+
+    await terms.locator('input[type="file"]').setInputFiles(
+      csv('TORT,侵权行为,false\r\n"terms, conditions",条款，条件,false\r\n'),
+    );
+    await expect(page.locator('#pt-toast')).toHaveText('已导入 2 条术语');
+    expect((await stored()).user[0].terms).toEqual([
+      { source: 'TORT', target: '侵权行为' },
+      { source: 'Esq.', noTranslate: true },
+      { source: 'terms, conditions', target: '条款，条件' },
+    ]);
+    // 编辑区随之刷新
+    const sources = terms.locator('.pt-term-source');
+    await expect(sources).toHaveCount(3);
+    expect(await sources.evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual([
+      'TORT', 'Esq.', 'terms, conditions',
+    ]);
+
+    // 内置领域：写入叠加层
+    const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' }).locator('.pt-domain-terms');
+    await builtin.locator('summary').click();
+    await builtin.locator('input[type="file"]').setInputFiles(csv('monorepo,单仓库,false\r\n'));
+    await expect(page.locator('#pt-toast')).toHaveText('已导入 1 条术语');
+    expect((await stored()).builtin['builtin:software-zh-CN'].terms).toEqual([
+      { source: 'monorepo', target: '单仓库' },
+    ]);
   });
 
   test('TC-E2E-71: 新建或删除领域写入失败 → toast 提示原因，名称留在输入框、领域留在列表（#470）', async ({
