@@ -285,6 +285,12 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
       })
       .catch((e) => {
         console.error('[PT] 导出术语失败:', e);
+        // 领域已在别处被删除：与保存失败同样提示并刷新列表（#430）
+        if (e instanceof DomainNotFoundError) {
+          showToast(tf('domainSaveDeleted', '这个领域已被删除，列表已刷新'), 4000);
+          onGone();
+          return;
+        }
         const reason = failReason(e);
         showToast(tf('domainTermsExportFailed', `导出术语失败：${reason}`, reason), 4000);
       });

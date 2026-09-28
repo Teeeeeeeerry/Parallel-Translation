@@ -16,7 +16,7 @@ import {
 import { resetStorage } from '~/docs/testing/setup';
 
 const BUILTIN = 'builtin:software-zh-CN';
-const HEADER = '﻿source,target,noTranslate\r\n';
+const HEADER = '\uFEFFsource,target,noTranslate\r\n';
 
 beforeEach(() => {
   resetStorage();

@@ -625,7 +625,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     // 文件名里不能出现路径分隔符
     expect(download.suggestedFilename()).toBe('parallel-translation-terms-法律_合同.csv');
     expect(fs.readFileSync(await download.path(), 'utf-8')).toBe(
-      '﻿source,target,noTranslate\r\n' +
+      '\uFEFFsource,target,noTranslate\r\n' +
         '"terms, conditions",条款，条件,false\r\n' +
         '"the ""Act""",“该法”,false\r\n' +
         'Esq.,,true\r\n',
