@@ -340,5 +340,33 @@
     "message": "Could not import terms: $reason$",
     "placeholders": { "reason": { "content": "$1" } }
   },
-  "domainTermsImportDiscard": { "message": "The term table has unsaved changes that will be replaced by the import. Continue?" }
+  "domainTermsImportDiscard": { "message": "The term table has unsaved changes that will be replaced by the import. Continue?" },
+  "domainTermsImportedSkipped": {
+    "message": "Imported $count$ term(s), skipped $skipped$ line(s)",
+    "placeholders": { "count": { "content": "$1" }, "skipped": { "content": "$2" } }
+  },
+  "domainTermsSkipColumns": {
+    "message": "Line $line$: expected 3 columns",
+    "placeholders": { "line": { "content": "$1" } }
+  },
+  "domainTermsSkipMissingSource": {
+    "message": "Line $line$: source term is empty",
+    "placeholders": { "line": { "content": "$1" } }
+  },
+  "domainTermsSkipMissingTarget": {
+    "message": "Line $line$: no translation and “do not translate” not checked",
+    "placeholders": { "line": { "content": "$1" } }
+  },
+  "domainTermsSkipNoTranslate": {
+    "message": "Line $line$: noTranslate must be true or false",
+    "placeholders": { "line": { "content": "$1" } }
+  },
+  "domainTermsSkipQuote": {
+    "message": "Line $line$: unclosed quote; this line and everything after it were not imported",
+    "placeholders": { "line": { "content": "$1" } }
+  },
+  "domainTermsSkipMore": {
+    "message": "$count$ more line(s) not imported",
+    "placeholders": { "count": { "content": "$1" } }
+  }
 }

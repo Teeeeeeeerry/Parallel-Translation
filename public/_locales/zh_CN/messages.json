@@ -340,5 +340,33 @@
     "message": "导入术语失败：$reason$",
     "placeholders": { "reason": { "content": "$1" } }
   },
-  "domainTermsImportDiscard": { "message": "术语表有未保存的修改，导入后会被替换。继续导入吗？" }
+  "domainTermsImportDiscard": { "message": "术语表有未保存的修改，导入后会被替换。继续导入吗？" },
+  "domainTermsImportedSkipped": {
+    "message": "已导入 $count$ 条术语，跳过 $skipped$ 行",
+    "placeholders": { "count": { "content": "$1" }, "skipped": { "content": "$2" } }
+  },
+  "domainTermsSkipColumns": {
+    "message": "第 $line$ 行：列数不对，应为 3 列",
+    "placeholders": { "line": { "content": "$1" } }
+  },
+  "domainTermsSkipMissingSource": {
+    "message": "第 $line$ 行：原词为空",
+    "placeholders": { "line": { "content": "$1" } }
+  },
+  "domainTermsSkipMissingTarget": {
+    "message": "第 $line$ 行：没有译法，也没有勾选“不翻译”",
+    "placeholders": { "line": { "content": "$1" } }
+  },
+  "domainTermsSkipNoTranslate": {
+    "message": "第 $line$ 行：不翻译列应为 true 或 false",
+    "placeholders": { "line": { "content": "$1" } }
+  },
+  "domainTermsSkipQuote": {
+    "message": "第 $line$ 行：引号没有闭合，这一行到文件结尾都没有导入",
+    "placeholders": { "line": { "content": "$1" } }
+  },
+  "domainTermsSkipMore": {
+    "message": "另有 $count$ 行没有导入",
+    "placeholders": { "count": { "content": "$1" } }
+  }
 }
