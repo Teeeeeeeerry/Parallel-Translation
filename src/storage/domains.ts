@@ -571,16 +571,26 @@ export function onDomainsChanged(fn: () => void): () => void {
  * 生效领域列表的变更订阅（#417）：任一上下文新建、删除、修改领域后，重新
  * 读取生效领域列表交给 fn。连续变更时只交付最后一次读取的结果，先发起、
  * 后返回的旧读取不会覆盖新列表。返回取消订阅函数，取消后不再交付。
+ *
+ * initial 为真时（#486）订阅后立即读取一次、交付初始列表。初始读取与之后
+ * 的变更读取按发起先后判定：变更读取先返回时，较早的初始读取不再交付。
+ * 页面拿初始值加订阅变更一律用它，不要自己另读一次。
  */
-export function watchEffectiveDomains(fn: (domains: Domain[]) => void): () => void {
+export function watchEffectiveDomains(
+  fn: (domains: Domain[]) => void,
+  { initial = false }: { initial?: boolean } = {},
+): () => void {
   let latest = 0;
   let active = true;
-  const off = onDomainsChanged(() => {
+  const load = () => {
     const seq = ++latest;
     void getEffectiveDomains().then((domains) => {
       if (active && seq === latest) fn(domains);
     });
-  });
+  };
+  // 先订阅再读取：初始读取期间的变更不会漏掉
+  const off = onDomainsChanged(load);
+  if (initial) load();
   return () => {
     active = false;
     off();
