@@ -67,6 +67,18 @@ interface Card {
 
 const toText = (sels: string[] = []) => sels.join('\n');
 
+/** 给用户看的失败原因：去掉内部日志用的“[PT] ”前缀。 */
+function failReason(e: unknown): string {
+  return (e instanceof Error ? e.message : String(e)).replace(/^\[PT\]\s*/, '');
+}
+
+/** 写入失败（#508）：记日志，并提示原因 —— 例如读取存储失败时未作改动。 */
+function showFailure(key: string, fallback: string, e: unknown): void {
+  console.error(`[PT] ${fallback}:`, e);
+  const reason = failReason(e);
+  showToast(tf(key, `${fallback}：${reason}`, reason), 4000);
+}
+
 /**
  * 站点卡片：站点名、各字段的多行文本框、保存与删除按钮。站点名是用户
  * 输入，只走 textContent。
@@ -98,7 +110,7 @@ function siteCard(u: UserSiteRules, onDelete: (site: string) => void): Card {
           toggle.classList.toggle('pt-on', disabled);
           showToast(tf('siteRulesSaved', '已保存，刷新该网站后生效'));
         })
-        .catch((e) => console.error('[PT] 保存站点规则失败:', e));
+        .catch((e) => showFailure('siteRulesSaveFailed', '保存站点规则失败', e));
     });
     row.append(label, toggle);
     el.append(row);
@@ -150,7 +162,7 @@ function siteCard(u: UserSiteRules, onDelete: (site: string) => void): Card {
       .then(() => showToast(tf('siteRulesSaved', '已保存，刷新该网站后生效')))
       .catch((e) => {
         if (e instanceof InvalidSelectorsError) showInvalid(e.invalid);
-        else console.error('[PT] 保存站点规则失败:', e);
+        else showFailure('siteRulesSaveFailed', '保存站点规则失败', e);
       });
   });
 
@@ -230,7 +242,7 @@ export function initSiteRules(): void {
     deleteUserSiteRules(site)
       .then(() => render())
       .then(() => showToast(tf('siteRulesDeleted', '已删除，刷新该网站后生效')))
-      .catch((e) => console.error('[PT] 删除站点规则失败:', e));
+      .catch((e) => showFailure('siteRulesDeleteFailed', '删除站点失败', e));
   }
 
   function add(): void {
@@ -242,9 +254,9 @@ export function initSiteRules(): void {
         cards.get(site)?.inputs.values().next().value?.focus();
       })
       .catch((e) => {
-        // 不是裸域名（或写入失败）：标红输入框，不新增卡片
+        // 不是裸域名（或写入失败）：标红输入框并提示原因，不新增卡片
         siteInput.classList.add('pt-error');
-        console.warn('[PT] 新增站点卡片失败:', e);
+        showFailure('siteRulesAddFailed', '新增站点失败', e);
       });
   }
 
@@ -278,7 +290,7 @@ export function initSiteRules(): void {
           tf('siteRulesImported', `已导入 ${imported} 个站点，刷新网站后生效`, String(imported)),
         );
       })
-      .catch((e) => console.error('[PT] 导入站点规则失败:', e));
+      .catch((e) => showFailure('siteRulesImportFailed', '导入站点规则失败', e));
   }
 
   addBtn.addEventListener('click', add);
