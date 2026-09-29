@@ -34,20 +34,36 @@ Parallel-Translation **不收集任何个人信息**。本扩展：
 | `chrome.storage.sync` | 用户设置（语言偏好、显示模式、样式等） | 是（跟随浏览器账号） |
 | `chrome.storage.local` | 翻译缓存 | 否 |
 | `chrome.storage.local` | API 密钥（OpenAI / DeepL / Gemini） | **否（明确不参与云端同步）** |
+| `chrome.storage.local` | 领域与术语（用户新建的领域，以及对内置领域的术语和适用网址所做的修改） | 否 |
+| `chrome.storage.local` | 站点页面规则（用户为各网站添加的限定范围、排除与保留原文规则） | 否 |
 
 API 密钥以明文形式存储在 `chrome.storage.local` 中，仅用于向对应翻译服务发起 API 请求时的认证。**密钥不会随浏览器账号同步到其他设备。**
 
+领域、术语与站点页面规则同样不随浏览器账号同步。换设备时，可以在设置页把术语导出为 CSV、把站点页面规则导出为 JSON，再到另一台设备导入。卸载扩展会删除存在 `chrome.storage.local` 里的全部数据。
+
 ## 权限用途
 
-本扩展仅申请以下三项权限：
+本扩展申请以下三项权限：
 
 | 权限 | 用途 |
 |------|-----|
-| `storage` | 保存用户设置、翻译缓存与 API 密钥 |
+| `storage` | 保存用户设置、翻译缓存、API 密钥、领域与术语、站点页面规则 |
 | `unlimitedStorage` | 取消本地存储的默认配额，上千条术语与站点页面规则也能保存；数据只存在本地，不上传 |
 | `contextMenus` | 提供右键菜单中的“翻译选中文本”功能 |
 
-本扩展**不申请 `host_permissions`** —— 不对任何网站持有持续访问权限。
+另外，本扩展为翻译服务的接口地址申请 `host_permissions`（Firefox 版写在 `permissions` 里），只有下列 7 个，不对其他任何网站持有访问权限：
+
+| 地址 | 用途 |
+|------|-----|
+| `https://translate.googleapis.com/*` | Google 翻译（默认引擎，无需 API 密钥） |
+| `https://api-edge.cognitive.microsofttranslator.com/*` | Bing 翻译（无需 API 密钥） |
+| `https://edge.microsoft.com/translate/auth` | Bing 翻译获取短期访问令牌，不发送待翻译文本 |
+| `https://api.openai.com/*` | OpenAI，仅在用户填入自己的 API 密钥后使用 |
+| `https://generativelanguage.googleapis.com/*` | Gemini，仅在用户填入自己的 API 密钥后使用 |
+| `https://api.deepl.com/*` | DeepL，仅在用户填入自己的 API 密钥后使用 |
+| `https://api-free.deepl.com/*` | DeepL 免费版，仅在用户填入自己的 API 密钥后使用 |
+
+扩展只在用户选用对应引擎时向这些地址发送请求，请求里只有要翻译的文本和翻译所需的参数（例如目标语言、用户自己的 API 密钥）。
 
 内容脚本以 `content_scripts` 静态声明的方式在所有页面运行（`matches: ["<all_urls>"]`）。但它在用户主动触发翻译之前**不读取、不发送任何页面内容**：脚本加载后只注册消息监听与快捷键，页面文本的采集与外发全部发生在用户点击翻译按钮、悬浮球、段落按钮、右键菜单或按下快捷键之后。
 

@@ -8,7 +8,7 @@
 
 All data is stored locally in the browser and none of it is transmitted anywhere.
 
-storage is used for four things:
+storage is used for six things:
 
 1. User settings (chrome.storage.sync) — target language, display mode (side-by-side or translation-only), translation styling, engine priority order, keyboard shortcuts, and the site allowlist/blocklist. These must survive browser restarts and follow the user across their signed-in browsers.
 
@@ -16,7 +16,11 @@ storage is used for four things:
 
 3. Translation cache (chrome.storage.local) — translated text is cached for 30 days, so revisiting a page does not re-request the same sentences. This saves the user's API quota and reduces load on the translation service.
 
-4. One flag recording which version's release notes have already been shown, so that notice appears once and is not repeated.
+4. Domains and their terms (chrome.storage.local) — a domain is a set of term translations plus the sites it applies to. This holds the domains the user creates and the user's changes to the built-in domains' terms and sites. It stays on the device and does not sync; the user can export a domain's terms as CSV and import them elsewhere.
+
+5. Site page rules (chrome.storage.local) — per-site rules the user adds to control which parts of a page are translated: translate only these elements, skip these elements, or keep these elements as original text inside the translation. They stay on the device and do not sync; the user can export them as JSON and import them elsewhere.
+
+6. One flag recording which version's release notes have already been shown, so that notice appears once and is not repeated.
 
 No browsing history, page content, or personal information is stored. Without this permission the extension could not remember a single setting and would reset to defaults on every page load.
 
