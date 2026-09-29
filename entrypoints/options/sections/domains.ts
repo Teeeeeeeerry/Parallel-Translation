@@ -196,7 +196,8 @@ const importReports = new Map<string, string>();
 /**
  * 术语表格编辑（#393）：列为原词 / 译法 / 不翻译，可新增、修改、删除
  * 行，保存时整体替换。重复的原词、缺译法或缺原词的行标红并在表格下方
- * 说明，不写入。内置领域（#395）同样可编辑，保存到叠加层。
+ * 说明，不写入。内置领域（#395）同样可编辑，保存到叠加层。收起时只有
+ * 摘要，第一次展开时才生成表格（#509）。
  */
 function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
   const details = document.createElement('details');
@@ -207,7 +208,25 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
 
   const summary = document.createElement('summary');
   summary.textContent = tf('domainTermsSummary', `术语（${d.terms.length}）`, String(d.terms.length));
+  details.append(summary);
 
+  // #509：表格与操作按钮在第一次展开时才生成。任一领域变更都会整表重绘，
+  // 几千条术语的表格每行 4 个控件，收起时生成了也只会被丢掉
+  // 监听 open 属性而不是 toggle 事件：回调在微任务里执行，用户点开或重绘时
+  // 沿用展开状态之后、下一帧画出之前就已生成；toggle 事件异步派发，中间
+  // 可能先画出一帧空的编辑区
+  const observer = new MutationObserver(() => {
+    // 重绘时沿用展开状态、随后又被内容没变的原编辑区换下的，已不在页面上
+    if (!details.open || !details.isConnected) return;
+    observer.disconnect();
+    buildTermsTable(details, d, onGone);
+  });
+  observer.observe(details, { attributes: true, attributeFilter: ['open'] });
+  return details;
+}
+
+/** 术语编辑区展开后的内容：术语表格、错误提示、添加、保存、导出与导入（#509 起按需生成）。 */
+function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => void): void {
   const table = document.createElement('table');
   table.className = 'pt-domain-terms-table';
   const head = document.createElement('tr');
@@ -396,9 +415,8 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
   actions.className = 'pt-domain-terms-actions';
   actions.append(add, save, exportBtn, importBtn, importFile);
 
-  details.append(summary, table, error, actions);
+  details.append(table, error, actions);
   showImportReport(details);
-  return details;
 }
 
 /** 在术语编辑区下方显示最近一次导入跳过的行（#404），没有则不动。 */
