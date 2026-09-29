@@ -20,6 +20,7 @@
  * #403：TC-E2E-80 覆盖设置页导入领域术语 CSV。
  * #404：TC-E2E-81 覆盖术语 CSV 导入的错误行与 5000 条规模。
  * #509：TC-E2E-84 覆盖设置页收起的术语编辑区不拖慢重绘。
+ * #510：TC-E2E-85 覆盖设置页保存术语遇到存储空间不足时的提示。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -1004,6 +1005,41 @@ test.describe('设置页：翻译领域 @extended', () => {
     );
     expect(stored.user[0].terms[N - 1]).toEqual({ source: `term-${N - 1}`, target: '新译法' });
     await expect(big.locator('summary')).toHaveText(`术语（${N}）`);
+  });
+
+  test('TC-E2E-85: 保存术语遇到存储空间不足 → 提示可以清空缓存后重试，术语不变（#510）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [{
+            id: 'user:e2e', name: '法律', targetLang: 'zh-CN', sites: [], origin: 'user',
+            terms: [{ source: 'tort', target: '侵权' }],
+          }],
+          builtin: {},
+        },
+      }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms');
+    await terms.locator('summary').click();
+    await terms.locator('.pt-term-target').first().fill('侵权行为');
+
+    // 设置页里的存储写入报 Chrome 的配额错误
+    await page.evaluate(() => {
+      (chrome.storage.local as any).set = () => Promise.reject(new Error('QUOTA_BYTES quota exceeded'));
+    });
+    await terms.locator('.pt-domain-terms-actions .pt-btn:not(.pt-btn-secondary)').click();
+    await expect(terms.locator('.pt-domain-terms-error')).toHaveText(
+      '保存失败：存储空间不足，可以在“高级”分区点“清空缓存”后重试',
+    );
+    const stored = await serviceWorker.evaluate(
+      async () => (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any,
+    );
+    expect(stored.user[0].terms).toEqual([{ source: 'tort', target: '侵权' }]);
   });
 });
 
