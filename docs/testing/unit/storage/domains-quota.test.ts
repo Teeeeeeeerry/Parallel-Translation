@@ -26,7 +26,8 @@ beforeEach(async () => {
 describe('存储空间不足（#510）', () => {
   test.each([
     ['Chrome', new Error('QUOTA_BYTES quota exceeded')],
-    ['Firefox', new DOMException('The current transaction exceeded its quota limitations.', 'QuotaExceededError')],
+    ['Firefox', new Error('QuotaExceededError: The current transaction exceeded its quota limitations.')],
+    ['DOMException', new DOMException('Storage full', 'QuotaExceededError')],
   ])('保存术语遇到配额错误（%s）：抛 StorageQuotaError，原因提示清空翻译缓存，存储不变', async (_, quota) => {
     const before = structuredClone(localStoreSnapshot()['pt-domains']);
     vi.mocked(chrome.storage.local.set).mockRejectedValueOnce(quota);

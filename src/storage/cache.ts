@@ -10,8 +10,8 @@ import { isQuotaError } from './quota';
 const PREFIX = 'pt-c:';
 const MAX_ENTRIES = 5000;
 const INDEX_KEY = 'pt-cache-index';
-/** 缓存条目的总字节数（#510），与 index 一起写。 */
-const BYTES_KEY = 'pt-cache-bytes';
+/** index 里每条的字节数（#510），与 index 一一对应、一起写。 */
+const SIZES_KEY = 'pt-cache-sizes';
 
 /**
  * 缓存条目的总字节数上限（#510）。扩展申请了 unlimitedStorage；没有它时
@@ -94,69 +94,81 @@ function entryBytes(key: string, stored: unknown): number {
     : 0;
 }
 
-/** LRU 顺序（最旧在前）与这些条目的总字节数。 */
+/**
+ * LRU 顺序（最旧在前）与每条的字节数（#510），两者一一对应、一起读写。
+ * 总字节数每次现算，不单独累计：设置页清空缓存与后台写入不在同一条
+ * chain 上，交错时后台可能把清空前的 index 写回；逐条记大小时，写回的
+ * 那些已不存在的条目随淘汰一起扣掉，总数不会一直虚高。
+ */
 interface IndexState {
   index: string[];
-  bytes: number;
+  sizes: number[];
 }
 
 async function loadIndex(): Promise<IndexState> {
-  const r = await chrome.storage.local.get([INDEX_KEY, BYTES_KEY]);
+  const r = await chrome.storage.local.get([INDEX_KEY, SIZES_KEY]);
   const index = (r[INDEX_KEY] as string[] | undefined) ?? [];
-  let bytes = r[BYTES_KEY];
-  if (typeof bytes !== 'number') {
-    // #510 之前写入的缓存没有字节数记录：按现有条目算一次
-    const entries = index.length > 0 ? await chrome.storage.local.get(index) : {};
-    bytes = index.reduce((sum, k) => sum + entryBytes(k, entries[k]), 0);
-  }
-  return { index, bytes: bytes as number };
+  const sizes = r[SIZES_KEY];
+  if (Array.isArray(sizes) && sizes.length === index.length) return { index, sizes };
+  // #510 之前写入的缓存没有大小记录：按现有条目算一次
+  const entries = index.length > 0 ? await chrome.storage.local.get(index) : {};
+  return { index, sizes: index.map((k) => entryBytes(k, entries[k])) };
 }
 
 function saveIndex(state: IndexState): Promise<void> {
-  return chrome.storage.local.set({ [INDEX_KEY]: state.index, [BYTES_KEY]: state.bytes });
+  return chrome.storage.local.set({ [INDEX_KEY]: state.index, [SIZES_KEY]: state.sizes });
 }
 
-/** 再淘汰 evicted 条之后，条数或总字节数仍超过上限（总字节数随淘汰即时扣减）。 */
-function overLimit(state: IndexState, evicted: number): boolean {
-  return state.index.length - evicted > MAX_ENTRIES || state.bytes > CACHE_MAX_BYTES;
+/** 把 key 移到末尾（"最近使用"），大小记为 bytes。 */
+function touch(state: IndexState, key: string, bytes: number): void {
+  const at = state.index.indexOf(key);
+  if (at !== -1) {
+    state.index.splice(at, 1);
+    state.sizes.splice(at, 1);
+  }
+  state.index.push(key);
+  state.sizes.push(bytes);
 }
 
 /**
- * 从最旧的开始淘汰，直到 more(已淘汰条数) 为假；keep（刚写入或刚读到的）
- * 不淘汰。按批读出被淘汰条目的大小，从总字节数里减掉。
+ * 从最旧的开始淘汰，直到 more(剩余条数, 剩余字节数) 为假；keep（刚写入或
+ * 刚读到的）不淘汰。
  */
 async function evictOldest(
   state: IndexState,
   keep: string,
-  more: (evicted: number) => boolean,
+  more: (count: number, bytes: number) => boolean,
 ): Promise<void> {
-  const evicted: string[] = [];
-  let next = 0;
-  while (more(evicted.length)) {
-    const batch = state.index.slice(next, next + 50).filter((k) => k !== keep);
-    if (batch.length === 0) break;
-    next += 50;
-    const entries = await chrome.storage.local.get(batch);
-    for (const k of batch) {
-      if (!more(evicted.length)) break;
-      evicted.push(k);
-      state.bytes -= entryBytes(k, entries[k]);
-    }
+  let count = state.index.length;
+  let bytes = state.sizes.reduce((a, b) => a + b, 0);
+  const evicted = new Set<string>();
+  for (let i = 0; i < state.index.length && more(count, bytes); i++) {
+    const k = state.index[i]!;
+    if (k === keep) continue;
+    evicted.add(k);
+    count--;
+    bytes -= state.sizes[i]!;
   }
-  if (evicted.length === 0) return;
-  const gone = new Set(evicted);
-  state.index = state.index.filter((k) => !gone.has(k));
-  state.bytes = Math.max(0, state.bytes);
-  await chrome.storage.local.remove(evicted);
+  if (evicted.size === 0) return;
+  state.sizes = state.sizes.filter((_, i) => !evicted.has(state.index[i]!));
+  state.index = state.index.filter((k) => !evicted.has(k));
+  await chrome.storage.local.remove([...evicted]);
 }
 
-/** 将 key 移到 index 末尾（"最近使用"），必要时淘汰最旧的条目。 */
-async function refreshIndex(key: string): Promise<void> {
+/** 条数或总字节数超过上限。 */
+function overLimit(count: number, bytes: number): boolean {
+  return count > MAX_ENTRIES || bytes > CACHE_MAX_BYTES;
+}
+
+/**
+ * 命中后把 key 移到 index 末尾（"最近使用"），必要时淘汰最旧的条目。
+ * stored 是读到的条目：不在 index 里的（条目写入成功、index 没写成）
+ * 按它补上大小。
+ */
+async function refreshIndex(key: string, stored: string): Promise<void> {
   const state = await loadIndex();
-  const existing = state.index.indexOf(key);
-  if (existing !== -1) state.index.splice(existing, 1);
-  state.index.push(key);
-  await evictOldest(state, key, (n) => overLimit(state, n));
+  touch(state, key, entryBytes(key, stored));
+  await evictOldest(state, key, overLimit);
   await saveIndex(state);
 }
 
@@ -173,13 +185,13 @@ export interface CacheEntry {
   ignoresTerms: boolean;
 }
 
-/** 移除超期条目，并从 index 与总字节数里去掉（#510）。 */
-async function removeExpired(key: string, stored: string): Promise<undefined> {
+/** 移除超期条目，并从 index 里去掉，不再占字节数（#510）。 */
+async function removeExpired(key: string): Promise<undefined> {
   const state = await loadIndex();
   const at = state.index.indexOf(key);
   if (at !== -1) {
     state.index.splice(at, 1);
-    state.bytes = Math.max(0, state.bytes - entryBytes(key, stored));
+    state.sizes.splice(at, 1);
   }
   await chrome.storage.local.remove(key);
   await saveIndex(state);
@@ -207,7 +219,7 @@ export function cacheGetEntry(key: string): Promise<CacheEntry | null> {
         const parsed = JSON.parse(v) as { v?: string; t?: number; ignoresTerms?: boolean };
         if (typeof parsed.v === 'string' && typeof parsed.t === 'number') {
           if (Date.now() - parsed.t > CACHE_TTL_MS) {
-            return removeExpired(key, v);
+            return removeExpired(key);
           }
           entry = { value: parsed.v, ignoresTerms: parsed.ignoresTerms === true };
         } else {
@@ -217,7 +229,7 @@ export function cacheGetEntry(key: string): Promise<CacheEntry | null> {
         entry = { value: v, ignoresTerms: false };
       }
       // 命中 → 刷新 index 位置
-      return refreshIndex(key);
+      return refreshIndex(key, v);
     })
     .catch((e) => {
       console.warn('[PT] 缓存读取失败:', e);
@@ -246,25 +258,19 @@ export function cacheSet(
   chain = chain
     .then(async () => {
       const state = await loadIndex();
-      const prev = (await chrome.storage.local.get(key))[key];
       try {
         await chrome.storage.local.set({ [key]: stored });
       } catch (e) {
         if (!isQuotaError(e) || state.index.length === 0) throw e;
         console.warn('[PT] 缓存写入遇到存储空间不足，淘汰最旧的条目后重试:', e);
         const quarter = Math.ceil(state.index.length / 4);
-        await evictOldest(state, key, (n) => n < quarter);
+        const floor = state.index.length - quarter;
+        await evictOldest(state, key, (count) => count > floor);
         await saveIndex(state);
         await chrome.storage.local.set({ [key]: stored });
       }
-      const existing = state.index.indexOf(key);
-      if (existing !== -1) {
-        state.index.splice(existing, 1);
-        state.bytes -= entryBytes(key, prev);
-      }
-      state.index.push(key);
-      state.bytes += entryBytes(key, stored);
-      await evictOldest(state, key, (n) => overLimit(state, n));
+      touch(state, key, entryBytes(key, stored));
+      await evictOldest(state, key, overLimit);
       await saveIndex(state);
     })
     .catch((e) => {
@@ -285,7 +291,7 @@ export function cacheClear(): Promise<void> {
       if (index.length > 0) {
         await chrome.storage.local.remove(index);
       }
-      await chrome.storage.local.remove([INDEX_KEY, BYTES_KEY]);
+      await chrome.storage.local.remove([INDEX_KEY, SIZES_KEY]);
     })
     .catch(() => {});
 
