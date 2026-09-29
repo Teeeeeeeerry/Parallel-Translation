@@ -35,7 +35,7 @@ import type {
   UserSiteRules,
 } from '~/src/storage/specialization';
 import { tf } from '~/src/i18n';
-import { showToast } from '../main';
+import { showToast, downloadFile } from '../main';
 
 type Field = keyof SiteRules;
 
@@ -292,12 +292,7 @@ export function initSiteRules(): void {
   function exportJson(): void {
     exportUserSiteRules()
       .then((json) => {
-        const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'parallel-translation-site-rules.json';
-        a.click();
-        URL.revokeObjectURL(url);
+        downloadFile(json, 'parallel-translation-site-rules.json', 'application/json');
         showToast(tf('siteRulesExported', '站点规则已导出'));
       })
       .catch((e) => console.error('[PT] 导出站点规则失败:', e));
