@@ -21,6 +21,16 @@ storage is used for four things:
 No browsing history, page content, or personal information is stored. Without this permission the extension could not remember a single setting and would reset to defaults on every page load.
 
 ================================================================
+[unlimitedStorage] Justification
+================================================================
+
+Everything this permission covers stays on the device; nothing is uploaded.
+
+The extension keeps three kinds of data in chrome.storage.local: the translation cache, the user's glossary terms (a single subject domain can hold thousands of term pairs, imported from CSV), and per-site page rules. With a large glossary the default local storage quota can fill up, and saving terms or rules would then fail. unlimitedStorage removes that quota so user-created data can always be saved.
+
+The translation cache does not grow without bound: it has its own size and entry limits, and the oldest entries are removed first when either is reached. The user can clear it at any time from the settings page.
+
+================================================================
 [contextMenus] Justification
 ================================================================
 

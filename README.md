@@ -26,7 +26,7 @@ Chrome / Edge（Manifest V3）· Firefox（MV2），当前 v2.0。
 
 **更新说明与反馈入口** —— 扩展更新到上架版本后，下次打开网页会在页内弹出本版变更说明，看过一次即不再出现；内部修复版静默升级、不打扰。popup 底部可直接跳转 GitHub 提交问题。
 
-**最小权限** —— 只申请 `storage` 与 `contextMenus`；`host_permissions` 仅限七个翻译端点域名（Google/Bing 免 key 端点与 OpenAI/DeepL/Gemini BYOK 端点），不申请任意站点权限，页面数据读取仍由 <all_urls> 内容脚本按翻译功能所需注入。
+**最小权限** —— 只申请 `storage`、`unlimitedStorage`（术语与站点页面规则多时不因本地配额保存失败，数据不上传）与 `contextMenus`；`host_permissions` 仅限七个翻译端点域名（Google/Bing 免 key 端点与 OpenAI/DeepL/Gemini BYOK 端点），不申请任意站点权限，页面数据读取仍由 <all_urls> 内容脚本按翻译功能所需注入。
 
 ## 安装与开发
 

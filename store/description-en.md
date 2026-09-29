@@ -50,7 +50,7 @@ The injected interface is isolated behind Shadow DOM in both directions, so it h
 Privacy
 
 No personal data is collected. No analytics, no tracking, no remote logging.
-Only two permissions are requested: local storage and context menus. Network requests go solely to the translation service you picked, with nothing in between.
+Only three permissions are requested: local storage, unlimited local storage space (so thousands of terms can be saved; nothing is uploaded), and context menus. Network requests go solely to the translation service you picked, with nothing in between.
 API keys are stored locally, are never synced to your browser account, and are never included when you export your settings.
 The content script is present on every page, but reads and sends nothing until you actively ask for a translation.
 
