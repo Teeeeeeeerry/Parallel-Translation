@@ -33,7 +33,7 @@ import { StorageQuotaError } from '~/src/storage/quota';
 import { getSettings, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import type { Domain, Term, TermsCsvSkip } from '~/src/storage/domains';
 import { tf } from '~/src/i18n';
-import { showToast } from '../main';
+import { showToast, downloadFile } from '../main';
 
 function langLabel(code: string): string {
   return LANG_LIST.find((l) => l.code === code)?.label ?? code;
@@ -338,12 +338,11 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
   exportBtn.addEventListener('click', () => {
     exportDomainTermsCsv(d.id)
       .then((csv) => {
-        const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `parallel-translation-terms-${d.name.replace(/[\\/:*?"<>|]/g, '_')}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
+        downloadFile(
+          csv,
+          `parallel-translation-terms-${d.name.replace(/[\\/:*?"<>|]/g, '_')}.csv`,
+          'text/csv;charset=utf-8',
+        );
         showToast(tf('domainTermsExported', '术语已导出'));
       })
       .catch((e) => {

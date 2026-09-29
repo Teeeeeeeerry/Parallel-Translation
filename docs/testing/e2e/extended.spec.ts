@@ -21,6 +21,7 @@
  * #404：TC-E2E-81 覆盖术语 CSV 导入的错误行与 5000 条规模。
  * #509：TC-E2E-84 覆盖设置页收起的术语编辑区不拖慢重绘。
  * #510：TC-E2E-85 覆盖设置页保存术语遇到存储空间不足时的提示。
+ * #527：TC-E2E-78 另断言术语导出触发下载时不立即释放临时链接。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -622,11 +623,22 @@ test.describe('设置页：翻译领域 @extended', () => {
     await page.click('.pt-nav-btn[data-section="domains"]');
     const terms = page.locator('.pt-domain-item', { hasText: '法律/合同' }).locator('.pt-domain-terms');
     await terms.locator('summary').click();
+    // #527：记下被释放的临时链接。Firefox 的下载异步开始，触发下载时就释放会下载失败
+    await page.evaluate(() => {
+      const w = window as unknown as { __ptRevoked: string[] };
+      w.__ptRevoked = [];
+      const revoke = URL.revokeObjectURL.bind(URL);
+      URL.revokeObjectURL = (url: string) => {
+        w.__ptRevoked.push(url);
+        revoke(url);
+      };
+    });
 
     const [download] = await Promise.all([
       page.waitForEvent('download'),
       terms.locator('.pt-domain-terms-export').click(),
     ]);
+    expect(await page.evaluate(() => (window as unknown as { __ptRevoked: string[] }).__ptRevoked)).toEqual([]);
     // 文件名里不能出现路径分隔符
     expect(download.suggestedFilename()).toBe('parallel-translation-terms-法律_合同.csv');
     expect(fs.readFileSync(await download.path(), 'utf-8')).toBe(
