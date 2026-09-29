@@ -129,8 +129,9 @@ async function readStoredStrict(): Promise<StoredDomains> {
       | Partial<StoredDomains>
       | undefined;
   } catch (e) {
-    // 设置页的失败提示显示去掉“[PT] ”前缀的原因
-    throw new Error('[PT] 读取领域数据失败，未作改动', { cause: e });
+    // 设置页的失败提示显示去掉“[PT] ”前缀的原因。只描述读取本身：领域
+    // 列表与导出不改动数据，写入路径另外说明未作改动（#537）
+    throw new Error('[PT] 暂时读不到存储里的数据，请稍后重试', { cause: e });
   }
   const user = Array.isArray(stored?.user) ? stored.user : [];
   const builtin: Record<string, BuiltinOverlay> = {};
@@ -192,7 +193,11 @@ function updateStored<T>(
   fn: (stored: StoredDomains) => { stored: StoredDomains | null; result: T },
 ): Promise<T> {
   const readModifyWrite = async (): Promise<T> => {
-    const { stored, result } = fn(await readStoredStrict());
+    const current = await readStoredStrict().catch((e: unknown) => {
+      // 读取失败时没有写入：告诉用户领域数据没有被改坏（#537）
+      throw new Error('[PT] 读取领域数据失败，未作改动', { cause: e });
+    });
+    const { stored, result } = fn(current);
     // stored 为 null：没有改动，不写入
     if (stored) {
       await chrome.storage.local.set({ [STORAGE_KEY]: stored }).catch((e: unknown) => {

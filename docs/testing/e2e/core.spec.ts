@@ -1620,7 +1620,7 @@ test.describe('站点页面规则', () => {
     await page.click('#pt-site-rules-export-btn');
     const toast = page.locator('#pt-toast');
     // 提示文案随浏览器界面语言（CI 是英文），原因是存储模块的固定文案
-    const reason = '读取站点规则失败，未作改动';
+    const reason = '暂时读不到存储里的数据，请稍后重试';
     const msg = (key: string) =>
       page.evaluate(({ k, r }) => chrome.i18n.getMessage(k, [r]), { k: key, r: reason });
     await expect(toast).toHaveText(await msg('siteRulesExportFailed'));
@@ -1651,7 +1651,7 @@ test.describe('站点页面规则', () => {
   const listStale = (page: import('@playwright/test').Page, done: string) =>
     page.evaluate(
       ({ d, r }) => chrome.i18n.getMessage('siteRulesListStale', [d, r]),
-      { d: done, r: '读取站点规则失败，未作改动' },
+      { d: done, r: '暂时读不到存储里的数据，请稍后重试' },
     );
 
   test('@core TC-E2E-89: 导入写入成功、刷新站点卡片列表失败 → 提示同时说明导入了几个站点与列表没有刷新（#536）', async ({

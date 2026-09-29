@@ -199,8 +199,9 @@ async function readUserSiteRulesStrict(): Promise<UserSiteRules[]> {
   try {
     stored = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY];
   } catch (e) {
-    // 设置页的失败提示显示去掉“[PT] ”前缀的原因
-    throw new Error('[PT] 读取站点规则失败，未作改动', { cause: e });
+    // 设置页的失败提示显示去掉“[PT] ”前缀的原因。只描述读取本身：列表与
+    // 导出不改动数据，写入路径另外说明未作改动（#537）
+    throw new Error('[PT] 暂时读不到存储里的数据，请稍后重试', { cause: e });
   }
   return parseStored(stored);
 }
@@ -317,7 +318,11 @@ function updateUserSiteRules<T>(
   change: (user: UserSiteRules[]) => UserSiteRulesChange<T>,
 ): Promise<T> {
   const readModifyWrite = async (): Promise<T> => {
-    const { user, result } = change(await readUserSiteRulesStrict());
+    const current = await readUserSiteRulesStrict().catch((e: unknown) => {
+      // 读取失败时没有写入：告诉用户规则没有被改坏（#537）
+      throw new Error('[PT] 读取站点规则失败，未作改动', { cause: e });
+    });
+    const { user, result } = change(current);
     if (user) {
       const stored: StoredSiteRules = { user };
       await chrome.storage.local.set({ [STORAGE_KEY]: stored }).catch((e: unknown) => {

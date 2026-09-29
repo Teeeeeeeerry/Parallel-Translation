@@ -76,7 +76,9 @@ describe('术语 CSV 导出（#402）', () => {
 
   test('读取存储失败时抛错，不把内置原样内容当成导出结果', async () => {
     vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
-    await expect(exportDomainTermsCsv(BUILTIN)).rejects.toThrow('[PT] 读取领域数据失败');
+    // 导出不改动数据：原因只说读不到，不说“未作改动”（#537）
+    const err = await exportDomainTermsCsv(BUILTIN).then(() => null, (e: unknown) => e);
+    expect((err as Error).message).toBe('[PT] 暂时读不到存储里的数据，请稍后重试');
   });
 
   test('领域不存在时抛 DomainNotFoundError', async () => {
