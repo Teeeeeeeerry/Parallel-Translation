@@ -48,12 +48,74 @@ function isEffective(t: Term): boolean {
   return t.source.trim() !== '' && (t.noTranslate === true || !!t.target?.trim());
 }
 
+const WORD_CHAR_RE = new RegExp(`^${WORD_CHAR}$`, 'u');
+
+/** text 里 i 之前的一个字符（按码点，代理对算一个）；在开头时为空。 */
+function charBefore(text: string, i: number): string {
+  if (i === 0) return '';
+  const cp = text.codePointAt(i - 2);
+  return i >= 2 && cp !== undefined && cp > 0xffff ? text.slice(i - 2, i) : text[i - 1]!;
+}
+
+/** text 里从 i 开始的一个字符（按码点）；在结尾时为空。 */
+function charAt(text: string, i: number): string {
+  const cp = text.codePointAt(i);
+  return cp === undefined ? '' : String.fromCodePoint(cp);
+}
+
+/**
+ * 一条原词的匹配函数（#418）：判定与 termPattern 相同，但原词本身只用
+ * 一个不带词边界的正则找，词边界在每个出现位置单独检查。带 Unicode
+ * 属性类的整词正则每条编译要约 1 毫秒，几千条术语就是几秒。
+ */
+function termMatcher(source: string): (text: string) => boolean {
+  const chars = [...source];
+  const checkBefore = !CJK_CHAR.test(chars[0]!);
+  const checkAfter = !CJK_CHAR.test(chars[chars.length - 1]!);
+  const re = new RegExp(escapeRegExp(source), 'giu');
+  return (text) => {
+    re.lastIndex = 0;
+    for (let m = re.exec(text); m; m = re.exec(text)) {
+      const end = m.index + m[0].length;
+      if (
+        (!checkBefore || !WORD_CHAR_RE.test(charBefore(text, m.index))) &&
+        (!checkAfter || !WORD_CHAR_RE.test(charAt(text, end)))
+      ) {
+        return true;
+      }
+      // 从下一个字符接着找：重叠的出现位置（“a-a”在“xa-a-a”里）也要检查
+      re.lastIndex = m.index + charAt(text, m.index).length;
+    }
+    return false;
+  };
+}
+
+/**
+ * 每份术语表的匹配函数，按术语表对象缓存（#418）：同一领域的几千条术语
+ * 只构造一次，不按“术语 × 段落”重复构造。领域数据变了，生效领域列表是
+ * 新对象，旧的随之回收。每条术语各自匹配 —— 合并成一个正则会让重叠的
+ * 术语（“pull request”与“request”）只命中一条。
+ */
+const compiledTerms = new WeakMap<readonly Term[], { term: Term; test: (text: string) => boolean }[]>();
+
+function termMatchers(terms: readonly Term[]): { term: Term; test: (text: string) => boolean }[] {
+  let matchers = compiledTerms.get(terms);
+  if (!matchers) {
+    matchers = terms.filter(isEffective).map((term) => ({ term, test: termMatcher(term.source.trim()) }));
+    compiledTerms.set(terms, matchers);
+  }
+  return matchers;
+}
+
 /**
  * 原文里命中的术语，保持术语在领域里的顺序。无从约束译文的术语
  * （既没给译法、也没标“不翻译”）不算命中，不进缓存 key 也不发送。
+ * 调用方不得原地修改传入的术语表 —— 匹配式按术语表对象缓存。
  */
 export function matchTerms(terms: readonly Term[], text: string): Term[] {
-  return terms.filter((t) => isEffective(t) && termRegExp([t.source.trim()], 'iu').test(text));
+  return termMatchers(terms)
+    .filter(({ test }) => test(text))
+    .map(({ term }) => term);
 }
 
 /**

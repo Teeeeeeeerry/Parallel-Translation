@@ -191,7 +191,10 @@ function updateStored<T>(
   const readModifyWrite = async (): Promise<T> => {
     const { stored, result } = fn(await readStoredStrict());
     // stored 为 null：没有改动，不写入
-    if (stored) await chrome.storage.local.set({ [STORAGE_KEY]: stored });
+    if (stored) {
+      await chrome.storage.local.set({ [STORAGE_KEY]: stored });
+      invalidateCachedDomains();
+    }
     return result;
   };
   const locks = globalThis.navigator?.locks;
@@ -257,6 +260,40 @@ function effectiveDomains({ user, builtin, order }: StoredDomains): Domain[] {
  */
 export async function getEffectiveDomains(): Promise<Domain[]> {
   return effectiveDomains(await readStored());
+}
+
+/**
+ * 翻译路径用的生效领域列表（#418）：后台内存里缓存一份，不再每次翻译都读
+ * 存储。本上下文写入领域数据后、或收到任一上下文写入的变更通知
+ * （onDomainsChanged）后失效，下一次重新读取。读取失败时退回只有内置领域
+ * 内置内容的列表，这份结果不缓存，下一次重读。返回值在各次调用间共享，
+ * 调用方不得修改。
+ */
+let cachedDomains: Promise<readonly Domain[]> | null = null;
+let stopWatchingDomains: (() => void) | null = null;
+
+function invalidateCachedDomains(): void {
+  cachedDomains = null;
+  stopWatchingDomains?.();
+  stopWatchingDomains = null;
+}
+
+export async function getCachedEffectiveDomains(): Promise<readonly Domain[]> {
+  if (!cachedDomains) {
+    // 先订阅再读：读取期间发生的写入也会让这次结果失效
+    stopWatchingDomains ??= onDomainsChanged(invalidateCachedDomains);
+    const load = readStoredStrict().then(effectiveDomains);
+    cachedDomains = load;
+    load.catch(() => {
+      if (cachedDomains === load) cachedDomains = null;
+    });
+  }
+  try {
+    return await cachedDomains;
+  } catch (e) {
+    console.warn('[PT] 读取用户领域数据失败:', e);
+    return effectiveDomains({ user: [], builtin: {}, order: [] });
+  }
 }
 
 /**

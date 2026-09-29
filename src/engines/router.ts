@@ -11,7 +11,7 @@
 import { getSettings } from '~/src/storage/settings';
 import { DEFAULT_MODELS } from '~/src/storage/schema';
 import { cacheGet, cacheSet, cacheKey } from '~/src/storage/cache';
-import { getEffectiveDomains } from '~/src/storage/domains';
+import { getCachedEffectiveDomains } from '~/src/storage/domains';
 import type { Term } from '~/src/storage/domains';
 import { matchTerms, uniqueTerms, maskTerms, unmaskTerms } from './terms';
 import { googleWeb } from './google-web';
@@ -32,11 +32,12 @@ const REGISTRY: Record<string, TranslateEngine> = {
 
 /**
  * 请求里每段原文命中的术语（#380）。请求不带领域 ID、或领域已不存在
- * （例如刚被删除）时，每段都视为没有命中。
+ * （例如刚被删除）时，每段都视为没有命中。领域数据读后台内存里的缓存，
+ * 术语的匹配函数按术语表缓存（#418）。
  */
 async function termHits(req: TranslateRequest): Promise<Term[][]> {
   const domain = req.domainId
-    ? (await getEffectiveDomains()).find((d) => d.id === req.domainId)
+    ? (await getCachedEffectiveDomains()).find((d) => d.id === req.domainId)
     : undefined;
   return req.texts.map((text) => (domain ? matchTerms(domain.terms, text) : []));
 }

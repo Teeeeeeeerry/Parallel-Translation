@@ -21,7 +21,7 @@ vi.mock('~/src/storage/settings', async (importOriginal) => ({
 
 let domains: Domain[] = [];
 vi.mock('~/src/storage/domains', () => ({
-  getEffectiveDomains: vi.fn(async () => structuredClone(domains)),
+  getCachedEffectiveDomains: vi.fn(async () => structuredClone(domains)),
 }));
 
 import { route } from '~/src/engines/router';
