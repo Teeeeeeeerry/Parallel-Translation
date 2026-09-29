@@ -220,11 +220,10 @@ export function initSiteRules(): void {
   const cards = new Map<string, Card>();
 
   /**
-   * 按存储重新渲染卡片。reset 为 true 时丢弃文本框里未保存的改动（#377
+   * 按读到的站点卡片重新渲染。reset 为 true 时丢弃文本框里未保存的改动（#377
    * 导入后）—— 否则再点保存会用旧文本覆盖刚导入的选择器。
    */
-  async function render(reset = false): Promise<void> {
-    const list = await getUserSiteRules();
+  function render(list: UserSiteRules[], reset: boolean): void {
     const els = list.map((u) => {
       let card = cards.get(u.site);
       if (!card) {
@@ -264,8 +263,9 @@ export function initSiteRules(): void {
     }
     deleteUserSiteRules(site)
       .then(() => {
-        showToast(tf('siteRulesDeleted', '已删除，刷新该网站后生效'));
-        return refresh();
+        const done = tf('siteRulesDeleted', '已删除，刷新该网站后生效');
+        showToast(done);
+        return refresh(false, done);
       })
       .catch((e) => showFailure('siteRulesDeleteFailed', '删除站点失败', e));
   }
@@ -273,8 +273,10 @@ export function initSiteRules(): void {
   function add(): void {
     const site = siteInput.value.trim().toLowerCase();
     saveUserSiteRules(site, {})
-      .then(() => refresh())
-      .then(() => {
+      .then(() => refresh(false, tf('siteRulesAdded', `已新增站点“${site}”`, site)))
+      .then((ok) => {
+        // 列表没有刷新时看不到新卡片：站点名留在输入框里（#536）
+        if (!ok) return;
         siteInput.value = '';
         cards.get(site)?.inputs.values().next().value?.focus();
       })
@@ -311,8 +313,9 @@ export function initSiteRules(): void {
       .then(({ imported, skipped }) => {
         const n = String(imported);
         if (skipped.length === 0) {
-          showToast(tf('siteRulesImported', `已导入 ${n} 个站点，刷新网站后生效`, n));
-          return refresh(true);
+          const done = tf('siteRulesImported', `已导入 ${n} 个站点，刷新网站后生效`, n);
+          showToast(done);
+          return refresh(true, done);
         }
         const lines = skipped.slice(0, SKIP_LIST_MAX).map(skipLine);
         const more = String(skipped.length - SKIP_LIST_MAX);
@@ -322,11 +325,9 @@ export function initSiteRules(): void {
         importReport.textContent = lines.join('\n');
         importReport.classList.add('pt-visible');
         const m = String(skipped.length);
-        showToast(
-          tf('siteRulesImportedSkipped', `已导入 ${n} 个站点，跳过 ${m} 条，刷新网站后生效`, n, m),
-          4000,
-        );
-        return refresh(true);
+        const done = tf('siteRulesImportedSkipped', `已导入 ${n} 个站点，跳过 ${m} 条，刷新网站后生效`, n, m);
+        showToast(done, 4000);
+        return refresh(true, done);
       })
       .catch((e) => {
         if (!(e instanceof SiteRulesImportError)) {
@@ -353,15 +354,50 @@ export function initSiteRules(): void {
     if (e.key === 'Enter') add();
   });
 
+  let renderSeq = 0;
+  let latest: Promise<boolean> = Promise.resolve(true);
+  /** 要丢弃未保存改动的刷新还没生效：先发起的被后发起的取代时不丢这个要求 */
+  let resetPending = false;
+  /** 刚写入成功、还在等列表刷新的提示；刷新失败时与原因合成一条（#536） */
+  let written: string | null = null;
+
   /**
-   * 按存储重新渲染卡片，不会失败：读取失败时提示原因，已显示的卡片和未保存
-   * 的编辑保持不变（#526）。写入成功后也用它刷新 —— 读取失败不该被当成写入
-   * 失败提示，所以写入成功的提示要在它之前显示，不覆盖它的失败提示。
+   * 按存储重新渲染卡片，不会失败，返回列表是否已按最新存储刷新：读取失败时
+   * 提示原因，已显示的卡片和未保存的编辑保持不变（#526）。连续刷新时只用
+   * 最后一次读取的结果，先发起、后返回的旧读取不覆盖新列表，结果跟随最后
+   * 一次（#536）。写入成功后传入写入成功的提示 done：列表刷新失败时提示
+   * 同时说明写入已成功、列表没有刷新，而不是只剩读取失败。
    */
-  function refresh(reset = false): Promise<void> {
-    return render(reset).catch((e) =>
-      showFailure('siteRulesListFailed', '读取站点卡片列表失败', e),
+  function refresh(reset = false, done?: string): Promise<boolean> {
+    const seq = ++renderSeq;
+    resetPending ||= reset;
+    if (done !== undefined) written = done;
+    const p = getUserSiteRules().then(
+      (list) => {
+        if (seq !== renderSeq) return latest;
+        render(list, resetPending);
+        resetPending = false;
+        written = null;
+        return true;
+      },
+      (e: unknown) => {
+        if (seq !== renderSeq) return latest;
+        if (written === null) {
+          showFailure('siteRulesListFailed', '读取站点卡片列表失败', e);
+        } else {
+          console.error('[PT] 读取站点卡片列表失败:', e);
+          const reason = failReason(e);
+          showToast(
+            tf('siteRulesListStale', `${written}；站点卡片列表没有刷新：${reason}`, written, reason),
+            4000,
+          );
+          written = null;
+        }
+        return false;
+      },
     );
+    latest = p;
+    return p;
   }
 
   refresh();

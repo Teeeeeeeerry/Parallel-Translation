@@ -424,5 +424,13 @@
   "domainListFailed": {
     "message": "读取领域列表失败：$error$",
     "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesAdded": {
+    "message": "已新增站点“$site$”",
+    "placeholders": { "site": { "content": "$1" } }
+  },
+  "siteRulesListStale": {
+    "message": "$done$；站点卡片列表没有刷新：$error$",
+    "placeholders": { "done": { "content": "$1" }, "error": { "content": "$2" } }
   }
 }

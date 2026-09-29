@@ -424,5 +424,13 @@
   "domainListFailed": {
     "message": "Failed to load domain list: $error$",
     "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesAdded": {
+    "message": "Added \"$site$\".",
+    "placeholders": { "site": { "content": "$1" } }
+  },
+  "siteRulesListStale": {
+    "message": "$done$ The site rules list was not refreshed: $error$",
+    "placeholders": { "done": { "content": "$1" }, "error": { "content": "$2" } }
   }
 }
