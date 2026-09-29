@@ -368,5 +368,6 @@
   "domainTermsSkipMore": {
     "message": "$count$ more line(s) not imported",
     "placeholders": { "count": { "content": "$1" } }
-  }
+  },
+  "domainStorageFull": { "message": "Not enough storage space. Clear the cache under Advanced and try again" }
 }

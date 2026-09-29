@@ -40,6 +40,8 @@ describe('构建产物校验', () => {
     if (!manifest) return;
     expect(manifest.permissions).toContain('storage');
     expect(manifest.permissions).toContain('contextMenus');
+    // #510: 用户数据不因翻译缓存占满 storage.local 配额而保存失败
+    expect(manifest.permissions).toContain('unlimitedStorage');
     // 不应包含 host_permissions（扩展使用 activeTab 风格）
   });
 

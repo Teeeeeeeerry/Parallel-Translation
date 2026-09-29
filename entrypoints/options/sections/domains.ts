@@ -29,6 +29,7 @@ import {
   exportDomainTermsCsv,
   importDomainTermsCsv,
 } from '~/src/storage/domains';
+import { StorageQuotaError } from '~/src/storage/quota';
 import { getSettings, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import type { Domain, Term, TermsCsvSkip } from '~/src/storage/domains';
 import { tf } from '~/src/i18n';
@@ -109,8 +110,11 @@ function saveFailed(e: unknown, error: HTMLElement, onGone: () => void): void {
   error.classList.add('pt-visible');
 }
 
-/** 给用户看的失败原因：去掉内部日志用的“[PT] ”前缀。 */
+/** 给用户看的失败原因：去掉内部日志用的“[PT] ”前缀；存储空间不足时说明办法（#510）。 */
 function failReason(e: unknown): string {
+  if (e instanceof StorageQuotaError) {
+    return tf('domainStorageFull', '存储空间不足，可以在“高级”分区点“清空缓存”后重试');
+  }
   return (e instanceof Error ? e.message : String(e)).replace(/^\[PT\]\s*/, '');
 }
 

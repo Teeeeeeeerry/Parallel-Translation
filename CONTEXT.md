@@ -33,6 +33,7 @@
 - **小改动不夹带大文件**:提交内容须与提交信息描述的范围一致;测试基础设施新建 / 迁移应有独立提交并写明规格来源(#137)
 - **输出不使用 emoji 表情符号**(对话 / issue / PR / 注释一律不用;状态标记写成文字,如「通过 / 失败」)
 - **提交信息 CI 校验**(#138):fix 类提交信息须含根因箭头(「→」或「—」)与 issue 编号(#N);含 fix 提交的 PR 须 bump `package.json` 版本号。校验脚本 `.github/scripts/check-commit-conventions.sh`,PR 时自动运行,避免人工把关遗漏
+- **存储配额**(#510):扩展申请 `unlimitedStorage`;翻译缓存另按条数(5000)与总字节数(`CACHE_MAX_BYTES`,5MB)双重限额,写入遇到配额错误时先淘汰最旧的一批再重试一次。用户数据(领域、术语、站点页面规则)存 storage.local,不占 sync 配额;写入遇到配额错误时报 `StorageQuotaError`(`src/storage/quota.ts`),设置页提示可以在「高级」分区清空缓存。以后新增存进 storage.local 的数据按同一口径处理
 - **并行开发用独立 worktree**(#420):多个会话同时开发时,每个会话在自己的 git worktree 里建分支、提交、rebase;共用目录(仓库主目录)只停在 main 上,不在里面切换分支或改写历史(`switch`、`reset`、`rebase`、`commit --amend` 等)。曾有一条命令链在 `cd` 失败后继续执行,`git reset --hard` 落在了共用目录的 main 上。
   - 建立:`git -C <主目录> fetch origin && git -C <主目录> worktree add --no-track -b feat/<分支名> ../pt-<ISSUE> origin/main`(相对路径按 `-C` 指定的主目录解析,不受当前目录影响),进入后先 `pnpm install`(每个 worktree 有自己的 `node_modules` 与 `.output/`)。`--no-track` 避免新分支以 `origin/main` 为上游。
   - 合并与清理,按这个顺序:`git -C <主目录> worktree remove ../pt-<ISSUE>`(工作区须已提交并推送)→ `cd <主目录> && gh pr merge <PR> --squash --delete-branch`(主目录停在 main,gh 删本地分支时不必切换分支;在 worktree 里执行会因 main 已在主目录检出而报错)→ `gh pr view <PR> --json state` 确认为 `MERGED`,远端分支还在就 `git -C <主目录> push origin --delete feat/<分支名>`,本地分支还在就 `git -C <主目录> branch -D feat/<分支名>`(squash 合并后分支不是 main 的祖先,`-d` 会拒绝;所以必须先确认 `MERGED` 再删)→ `git -C <主目录> pull --ff-only`。合并失败时分支仍在,用 `worktree add`(不带 `-b`)重新检出即可。

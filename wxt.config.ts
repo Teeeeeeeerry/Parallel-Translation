@@ -60,7 +60,9 @@ export default defineConfig({
     default_locale: 'zh_CN',
     name: '__MSG_extName__',
     description: '__MSG_extDesc__',
-    permissions: ['storage', 'contextMenus'],
+    // #510: unlimitedStorage —— 翻译缓存与几千条术语、站点页面规则同在
+    // storage.local，没有它时总配额约 10MB，缓存占满后用户数据会保存失败
+    permissions: ['storage', 'unlimitedStorage', 'contextMenus'],
     // #180: 引擎端点显式声明 host 权限 —— 不依赖各端点 ACAO 头
     // （Google/Bing 免 key 端点与 BYOK 端点均支持，声明后 options 页
     // testConnection 对 CORS 异常端点的探测也不再静默失败）

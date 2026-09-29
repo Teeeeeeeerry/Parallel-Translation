@@ -368,5 +368,6 @@
   "domainTermsSkipMore": {
     "message": "另有 $count$ 行沒有匯入",
     "placeholders": { "count": { "content": "$1" } }
-  }
+  },
+  "domainStorageFull": { "message": "儲存空間不足，可以在「進階」分區點「清空快取」後重試" }
 }

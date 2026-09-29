@@ -14,6 +14,7 @@
 
 import { siteMatches } from '~/src/dom/site-filter';
 import { BUILTIN_DOMAINS } from './builtin-domains';
+import { isQuotaError, StorageQuotaError } from './quota';
 
 /** 术语：领域里的一条对照（原词 → 译法），或标记为「不翻译」。 */
 export interface Term {
@@ -193,7 +194,10 @@ function updateStored<T>(
     const { stored, result } = fn(await readStoredStrict());
     // stored 为 null：没有改动，不写入
     if (stored) {
-      await chrome.storage.local.set({ [STORAGE_KEY]: stored });
+      await chrome.storage.local.set({ [STORAGE_KEY]: stored }).catch((e: unknown) => {
+        // 存储空间不足（#510）：换成说得清原因与办法的错误
+        throw isQuotaError(e) ? new StorageQuotaError(e) : e;
+      });
       invalidateCachedDomains();
     }
     return result;
