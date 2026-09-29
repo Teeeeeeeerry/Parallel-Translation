@@ -420,5 +420,9 @@
   "siteRulesListFailed": {
     "message": "Failed to load site rules list: $error$",
     "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainListFailed": {
+    "message": "Failed to load domain list: $error$",
+    "placeholders": { "error": { "content": "$1" } }
   }
 }

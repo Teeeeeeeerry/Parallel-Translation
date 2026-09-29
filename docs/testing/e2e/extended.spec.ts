@@ -22,6 +22,7 @@
  * #509：TC-E2E-84 覆盖设置页收起的术语编辑区不拖慢重绘。
  * #510：TC-E2E-85 覆盖设置页保存术语遇到存储空间不足时的提示。
  * #527：TC-E2E-78 另断言术语导出触发下载时不立即释放临时链接。
+ * #535：TC-E2E-88 覆盖设置页读取领域失败时的提示。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -1052,6 +1053,62 @@ test.describe('设置页：翻译领域 @extended', () => {
       async () => (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any,
     );
     expect(stored.user[0].terms).toEqual([{ source: 'tort', target: '侵权' }]);
+  });
+
+  test('TC-E2E-88: 设置页读取领域失败 → 刷新列表提示原因，已显示的领域与未保存的术语不变；首次打开就失败时不显示只剩内置领域的列表（#535）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [{
+            id: 'user:e2e', name: '法律', targetLang: 'zh-CN', sites: [], origin: 'user',
+            terms: [{ source: 'tort', target: '侵权' }],
+          }],
+          builtin: {},
+        },
+      }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const items = page.locator('.pt-domain-item');
+    await expect(items).toHaveCount(2);
+    const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms');
+    await terms.locator('summary').click();
+    const target = terms.locator('.pt-term-target').first();
+    await target.fill('侵权行为');
+
+    // 提示文案随浏览器界面语言（CI 是英文），原因是存储模块的固定文案
+    const toast = page.locator('#pt-toast');
+    const listFailed = () =>
+      page.evaluate(() => chrome.i18n.getMessage('domainListFailed', ['读取领域数据失败，未作改动']));
+
+    // 设置页里的存储读取失败；另一上下文写入触发本页刷新列表
+    await page.evaluate(() => {
+      (chrome.storage.local as any).get = () => Promise.reject(new Error('boom'));
+    });
+    await serviceWorker.evaluate(async () => {
+      const stored = (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any;
+      stored.user.push({ id: 'user:e2e-2', name: '医学', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] });
+      await chrome.storage.local.set({ 'pt-domains': stored });
+    });
+    await expect(toast).toHaveText(await listFailed());
+    await expect(items).toHaveCount(2);
+    await expect(page.locator('.pt-domain-item', { hasText: '医学' })).toHaveCount(0);
+    await expect(terms).toHaveAttribute('open', '');
+    await expect(target).toHaveValue('侵权行为');
+
+    // 首次打开就读取失败：列表留空并提示，不显示只剩内置领域的列表
+    await page.addInitScript(() => {
+      const get = chrome.storage.local.get.bind(chrome.storage.local);
+      (chrome.storage.local as any).get = (keys: unknown) =>
+        keys === 'pt-domains' ? Promise.reject(new Error('boom')) : get(keys as any);
+    });
+    await page.reload();
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    await expect(toast).toHaveText(await listFailed());
+    await expect(items).toHaveCount(0);
   });
 });
 

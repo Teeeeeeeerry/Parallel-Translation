@@ -159,10 +159,11 @@ async function readStoredStrict(): Promise<StoredDomains> {
 }
 
 /**
- * 读取路径用：读取失败时退回空数据（只剩内置领域的内置内容）并记日志 ——
- * 存储故障不该让设置页、页面上的当前领域判定整个失败（翻译路径另见
- * getCachedEffectiveDomains，#418）。写入路径不用它
- * （#484）：把空数据当作现有数据写回会清掉用户的全部领域。
+ * 订阅生效领域列表（页面上的当前领域判定）用：读取失败时退回空数据（只剩
+ * 内置领域的内置内容）并记日志 —— 存储故障不该让整页翻译失败（翻译路径另见
+ * getCachedEffectiveDomains，#418）。写入路径不用它（#484）：把空数据当作
+ * 现有数据写回会清掉用户的全部领域。设置页的列表也不用它（#535）：只剩内置
+ * 领域的列表看起来像自建领域全没了。
  */
 async function readStored(): Promise<StoredDomains> {
   try {
@@ -261,10 +262,11 @@ function effectiveDomains({ user, builtin, order }: StoredDomains): Domain[] {
 
 /**
  * 生效领域列表 —— 内置领域（叠加用户对术语和适用网址的修改）与自建领域，
- * 按用户调整的顺序排列（#394）。调用方可随意改动返回值。
+ * 按用户调整的顺序排列（#394）。设置页据此渲染，读取失败时抛错（#535）。
+ * 调用方可随意改动返回值。
  */
 export async function getEffectiveDomains(): Promise<Domain[]> {
-  return effectiveDomains(await readStored());
+  return effectiveDomains(await readStoredStrict());
 }
 
 /**
@@ -844,6 +846,7 @@ export function onDomainsChanged(fn: () => void): () => void {
  * 生效领域列表的变更订阅（#417）：任一上下文新建、删除、修改领域后，重新
  * 读取生效领域列表交给 fn。连续变更时只交付最后一次读取的结果，先发起、
  * 后返回的旧读取不会覆盖新列表。返回取消订阅函数，取消后不再交付。
+ * 读取失败时交付只剩内置领域内置内容的列表，不抛错（#535）。
  *
  * initial 为真时（#486）订阅后立即读取一次、交付初始列表。初始读取与之后
  * 的变更读取按发起先后判定：变更读取先返回时，较早的初始读取不再交付。
@@ -857,7 +860,7 @@ export function watchEffectiveDomains(
   let active = true;
   const load = () => {
     const seq = ++latest;
-    void getEffectiveDomains().then((domains) => {
+    void readStored().then(effectiveDomains).then((domains) => {
       if (active && seq === latest) fn(domains);
     });
   };
