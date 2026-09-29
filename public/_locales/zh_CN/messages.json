@@ -385,5 +385,32 @@
   "siteRulesAddFailed": {
     "message": "新增站点失败：$error$",
     "placeholders": { "error": { "content": "$1" } }
-  }
+  },
+  "siteRulesImportedSkipped": {
+    "message": "已导入 $count$ 个站点，跳过 $skipped$ 条，刷新网站后生效",
+    "placeholders": { "count": { "content": "$1" }, "skipped": { "content": "$2" } }
+  },
+  "siteRulesSkipSite": {
+    "message": "“$site$”：站点名须为裸域名，例如 example.com",
+    "placeholders": { "site": { "content": "$1" } }
+  },
+  "siteRulesSkipEntry": {
+    "message": "“$site$”：条目格式不对",
+    "placeholders": { "site": { "content": "$1" } }
+  },
+  "siteRulesSkipList": {
+    "message": "“$site$”：“$field$”应为选择器列表",
+    "placeholders": { "site": { "content": "$1" }, "field": { "content": "$2" } }
+  },
+  "siteRulesSkipDisable": {
+    "message": "“$site$”：“$field$”应为 true 或 false",
+    "placeholders": { "site": { "content": "$1" }, "field": { "content": "$2" } }
+  },
+  "siteRulesSkipMore": {
+    "message": "另有 $count$ 条没有导入",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "siteRulesImportBadJson": { "message": "导入失败：文件不是合法的 JSON" },
+  "siteRulesImportBadFormat": { "message": "导入失败：文件不是站点规则导出文件" },
+  "siteRulesImportBadVersion": { "message": "导入失败：文件的版本号不支持，请更新扩展后再导入" }
 }

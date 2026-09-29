@@ -385,5 +385,32 @@
   "siteRulesAddFailed": {
     "message": "新增站點失敗：$error$",
     "placeholders": { "error": { "content": "$1" } }
-  }
+  },
+  "siteRulesImportedSkipped": {
+    "message": "已匯入 $count$ 個站點，略過 $skipped$ 條，重新整理網站後生效",
+    "placeholders": { "count": { "content": "$1" }, "skipped": { "content": "$2" } }
+  },
+  "siteRulesSkipSite": {
+    "message": "“$site$”：站點名須為裸網域，例如 example.com",
+    "placeholders": { "site": { "content": "$1" } }
+  },
+  "siteRulesSkipEntry": {
+    "message": "“$site$”：條目格式不對",
+    "placeholders": { "site": { "content": "$1" } }
+  },
+  "siteRulesSkipList": {
+    "message": "“$site$”：“$field$”應為選擇器列表",
+    "placeholders": { "site": { "content": "$1" }, "field": { "content": "$2" } }
+  },
+  "siteRulesSkipDisable": {
+    "message": "“$site$”：“$field$”應為 true 或 false",
+    "placeholders": { "site": { "content": "$1" }, "field": { "content": "$2" } }
+  },
+  "siteRulesSkipMore": {
+    "message": "另有 $count$ 條沒有匯入",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "siteRulesImportBadJson": { "message": "匯入失敗：檔案不是合法的 JSON" },
+  "siteRulesImportBadFormat": { "message": "匯入失敗：檔案不是站點規則匯出檔" },
+  "siteRulesImportBadVersion": { "message": "匯入失敗：檔案的版本號不支援，請更新擴充功能後再匯入" }
 }

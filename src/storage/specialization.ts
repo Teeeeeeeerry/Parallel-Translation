@@ -149,12 +149,25 @@ const SITE_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)
 /**
  * 站点卡片的站点名是否为裸域名。纯数字（如 `123`）不算（#490）：不是
  * 有效主机名，任何页面上都不会生效；导出文件以站点名为键，形如整数的
- * 键会被排到最前，打乱新增顺序。IPv4 带点，不受影响。保存、导入与读取
- * 存储都用它校验。
+ * 键会被排到最前，打乱新增顺序。IPv4 带点，不受影响。写入经 siteKey
+ * 校验，读取存储时直接用它校验、不做规范化。
  */
 function isBareSite(site: string): boolean {
   return SITE_RE.test(site) && !/^\d+$/.test(site);
 }
+
+/**
+ * 写入站点卡片时的站点名（#512）：去掉首尾空白、转成小写，再校验是否为
+ * 裸域名，不是时为 null。保存、停用开关、导入都经过它，同一个站点名从
+ * 哪个入口写入结果都相同。
+ */
+function siteKey(site: string): string | null {
+  const key = site.trim().toLowerCase();
+  return isBareSite(key) ? key : null;
+}
+
+const notBareSite = (site: string) =>
+  new Error(`[PT] 站点须为裸域名：${JSON.stringify(site)}`);
 
 const isStringList = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((x) => typeof x === 'string');
@@ -327,10 +340,8 @@ export function saveUserSiteRules(
   site: string,
   rules: Partial<SiteRules>,
 ): Promise<void> {
-  const key = site.trim().toLowerCase();
-  if (!isBareSite(key)) {
-    return Promise.reject(new Error(`[PT] 站点须为裸域名：${JSON.stringify(site)}`));
-  }
+  const key = siteKey(site);
+  if (!key) return Promise.reject(notBareSite(site));
   const invalid = findInvalidSelectors(rules);
   if (invalid.length > 0) return Promise.reject(new InvalidSelectorsError(invalid));
   const patch: Partial<SiteRules> = {};
@@ -344,10 +355,12 @@ export function saveUserSiteRules(
 /**
  * 站点卡片的“停用这个站点的内置规则”开关（#375）。打开后该站点及其子域
  * 只剩用户规则生效，主域名与兄弟子域不受影响（#467）；关闭后恢复追加
- * 合并。站点卡片不存在时新增在末尾。
+ * 合并。站点卡片不存在时新增在末尾。站点不是裸域名时抛错、不写入（#512）。
  */
 export function setBuiltinSiteRulesDisabled(site: string, disabled: boolean): Promise<void> {
-  return writeCard(site.trim().toLowerCase(), { disableBuiltin: disabled });
+  const key = siteKey(site);
+  if (!key) return Promise.reject(notBareSite(site));
+  return writeCard(key, { disableBuiltin: disabled });
 }
 
 /**
@@ -422,36 +435,111 @@ export async function exportUserSiteRules(): Promise<string> {
   return JSON.stringify(out, null, 2);
 }
 
+/**
+ * 导入时跳过的一个条目（#378）。site 是文件里写的站点名。
+ * - site：站点名不是裸域名（#490）
+ * - entry：条目不是对象
+ * - field：字段类型错误 —— 选择器字段不是字符串列表，或停用内置规则的
+ *   标记不是布尔值
+ */
+export type SiteRulesImportSkip =
+  | { site: string; reason: 'site' }
+  | { site: string; reason: 'entry' }
+  | { site: string; reason: 'field'; field: keyof ExportedSiteRules };
+
 /** 导入结果。 */
 export interface ImportSiteRulesResult {
-  /** 导入的站点数，不含站点名不是裸域名而跳过的条目 */
+  /** 导入的站点数，不含跳过的条目 */
   imported: number;
+  /** 跳过的条目，按文件里的顺序 */
+  skipped: SiteRulesImportSkip[];
+}
+
+/**
+ * 整个文件无法导入（#378）：不是合法 JSON（json）、不是站点规则导出文件
+ * （format）、版本号不支持（version）。此时不改动现有规则。
+ */
+export class SiteRulesImportError extends Error {
+  constructor(readonly reason: 'json' | 'format' | 'version') {
+    super(
+      {
+        json: '[PT] 站点规则文件不是合法的 JSON',
+        format: '[PT] 文件不是站点规则导出文件',
+        version: '[PT] 站点规则文件的版本号不支持',
+      }[reason],
+    );
+    this.name = 'SiteRulesImportError';
+  }
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** 解析导入文件，返回 sites。整个文件无法导入时抛 SiteRulesImportError。 */
+function parseImportFile(json: string): Record<string, unknown> {
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new SiteRulesImportError('json');
+  }
+  if (!isPlainObject(data) || data.format !== SITE_RULES_EXPORT_FORMAT) {
+    throw new SiteRulesImportError('format');
+  }
+  // 先认版本号再看 sites：更新版本的文件 sites 的形状可能不同
+  if (data.version !== SITE_RULES_EXPORT_VERSION) throw new SiteRulesImportError('version');
+  if (!isPlainObject(data.sites)) throw new SiteRulesImportError('format');
+  return data.sites;
+}
+
+/** 导入文件里一个条目内容的跳过原因；格式正确时为 null。缺少的字段按空处理。 */
+function entrySkip(site: string, raw: unknown): SiteRulesImportSkip | null {
+  if (!isPlainObject(raw)) return { site, reason: 'entry' };
+  const field = SITE_RULE_FIELDS.find((f) => raw[f] !== undefined && !isStringList(raw[f]));
+  if (field) return { site, reason: 'field', field };
+  if (raw.disableBuiltin !== undefined && typeof raw.disableBuiltin !== 'boolean') {
+    return { site, reason: 'field', field: 'disableBuiltin' };
+  }
+  return null;
 }
 
 /**
  * 导入 exportUserSiteRules() 导出的 JSON 文本（#377），与现有用户规则合并：
  * 新站点新增在末尾；同一站点逐字段追加并去重。停用内置规则的标记只会被
  * 导入打开，不会被导入关闭 —— 与“追加”一致，导入不削弱现有设置。选择器
- * 与保存时一样去掉首尾空白、丢弃空行。站点名与保存时走同一个裸域名校验，
- * 不通过的条目跳过（#490）。一次写入，与保存共用读-改-写串行链。
+ * 与保存时一样去掉首尾空白、丢弃空行。站点名与保存时一样规范化，规范化
+ * 后相同的条目按文件顺序合并到同一张卡片（#512）。一次写入，与保存共用
+ * 读-改-写串行链。
+ *
+ * 容错（#378）：格式不对的条目（站点名不是裸域名、条目不是对象、字段
+ * 类型错误）只跳过它自己，原因放在结果的 skipped 里；整个文件无法导入时
+ * 抛 SiteRulesImportError，不改动现有规则。无法解析的选择器照常导入，
+ * 由运行时跳过（#368）。没有可导入的条目时不写入。
  */
-export function importUserSiteRules(json: string): Promise<ImportSiteRulesResult> {
-  const { sites } = JSON.parse(json) as SiteRulesExport;
+export async function importUserSiteRules(json: string): Promise<ImportSiteRulesResult> {
+  const skipped: SiteRulesImportSkip[] = [];
+  const incoming: Array<[string, Partial<ExportedSiteRules>]> = [];
+  for (const [site, raw] of Object.entries(parseImportFile(json))) {
+    const key = siteKey(site);
+    const skip = key ? entrySkip(site, raw) : { site, reason: 'site' as const };
+    if (skip) skipped.push(skip);
+    else if (key) incoming.push([key, raw as Partial<ExportedSiteRules>]);
+  }
+  if (incoming.length === 0) return { imported: 0, skipped };
+  // 导入的站点数按规范化、合并之后的卡片计
+  const imported = new Set(incoming.map(([site]) => site)).size;
   return updateUserSiteRules((user) => {
-    let imported = 0;
-    for (const [site, rules] of Object.entries(sites)) {
-      if (!isBareSite(site)) continue;
-      imported++;
+    for (const [site, rules] of incoming) {
       let card = user.find((u) => u.site === site);
       if (!card) user.push((card = { site }));
       for (const field of SITE_RULE_FIELDS) {
-        const sels = rules[field].map((s) => s.trim()).filter(Boolean);
+        const sels = (rules[field] ?? []).map((s) => s.trim()).filter(Boolean);
         const merged = [...new Set([...(card[field] ?? []), ...sels])];
         if (merged.length > 0 || card[field]) card[field] = merged;
       }
       if (rules.disableBuiltin) card.disableBuiltin = true;
     }
-    return { user, result: { imported } };
+    return { user, result: { imported, skipped } };
   });
 }
 

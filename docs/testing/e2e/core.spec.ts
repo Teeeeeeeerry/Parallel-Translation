@@ -1482,4 +1482,51 @@ test.describe('站点页面规则', () => {
       { site: 'example.com', scope: ['main'] },
     ]);
   });
+
+  test('@core TC-E2E-82: 设置页导入站点规则 JSON 含格式错误的条目 → 只跳过这些条目并逐条列出原因；文件不是合法 JSON 时提示且规则不变（#378）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    const importFile = (name: string, text: string) =>
+      page.setInputFiles('#pt-site-rules-import-file', {
+        name,
+        mimeType: 'application/json',
+        buffer: Buffer.from(text),
+      });
+
+    await importFile('rules.json', JSON.stringify({
+      format: 'parallel-translation-site-rules',
+      version: 1,
+      sites: {
+        'example.com': { scope: [], exclude: ['.ad'], preserve: [], disableBuiltin: false },
+        'example.org': { scope: [], exclude: '.ad', preserve: [], disableBuiltin: false },
+        'http://example.net': { scope: [], exclude: [], preserve: [], disableBuiltin: false },
+      },
+    }));
+    const toast = page.locator('#pt-toast');
+    // 导入 1 个站点、跳过 2 条：先出现的是导入数
+    await expect(toast).toHaveText(/1\D+2/);
+    const report = page.locator('#pt-site-rules-import-report');
+    await expect(report).toBeVisible();
+    await expect(report).toContainText('example.org');
+    await expect(report).toContainText('http://example.net');
+    await expect(page.locator('.pt-site-rules-card')).toHaveCount(1);
+    await expect(
+      page.locator('.pt-site-rules-card', { hasText: 'example.com' }).locator('textarea[data-field="exclude"]'),
+    ).toHaveValue('.ad');
+
+    await importFile('broken.json', '{"format":');
+    await expect(toast).toContainText('JSON');
+    await expect(report).toBeHidden();
+    await expect(page.locator('.pt-site-rules-card')).toHaveCount(1);
+    const cards = await serviceWorker.evaluate(async () => {
+      const stored = (await chrome.storage.local.get('pt-site-rules'))['pt-site-rules'] as {
+        user: unknown[];
+      };
+      return stored.user;
+    });
+    expect(cards).toEqual([{ site: 'example.com', exclude: ['.ad'] }]);
+  });
 });
