@@ -30,25 +30,12 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** 一个原词的匹配式：边缘不是中日韩文字的一侧要求词边界。 */
-function termPattern(source: string): string {
-  const chars = [...source];
-  const before = CJK_CHAR.test(chars[0]!) ? '' : `(?<!${WORD_CHAR})`;
-  const after = CJK_CHAR.test(chars[chars.length - 1]!) ? '' : `(?!${WORD_CHAR})`;
-  return `${before}${escapeRegExp(source)}${after}`;
-}
-
-/** 按词边界匹配任一原词（不区分大小写；中日韩文字一侧按子串，#385）。 */
-function termRegExp(sources: readonly string[], flags: string): RegExp {
-  return new RegExp(sources.map(termPattern).join('|'), flags);
-}
-
 /** 能约束译文的术语：给了译法，或标为“不翻译”。 */
 function isEffective(t: Term): boolean {
   return t.source.trim() !== '' && (t.noTranslate === true || !!t.target?.trim());
 }
 
-/** 词内字符判定。与 termPattern 的前后断言同在不区分大小写的正则里（U+0345 这类折叠字符才一致）。 */
+/** 词内字符判定。用不区分大小写的正则（U+0345 这类折叠字符按折叠后的判定，#418）。 */
 const WORD_CHAR_RE = new RegExp(`^${WORD_CHAR}$`, 'iu');
 
 /** text 里 i 之前的一个字符（按码点，代理对算一个）；在开头时为空。 */
@@ -64,45 +51,70 @@ function charAt(text: string, i: number): string {
   return cp === undefined ? '' : String.fromCodePoint(cp);
 }
 
+/** 原词在 text 里的一处出现：[start, end)。 */
+interface Occurrence {
+  start: number;
+  end: number;
+}
+
+/** 找出从 from 起第一处符合词边界的出现；没有时为 null。 */
+type TermFinder = (text: string, from: number) => Occurrence | null;
+
 /**
- * 一条原词的匹配函数（#418）：判定与 termPattern 相同，但原词本身只用
- * 一个不带词边界的正则找，词边界在每个出现位置单独检查。带 Unicode
- * 属性类的整词正则每条编译要约 1 毫秒，几千条术语就是几秒。
+ * 一条原词的查找函数（#418）：原词本身只用一个不带词边界的正则找，
+ * 词边界在每个出现位置单独检查 —— 边缘不是中日韩文字的一侧要求前后
+ * 不是词内字符。带 Unicode 属性类的整词正则每条编译要约 1 毫秒，几千条
+ * 术语就是几秒。
  */
-function termMatcher(source: string): (text: string) => boolean {
+function termFinder(source: string): TermFinder {
   const chars = [...source];
   const checkBefore = !CJK_CHAR.test(chars[0]!);
   const checkAfter = !CJK_CHAR.test(chars[chars.length - 1]!);
   const re = new RegExp(escapeRegExp(source), 'giu');
-  return (text) => {
-    re.lastIndex = 0;
+  return (text, from) => {
+    re.lastIndex = from;
     for (let m = re.exec(text); m; m = re.exec(text)) {
       const end = m.index + m[0].length;
       if (
         (!checkBefore || !WORD_CHAR_RE.test(charBefore(text, m.index))) &&
         (!checkAfter || !WORD_CHAR_RE.test(charAt(text, end)))
       ) {
-        return true;
+        return { start: m.index, end };
       }
       // 从下一个字符接着找：重叠的出现位置（“a-a”在“xa-a-a”里）也要检查
       re.lastIndex = m.index + charAt(text, m.index).length;
     }
-    return false;
+    return null;
   };
 }
 
 /**
- * 每份术语表的匹配函数，按术语表对象缓存（#418）：同一领域的几千条术语
- * 只构造一次，不按“术语 × 段落”重复构造。领域数据变了，生效领域列表是
- * 新对象，旧的随之回收。每条术语各自匹配 —— 合并成一个正则会让重叠的
- * 术语（“pull request”与“request”）只命中一条。
+ * 每条术语的查找函数，按术语对象缓存（#524）：命中判断与占位符替换共用，
+ * 同一领域的几千条术语只构造一次，不按“术语 × 段落”重复构造。领域数据
+ * 变了，术语是新对象，旧的随之回收。
  */
-const compiledTerms = new WeakMap<readonly Term[], { term: Term; test: (text: string) => boolean }[]>();
+const finders = new WeakMap<Term, TermFinder>();
 
-function termMatchers(terms: readonly Term[]): { term: Term; test: (text: string) => boolean }[] {
+function finderOf(term: Term): TermFinder {
+  let find = finders.get(term);
+  if (!find) {
+    find = termFinder(term.source.trim());
+    finders.set(term, find);
+  }
+  return find;
+}
+
+/**
+ * 每份术语表里能约束译文的术语及其查找函数，按术语表对象缓存（#418）。
+ * 每条术语各自匹配 —— 合并成一个正则会让重叠的术语（“pull request”与
+ * “request”）只命中一条。
+ */
+const compiledTerms = new WeakMap<readonly Term[], { term: Term; find: TermFinder }[]>();
+
+function termMatchers(terms: readonly Term[]): { term: Term; find: TermFinder }[] {
   let matchers = compiledTerms.get(terms);
   if (!matchers) {
-    matchers = terms.filter(isEffective).map((term) => ({ term, test: termMatcher(term.source.trim()) }));
+    matchers = terms.filter(isEffective).map((term) => ({ term, find: finderOf(term) }));
     compiledTerms.set(terms, matchers);
   }
   return matchers;
@@ -111,11 +123,11 @@ function termMatchers(terms: readonly Term[]): { term: Term; test: (text: string
 /**
  * 原文里命中的术语，保持术语在领域里的顺序。无从约束译文的术语
  * （既没给译法、也没标“不翻译”）不算命中，不进缓存 key 也不发送。
- * 调用方不得原地修改传入的术语表 —— 匹配式按术语表对象缓存。
+ * 调用方不得原地修改传入的术语表与术语 —— 查找函数按对象缓存。
  */
 export function matchTerms(terms: readonly Term[], text: string): Term[] {
   return termMatchers(terms)
-    .filter(({ test }) => test(text))
+    .filter(({ find }) => find(text, 0) !== null)
     .map(({ term }) => term);
 }
 
@@ -139,21 +151,38 @@ export interface MaskedText {
 /**
  * 把传入的术语换成占位符（#386）。调用方决定哪些术语参与：默认只有
  * “不翻译”术语，机翻“指定译法”开关打开后也包括指定了译法的术语（#390）。
- * 多条术语重叠时长的优先（“pull request”先于“request”）。原文里本来
- * 就有占位符样式的文字时不替换 —— 回填时无法区分，编号会错乱。
+ * 多条术语重叠时先开始的优先，起点相同时长的优先（“pull request”先于
+ * “request”）。原文里本来就有占位符样式的文字时不替换 —— 回填时无法
+ * 区分，编号会错乱。
  */
 export function maskTerms(text: string, terms: readonly Term[]): MaskedText {
-  const sources = terms.map((t) => t.source.trim()).sort((a, b) => b.length - a.length);
-  if (sources.length === 0 || /⟦TM\d+⟧/.test(text)) return { text, replacements: [] };
+  const ranked = terms
+    .filter((t) => t.source.trim() !== '')
+    .sort((a, b) => b.source.trim().length - a.source.trim().length);
+  if (ranked.length === 0 || /⟦TM\d+⟧/.test(text)) return { text, replacements: [] };
+
+  // 每条术语的全部出现位置（#524，查找函数与命中判断共用），再按起点排序：
+  // 同一起点长的优先，与前一处重叠的丢掉 —— 与从左到右逐处取最长的结果相同
+  const hits: (Occurrence & { rank: number; term: Term })[] = [];
+  ranked.forEach((term, rank) => {
+    const find = finderOf(term);
+    for (let o = find(text, 0); o; o = find(text, o.start + charAt(text, o.start).length)) {
+      hits.push({ ...o, rank, term });
+    }
+  });
+  hits.sort((a, b) => a.start - b.start || a.rank - b.rank);
 
   const replacements: string[] = [];
-  const masked = text.replace(termRegExp(sources, 'giu'), (m) => {
-    const term = terms.find((t) => t.source.trim().toLowerCase() === m.toLowerCase());
+  let masked = '';
+  let cursor = 0;
+  for (const { start, end, term } of hits) {
+    if (start < cursor) continue;
     // 同时标了“不翻译”和译法时按“不翻译”处理
-    const fill = term && !term.noTranslate && term.target?.trim() ? term.target.trim() : m;
-    return `⟦TM${replacements.push(fill) - 1}⟧`;
-  });
-  return { text: masked, replacements };
+    const fill = !term.noTranslate && term.target?.trim() ? term.target.trim() : text.slice(start, end);
+    masked += `${text.slice(cursor, start)}⟦TM${replacements.push(fill) - 1}⟧`;
+    cursor = end;
+  }
+  return { text: masked + text.slice(cursor), replacements };
 }
 
 /**
