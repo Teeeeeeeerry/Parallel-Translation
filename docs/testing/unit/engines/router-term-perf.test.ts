@@ -85,9 +85,12 @@ describe('领域数据缓存在后台内存里（#418）', () => {
     vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('storage down'));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    await route({ texts: ['a tort claim'], from: 'en', to: 'zh-CN', domainId: law.id });
+    try {
+      await route({ texts: ['a tort claim'], from: 'en', to: 'zh-CN', domainId: law.id });
+    } finally {
+      warn.mockRestore();
+    }
     expect(sentTerms(0)).toBeUndefined();
-    warn.mockRestore();
 
     await route({ texts: ['another tort'], from: 'en', to: 'zh-CN', domainId: law.id });
     expect(sentTerms(1)).toEqual([{ source: 'tort', target: '侵权' }]);
@@ -117,6 +120,7 @@ describe('大量术语的匹配（#418）', () => {
     expect(sentTerms(0)).toEqual(
       Array.from({ length: 15 }, (_, i) => ({ source: `term-${i * 300}`, target: `译法 ${i * 300}` })),
     );
-    expect(elapsed).toBeLessThan(1000);
+    // 旧实现约 5 秒；留出覆盖率插桩与 CI 共享机器的余量
+    expect(elapsed).toBeLessThan(2000);
   });
 });

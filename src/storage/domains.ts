@@ -159,7 +159,8 @@ async function readStoredStrict(): Promise<StoredDomains> {
 
 /**
  * 读取路径用：读取失败时退回空数据（只剩内置领域的内置内容）并记日志 ——
- * 翻译路径每次请求都会读，存储故障不该让整次翻译失败。写入路径不用它
+ * 存储故障不该让设置页、页面上的当前领域判定整个失败（翻译路径另见
+ * getCachedEffectiveDomains，#418）。写入路径不用它
  * （#484）：把空数据当作现有数据写回会清掉用户的全部领域。
  */
 async function readStored(): Promise<StoredDomains> {

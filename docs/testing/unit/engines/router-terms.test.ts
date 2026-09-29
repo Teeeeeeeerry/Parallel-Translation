@@ -152,6 +152,16 @@ describe('术语匹配（拉丁字母整词、不区分大小写）', () => {
       await legacyKey('pull requests pile up'),
     );
   });
+
+  test('先出现在词内、后面才整词出现：仍算命中（#418）', async () => {
+    expect(await keyWritten('prices and PR', 'dev')).not.toBe(await legacyKey('prices and PR'));
+  });
+
+  test('重叠的出现位置也检查：“a-a”在“xa-a-a”里命中（#418）', async () => {
+    domains[0]!.terms = [{ source: 'a-a', noTranslate: true }];
+    expect(await keyWritten('xa-a-a', 'dev')).not.toBe(await legacyKey('xa-a-a'));
+    expect(await keyWritten('xa-a-ax', 'dev')).toBe(await legacyKey('xa-a-ax'));
+  });
 });
 
 describe('中日韩术语按子串匹配（#385）', () => {

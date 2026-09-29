@@ -48,7 +48,8 @@ function isEffective(t: Term): boolean {
   return t.source.trim() !== '' && (t.noTranslate === true || !!t.target?.trim());
 }
 
-const WORD_CHAR_RE = new RegExp(`^${WORD_CHAR}$`, 'u');
+/** 词内字符判定。与 termPattern 的前后断言同在不区分大小写的正则里（U+0345 这类折叠字符才一致）。 */
+const WORD_CHAR_RE = new RegExp(`^${WORD_CHAR}$`, 'iu');
 
 /** text 里 i 之前的一个字符（按码点，代理对算一个）；在开头时为空。 */
 function charBefore(text: string, i: number): string {
