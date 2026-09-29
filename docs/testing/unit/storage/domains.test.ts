@@ -196,12 +196,6 @@ describe('新建与删除自建领域（#391）', () => {
     expect(domains[0]!.name).toBe(dev!.name);
   });
 
-  test('读取存储失败时只剩内置领域，不抛错', async () => {
-    vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
-    const domains = await getEffectiveDomains();
-    expect(domains.map((d) => d.origin)).toEqual(['builtin']);
-  });
-
   test('领域数据变更时通知订阅者，其他键的变更不通知', () => {
     const fn = vi.fn();
     const off = onDomainsChanged(fn);

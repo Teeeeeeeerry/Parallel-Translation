@@ -3,12 +3,17 @@
  *
  * 只断言外部可观察的行为：存储读取失败时各写操作抛错、存储里原有的
  * 自建领域、叠加层与顺序保持原样，恢复读取后生效领域列表与之前一致；
- * 存储里本来没有数据时照常写入。读取路径退回只有内置领域、不抛错的
- * 用例见 domains.test.ts。
+ * 存储里本来没有数据时照常写入。
+ *
+ * 读取（#535）：设置页用的生效领域列表读取失败时抛错，不再退回只剩内置
+ * 领域的列表；翻译路径的缓存读取与订阅生效领域列表的入口仍退回只剩内置
+ * 领域的列表、不抛错。
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import {
   getEffectiveDomains,
+  getCachedEffectiveDomains,
+  watchEffectiveDomains,
   createDomain,
   deleteDomain,
   moveDomain,
@@ -18,6 +23,7 @@ import {
   DomainNotFoundError,
 } from '~/src/storage/domains';
 import { resetStorage, localStoreSnapshot } from '~/docs/testing/setup';
+import type { Domain } from '~/src/storage/domains';
 
 const BUILTIN = 'builtin:software-zh-CN';
 
@@ -77,5 +83,35 @@ describe('读取存储失败时写操作不落盘（#484）', () => {
     resetStorage();
     const med = await createDomain({ name: '医学', targetLang: 'zh-CN' });
     expect((await getEffectiveDomains()).map((d) => d.id)).toContain(med.id);
+  });
+});
+
+describe('读取存储失败时设置页的领域列表抛错，翻译路径照常（#535）', () => {
+  const origins = (list: readonly Domain[]) => list.map((d) => d.origin);
+
+  test('设置页用的列表读取抛出读取失败的错误，恢复后与之前一致', async () => {
+    const before = await getEffectiveDomains();
+    vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
+    await expect(getEffectiveDomains()).rejects.toThrow('[PT] 读取领域数据失败');
+    expect(await getEffectiveDomains()).toEqual(before);
+  });
+
+  test('存储里本来没有数据不算失败：只有内置领域', async () => {
+    resetStorage();
+    expect(origins(await getEffectiveDomains())).toEqual(['builtin']);
+  });
+
+  test('翻译路径的缓存读取失败时不抛错，只剩内置领域', async () => {
+    vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
+    expect(origins(await getCachedEffectiveDomains())).toEqual(['builtin']);
+  });
+
+  test('订阅生效领域列表的入口读取失败时不抛错，交付只剩内置领域的列表', async () => {
+    const fn = vi.fn();
+    vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
+    const off = watchEffectiveDomains(fn, { initial: true });
+    await vi.waitFor(() => expect(fn).toHaveBeenCalledTimes(1));
+    expect(origins(fn.mock.lastCall![0] as Domain[])).toEqual(['builtin']);
+    off();
   });
 });

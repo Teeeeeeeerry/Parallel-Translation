@@ -420,5 +420,9 @@
   "siteRulesListFailed": {
     "message": "讀取站點卡片列表失敗：$error$",
     "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainListFailed": {
+    "message": "讀取領域清單失敗：$error$",
+    "placeholders": { "error": { "content": "$1" } }
   }
 }
