@@ -15,6 +15,7 @@ import {
   onSettingsChanged,
 } from '~/src/storage/settings';
 import { detectOS } from '~/src/hotkeys/platform';
+import { StorageQuotaError } from '~/src/storage/quota';
 import { applyI18n, tf } from '~/src/i18n';
 import { initGeneral } from './sections/general';
 import { initEngines } from './sections/engines';
@@ -56,6 +57,19 @@ export function showToast(msg: string, duration = 2000): void {
   (el as any)._tid = setTimeout(() => {
     el.style.display = 'none';
   }, duration);
+}
+
+// ---- Failure reason ----
+
+/**
+ * 给用户看的失败原因：去掉内部日志用的“[PT] ”前缀；存储空间不足时说明
+ * 办法（#510）。设置页各分区的失败提示都用它（#528）。
+ */
+export function failReason(e: unknown): string {
+  if (e instanceof StorageQuotaError) {
+    return tf('domainStorageFull', '存储空间不足，可以在“高级”分区点“清空缓存”后重试');
+  }
+  return (e instanceof Error ? e.message : String(e)).replace(/^\[PT\]\s*/, '');
 }
 
 // ---- Download ----

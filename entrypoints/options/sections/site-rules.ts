@@ -35,7 +35,7 @@ import type {
   UserSiteRules,
 } from '~/src/storage/specialization';
 import { tf } from '~/src/i18n';
-import { showToast, downloadFile } from '../main';
+import { showToast, downloadFile, failReason } from '../main';
 
 type Field = keyof SiteRules;
 
@@ -73,11 +73,6 @@ interface Card {
 }
 
 const toText = (sels: string[] = []) => sels.join('\n');
-
-/** 给用户看的失败原因：去掉内部日志用的“[PT] ”前缀。 */
-function failReason(e: unknown): string {
-  return (e instanceof Error ? e.message : String(e)).replace(/^\[PT\]\s*/, '');
-}
 
 /** 写入失败（#508）：记日志，并提示原因 —— 例如读取存储失败时未作改动。 */
 function showFailure(key: string, fallback: string, e: unknown): void {
