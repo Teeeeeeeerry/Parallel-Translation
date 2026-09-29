@@ -1106,3 +1106,82 @@ describe('站点规则 JSON 导入容错（#378）', () => {
     expect(await options.getUserSiteRules()).toEqual([{ site: 'example.com', exclude: ['.old'] }]);
   });
 });
+
+/**
+ * #512：站点名在保存、停用开关、导入三个入口统一先去掉首尾空白、转成
+ * 小写，再校验是否为裸域名。导入时规范化后相同的条目合并到同一张卡片。
+ */
+describe('站点名统一规范化与校验（#512）', () => {
+  type Spec = typeof import('~/src/storage/specialization');
+  async function load(): Promise<Spec> {
+    vi.resetModules();
+    return import('~/src/storage/specialization');
+  }
+
+  let options: Spec;
+  beforeEach(async () => {
+    resetStorage();
+    options = await load();
+    vi.mocked(chrome.storage.local.set).mockClear();
+  });
+
+  const file = (sites: Record<string, unknown>) =>
+    JSON.stringify({ format: 'parallel-translation-site-rules', version: 1, sites });
+  const entry = (exclude: string[], disableBuiltin = false) => ({
+    scope: [],
+    exclude,
+    preserve: [],
+    disableBuiltin,
+  });
+
+  test('导入时站点名去空白、转小写，规范化后相同的条目按文件顺序合并去重', async () => {
+    const result = await options.importUserSiteRules(
+      file({ ' GitHub.com ': entry(['.a', '.b']), 'github.com': entry(['.b', '.c'], true) }),
+    );
+    expect(result).toEqual({ imported: 1, skipped: [] });
+    expect(await options.getUserSiteRules()).toEqual([
+      { site: 'github.com', exclude: ['.a', '.b', '.c'], disableBuiltin: true },
+    ]);
+  });
+
+  test('导入大小写不同的站点名，卡片站点名为小写', async () => {
+    await options.importUserSiteRules(file({ 'Example.COM': entry(['.ad']) }));
+    expect(await options.getUserSiteRules()).toEqual([{ site: 'example.com', exclude: ['.ad'] }]);
+  });
+
+  test('导入到已有卡片时按规范化后的站点名合并', async () => {
+    await options.saveUserSiteRules('example.com', { exclude: ['.a'] });
+    const result = await options.importUserSiteRules(file({ 'EXAMPLE.com': entry(['.b']) }));
+    expect(result.imported).toBe(1);
+    expect(await options.getUserSiteRules()).toEqual([{ site: 'example.com', exclude: ['.a', '.b'] }]);
+  });
+
+  test('规范化后仍不是裸域名的条目跳过，原因带上文件里的站点名', async () => {
+    const result = await options.importUserSiteRules(
+      file({ ' HTTP://Example.com ': entry(['.a']), ' 42 ': entry(['.a']) }),
+    );
+    expect(result).toEqual({
+      imported: 0,
+      skipped: [
+        { site: ' HTTP://Example.com ', reason: 'site' },
+        { site: ' 42 ', reason: 'site' },
+      ],
+    });
+  });
+
+  test('停用开关遇到不是裸域名的站点名时抛错，不写入存储', async () => {
+    for (const bad of ['123', 'http://example.com', 'example.com/path', '']) {
+      await expect(options.setBuiltinSiteRulesDisabled(bad, true)).rejects.toThrow('[PT] 站点须为裸域名');
+    }
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    expect(await options.getUserSiteRules()).toEqual([]);
+  });
+
+  test('停用开关与保存一样先规范化站点名', async () => {
+    await options.saveUserSiteRules('github.com', { exclude: ['.a'] });
+    await options.setBuiltinSiteRulesDisabled(' GitHub.COM ', true);
+    expect(await options.getUserSiteRules()).toEqual([
+      { site: 'github.com', exclude: ['.a'], disableBuiltin: true },
+    ]);
+  });
+});

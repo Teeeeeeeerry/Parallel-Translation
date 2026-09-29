@@ -149,12 +149,25 @@ const SITE_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)
 /**
  * 站点卡片的站点名是否为裸域名。纯数字（如 `123`）不算（#490）：不是
  * 有效主机名，任何页面上都不会生效；导出文件以站点名为键，形如整数的
- * 键会被排到最前，打乱新增顺序。IPv4 带点，不受影响。保存、导入与读取
- * 存储都用它校验。
+ * 键会被排到最前，打乱新增顺序。IPv4 带点，不受影响。写入经 siteKey
+ * 校验，读取存储时直接用它校验、不做规范化。
  */
 function isBareSite(site: string): boolean {
   return SITE_RE.test(site) && !/^\d+$/.test(site);
 }
+
+/**
+ * 写入站点卡片时的站点名（#512）：去掉首尾空白、转成小写，再校验是否为
+ * 裸域名，不是时为 null。保存、停用开关、导入都经过它，同一个站点名从
+ * 哪个入口写入结果都相同。
+ */
+function siteKey(site: string): string | null {
+  const key = site.trim().toLowerCase();
+  return isBareSite(key) ? key : null;
+}
+
+const notBareSite = (site: string) =>
+  new Error(`[PT] 站点须为裸域名：${JSON.stringify(site)}`);
 
 const isStringList = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((x) => typeof x === 'string');
@@ -327,10 +340,8 @@ export function saveUserSiteRules(
   site: string,
   rules: Partial<SiteRules>,
 ): Promise<void> {
-  const key = site.trim().toLowerCase();
-  if (!isBareSite(key)) {
-    return Promise.reject(new Error(`[PT] 站点须为裸域名：${JSON.stringify(site)}`));
-  }
+  const key = siteKey(site);
+  if (!key) return Promise.reject(notBareSite(site));
   const invalid = findInvalidSelectors(rules);
   if (invalid.length > 0) return Promise.reject(new InvalidSelectorsError(invalid));
   const patch: Partial<SiteRules> = {};
@@ -344,10 +355,12 @@ export function saveUserSiteRules(
 /**
  * 站点卡片的“停用这个站点的内置规则”开关（#375）。打开后该站点及其子域
  * 只剩用户规则生效，主域名与兄弟子域不受影响（#467）；关闭后恢复追加
- * 合并。站点卡片不存在时新增在末尾。
+ * 合并。站点卡片不存在时新增在末尾。站点不是裸域名时抛错、不写入（#512）。
  */
 export function setBuiltinSiteRulesDisabled(site: string, disabled: boolean): Promise<void> {
-  return writeCard(site.trim().toLowerCase(), { disableBuiltin: disabled });
+  const key = siteKey(site);
+  if (!key) return Promise.reject(notBareSite(site));
+  return writeCard(key, { disableBuiltin: disabled });
 }
 
 /**
@@ -479,9 +492,8 @@ function parseImportFile(json: string): Record<string, unknown> {
   return data.sites;
 }
 
-/** 导入文件里一个条目的跳过原因；格式正确时为 null。缺少的字段按空处理。 */
-function importSkip(site: string, raw: unknown): SiteRulesImportSkip | null {
-  if (!isBareSite(site)) return { site, reason: 'site' };
+/** 导入文件里一个条目内容的跳过原因；格式正确时为 null。缺少的字段按空处理。 */
+function entrySkip(site: string, raw: unknown): SiteRulesImportSkip | null {
   if (!isPlainObject(raw)) return { site, reason: 'entry' };
   const field = SITE_RULE_FIELDS.find((f) => raw[f] !== undefined && !isStringList(raw[f]));
   if (field) return { site, reason: 'field', field };
@@ -495,7 +507,9 @@ function importSkip(site: string, raw: unknown): SiteRulesImportSkip | null {
  * 导入 exportUserSiteRules() 导出的 JSON 文本（#377），与现有用户规则合并：
  * 新站点新增在末尾；同一站点逐字段追加并去重。停用内置规则的标记只会被
  * 导入打开，不会被导入关闭 —— 与“追加”一致，导入不削弱现有设置。选择器
- * 与保存时一样去掉首尾空白、丢弃空行。一次写入，与保存共用读-改-写串行链。
+ * 与保存时一样去掉首尾空白、丢弃空行。站点名与保存时一样规范化，规范化
+ * 后相同的条目按文件顺序合并到同一张卡片（#512）。一次写入，与保存共用
+ * 读-改-写串行链。
  *
  * 容错（#378）：格式不对的条目（站点名不是裸域名、条目不是对象、字段
  * 类型错误）只跳过它自己，原因放在结果的 skipped 里；整个文件无法导入时
@@ -506,11 +520,14 @@ export async function importUserSiteRules(json: string): Promise<ImportSiteRules
   const skipped: SiteRulesImportSkip[] = [];
   const incoming: Array<[string, Partial<ExportedSiteRules>]> = [];
   for (const [site, raw] of Object.entries(parseImportFile(json))) {
-    const skip = importSkip(site, raw);
+    const key = siteKey(site);
+    const skip = key ? entrySkip(site, raw) : { site, reason: 'site' as const };
     if (skip) skipped.push(skip);
-    else incoming.push([site, raw as Partial<ExportedSiteRules>]);
+    else if (key) incoming.push([key, raw as Partial<ExportedSiteRules>]);
   }
   if (incoming.length === 0) return { imported: 0, skipped };
+  // 导入的站点数按规范化、合并之后的卡片计
+  const imported = new Set(incoming.map(([site]) => site)).size;
   return updateUserSiteRules((user) => {
     for (const [site, rules] of incoming) {
       let card = user.find((u) => u.site === site);
@@ -522,7 +539,7 @@ export async function importUserSiteRules(json: string): Promise<ImportSiteRules
       }
       if (rules.disableBuiltin) card.disableBuiltin = true;
     }
-    return { user, result: { imported: incoming.length, skipped } };
+    return { user, result: { imported, skipped } };
   });
 }
 
