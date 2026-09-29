@@ -412,5 +412,13 @@
   },
   "siteRulesImportBadJson": { "message": "Import failed: the file is not valid JSON" },
   "siteRulesImportBadFormat": { "message": "Import failed: the file is not a site rules export" },
-  "siteRulesImportBadVersion": { "message": "Import failed: unsupported file version. Update the extension and try again." }
+  "siteRulesImportBadVersion": { "message": "Import failed: unsupported file version. Update the extension and try again." },
+  "siteRulesExportFailed": {
+    "message": "Failed to export site rules: $error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesListFailed": {
+    "message": "Failed to load site rules list: $error$",
+    "placeholders": { "error": { "content": "$1" } }
+  }
 }

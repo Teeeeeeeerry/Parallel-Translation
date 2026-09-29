@@ -412,5 +412,13 @@
   },
   "siteRulesImportBadJson": { "message": "导入失败：文件不是合法的 JSON" },
   "siteRulesImportBadFormat": { "message": "导入失败：文件不是站点规则导出文件" },
-  "siteRulesImportBadVersion": { "message": "导入失败：文件的版本号不支持，请更新扩展后再导入" }
+  "siteRulesImportBadVersion": { "message": "导入失败：文件的版本号不支持，请更新扩展后再导入" },
+  "siteRulesExportFailed": {
+    "message": "导出站点规则失败：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesListFailed": {
+    "message": "读取站点卡片列表失败：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  }
 }

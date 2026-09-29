@@ -74,7 +74,7 @@ interface Card {
 
 const toText = (sels: string[] = []) => sels.join('\n');
 
-/** 写入失败（#508）：记日志，并提示原因 —— 例如读取存储失败时未作改动。 */
+/** 写入或读取失败（#508、#526）：记日志，并提示原因 —— 例如读取存储失败时未作改动。 */
 function showFailure(key: string, fallback: string, e: unknown): void {
   console.error(`[PT] ${fallback}:`, e);
   const reason = failReason(e);
@@ -263,15 +263,17 @@ export function initSiteRules(): void {
       return;
     }
     deleteUserSiteRules(site)
-      .then(() => render())
-      .then(() => showToast(tf('siteRulesDeleted', '已删除，刷新该网站后生效')))
+      .then(() => {
+        showToast(tf('siteRulesDeleted', '已删除，刷新该网站后生效'));
+        return refresh();
+      })
       .catch((e) => showFailure('siteRulesDeleteFailed', '删除站点失败', e));
   }
 
   function add(): void {
     const site = siteInput.value.trim().toLowerCase();
     saveUserSiteRules(site, {})
-      .then(() => render())
+      .then(() => refresh())
       .then(() => {
         siteInput.value = '';
         cards.get(site)?.inputs.values().next().value?.focus();
@@ -283,14 +285,14 @@ export function initSiteRules(): void {
       });
   }
 
-  /** #376：导出全部用户规则，下载一个 JSON 文件 */
+  /** #376：导出全部用户规则，下载一个 JSON 文件。读取失败时提示原因，不下载（#526）。 */
   function exportJson(): void {
     exportUserSiteRules()
       .then((json) => {
         downloadFile(json, 'parallel-translation-site-rules.json', 'application/json');
         showToast(tf('siteRulesExported', '站点规则已导出'));
       })
-      .catch((e) => console.error('[PT] 导出站点规则失败:', e));
+      .catch((e) => showFailure('siteRulesExportFailed', '导出站点规则失败', e));
   }
 
   /**
@@ -306,12 +308,11 @@ export function initSiteRules(): void {
     file
       .text()
       .then(importUserSiteRules)
-      .then(async ({ imported, skipped }) => {
-        await render(true);
+      .then(({ imported, skipped }) => {
         const n = String(imported);
         if (skipped.length === 0) {
           showToast(tf('siteRulesImported', `已导入 ${n} 个站点，刷新网站后生效`, n));
-          return;
+          return refresh(true);
         }
         const lines = skipped.slice(0, SKIP_LIST_MAX).map(skipLine);
         const more = String(skipped.length - SKIP_LIST_MAX);
@@ -325,6 +326,7 @@ export function initSiteRules(): void {
           tf('siteRulesImportedSkipped', `已导入 ${n} 个站点，跳过 ${m} 条，刷新网站后生效`, n, m),
           4000,
         );
+        return refresh(true);
       })
       .catch((e) => {
         if (!(e instanceof SiteRulesImportError)) {
@@ -351,8 +353,18 @@ export function initSiteRules(): void {
     if (e.key === 'Enter') add();
   });
 
-  const refresh = () => render().catch((e) => console.error('[PT] 读取站点规则失败:', e));
+  /**
+   * 按存储重新渲染卡片，不会失败：读取失败时提示原因，已显示的卡片和未保存
+   * 的编辑保持不变（#526）。写入成功后也用它刷新 —— 读取失败不该被当成写入
+   * 失败提示，所以写入成功的提示要在它之前显示，不覆盖它的失败提示。
+   */
+  function refresh(reset = false): Promise<void> {
+    return render(reset).catch((e) =>
+      showFailure('siteRulesListFailed', '读取站点卡片列表失败', e),
+    );
+  }
+
   refresh();
   // 其他设置页标签页保存后同步刷新
-  onUserSiteRulesChanged(refresh);
+  onUserSiteRulesChanged(() => refresh());
 }
