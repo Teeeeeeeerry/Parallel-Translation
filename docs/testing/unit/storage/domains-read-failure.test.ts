@@ -92,7 +92,9 @@ describe('读取存储失败时设置页的领域列表抛错，翻译路径照�
   test('设置页用的列表读取抛出读取失败的错误，恢复后与之前一致', async () => {
     const before = await getEffectiveDomains();
     vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
-    await expect(getEffectiveDomains()).rejects.toThrow('[PT] 读取领域数据失败');
+    // 只读不改动数据：原因只说读不到，不说“未作改动”（#537）
+    const err = await getEffectiveDomains().then(() => null, (e: unknown) => e);
+    expect((err as Error).message).toBe('[PT] 暂时读不到存储里的数据，请稍后重试');
     expect(await getEffectiveDomains()).toEqual(before);
   });
 

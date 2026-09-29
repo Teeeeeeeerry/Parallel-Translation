@@ -44,7 +44,8 @@ describe('读取存储失败时写操作不落盘（#508）', () => {
     const snapshot = structuredClone(localStoreSnapshot());
 
     vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
-    await expect(write()).rejects.toThrow('[PT] 读取站点规则失败，未作改动');
+    const err = await write().then(() => null, (e: unknown) => e);
+    expect((err as Error).message).toBe('[PT] 读取站点规则失败，未作改动');
 
     expect(chrome.storage.local.set).not.toHaveBeenCalled();
     expect(localStoreSnapshot()).toEqual(snapshot);
@@ -94,7 +95,9 @@ describe('读取存储失败时设置页的读取报错（#526）', () => {
     const before = await read();
 
     vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
-    await expect(read()).rejects.toThrow('[PT] 读取站点规则失败');
+    // 只读不改动数据：原因只说读不到，不说“未作改动”（#537）
+    const err = await read().then(() => null, (e: unknown) => e);
+    expect((err as Error).message).toBe('[PT] 暂时读不到存储里的数据，请稍后重试');
 
     expect(await read()).toEqual(before);
   });

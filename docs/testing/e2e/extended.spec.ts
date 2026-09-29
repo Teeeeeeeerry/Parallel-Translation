@@ -1082,7 +1082,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     // 提示文案随浏览器界面语言（CI 是英文），原因是存储模块的固定文案
     const toast = page.locator('#pt-toast');
     const listFailed = () =>
-      page.evaluate(() => chrome.i18n.getMessage('domainListFailed', ['读取领域数据失败，未作改动']));
+      page.evaluate(() => chrome.i18n.getMessage('domainListFailed', ['暂时读不到存储里的数据，请稍后重试']));
 
     // 设置页里的存储读取失败；另一上下文写入触发本页刷新列表
     await page.evaluate(() => {
