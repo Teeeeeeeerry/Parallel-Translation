@@ -207,7 +207,30 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
 
   const summary = document.createElement('summary');
   summary.textContent = tf('domainTermsSummary', `术语（${d.terms.length}）`, String(d.terms.length));
+  details.append(summary);
 
+  // #509：表格与操作按钮在第一次展开时才生成。任一领域变更都会整表重绘，
+  // 几千条术语的表格每行 4 个控件，收起时生成了也只会被丢掉
+  let built = false;
+  const build = (): void => {
+    if (built) return;
+    built = true;
+    buildTermsTable(details, d, onGone);
+  };
+  // 用户点开（鼠标或键盘）：在展开前同步生成，展开后内容立即可用；
+  // toggle 事件异步派发，只用来兜底重绘时沿用的展开状态
+  summary.addEventListener('click', () => {
+    if (!details.open) build();
+  });
+  details.addEventListener('toggle', () => {
+    // 重绘时沿用展开状态、随后又被内容没变的原编辑区换下的，已不在页面上
+    if (details.open && details.isConnected) build();
+  });
+  return details;
+}
+
+/** 术语编辑区展开后的内容：术语表格、错误提示、添加、保存、导出与导入（#509 起按需生成）。 */
+function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => void): void {
   const table = document.createElement('table');
   table.className = 'pt-domain-terms-table';
   const head = document.createElement('tr');
@@ -396,9 +419,8 @@ function termsEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
   actions.className = 'pt-domain-terms-actions';
   actions.append(add, save, exportBtn, importBtn, importFile);
 
-  details.append(summary, table, error, actions);
+  details.append(table, error, actions);
   showImportReport(details);
-  return details;
 }
 
 /** 在术语编辑区下方显示最近一次导入跳过的行（#404），没有则不动。 */

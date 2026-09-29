@@ -19,6 +19,7 @@
  * #401：TC-E2E-79 覆盖 popup 勾选“以后在此站点都使用”。
  * #403：TC-E2E-80 覆盖设置页导入领域术语 CSV。
  * #404：TC-E2E-81 覆盖术语 CSV 导入的错误行与 5000 条规模。
+ * #509：TC-E2E-84 覆盖设置页收起的术语编辑区不拖慢重绘。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -949,6 +950,60 @@ test.describe('设置页：翻译领域 @extended', () => {
     expect(await overlay()).toBeNull();
     // 焦点交还给同一领域的移动按钮
     await expect(builtin.locator(':scope > .pt-domain-move:focus')).toHaveCount(1);
+  });
+
+  test('TC-E2E-84: 5000 条术语的领域收起时，别的领域上移、下移在限定时间内完成；展开后看到全部术语并能保存（#509）', async ({
+    page, serviceWorker,
+  }) => {
+    const N = 5000;
+    await serviceWorker.evaluate((n) =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [
+            {
+              id: 'user:big', name: '大术语表', targetLang: 'zh-CN', sites: [], origin: 'user',
+              terms: Array.from({ length: n }, (_, i) => ({ source: `term-${i}`, target: `译法 ${i}` })),
+            },
+            { id: 'user:small', name: '小领域', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] },
+          ],
+          builtin: {},
+        },
+      }), N);
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const names = page.locator('.pt-domain-item .pt-domain-name');
+    await expect(names).toHaveText(['软件开发(简体中文)', '大术语表', '小领域']);
+    const big = page.locator('.pt-domain-item', { hasText: '大术语表' }).locator('.pt-domain-terms');
+    await expect(big.locator('summary')).toHaveText(`术语（${N}）`);
+
+    // 收起状态下调整另一个领域的顺序：每次都整表重绘
+    const small = () => page.locator('.pt-domain-item', { hasText: '小领域' });
+    const start = Date.now();
+    await small().locator(':scope > .pt-domain-move[data-direction="up"]').click();
+    await expect(names).toHaveText(['软件开发(简体中文)', '小领域', '大术语表']);
+    await small().locator(':scope > .pt-domain-move[data-direction="up"]').click();
+    await expect(names).toHaveText(['小领域', '软件开发(简体中文)', '大术语表']);
+    await small().locator(':scope > .pt-domain-move[data-direction="down"]').click();
+    await expect(names).toHaveText(['软件开发(简体中文)', '小领域', '大术语表']);
+    await small().locator(':scope > .pt-domain-move[data-direction="down"]').click();
+    await expect(names).toHaveText(['软件开发(简体中文)', '大术语表', '小领域']);
+    const elapsed = Date.now() - start;
+    console.log(`TC-E2E-84 四次调整顺序耗时 ${elapsed}ms`);
+    expect(elapsed).toBeLessThan(1200);
+
+    // 展开：看到全部术语，改一条并保存
+    await big.locator('summary').click();
+    const rows = big.locator('tbody tr');
+    await expect(rows).toHaveCount(N);
+    await rows.nth(N - 1).locator('input').nth(1).fill('新译法');
+    await big.locator('.pt-domain-terms-actions .pt-btn:not(.pt-btn-secondary)').click();
+    await expect(page.locator('#pt-toast')).toHaveText('已保存术语');
+    const stored = await serviceWorker.evaluate(
+      async () => (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any,
+    );
+    expect(stored.user[0].terms[N - 1]).toEqual({ source: `term-${N - 1}`, target: '新译法' });
+    await expect(big.locator('summary')).toHaveText(`术语（${N}）`);
   });
 });
 
