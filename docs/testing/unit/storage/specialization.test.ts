@@ -1001,3 +1001,108 @@ describe('用户规则的写入（#493）', () => {
     expect(chrome.storage.local.set).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * #378：导入容错。条目格式不对（不是对象、字段类型错误、站点名不是裸域名）
+ * 时只跳过该条目，结果里逐条带上跳过原因；文件整体不是合法 JSON、不是
+ * 站点规则导出文件或版本号不支持时整次导入失败，现有规则不变。无效
+ * 选择器不在导入时拦截，交给运行时容错（#368）。
+ */
+describe('站点规则 JSON 导入容错（#378）', () => {
+  type Spec = typeof import('~/src/storage/specialization');
+  async function load(): Promise<Spec> {
+    vi.resetModules();
+    return import('~/src/storage/specialization');
+  }
+
+  let options: Spec;
+  beforeEach(async () => {
+    resetStorage();
+    options = await load();
+    await options.saveUserSiteRules('example.com', { exclude: ['.old'] });
+    vi.mocked(chrome.storage.local.set).mockClear();
+  });
+
+  const file = (sites: unknown, head: Record<string, unknown> = {}) =>
+    JSON.stringify({ format: 'parallel-translation-site-rules', version: 1, ...head, sites });
+  const entry = (patch: Record<string, unknown> = {}) => ({
+    scope: [],
+    exclude: ['.ad'],
+    preserve: [],
+    disableBuiltin: false,
+    ...patch,
+  });
+
+  test('字段类型错误的条目只跳过它自己，逐条带上原因，其他条目照常导入', async () => {
+    const result = await options.importUserSiteRules(
+      file({
+        'a.com': entry({ exclude: '.ad' }),
+        'b.com': entry({ preserve: ['code', 1] }),
+        'c.com': entry({ scope: null }),
+        'd.com': entry({ disableBuiltin: 'yes' }),
+        'e.com': null,
+        'f.com': ['.ad'],
+        'http://g.com': entry(),
+        'example.org': entry(),
+      }),
+    );
+    expect(result).toEqual({
+      imported: 1,
+      skipped: [
+        { site: 'a.com', reason: 'field', field: 'exclude' },
+        { site: 'b.com', reason: 'field', field: 'preserve' },
+        { site: 'c.com', reason: 'field', field: 'scope' },
+        { site: 'd.com', reason: 'field', field: 'disableBuiltin' },
+        { site: 'e.com', reason: 'entry' },
+        { site: 'f.com', reason: 'entry' },
+        { site: 'http://g.com', reason: 'site' },
+      ],
+    });
+    expect((await options.getUserSiteRules()).map((u) => u.site)).toEqual([
+      'example.com',
+      'example.org',
+    ]);
+  });
+
+  test('条目缺少的字段按空处理，不算格式错误', async () => {
+    const result = await options.importUserSiteRules(file({ 'example.org': { exclude: ['.ad'] } }));
+    expect(result).toEqual({ imported: 1, skipped: [] });
+    expect((await options.getUserSiteRules())[1]).toEqual({ site: 'example.org', exclude: ['.ad'] });
+  });
+
+  test('无法解析的选择器不在导入时拦截，照常导入，运行时跳过', async () => {
+    const result = await options.importUserSiteRules(file({ 'example.org': entry({ exclude: ['a[', '.ad'] }) }));
+    expect(result).toEqual({ imported: 1, skipped: [] });
+    expect((await options.getUserSiteRules())[1]!.exclude).toEqual(['a[', '.ad']);
+    expect(options.getSiteRules('example.org').exclude).toEqual(['.ad']);
+  });
+
+  test('条目全部被跳过时不写入存储', async () => {
+    const result = await options.importUserSiteRules(file({ '123': entry() }));
+    expect(result).toEqual({ imported: 0, skipped: [{ site: '123', reason: 'site' }] });
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+  });
+
+  const broken: [string, string, string][] = [
+    ['不是合法 JSON', '{"format":', 'json'],
+    ['空文件', '', 'json'],
+    ['顶层不是对象', '[]', 'format'],
+    ['格式标识不对', file({}, { format: 'parallel-translation-settings' }), 'format'],
+    ['缺少格式标识', JSON.stringify({ version: 1, sites: {} }), 'format'],
+    ['sites 不是对象', file(['example.org']), 'format'],
+    ['缺少 sites', JSON.stringify({ format: 'parallel-translation-site-rules', version: 1 }), 'format'],
+    ['版本号更新', file({ 'example.org': entry() }, { version: 2 }), 'version'],
+    ['版本号不是数字', file({ 'example.org': entry() }, { version: '1' }), 'version'],
+  ];
+
+  test.each(broken)('%s → 整次导入失败，现有规则不变', async (_, json, reason) => {
+    const err = await options.importUserSiteRules(json).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(options.SiteRulesImportError);
+    expect((err as InstanceType<Spec['SiteRulesImportError']>).reason).toBe(reason);
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    expect(await options.getUserSiteRules()).toEqual([{ site: 'example.com', exclude: ['.old'] }]);
+  });
+});

@@ -12,7 +12,8 @@
 // 校验（#443）：导入等途径带进的无效行照样标出。删除卡片（#371）前先确认，
 // 删除后该站点只剩内置规则生效。有内置规则的站点，卡片上显示“停用这个
 // 站点的内置规则”开关（#375），点击即保存。全部用户规则可导出为 JSON
-// 文件（#376），用于备份和迁移；导入的文件与现有用户规则合并（#377）。
+// 文件（#376），用于备份和迁移；导入的文件与现有用户规则合并（#377），
+// 格式不对的条目跳过，逐条列出原因（#378）。
 
 import {
   getUserSiteRules,
@@ -25,8 +26,14 @@ import {
   importUserSiteRules,
   findInvalidSelectors,
   InvalidSelectorsError,
+  SiteRulesImportError,
 } from '~/src/storage/specialization';
-import type { InvalidSelector, SiteRules, UserSiteRules } from '~/src/storage/specialization';
+import type {
+  InvalidSelector,
+  SiteRules,
+  SiteRulesImportSkip,
+  UserSiteRules,
+} from '~/src/storage/specialization';
 import { tf } from '~/src/i18n';
 import { showToast } from '../main';
 
@@ -77,6 +84,26 @@ function showFailure(key: string, fallback: string, e: unknown): void {
   console.error(`[PT] ${fallback}:`, e);
   const reason = failReason(e);
   showToast(tf(key, `${fallback}：${reason}`, reason), 4000);
+}
+
+/** 导入报告最多逐条列出的跳过条目数，其余合并成一行（#378）。 */
+const SKIP_LIST_MAX = 20;
+
+/** 导入时跳过的一个条目，给用户看的原因（#378）。 */
+function skipLine(skip: SiteRulesImportSkip): string {
+  const { site } = skip;
+  if (skip.reason === 'site') {
+    return tf('siteRulesSkipSite', `“${site}”：站点名须为裸域名，例如 example.com`, site);
+  }
+  if (skip.reason === 'entry') {
+    return tf('siteRulesSkipEntry', `“${site}”：条目格式不对`, site);
+  }
+  if (skip.field === 'disableBuiltin') {
+    const label = tf('siteRulesDisableBuiltin', '停用这个站点的内置规则');
+    return tf('siteRulesSkipDisable', `“${site}”：“${label}”应为 true 或 false`, site, label);
+  }
+  const label = fieldDefs().find((d) => d.field === skip.field)!.label;
+  return tf('siteRulesSkipList', `“${site}”：“${label}”应为选择器列表`, site, label);
 }
 
 /**
@@ -192,6 +219,7 @@ export function initSiteRules(): void {
   const exportBtn = document.getElementById('pt-site-rules-export-btn')!;
   const importBtn = document.getElementById('pt-site-rules-import-btn')!;
   const importFile = document.getElementById('pt-site-rules-import-file') as HTMLInputElement;
+  const importReport = document.getElementById('pt-site-rules-import-report')!;
 
   /** 已渲染的卡片，按站点复用 —— 保存一张卡片时，其他卡片未保存的改动不丢 */
   const cards = new Map<string, Card>();
@@ -275,22 +303,53 @@ export function initSiteRules(): void {
       .catch((e) => console.error('[PT] 导出站点规则失败:', e));
   }
 
-  /** #377：导入 JSON 文件，与现有用户规则合并后重新渲染卡片 */
+  /**
+   * #377：导入 JSON 文件，与现有用户规则合并后重新渲染卡片。#378：跳过的
+   * 条目逐条列出原因；整个文件无法导入时提示原因，现有规则不变。
+   */
   function importJson(): void {
     const file = importFile.files?.[0];
     // 清空选择：再次选同一个文件也会触发 change
     importFile.value = '';
     if (!file) return;
+    importReport.classList.remove('pt-visible');
     file
       .text()
       .then(importUserSiteRules)
-      .then(async ({ imported }) => {
+      .then(async ({ imported, skipped }) => {
         await render(true);
+        const n = String(imported);
+        if (skipped.length === 0) {
+          showToast(tf('siteRulesImported', `已导入 ${n} 个站点，刷新网站后生效`, n));
+          return;
+        }
+        const lines = skipped.slice(0, SKIP_LIST_MAX).map(skipLine);
+        const more = String(skipped.length - SKIP_LIST_MAX);
+        if (skipped.length > SKIP_LIST_MAX) {
+          lines.push(tf('siteRulesSkipMore', `另有 ${more} 条没有导入`, more));
+        }
+        importReport.textContent = lines.join('\n');
+        importReport.classList.add('pt-visible');
+        const m = String(skipped.length);
         showToast(
-          tf('siteRulesImported', `已导入 ${imported} 个站点，刷新网站后生效`, String(imported)),
+          tf('siteRulesImportedSkipped', `已导入 ${n} 个站点，跳过 ${m} 条，刷新网站后生效`, n, m),
+          4000,
         );
       })
-      .catch((e) => showFailure('siteRulesImportFailed', '导入站点规则失败', e));
+      .catch((e) => {
+        if (!(e instanceof SiteRulesImportError)) {
+          showFailure('siteRulesImportFailed', '导入站点规则失败', e);
+          return;
+        }
+        // 整个文件无法导入（#378）：提示具体原因
+        console.error('[PT] 导入站点规则失败:', e);
+        const msg = {
+          json: tf('siteRulesImportBadJson', '导入失败：文件不是合法的 JSON'),
+          format: tf('siteRulesImportBadFormat', '导入失败：文件不是站点规则导出文件'),
+          version: tf('siteRulesImportBadVersion', '导入失败：文件的版本号不支持，请更新扩展后再导入'),
+        }[e.reason];
+        showToast(msg, 4000);
+      });
   }
 
   addBtn.addEventListener('click', add);

@@ -385,5 +385,32 @@
   "siteRulesAddFailed": {
     "message": "Failed to add site: $error$",
     "placeholders": { "error": { "content": "$1" } }
-  }
+  },
+  "siteRulesImportedSkipped": {
+    "message": "Imported $count$ site(s), skipped $skipped$. Reload the site to apply.",
+    "placeholders": { "count": { "content": "$1" }, "skipped": { "content": "$2" } }
+  },
+  "siteRulesSkipSite": {
+    "message": "\"$site$\": site must be a bare domain, e.g. example.com",
+    "placeholders": { "site": { "content": "$1" } }
+  },
+  "siteRulesSkipEntry": {
+    "message": "\"$site$\": invalid entry",
+    "placeholders": { "site": { "content": "$1" } }
+  },
+  "siteRulesSkipList": {
+    "message": "\"$site$\": \"$field$\" must be a list of selectors",
+    "placeholders": { "site": { "content": "$1" }, "field": { "content": "$2" } }
+  },
+  "siteRulesSkipDisable": {
+    "message": "\"$site$\": \"$field$\" must be true or false",
+    "placeholders": { "site": { "content": "$1" }, "field": { "content": "$2" } }
+  },
+  "siteRulesSkipMore": {
+    "message": "$count$ more not imported",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "siteRulesImportBadJson": { "message": "Import failed: the file is not valid JSON" },
+  "siteRulesImportBadFormat": { "message": "Import failed: the file is not a site rules export" },
+  "siteRulesImportBadVersion": { "message": "Import failed: unsupported file version. Update the extension and try again." }
 }
