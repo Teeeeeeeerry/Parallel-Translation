@@ -272,13 +272,13 @@
   "domainCardMt": { "message": "機翻引擎" },
   "domainMtTermTargets": { "message": "機翻引擎套用指定譯法的術語" },
   "domainMtTermTargetsDesc": { "message": "AI 引擎（OpenAI、Gemini）會把命中的術語寫進請求，指定的譯法和「不翻譯」都會生效。機翻引擎（Google、Bing、DeepL）預設只處理「不翻譯」術語，原詞原樣保留在譯文裡；開啟此開關後，指定了譯法的術語也會直接替換為指定譯法，但不會隨上下文變形，句子可能讀起來不夠通順。" },
-  "siteRulesDelete": { "message": "刪除站點" },
+  "siteRulesDelete": { "message": "刪除網站" },
   "siteRulesDeleteConfirm": {
-    "message": "確定刪除站點「$site$」的規則嗎？刪除後該站點只剩內建規則生效。",
+    "message": "確定刪除網站「$site$」的規則嗎？刪除後該網站只剩內建規則生效。",
     "placeholders": { "site": { "content": "$1" } }
   },
   "siteRulesDeleted": { "message": "已刪除，重新整理該網站後生效" },
-  "siteRulesDisableBuiltin": { "message": "停用這個站點的內建規則" },
+  "siteRulesDisableBuiltin": { "message": "停用這個網站的內建規則" },
   "domainCreateFailed": {
     "message": "新增領域失敗：$error$",
     "placeholders": { "error": { "content": "$1" } }
@@ -305,10 +305,10 @@
   },
   "siteRulesCardBackup": { "message": "備份與遷移" },
   "siteRulesExport": { "message": "匯出 JSON" },
-  "siteRulesExported": { "message": "站點規則已匯出" },
+  "siteRulesExported": { "message": "網站規則已匯出" },
   "siteRulesImport": { "message": "匯入 JSON" },
   "siteRulesImported": {
-    "message": "已匯入 $count$ 個站點，重新整理網站後生效",
+    "message": "已匯入 $count$ 個網站，重新整理網站後生效",
     "placeholders": { "count": { "content": "$1" } }
   },
   "domainPopupAuto": {
@@ -371,27 +371,27 @@
   },
   "domainStorageFull": { "message": "儲存空間不足，可以在「進階」分區點「清空快取」後重試" },
   "siteRulesSaveFailed": {
-    "message": "儲存站點規則失敗：$error$",
+    "message": "儲存網站規則失敗：$error$",
     "placeholders": { "error": { "content": "$1" } }
   },
   "siteRulesDeleteFailed": {
-    "message": "刪除站點失敗：$error$",
+    "message": "刪除網站失敗：$error$",
     "placeholders": { "error": { "content": "$1" } }
   },
   "siteRulesImportFailed": {
-    "message": "匯入站點規則失敗：$error$",
+    "message": "匯入網站規則失敗：$error$",
     "placeholders": { "error": { "content": "$1" } }
   },
   "siteRulesAddFailed": {
-    "message": "新增站點失敗：$error$",
+    "message": "新增網站失敗：$error$",
     "placeholders": { "error": { "content": "$1" } }
   },
   "siteRulesImportedSkipped": {
-    "message": "已匯入 $count$ 個站點，略過 $skipped$ 條，重新整理網站後生效",
+    "message": "已匯入 $count$ 個網站，略過 $skipped$ 條，重新整理網站後生效",
     "placeholders": { "count": { "content": "$1" }, "skipped": { "content": "$2" } }
   },
   "siteRulesSkipSite": {
-    "message": "“$site$”：站點名須為裸網域，例如 example.com",
+    "message": "“$site$”：網站名須為裸網域，例如 example.com",
     "placeholders": { "site": { "content": "$1" } }
   },
   "siteRulesSkipEntry": {
@@ -411,14 +411,14 @@
     "placeholders": { "count": { "content": "$1" } }
   },
   "siteRulesImportBadJson": { "message": "匯入失敗：檔案不是合法的 JSON" },
-  "siteRulesImportBadFormat": { "message": "匯入失敗：檔案不是站點規則匯出檔" },
+  "siteRulesImportBadFormat": { "message": "匯入失敗：檔案不是網站規則匯出檔" },
   "siteRulesImportBadVersion": { "message": "匯入失敗：檔案的版本號不支援，請更新擴充功能後再匯入" },
   "siteRulesExportFailed": {
-    "message": "匯出站點規則失敗：$error$",
+    "message": "匯出網站規則失敗：$error$",
     "placeholders": { "error": { "content": "$1" } }
   },
   "siteRulesListFailed": {
-    "message": "讀取站點卡片列表失敗：$error$",
+    "message": "讀取網站卡片列表失敗：$error$",
     "placeholders": { "error": { "content": "$1" } }
   },
   "domainListFailed": {
