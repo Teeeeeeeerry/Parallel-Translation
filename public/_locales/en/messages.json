@@ -369,5 +369,21 @@
     "message": "$count$ more line(s) not imported",
     "placeholders": { "count": { "content": "$1" } }
   },
-  "domainStorageFull": { "message": "not enough storage space. Click \"Clear cache\" under Advanced, then try again" }
+  "domainStorageFull": { "message": "not enough storage space. Click \"Clear cache\" under Advanced, then try again" },
+  "siteRulesSaveFailed": {
+    "message": "Failed to save site rules: $error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesDeleteFailed": {
+    "message": "Failed to delete site: $error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesImportFailed": {
+    "message": "Failed to import site rules: $error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesAddFailed": {
+    "message": "Failed to add site: $error$",
+    "placeholders": { "error": { "content": "$1" } }
+  }
 }

@@ -369,5 +369,21 @@
     "message": "另有 $count$ 行没有导入",
     "placeholders": { "count": { "content": "$1" } }
   },
-  "domainStorageFull": { "message": "存储空间不足，可以在“高级”分区点“清空缓存”后重试" }
+  "domainStorageFull": { "message": "存储空间不足，可以在“高级”分区点“清空缓存”后重试" },
+  "siteRulesSaveFailed": {
+    "message": "保存站点规则失败：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesDeleteFailed": {
+    "message": "删除站点失败：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesImportFailed": {
+    "message": "导入站点规则失败：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesAddFailed": {
+    "message": "新增站点失败：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  }
 }

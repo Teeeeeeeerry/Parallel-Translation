@@ -177,12 +177,28 @@ function parseStored(stored: unknown): UserSiteRules[] {
 }
 
 /**
- * 读取用户规则。读取失败时退回空列表（只剩内置规则）并记日志 ——
- * 存储故障不该让整页翻译失败。
+ * 读取用户规则，读取失败时抛错。存储里还没有数据（首次使用）不算失败，
+ * 得到空列表。形状不对的卡片跳过。
+ */
+async function readUserSiteRulesStrict(): Promise<UserSiteRules[]> {
+  let stored: unknown;
+  try {
+    stored = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY];
+  } catch (e) {
+    // 设置页的失败提示显示去掉“[PT] ”前缀的原因
+    throw new Error('[PT] 读取站点规则失败，未作改动', { cause: e });
+  }
+  return parseStored(stored);
+}
+
+/**
+ * 读取路径用：读取失败时退回空列表（只剩内置规则）并记日志 —— 存储故障
+ * 不该让整页翻译失败。写入路径不用它（#508）：把空列表当作现有数据写回
+ * 会清掉用户的全部站点卡片。
  */
 async function readUserSiteRules(): Promise<UserSiteRules[]> {
   try {
-    return parseStored((await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY]);
+    return await readUserSiteRulesStrict();
   } catch (e) {
     console.warn('[PT] 读取站点规则失败:', e);
     return [];
@@ -258,9 +274,17 @@ export function findInvalidSelectors(rules: Partial<SiteRules>): InvalidSelector
 
 /**
  * 读-改-写串行化：同一上下文里连续保存时，后一次基于前一次的结果改，
- * 不会互相覆盖（与 domains.ts 同一做法）。
+ * 不会互相覆盖（与 domains.ts 同一做法）。读取失败时抛错、不写入（#508），
+ * 存储里原有的站点卡片保持不变。
+ *
+ * 跨页面（#508）：多个设置页标签页同时修改时，读-改-写这一段再包一层
+ * Web Locks 的同名锁 —— 扩展页面与后台同源，锁在它们之间共享，
+ * 后一次写入基于前一次写入之后的数据。拿不到锁接口的环境只有页面内串行。
  */
 let writeChain: Promise<unknown> = Promise.resolve();
+
+/** 站点页面规则读-改-写的跨页面锁名，与领域部分的锁互不相干。 */
+const LOCK_NAME = 'pt-site-rules-write';
 
 /** 修改函数的结果：要写入的用户规则（null 表示没有变化、不写入）与带给调用方的值。 */
 interface UserSiteRulesChange<T> {
@@ -271,20 +295,25 @@ interface UserSiteRulesChange<T> {
 /**
  * 读-改-写用户规则（#493）：保存、删除、导入都经这里写入。挂到写入链上
  * 串行执行，读取当前用户规则交给 change，写入它返回的新列表并更新本
- * 上下文的快照，返回 change 带出的值。某一次失败不会让链断掉。
+ * 上下文的快照，返回 change 带出的值。某一次失败不会让链断掉。读取
+ * 失败时抛错、不调用 change（#508）。
  */
 function updateUserSiteRules<T>(
   change: (user: UserSiteRules[]) => UserSiteRulesChange<T>,
 ): Promise<T> {
-  const next = writeChain.then(async () => {
-    const { user, result } = change(await readUserSiteRules());
+  const readModifyWrite = async (): Promise<T> => {
+    const { user, result } = change(await readUserSiteRulesStrict());
     if (user) {
       const stored: StoredSiteRules = { user };
       await chrome.storage.local.set({ [STORAGE_KEY]: stored });
       userSnapshot = user;
     }
     return result;
-  });
+  };
+  const locks = globalThis.navigator?.locks;
+  const next = writeChain.then(async () =>
+    locks ? await locks.request(LOCK_NAME, readModifyWrite) : readModifyWrite(),
+  );
   writeChain = next.catch(() => {});
   return next;
 }

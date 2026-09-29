@@ -369,5 +369,21 @@
     "message": "另有 $count$ 行沒有匯入",
     "placeholders": { "count": { "content": "$1" } }
   },
-  "domainStorageFull": { "message": "儲存空間不足，可以在「進階」分區點「清空快取」後重試" }
+  "domainStorageFull": { "message": "儲存空間不足，可以在「進階」分區點「清空快取」後重試" },
+  "siteRulesSaveFailed": {
+    "message": "儲存站點規則失敗：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesDeleteFailed": {
+    "message": "刪除站點失敗：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesImportFailed": {
+    "message": "匯入站點規則失敗：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesAddFailed": {
+    "message": "新增站點失敗：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  }
 }
