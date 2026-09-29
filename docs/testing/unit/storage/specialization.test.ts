@@ -986,10 +986,10 @@ describe('用户规则的写入（#493）', () => {
   });
 
   test('某次写入失败只让这一次失败，之后的写入照常', async () => {
-    vi.mocked(chrome.storage.local.set).mockRejectedValueOnce(new Error('quota'));
+    vi.mocked(chrome.storage.local.set).mockRejectedValueOnce(new Error('boom'));
     const failed = options.saveUserSiteRules('example.com', { exclude: ['.a'] });
     const ok = options.saveUserSiteRules('example.org', { exclude: ['.b'] });
-    await expect(failed).rejects.toThrow('quota');
+    await expect(failed).rejects.toThrow('boom');
     await ok;
     expect(await options.getUserSiteRules()).toEqual([{ site: 'example.org', exclude: ['.b'] }]);
   });

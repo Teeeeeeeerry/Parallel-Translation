@@ -1471,6 +1471,37 @@ test.describe('站点页面规则', () => {
     });
   });
 
+  test('@core TC-E2E-87: 保存站点卡片遇到存储空间不足 → 提示可以清空缓存后重试，规则不变（#523）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    await page.fill('#pt-site-rules-site-input', 'github.com');
+    await page.click('#pt-site-rules-add-btn');
+    const card = page.locator('.pt-site-rules-card', { hasText: 'github.com' });
+    await card.locator('textarea[data-field="exclude"]').fill('.a');
+    await card.locator('.pt-site-rules-save').click();
+    await expect(page.locator('#pt-toast')).toBeVisible();
+
+    // 设置页里的存储写入报 Chrome 的配额错误（同 TC-E2E-85）
+    await page.evaluate(() => {
+      (chrome.storage.local as any).set = () => Promise.reject(new Error('QUOTA_BYTES quota exceeded'));
+    });
+    await card.locator('textarea[data-field="exclude"]').fill('.b');
+    await card.locator('.pt-site-rules-save').click();
+    // 提示文案随浏览器界面语言（CI 是英文）：与领域分区同一句存储空间不足的原因
+    const expected = await page.evaluate(() =>
+      chrome.i18n.getMessage('siteRulesSaveFailed', [chrome.i18n.getMessage('domainStorageFull')]),
+    );
+    await expect(page.locator('#pt-toast')).toHaveText(expected);
+    const cards = await serviceWorker.evaluate(
+      async () => ((await chrome.storage.local.get('pt-site-rules'))['pt-site-rules'] as any).user,
+    );
+    expect(cards).toHaveLength(1);
+    expect(cards[0].exclude).toEqual(['.a']);
+  });
+
   test('@core TC-E2E-76: 设置页导入站点规则 JSON → 与已有卡片逐字段合并去重，新站点新增卡片（#377）', async ({
     page, serviceWorker,
   }) => {
