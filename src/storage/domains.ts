@@ -647,14 +647,33 @@ function cleanTerms(terms: readonly Term[]): Term[] {
 /** 术语 CSV 的表头（#402）：列为原词、译法、不翻译，与 Term 的字段同名，不随界面语言变化。 */
 const TERMS_CSV_HEADER = ['source', 'target', 'noTranslate'];
 
-/** CSV 字段（RFC 4180）：含逗号、双引号或换行时加引号，双引号写两遍。 */
+/**
+ * 表格软件会当成公式的开头（#511）：= + - @、制表符、回车。导出时这类字段
+ * 前面加一个单引号；原本就以单引号开头的字段也加，导入时才能区分。
+ */
+const FORMULA_START = /^[=+\-@\t\r']/;
+
+/**
+ * CSV 字段（RFC 4180）：含逗号、双引号或换行时加引号，双引号写两遍。
+ * 以公式字符开头的加单引号前缀并加引号（#511），表格软件打开时不执行。
+ */
 function csvField(v: string): string {
+  if (FORMULA_START.test(v)) return `"'${v.replace(/"/g, '""')}"`;
   return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 }
 
 /**
+ * 去掉导出时加的公式前缀（#511）：单引号后面紧跟公式字符或单引号时去掉
+ * 这一个，其余原样保留 —— 手写的“'til”不受影响。
+ */
+function stripFormulaGuard(v: string): string {
+  return v.startsWith("'") && FORMULA_START.test(v.slice(1)) ? v.slice(1) : v;
+}
+
+/**
  * 把领域的术语导出为 CSV（#402）：UTF-8 带 BOM（表格软件据此按 UTF-8
- * 打开），首行表头，行尾 CRLF。不翻译列写 true / false。内置领域导出
+ * 打开），首行表头，行尾 CRLF。不翻译列写 true / false。以公式字符开头
+ * 的原词与译法加单引号前缀（#511），导入时去掉。内置领域导出
  * 生效内容，含用户的修改、新增与删除。不存在的领域抛 DomainNotFoundError，
  * 读取失败时抛错。
  */
@@ -737,7 +756,8 @@ export interface TermsCsvSkip {
 
 /**
  * 把 CSV 文件里的术语导入到领域（#403），格式与 exportDomainTermsCsv 相同：
- * 首行是表头 source,target,noTranslate 时跳过；不翻译列为 true / 1 时勾选，
+ * 首行是表头 source,target,noTranslate 时跳过；原词与译法去掉导出时加的
+ * 公式前缀（#511）；不翻译列为 true / 1 时勾选，
  * false / 0 / 空时不勾选（不区分大小写）。与现有术语合并：同一原词（不区分
  * 大小写）以导入为准、留在原位，新原词追加在后，文件里没有的术语不动；
  * 文件里同一原词出现多次时后出现的为准。内置领域写入叠加层。
@@ -769,7 +789,8 @@ export async function importDomainTermsCsv(
       skipped.push({ line, reason: 'columns' });
       continue;
     }
-    const [source, target, flag] = fields as [string, string, string];
+    const [source, target] = fields.slice(0, 2).map(stripFormulaGuard) as [string, string];
+    const flag = fields[2]!;
     const noTranslate = flag.trim().toLowerCase();
     if (!['true', '1', 'false', '0', ''].includes(noTranslate)) {
       skipped.push({ line, reason: 'noTranslate' });

@@ -87,6 +87,38 @@ describe('术语 CSV 导入（#403）', () => {
     expect(await termsOf(law.id)).toEqual(terms);
   });
 
+  test('以 = + - @ 或单引号开头的术语导出再导入后与导出前一致（#511）', async () => {
+    const style = await createDomain({ name: '样式', targetLang: 'zh-CN' });
+    const terms: Term[] = [
+      { source: '=SUM(A1)', target: '求和' },
+      { source: '+1', target: '=HYPERLINK("x")' },
+      { source: '-webkit-', noTranslate: true },
+      { source: '@media', target: '@媒体查询' },
+      { source: "'til", target: "''直到" },
+      { source: "'", target: '单引号' },
+    ];
+    await setDomainTerms(style.id, terms);
+    const csv = await exportDomainTermsCsv(style.id);
+
+    await setDomainTerms(style.id, []);
+    await importDomainTermsCsv(style.id, csv);
+    expect(await termsOf(style.id)).toEqual(terms);
+  });
+
+  test('导入时只去掉公式前缀那一个单引号；单引号后不是公式字符时原样保留（#511）', async () => {
+    const style = await createDomain({ name: '样式', targetLang: 'zh-CN' });
+    await importDomainTermsCsv(
+      style.id,
+      `${HEADER}'-webkit-,,true\r\n''til,直到,false\r\n'twas,那是,false\r\nrock 'n' roll,摇滚,false\r\n`,
+    );
+    expect(await termsOf(style.id)).toEqual([
+      { source: '-webkit-', noTranslate: true },
+      { source: "'til", target: '直到' },
+      { source: "'twas", target: '那是' },
+      { source: 'rock \'n\' roll', target: '摇滚' },
+    ]);
+  });
+
   test('只有换行（LF）、没有 BOM 的文件照样导入', async () => {
     const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
     await importDomainTermsCsv(law.id, 'source,target,noTranslate\ntort,侵权,false\nEsq.,,TRUE');
