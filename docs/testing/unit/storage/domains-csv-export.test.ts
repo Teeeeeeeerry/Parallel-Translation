@@ -86,15 +86,15 @@ describe('术语 CSV 导出（#402）', () => {
 
 describe('术语 CSV 导出防止表格软件把字段当成公式（#511）', () => {
   test('以 = + - @ 开头的原词与译法加单引号前缀并加引号', async () => {
-    const law = await createDomain({ name: '样式', targetLang: 'zh-CN' });
-    await setDomainTerms(law.id, [
+    const style = await createDomain({ name: '样式', targetLang: 'zh-CN' });
+    await setDomainTerms(style.id, [
       { source: '=SUM(A1)', target: '求和' },
       { source: '+1', target: '=HYPERLINK("x")' },
       { source: '-webkit-', noTranslate: true },
       { source: '@media', target: '@媒体查询' },
     ]);
 
-    expect(await exportDomainTermsCsv(law.id)).toBe(
+    expect(await exportDomainTermsCsv(style.id)).toBe(
       HEADER +
         `"'=SUM(A1)",求和,false\r\n` +
         `"'+1","'=HYPERLINK(""x"")",false\r\n` +
@@ -104,14 +104,14 @@ describe('术语 CSV 导出防止表格软件把字段当成公式（#511）', (
   });
 
   test('原本以单引号开头的字段也加前缀，导入时才能与导出加的前缀区分', async () => {
-    const law = await createDomain({ name: '口语', targetLang: 'zh-CN' });
-    await setDomainTerms(law.id, [{ source: "'til", target: "'直到" }]);
-    expect(await exportDomainTermsCsv(law.id)).toBe(`${HEADER}"''til","''直到",false\r\n`);
+    const slang = await createDomain({ name: '口语', targetLang: 'zh-CN' });
+    await setDomainTerms(slang.id, [{ source: "'til", target: "'直到" }]);
+    expect(await exportDomainTermsCsv(slang.id)).toBe(`${HEADER}"''til","''直到",false\r\n`);
   });
 
   test('中间或结尾出现这些字符的字段不加前缀', async () => {
-    const law = await createDomain({ name: '样式', targetLang: 'zh-CN' });
-    await setDomainTerms(law.id, [{ source: 'a-b', target: 'x@y' }]);
-    expect(await exportDomainTermsCsv(law.id)).toBe(`${HEADER}a-b,x@y,false\r\n`);
+    const style = await createDomain({ name: '样式', targetLang: 'zh-CN' });
+    await setDomainTerms(style.id, [{ source: 'a-b', target: 'x@y' }]);
+    expect(await exportDomainTermsCsv(style.id)).toBe(`${HEADER}a-b,x@y,false\r\n`);
   });
 });
