@@ -1634,4 +1634,85 @@ test.describe('站点页面规则', () => {
     await expect(page.locator('.pt-site-rules-card')).toHaveCount(1);
     await expect(exclude).toHaveValue('.unsaved');
   });
+
+  /** 设置页里每次写入存储之后，读取都失败，直到 __ptFailGet 被清掉 */
+  const failGetAfterWrite = (page: import('@playwright/test').Page) =>
+    page.evaluate(() => {
+      const local = chrome.storage.local as any;
+      const w = window as any;
+      const { get, set } = local;
+      local.get = (...a: unknown[]) =>
+        w.__ptFailGet ? Promise.reject(new Error('boom')) : get.apply(local, a);
+      local.set = async (...a: unknown[]) => {
+        await set.apply(local, a);
+        w.__ptFailGet = true;
+      };
+    });
+  const listStale = (page: import('@playwright/test').Page, done: string) =>
+    page.evaluate(
+      ({ d, r }) => chrome.i18n.getMessage('siteRulesListStale', [d, r]),
+      { d: done, r: '读取站点规则失败，未作改动' },
+    );
+
+  test('@core TC-E2E-89: 导入写入成功、刷新站点卡片列表失败 → 提示同时说明导入了几个站点与列表没有刷新（#536）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    await failGetAfterWrite(page);
+
+    await page.setInputFiles('#pt-site-rules-import-file', {
+      name: 'parallel-translation-site-rules.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify({
+        format: 'parallel-translation-site-rules',
+        version: 1,
+        sites: {
+          'github.com': { scope: [], exclude: ['.a'], preserve: [], disableBuiltin: false },
+          'example.com': { scope: ['main'], exclude: [], preserve: [], disableBuiltin: false },
+        },
+      })),
+    });
+
+    const imported = await page.evaluate(() => chrome.i18n.getMessage('siteRulesImported', ['2']));
+    await expect(page.locator('#pt-toast')).toHaveText(await listStale(page, imported));
+    await expect(page.locator('.pt-site-rules-card')).toHaveCount(0);
+    const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('pt-site-rules'));
+    expect((stored['pt-site-rules'] as any).user).toHaveLength(2);
+  });
+
+  test('@core TC-E2E-90: 删除或新增站点写入成功、刷新站点卡片列表失败 → 提示写入已成功，新增时站点输入框不清空（#536）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    await page.fill('#pt-site-rules-site-input', 'github.com');
+    await page.click('#pt-site-rules-add-btn');
+    const cards = page.locator('.pt-site-rules-card');
+    await expect(cards).toHaveCount(1);
+    await failGetAfterWrite(page);
+    const toast = page.locator('#pt-toast');
+
+    // 删除：写入成功，提示说明已删除、列表没有刷新
+    page.once('dialog', (d) => d.accept());
+    await cards.locator('.pt-site-rules-delete').click();
+    const deleted = await page.evaluate(() => chrome.i18n.getMessage('siteRulesDeleted'));
+    await expect(toast).toHaveText(await listStale(page, deleted));
+    await expect(cards).toHaveCount(1);
+
+    // 新增：写入成功，提示说明站点已加上；输入框里的站点名还在
+    await page.evaluate(() => {
+      (window as any).__ptFailGet = false;
+    });
+    await page.fill('#pt-site-rules-site-input', 'example.com');
+    await page.click('#pt-site-rules-add-btn');
+    const added = await page.evaluate(() => chrome.i18n.getMessage('siteRulesAdded', ['example.com']));
+    await expect(toast).toHaveText(await listStale(page, added));
+    await expect(page.locator('#pt-site-rules-site-input')).toHaveValue('example.com');
+    await expect(page.locator('#pt-site-rules-site-input')).not.toHaveClass(/pt-error/);
+    const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('pt-site-rules'));
+    expect((stored['pt-site-rules'] as any).user.map((u: any) => u.site)).toEqual(['example.com']);
+  });
 });
