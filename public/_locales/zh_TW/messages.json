@@ -412,5 +412,13 @@
   },
   "siteRulesImportBadJson": { "message": "匯入失敗：檔案不是合法的 JSON" },
   "siteRulesImportBadFormat": { "message": "匯入失敗：檔案不是站點規則匯出檔" },
-  "siteRulesImportBadVersion": { "message": "匯入失敗：檔案的版本號不支援，請更新擴充功能後再匯入" }
+  "siteRulesImportBadVersion": { "message": "匯入失敗：檔案的版本號不支援，請更新擴充功能後再匯入" },
+  "siteRulesExportFailed": {
+    "message": "匯出站點規則失敗：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesListFailed": {
+    "message": "讀取站點卡片列表失敗：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  }
 }

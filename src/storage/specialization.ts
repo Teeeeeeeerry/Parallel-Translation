@@ -205,9 +205,10 @@ async function readUserSiteRulesStrict(): Promise<UserSiteRules[]> {
 }
 
 /**
- * 读取路径用：读取失败时退回空列表（只剩内置规则）并记日志 —— 存储故障
+ * 翻译路径用：读取失败时退回空列表（只剩内置规则）并记日志 —— 存储故障
  * 不该让整页翻译失败。写入路径不用它（#508）：把空列表当作现有数据写回
- * 会清掉用户的全部站点卡片。
+ * 会清掉用户的全部站点卡片。设置页的列表与导出也不用它（#526）：空列表
+ * 看起来像规则全没了，导出会得到一份空文件。
  */
 async function readUserSiteRules(): Promise<UserSiteRules[]> {
   try {
@@ -240,9 +241,9 @@ export function siteRulesReady(): Promise<void> {
   return ready;
 }
 
-/** 站点卡片列表，按新增顺序。设置页据此渲染。 */
+/** 站点卡片列表，按新增顺序。设置页据此渲染。读取失败时抛错（#526）。 */
 export function getUserSiteRules(): Promise<UserSiteRules[]> {
-  return readUserSiteRules();
+  return readUserSiteRulesStrict();
 }
 
 /** 保存时发现的一条无效选择器。 */
@@ -415,11 +416,12 @@ export interface SiteRulesExport {
 
 /**
  * 把全部用户规则导出为 JSON 文本（#376），用于备份和迁移。只含用户
- * 规则，不含内置规则；存储里形状不对的卡片不导出。
+ * 规则，不含内置规则；存储里形状不对的卡片不导出。读取失败时抛错，
+ * 不导出空文件（#526）。
  */
 export async function exportUserSiteRules(): Promise<string> {
   const sites: Record<string, ExportedSiteRules> = {};
-  for (const u of await readUserSiteRules()) {
+  for (const u of await readUserSiteRulesStrict()) {
     sites[u.site] = {
       scope: u.scope ?? [],
       exclude: u.exclude ?? [],

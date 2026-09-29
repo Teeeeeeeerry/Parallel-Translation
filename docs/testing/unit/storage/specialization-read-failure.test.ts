@@ -83,3 +83,32 @@ describe('读取存储失败时翻译路径照常（#508）', () => {
     expect(page.getSiteRules('github.com').exclude).toContain('.blob-code');
   });
 });
+
+describe('读取存储失败时设置页的读取报错（#526）', () => {
+  const reads: [string, () => Promise<unknown>][] = [
+    ['站点卡片列表', () => spec.getUserSiteRules()],
+    ['导出 JSON', () => spec.exportUserSiteRules()],
+  ];
+
+  test.each(reads)('%s：抛出读取失败的原因，恢复读取后结果与之前一致', async (_, read) => {
+    const before = await read();
+
+    vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
+    await expect(read()).rejects.toThrow('[PT] 读取站点规则失败');
+
+    expect(await read()).toEqual(before);
+  });
+
+  test('导出成功时文件里是全部站点卡片', async () => {
+    expect(JSON.parse(await spec.exportUserSiteRules()).sites).toEqual({
+      'example.com': { scope: [], exclude: ['.ad'], preserve: ['code'], disableBuiltin: false },
+      'github.com': { scope: ['main'], exclude: [], preserve: [], disableBuiltin: true },
+    });
+  });
+
+  test('存储里本来没有数据不算失败：列表为空，导出的 sites 为空', async () => {
+    resetStorage();
+    expect(await spec.getUserSiteRules()).toEqual([]);
+    expect(JSON.parse(await spec.exportUserSiteRules()).sites).toEqual({});
+  });
+});

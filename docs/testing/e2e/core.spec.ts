@@ -1562,4 +1562,45 @@ test.describe('站点页面规则', () => {
     });
     expect(cards).toEqual([{ site: 'example.com', exclude: ['.ad'] }]);
   });
+
+  test('@core TC-E2E-86: 设置页读取站点规则失败 → 导出提示原因且不下载，刷新列表提示原因且卡片不变（#526）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    await page.fill('#pt-site-rules-site-input', 'github.com');
+    await page.click('#pt-site-rules-add-btn');
+    const card = page.locator('.pt-site-rules-card', { hasText: 'github.com' });
+    const exclude = card.locator('textarea[data-field="exclude"]');
+    await exclude.fill('.a');
+    await card.locator('.pt-site-rules-save').click();
+    await expect(page.locator('#pt-toast')).toBeVisible();
+    await exclude.fill('.unsaved');
+
+    // 设置页里的存储读取失败
+    await page.evaluate(() => {
+      (chrome.storage.local as any).get = () => Promise.reject(new Error('boom'));
+    });
+    let downloaded = false;
+    page.on('download', () => {
+      downloaded = true;
+    });
+    await page.click('#pt-site-rules-export-btn');
+    const toast = page.locator('#pt-toast');
+    // 提示文案随浏览器界面语言（CI 是英文），原因是存储模块的固定文案
+    const reason = '读取站点规则失败，未作改动';
+    const msg = (key: string) =>
+      page.evaluate(({ k, r }) => chrome.i18n.getMessage(k, [r]), { k: key, r: reason });
+    await expect(toast).toHaveText(await msg('siteRulesExportFailed'));
+    expect(downloaded).toBe(false);
+
+    // 其他标签页保存后本页刷新列表：读取失败，已显示的卡片与未保存的编辑都还在
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({ 'pt-site-rules': { user: [{ site: 'github.com', exclude: ['.b'] }] } }),
+    );
+    await expect(toast).toHaveText(await msg('siteRulesListFailed'));
+    await expect(page.locator('.pt-site-rules-card')).toHaveCount(1);
+    await expect(exclude).toHaveValue('.unsaved');
+  });
 });
