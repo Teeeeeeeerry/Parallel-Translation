@@ -9,42 +9,56 @@
  * 只统计生效的 test(...) 标题里的编号：注释里引用别的用例（“覆盖见
  * TC-E2E-40”）与注释掉的旧用例都不算。编号带平台后缀的变体（TC-E2E-03-Mac）
  * 是另一条用例。新增 e2e 文件不需要改这里。
+ *
+ * 用例文件用 TypeScript 解析（#513）：手写的去注释认不出正则字面量，
+ * /it's/ 里的引号会让后面的注释与用例整体错位。
  */
 import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import ts from 'typescript';
 
 const E2E_DIR = path.resolve('docs/testing/e2e');
 
-/** test('…') / test.skip("…") 等的标题；test.describe 与 test.step 不是用例 */
-const TEST_TITLE_RE = /\btest(?:\.(?!describe\b|step\b)\w+)?\(\s*(['"`])((?:(?!\1)[\s\S])*)\1/g;
+/** test(...) 与 test.<修饰>(...) 是用例；test.describe 与 test.step 不是 */
+function isTestCall(callee: ts.Expression): boolean {
+  if (ts.isIdentifier(callee)) return callee.text === 'test';
+  return (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    callee.expression.text === 'test' &&
+    callee.name.text !== 'describe' &&
+    callee.name.text !== 'step'
+  );
+}
 
 /**
- * 去掉行注释与块注释（#492）：注释掉的旧用例不算，免得复用它的编号时误报。
- * 引号与模板字符串里的 // 与 /* 原样保留（标题里常有网址）。
+ * 标题开头的固定文字：字符串、模板字符串第一个插值之前的部分、拼接式
+ * 最左边的字符串。编号写在标题开头，带插值或拼接的标题照样统计。
  */
-function stripComments(src: string): string {
-  let out = '';
-  let quote = '';
-  for (let i = 0; i < src.length; i++) {
-    const c = src[i]!;
-    if (quote) {
-      out += c;
-      if (c === '\\') out += src[++i] ?? '';
-      else if (c === quote) quote = '';
-    } else if (c === '/' && src[i + 1] === '/') {
-      while (i < src.length && src[i] !== '\n') i++;
-      out += '\n';
-    } else if (c === '/' && src[i + 1] === '*') {
-      const end = src.indexOf('*/', i + 2);
-      i = end === -1 ? src.length : end + 1;
-    } else {
-      if (c === "'" || c === '"' || c === '`') quote = c;
-      out += c;
-    }
+function titlePrefix(node: ts.Expression): string | null {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  if (ts.isTemplateExpression(node)) return node.head.text;
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    return titlePrefix(node.left);
   }
-  return out;
+  if (ts.isParenthesizedExpression(node)) return titlePrefix(node.expression);
+  return null;
+}
+
+/** 用例文件里生效的用例标题（开头的固定文字） */
+function testTitles(file: string, src: string): string[] {
+  const titles: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && isTestCall(node.expression)) {
+      const title = node.arguments[0] && titlePrefix(node.arguments[0]);
+      if (title) titles.push(title);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(ts.createSourceFile(file, src, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS));
+  return titles;
 }
 
 /**
@@ -59,9 +73,8 @@ function collectIds(dir: string): Map<string, string[]> {
     .map((f) => f.split(path.sep).join('/'))
     .sort();
   for (const file of files) {
-    const content = stripComments(fs.readFileSync(path.join(dir, file), 'utf-8'));
-    for (const m of content.matchAll(TEST_TITLE_RE)) {
-      const id = m[2]!.match(/TC-E2E-\d+(?:-[A-Za-z]+)?/)?.[0];
+    for (const title of testTitles(file, fs.readFileSync(path.join(dir, file), 'utf-8'))) {
+      const id = title.match(/TC-E2E-\d+(?:-[A-Za-z]+)?/)?.[0];
       if (id) ids.set(id, [...(ids.get(id) ?? []), file]);
     }
   }
@@ -119,6 +132,42 @@ describe('用例编号扫描覆盖子目录并忽略注释（#492）', () => {
       'TC-E2E-03': ['sites/b.spec.ts'],
       'TC-E2E-05-Mac': ['a.spec.ts'],
       'TC-E2E-05': ['a.spec.ts'],
+    });
+  });
+});
+
+describe('用例编号扫描按 TypeScript 语法识别用例（#513）', () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-ids-ts-'));
+    fs.writeFileSync(
+      path.join(dir, 'c.spec.ts'),
+      [
+        "test('TC-E2E-10: 含引号的正则', async ({ page }) => {",
+        "  expect(await page.title()).toMatch(/it's/);",
+        '});',
+        "// test('TC-E2E-11: 正则后面注释掉的旧用例', async () => {});",
+        "test('TC-E2E-12: 正则后面的生效用例', async () => {});",
+        "const sample = \"test('TC-E2E-13: 字符串里的文字不是用例')\";",
+        'test.only(`TC-E2E-14: 无插值模板字符串`, async () => {});',
+        'test(`TC-E2E-15: ${sample}`, async () => {});',
+        "test('TC-E2E-18: ' + sample, async () => {});",
+        "test.describe('TC-E2E-16: 分组不是用例', () => {});",
+        "/it's/.test('TC-E2E-17: 正则的 test 方法不是用例');",
+      ].join('\n'),
+    );
+  });
+
+  afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  test('只统计生效的 test(...) 调用：正则里的引号不影响后面的注释与用例，带插值或拼接的标题照样统计', () => {
+    expect(Object.fromEntries(collectIds(dir))).toEqual({
+      'TC-E2E-10': ['c.spec.ts'],
+      'TC-E2E-12': ['c.spec.ts'],
+      'TC-E2E-14': ['c.spec.ts'],
+      'TC-E2E-15': ['c.spec.ts'],
+      'TC-E2E-18': ['c.spec.ts'],
     });
   });
 });
