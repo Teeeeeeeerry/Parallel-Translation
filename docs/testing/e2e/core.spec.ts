@@ -1134,6 +1134,39 @@ test.describe('引擎', () => {
 });
 
 // ================================================================
+// 设置页：导出（#494）
+// ================================================================
+
+test.describe('设置页：导出', () => {
+  test('@core TC-E2E-83: 高级分区导出设置 → 下载 JSON 文件，内容为当前设置且不含 API key（#494）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="advanced"]');
+    await page.selectOption('#pt-select-concurrency', '4');
+    await expect
+      .poll(() =>
+        serviceWorker.evaluate(async () => {
+          const all = await chrome.storage.sync.get(null);
+          return JSON.stringify(all).includes('"maxConcurrency":4');
+        }),
+      )
+      .toBe(true);
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.click('#pt-export-settings-btn'),
+    ]);
+    expect(download.suggestedFilename()).toBe('parallel-translation-settings.json');
+    const json = JSON.parse(fs.readFileSync(await download.path(), 'utf-8'));
+    expect(json.maxConcurrency).toBe(4);
+    expect(json).not.toHaveProperty('apiKeys');
+    await expect(page.locator('#pt-toast')).toBeVisible();
+  });
+});
+
+// ================================================================
 // 站点页面规则（#365）
 // ================================================================
 

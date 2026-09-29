@@ -58,6 +58,27 @@ export function showToast(msg: string, duration = 2000): void {
   }, duration);
 }
 
+// ---- Download ----
+
+/** 下载开始之后多久释放临时链接（#494）。 */
+const REVOKE_DELAY_MS = 60_000;
+
+/**
+ * 把文本存成文件并触发下载（#494）。设置页的各个导出都用它。
+ *
+ * 临时链接延后释放：Chrome 在触发下载时已经取到文件，但 Firefox 的下载
+ * 异步开始，同一时刻释放可能导致下载失败或得到空文件。FileSaver.js 同样
+ * 延后几十秒才释放。
+ */
+export function downloadFile(content: string, filename: string, type: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
+}
+
 // ---- Init ----
 
 async function init(): Promise<void> {
