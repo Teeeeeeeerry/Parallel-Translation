@@ -18,6 +18,7 @@
 
 import { siteCovers, siteMatches } from '~/src/dom/site-filter';
 import { BUILTIN_SITE_RULES } from './builtin-site-rules';
+import { isQuotaError, StorageQuotaError } from './quota';
 
 /** 一个站点的页面规则：CSS 选择器列表。 */
 export interface SiteRules {
@@ -319,7 +320,10 @@ function updateUserSiteRules<T>(
     const { user, result } = change(await readUserSiteRulesStrict());
     if (user) {
       const stored: StoredSiteRules = { user };
-      await chrome.storage.local.set({ [STORAGE_KEY]: stored });
+      await chrome.storage.local.set({ [STORAGE_KEY]: stored }).catch((e: unknown) => {
+        // 存储空间不足（#523）：与领域一样，换成说得清原因与办法的错误
+        throw isQuotaError(e) ? new StorageQuotaError(e) : e;
+      });
       userSnapshot = user;
     }
     return result;
