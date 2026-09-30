@@ -278,7 +278,8 @@ export function initSiteRules(): void {
         // 再点保存会把站点写回来（#548）
         cards.get(site)?.el.remove();
         cards.delete(site);
-        const done = tf('siteRulesDeleted', '已删除，刷新该网站后生效');
+        // 提示带站点名：连续删除不同站点时，合成提示逐条列出（#556）
+        const done = tf('siteRulesDeletedSite', `已删除站点“${site}”，刷新该网站后生效`, site);
         showToast(done);
         return refresh(done);
       })

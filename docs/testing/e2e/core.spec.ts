@@ -1749,7 +1749,7 @@ test.describe('站点页面规则', () => {
     // 删除：写入成功，提示说明已删除、列表没有刷新
     page.once('dialog', (d) => d.accept());
     await cards.locator('.pt-site-rules-delete').click();
-    const deleted = await page.evaluate(() => chrome.i18n.getMessage('siteRulesDeleted'));
+    const deleted = await page.evaluate(() => chrome.i18n.getMessage('siteRulesDeletedSite', ['github.com']));
     await expect(toast).toHaveText(await listStale(page, deleted));
     // 删除已成功：被删站点的卡片立即移除（#548）
     await expect(cards).toHaveCount(0);
@@ -1763,7 +1763,7 @@ test.describe('站点页面规则', () => {
     // 列表还没按删除刷新过：提示同时说明删除与新增都已成功（#550）
     const added = await page.evaluate(() =>
       chrome.i18n.getMessage('siteRulesWrittenJoin', [
-        chrome.i18n.getMessage('siteRulesDeleted'),
+        chrome.i18n.getMessage('siteRulesDeletedSite', ['github.com']),
         chrome.i18n.getMessage('siteRulesAdded', ['example.com']),
       ]),
     );
@@ -1799,7 +1799,7 @@ test.describe('站点页面规则', () => {
 
     page.once('dialog', (d) => d.accept());
     await github.locator('.pt-site-rules-delete').click();
-    const deleted = await page.evaluate(() => chrome.i18n.getMessage('siteRulesDeleted'));
+    const deleted = await page.evaluate(() => chrome.i18n.getMessage('siteRulesDeletedSite', ['github.com']));
     await expect(page.locator('#pt-toast')).toHaveText(await listStale(page, deleted));
     // 被删站点的卡片不在了，其他卡片与未保存的编辑还在
     await expect(github).toHaveCount(0);
@@ -1901,7 +1901,7 @@ test.describe('站点页面规则', () => {
     const both = await page.evaluate(() =>
       chrome.i18n.getMessage('siteRulesWrittenJoin', [
         chrome.i18n.getMessage('siteRulesImported', ['1']),
-        chrome.i18n.getMessage('siteRulesDeleted'),
+        chrome.i18n.getMessage('siteRulesDeletedSite', ['example.com']),
       ]),
     );
     await expect(toast).toHaveText(await listStale(page, both));
@@ -2031,5 +2031,47 @@ test.describe('站点页面规则', () => {
     await expect(
       cards.filter({ hasText: 'new.com' }).locator('textarea[data-field="exclude"]'),
     ).toHaveValue('.n2');
+  });
+
+  test('@core TC-E2E-97: 连续删除两个站点，两次刷新站点卡片列表都失败 → 提示逐条列出两个被删的站点（#556）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-site-rules': {
+          user: [
+            { site: 'github.com', exclude: ['.a'] },
+            { site: 'example.com', exclude: ['.b'] },
+          ],
+        },
+      }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    const cards = page.locator('.pt-site-rules-card');
+    await expect(cards).toHaveCount(2);
+    await failGetAfterWrite(page);
+    const toast = page.locator('#pt-toast');
+
+    page.once('dialog', (d) => d.accept());
+    await cards.filter({ hasText: 'github.com' }).locator('.pt-site-rules-delete').click();
+    const first = await page.evaluate(() => chrome.i18n.getMessage('siteRulesDeletedSite', ['github.com']));
+    await expect(toast).toHaveText(await listStale(page, first));
+
+    // 删除前读取恢复（删除要先读再写），写入后刷新列表又读取失败
+    await page.evaluate(() => {
+      (window as any).__ptFailGet = false;
+    });
+    page.once('dialog', (d) => d.accept());
+    await cards.filter({ hasText: 'example.com' }).locator('.pt-site-rules-delete').click();
+    const both = await page.evaluate(() =>
+      chrome.i18n.getMessage('siteRulesWrittenJoin', [
+        chrome.i18n.getMessage('siteRulesDeletedSite', ['github.com']),
+        chrome.i18n.getMessage('siteRulesDeletedSite', ['example.com']),
+      ]),
+    );
+    await expect(toast).toHaveText(await listStale(page, both));
+    await expect(cards).toHaveCount(0);
   });
 });
