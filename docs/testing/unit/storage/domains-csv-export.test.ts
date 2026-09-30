@@ -13,6 +13,7 @@ import {
   exportDomainTermsCsv,
   DomainNotFoundError,
 } from '~/src/storage/domains';
+import { StorageReadError } from '~/src/storage/read-error';
 import { resetStorage } from '~/docs/testing/setup';
 
 const BUILTIN = 'builtin:software-zh-CN';
@@ -79,6 +80,8 @@ describe('术语 CSV 导出（#402）', () => {
     // 导出不改动数据：原因只说读不到，不说“未作改动”（#537）
     const err = await exportDomainTermsCsv(BUILTIN).then(() => null, (e: unknown) => e);
     expect((err as Error).message).toBe('[PT] 暂时读不到存储里的数据，请稍后重试');
+    // 两个存储模块共用同一个读取失败错误（#549）
+    expect(err).toBeInstanceOf(StorageReadError);
   });
 
   test('领域不存在时抛 DomainNotFoundError', async () => {

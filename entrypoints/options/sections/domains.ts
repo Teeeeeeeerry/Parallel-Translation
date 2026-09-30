@@ -508,6 +508,8 @@ export function initDomains(): void {
   langSelect.value = getSettings().to;
 
   let renderSeq = 0;
+  /** 列表是否已按存储显示过：决定读取失败时说“没有载入”还是“没有刷新”（#549） */
+  let loaded = false;
   async function render(): Promise<void> {
     // 连续变更时只用最后一次读取的结果，先发起、后返回的旧读取不覆盖新列表
     const seq = ++renderSeq;
@@ -546,6 +548,7 @@ export function initDomains(): void {
         ? { id: focused.closest<HTMLElement>('.pt-domain-item')?.dataset.id, dir: focused.dataset.direction }
         : null;
     listEl.replaceChildren(...items);
+    loaded = true;
     if (focusedBtn) {
       const li = items.find((el) => el.dataset.id === focusedBtn.id);
       const reset = focusedBtn.dir ? null : li?.querySelector<HTMLButtonElement>(':scope > .pt-domain-reset');
@@ -628,15 +631,20 @@ export function initDomains(): void {
   onSettingsChanged(syncMtTermTargets);
 
   /**
-   * 按存储重新渲染领域列表，不会失败：读取失败时提示原因，已显示的列表、
-   * 展开的编辑框和里面未保存的改动保持不变（#535）；首次打开就读取失败时
-   * 列表留空，不显示只剩内置领域的列表。
+   * 按存储重新渲染领域列表，不会失败：读取失败时提示列表没有刷新与原因，
+   * 已显示的列表、展开的编辑框和里面未保存的改动保持不变（#535）；首次打开
+   * 就读取失败时提示列表没有载入，列表留空，不显示只剩内置领域的列表（#549）。
    */
   const refresh = () =>
     render().catch((e) => {
-      console.error('[PT] 读取领域列表失败:', e);
       const reason = failReason(e);
-      showToast(tf('domainListFailed', `读取领域列表失败：${reason}`, reason), 4000);
+      if (loaded) {
+        console.error('[PT] 领域列表没有刷新:', e);
+        showToast(tf('domainListNotRefreshed', `领域列表没有刷新：${reason}`, reason), 4000);
+      } else {
+        console.error('[PT] 领域列表没有载入:', e);
+        showToast(tf('domainListNotLoaded', `领域列表没有载入：${reason}`, reason), 4000);
+      }
     });
   refresh();
   // 其他设置页标签页新建 / 删除 / 修改后同步刷新

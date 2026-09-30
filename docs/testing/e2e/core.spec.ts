@@ -1626,13 +1626,63 @@ test.describe('站点页面规则', () => {
     await expect(toast).toHaveText(await msg('siteRulesExportFailed'));
     expect(downloaded).toBe(false);
 
-    // 其他标签页保存后本页刷新列表：读取失败，已显示的卡片与未保存的编辑都还在
+    // 其他标签页保存后本页刷新列表：读取失败，提示列表没有刷新（#549），
+    // 已显示的卡片与未保存的编辑都还在
     await serviceWorker.evaluate(() =>
       chrome.storage.local.set({ 'pt-site-rules': { user: [{ site: 'github.com', exclude: ['.b'] }] } }),
     );
-    await expect(toast).toHaveText(await msg('siteRulesListFailed'));
+    await expect(toast).toHaveText(await msg('siteRulesListNotRefreshed'));
     await expect(page.locator('.pt-site-rules-card')).toHaveCount(1);
     await expect(exclude).toHaveValue('.unsaved');
+  });
+
+  test('@core TC-E2E-94: 首次打开设置页就读取站点规则失败 → 提示站点卡片列表没有载入，不显示卡片（#549）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({ 'pt-site-rules': { user: [{ site: 'github.com', exclude: ['.a'] }] } }),
+    );
+    // 读取站点规则失败，直到 __ptFailGet 被清掉；每次写入之后又失败
+    await page.addInitScript(() => {
+      const local = chrome.storage.local as any;
+      const w = window as any;
+      const { get, set } = local;
+      w.__ptFailGet = true;
+      local.get = (...a: unknown[]) =>
+        a[0] === 'pt-site-rules' && w.__ptFailGet ? Promise.reject(new Error('boom')) : get.apply(local, a);
+      local.set = async (...a: unknown[]) => {
+        await set.apply(local, a);
+        w.__ptFailGet = true;
+      };
+    });
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    const reason = '暂时读不到存储里的数据，请稍后重试';
+    const notLoaded = await page.evaluate(
+      (r) => chrome.i18n.getMessage('siteRulesListNotLoaded', [r]),
+      reason,
+    );
+    const toast = page.locator('#pt-toast');
+    await expect(toast).toHaveText(notLoaded);
+    await expect(page.locator('.pt-site-rules-card')).toHaveCount(0);
+
+    // 新增站点写入成功、列表仍读取失败：合成提示也说列表没有载入
+    await page.evaluate(() => {
+      (window as any).__ptFailGet = false;
+    });
+    await page.fill('#pt-site-rules-site-input', 'example.com');
+    await page.click('#pt-site-rules-add-btn');
+    const stale = await page.evaluate(
+      (r) =>
+        chrome.i18n.getMessage('siteRulesListStaleNotLoaded', [
+          chrome.i18n.getMessage('siteRulesAdded', ['example.com']),
+          r,
+        ]),
+      reason,
+    );
+    await expect(toast).toHaveText(stale);
+    await expect(page.locator('.pt-site-rules-card')).toHaveCount(0);
   });
 
   /** 设置页里每次写入存储之后，读取都失败，直到 __ptFailGet 被清掉 */
