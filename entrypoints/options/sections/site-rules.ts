@@ -220,8 +220,9 @@ export function initSiteRules(): void {
   const cards = new Map<string, Card>();
 
   /**
-   * 按读到的站点卡片重新渲染。reset 为 true 时丢弃文本框里未保存的改动（#377
-   * 导入后）—— 否则再点保存会用旧文本覆盖刚导入的选择器。
+   * 按读到的站点卡片重新渲染。reset 为 true 时（#377 导入后），存储内容变了的
+   * 字段丢弃文本框里未保存的改动 —— 否则再点保存会用旧文本覆盖刚导入的
+   * 选择器；存储内容没变的字段照常保留未保存的编辑（#550）。
    */
   function render(list: UserSiteRules[], reset: boolean): void {
     const els = list.map((u) => {
@@ -235,7 +236,8 @@ export function initSiteRules(): void {
       const clean: Field[] = [];
       for (const [field, input] of card.inputs) {
         const text = toText(u[field]);
-        if (reset || input.value === (card.saved.get(field) ?? '')) {
+        const saved = card.saved.get(field) ?? '';
+        if (input.value === saved || (reset && text !== saved)) {
           input.value = text;
           clean.push(field);
         }
@@ -362,44 +364,51 @@ export function initSiteRules(): void {
   let latest: Promise<boolean> = Promise.resolve(true);
   /** 要丢弃未保存改动的刷新还没生效：先发起的被后发起的取代时不丢这个要求 */
   let resetPending = false;
-  /** 刚写入成功、还在等列表刷新的提示；刷新失败时与原因合成一条（#536） */
-  let written: string | null = null;
+  /**
+   * 写入成功、列表还没按它刷新的提示，按先后排列；刷新失败时与原因合成一条
+   * （#536），刷新成功才清空 —— 连续写入时前一次的结果不丢（#550）
+   */
+  let written: string[] = [];
 
   /**
    * 按存储重新渲染卡片，不会失败，返回列表是否已按最新存储刷新：读取失败时
    * 提示原因，已显示的卡片和未保存的编辑保持不变（#526）。连续刷新时只用
    * 最后一次读取的结果，先发起、后返回的旧读取不覆盖新列表，结果跟随最后
    * 一次（#536）。写入成功后传入写入成功的提示 done：列表刷新失败时提示
-   * 同时说明写入已成功、列表没有刷新，而不是只剩读取失败。
+   * 同时说明写入已成功、列表没有刷新，而不是只剩读取失败。渲染卡片出错与
+   * 读取失败一样处理（#550）。
    */
   function refresh(reset = false, done?: string): Promise<boolean> {
     const seq = ++renderSeq;
     resetPending ||= reset;
-    if (done !== undefined) written = done;
-    const p = getUserSiteRules().then(
-      (list) => {
-        if (seq !== renderSeq) return latest;
-        render(list, resetPending);
-        resetPending = false;
-        written = null;
-        return true;
-      },
-      (e: unknown) => {
-        if (seq !== renderSeq) return latest;
-        if (written === null) {
-          showFailure('siteRulesListFailed', '读取站点卡片列表失败', e);
-        } else {
-          console.error('[PT] 读取站点卡片列表失败:', e);
-          const reason = failReason(e);
-          showToast(
-            tf('siteRulesListStale', `${written}；站点卡片列表没有刷新：${reason}`, written, reason),
-            4000,
-          );
-          written = null;
-        }
-        return false;
-      },
-    );
+    if (done !== undefined && !written.includes(done)) written.push(done);
+    const p = getUserSiteRules()
+      .then((list) => {
+        if (seq === renderSeq) render(list, resetPending);
+      })
+      .then(
+        () => {
+          if (seq !== renderSeq) return latest;
+          resetPending = false;
+          written = [];
+          return true;
+        },
+        (e: unknown) => {
+          if (seq !== renderSeq) return latest;
+          if (written.length === 0) {
+            showFailure('siteRulesListFailed', '读取站点卡片列表失败', e);
+          } else {
+            console.error('[PT] 读取站点卡片列表失败:', e);
+            const all = written.reduce((a, b) => tf('siteRulesWrittenJoin', `${a}；${b}`, a, b));
+            const reason = failReason(e);
+            showToast(
+              tf('siteRulesListStale', `${all}；站点卡片列表没有刷新：${reason}`, all, reason),
+              4000,
+            );
+          }
+          return false;
+        },
+      );
     latest = p;
     return p;
   }

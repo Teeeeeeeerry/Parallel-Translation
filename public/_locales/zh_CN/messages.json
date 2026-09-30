@@ -432,5 +432,9 @@
   "siteRulesListStale": {
     "message": "$done$；站点卡片列表没有刷新：$error$",
     "placeholders": { "done": { "content": "$1" }, "error": { "content": "$2" } }
+  },
+  "siteRulesWrittenJoin": {
+    "message": "$first$；$next$",
+    "placeholders": { "first": { "content": "$1" }, "next": { "content": "$2" } }
   }
 }
