@@ -456,5 +456,9 @@
   "siteRulesListStaleNotLoaded": {
     "message": "$done$；網站卡片清單沒有載入：$error$",
     "placeholders": { "done": { "content": "$1" }, "error": { "content": "$2" } }
+  },
+  "siteRulesDeletedSite": {
+    "message": "已刪除網站“$site$”，重新整理該網站後生效",
+    "placeholders": { "site": { "content": "$1" } }
   }
 }
