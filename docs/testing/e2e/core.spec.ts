@@ -1710,7 +1710,13 @@ test.describe('站点页面规则', () => {
     });
     await page.fill('#pt-site-rules-site-input', 'example.com');
     await page.click('#pt-site-rules-add-btn');
-    const added = await page.evaluate(() => chrome.i18n.getMessage('siteRulesAdded', ['example.com']));
+    // 列表还没按删除刷新过：提示同时说明删除与新增都已成功（#550）
+    const added = await page.evaluate(() =>
+      chrome.i18n.getMessage('siteRulesWrittenJoin', [
+        chrome.i18n.getMessage('siteRulesDeleted'),
+        chrome.i18n.getMessage('siteRulesAdded', ['example.com']),
+      ]),
+    );
     await expect(toast).toHaveText(await listStale(page, added));
     await expect(page.locator('#pt-site-rules-site-input')).toHaveValue('example.com');
     await expect(page.locator('#pt-site-rules-site-input')).not.toHaveClass(/pt-error/);
@@ -1763,5 +1769,91 @@ test.describe('站点页面规则', () => {
     await page.click('#pt-site-rules-add-btn');
     await expect(github).toHaveCount(1);
     await expect(github.locator('textarea[data-field="exclude"]')).toHaveValue('');
+  });
+
+  /** 站点规则导入文件 */
+  const siteRulesFile = (sites: Record<string, unknown>) => ({
+    name: 'parallel-translation-site-rules.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ format: 'parallel-translation-site-rules', version: 1, sites })),
+  });
+
+  test('@core TC-E2E-92: 导入写入成功、刷新站点卡片列表失败，之后在导入没改动的卡片上编辑 → 下次刷新保留这个编辑，导入改动过的字段显示导入后的内容（#550）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-site-rules': {
+          user: [
+            { site: 'github.com', exclude: ['.old'] },
+            { site: 'example.com', exclude: ['.a'] },
+          ],
+        },
+      }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    const cards = page.locator('.pt-site-rules-card');
+    await expect(cards).toHaveCount(2);
+    const github = cards.filter({ hasText: 'github.com' });
+    const example = cards.filter({ hasText: 'example.com' });
+    await failGetAfterWrite(page);
+
+    await page.setInputFiles('#pt-site-rules-import-file', siteRulesFile({
+      'github.com': { scope: [], exclude: ['.new'], preserve: [], disableBuiltin: false },
+    }));
+    const imported = await page.evaluate(() => chrome.i18n.getMessage('siteRulesImported', ['1']));
+    await expect(page.locator('#pt-toast')).toHaveText(await listStale(page, imported));
+
+    // 导入没有改动 example.com：在它上面的编辑不该被之后的刷新清掉
+    await example.locator('textarea[data-field="exclude"]').fill('.unsaved');
+    await page.evaluate(() => {
+      const local = chrome.storage.local as any;
+      const w = window as any;
+      w.__ptFailGet = false;
+      local.set = w.__ptSet;
+    });
+    // 新增一个站点，触发一次成功的刷新
+    await page.fill('#pt-site-rules-site-input', 'third.com');
+    await page.click('#pt-site-rules-add-btn');
+    await expect(cards).toHaveCount(3);
+    await expect(example.locator('textarea[data-field="exclude"]')).toHaveValue('.unsaved');
+    await expect(github.locator('textarea[data-field="exclude"]')).toHaveValue('.old\n.new');
+  });
+
+  test('@core TC-E2E-93: 导入后又删除站点，两次刷新站点卡片列表都失败 → 提示同时说明导入与删除都已成功（#550）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({ 'pt-site-rules': { user: [{ site: 'example.com', exclude: ['.a'] }] } }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    const cards = page.locator('.pt-site-rules-card');
+    await expect(cards).toHaveCount(1);
+    await failGetAfterWrite(page);
+    const toast = page.locator('#pt-toast');
+
+    await page.setInputFiles('#pt-site-rules-import-file', siteRulesFile({
+      'github.com': { scope: [], exclude: ['.new'], preserve: [], disableBuiltin: false },
+    }));
+    const imported = await page.evaluate(() => chrome.i18n.getMessage('siteRulesImported', ['1']));
+    await expect(toast).toHaveText(await listStale(page, imported));
+
+    // 删除前读取恢复（删除要先读再写），写入后刷新列表又读取失败
+    await page.evaluate(() => {
+      (window as any).__ptFailGet = false;
+    });
+    page.once('dialog', (d) => d.accept());
+    await cards.locator('.pt-site-rules-delete').click();
+    const both = await page.evaluate(() =>
+      chrome.i18n.getMessage('siteRulesWrittenJoin', [
+        chrome.i18n.getMessage('siteRulesImported', ['1']),
+        chrome.i18n.getMessage('siteRulesDeleted'),
+      ]),
+    );
+    await expect(toast).toHaveText(await listStale(page, both));
   });
 });
