@@ -66,13 +66,31 @@ interface Card {
   inputs: Map<Field, HTMLTextAreaElement>;
   /** 各字段已保存的文本 —— 文本框与它相同时说明该字段没有未保存的改动 */
   saved: Map<Field, string>;
-  /** 按无效选择器标出各字段：有则标红并逐行列出，没有则清除提示 */
-  showInvalid: (invalid: InvalidSelector[], fields?: Iterable<Field>) => void;
+  /** 按算好的提示标出各字段：有提示则标红并显示，空则清除提示 */
+  showInvalid: (marks: Map<Field, string>) => void;
   /** 停用内置规则的开关，站点没有内置规则时为 null（#375） */
   builtinToggle: HTMLButtonElement | null;
 }
 
 const toText = (sels: string[] = []) => sels.join('\n');
+
+/**
+ * 无效选择器的提示，按字段：逐行列出行号与选择器，没有无效行的字段为空。
+ * 只算文案、不动界面 —— 渲染时放在第一步，出错时界面不变（#564）。
+ */
+function invalidMarks(invalid: InvalidSelector[], fields: Iterable<Field>): Map<Field, string> {
+  const marks = new Map<Field, string>();
+  for (const field of fields) {
+    marks.set(field, invalid
+      .filter((i) => i.field === field)
+      .map((i) =>
+        tf('siteRulesInvalidSelector', `第 ${i.line} 行不是有效的 CSS 选择器：${i.selector}`,
+          String(i.line), i.selector),
+      )
+      .join('\n'));
+  }
+  return marks;
+}
 
 /** 写入或读取失败（#508、#526）：记日志，并提示原因 —— 例如读取存储失败时未作改动。 */
 function showFailure(key: string, fallback: string, e: unknown): void {
@@ -183,25 +201,18 @@ function siteCard(u: UserSiteRules, onDelete: (site: string) => void): Card {
     saveUserSiteRules(u.site, rules)
       .then(() => showToast(tf('siteRulesSaved', '已保存，刷新该网站后生效')))
       .catch((e) => {
-        if (e instanceof InvalidSelectorsError) showInvalid(e.invalid);
+        if (e instanceof InvalidSelectorsError) showInvalid(invalidMarks(e.invalid, inputs.keys()));
         else showFailure('siteRulesSaveFailed', '保存站点规则失败', e);
       });
   });
 
-  /** 无效选择器：标红对应文本框，逐行列出行号与选择器；没有无效行的字段清除提示 */
-  function showInvalid(invalid: InvalidSelector[], fields: Iterable<Field> = inputs.keys()): void {
-    for (const field of fields) {
-      const input = inputs.get(field)!;
+  /** 无效选择器：有提示的字段标红对应文本框并显示提示；提示为空的字段清除提示 */
+  function showInvalid(marks: Map<Field, string>): void {
+    for (const [field, text] of marks) {
+      inputs.get(field)!.classList.toggle('pt-error', text !== '');
       const error = errors.get(field)!;
-      const lines = invalid
-        .filter((i) => i.field === field)
-        .map((i) =>
-          tf('siteRulesInvalidSelector', `第 ${i.line} 行不是有效的 CSS 选择器：${i.selector}`,
-            String(i.line), i.selector),
-        );
-      input.classList.toggle('pt-error', lines.length > 0);
-      error.textContent = lines.join('\n');
-      error.classList.toggle('pt-visible', lines.length > 0);
+      error.textContent = text;
+      error.classList.toggle('pt-visible', text !== '');
     }
   }
   return { el, inputs, saved: new Map(), showInvalid, builtinToggle };
@@ -232,6 +243,8 @@ export function initSiteRules(): void {
    * 分两步（#558）：先算出每张卡片要显示的内容，新卡片建好但不放进列表，
    * 不改动已显示的卡片；全部成功后才一次性写入并替换列表。第一步出错时
    * 界面与已保存内容的记录都保持刷新前的样子，与提示“列表没有刷新”一致。
+   * 可能出错的计算（包括无效选择器提示的文案）都放在第一步，第二步只把算好的
+   * 结果写进界面（#564）。
    */
   function render(list: UserSiteRules[]): void {
     const plans = list.map((u) => {
@@ -245,14 +258,14 @@ export function initSiteRules(): void {
         if (input.value === saved || importChanges.get(u.site)?.has(field)) clean.push(field);
         texts.set(field, text);
       }
-      return { u, card, texts, clean, invalid: findInvalidSelectors(u) };
-    });
-    for (const { u, card, texts, clean, invalid } of plans) {
-      for (const field of clean) card.inputs.get(field)!.value = texts.get(field)!;
-      for (const [field, text] of texts) card.saved.set(field, text);
       // #443：已保存的规则也逐行校验。只标没有未保存改动的字段 ——
       // 行号对应的是已保存的文本
-      card.showInvalid(invalid, clean);
+      return { u, card, texts, clean, marks: invalidMarks(findInvalidSelectors(u), clean) };
+    });
+    for (const { u, card, texts, clean, marks } of plans) {
+      for (const field of clean) card.inputs.get(field)!.value = texts.get(field)!;
+      for (const [field, text] of texts) card.saved.set(field, text);
+      card.showInvalid(marks);
       card.builtinToggle?.classList.toggle('pt-on', u.disableBuiltin === true);
       cards.set(u.site, card);
     }
