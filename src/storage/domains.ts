@@ -15,6 +15,7 @@
 import { siteMatches } from '~/src/dom/site-filter';
 import { BUILTIN_DOMAINS } from './builtin-domains';
 import { isQuotaError, StorageQuotaError } from './quota';
+import { StorageReadError } from './read-error';
 
 /** 术语：领域里的一条对照（原词 → 译法），或标记为「不翻译」。 */
 export interface Term {
@@ -129,9 +130,7 @@ async function readStoredStrict(): Promise<StoredDomains> {
       | Partial<StoredDomains>
       | undefined;
   } catch (e) {
-    // 设置页的失败提示显示去掉“[PT] ”前缀的原因。只描述读取本身：领域
-    // 列表与导出不改动数据，写入路径另外说明未作改动（#537）
-    throw new Error('[PT] 暂时读不到存储里的数据，请稍后重试', { cause: e });
+    throw new StorageReadError(e);
   }
   const user = Array.isArray(stored?.user) ? stored.user : [];
   const builtin: Record<string, BuiltinOverlay> = {};

@@ -436,5 +436,25 @@
   "siteRulesWrittenJoin": {
     "message": "$first$；$next$",
     "placeholders": { "first": { "content": "$1" }, "next": { "content": "$2" } }
+  },
+  "siteRulesListNotRefreshed": {
+    "message": "網站卡片清單沒有重新整理：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesListNotLoaded": {
+    "message": "網站卡片清單沒有載入：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainListNotRefreshed": {
+    "message": "領域清單沒有重新整理：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainListNotLoaded": {
+    "message": "領域清單沒有載入：$error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesListStaleNotLoaded": {
+    "message": "$done$；網站卡片清單沒有載入：$error$",
+    "placeholders": { "done": { "content": "$1" }, "error": { "content": "$2" } }
   }
 }

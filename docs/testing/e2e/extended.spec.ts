@@ -1081,8 +1081,8 @@ test.describe('设置页：翻译领域 @extended', () => {
 
     // 提示文案随浏览器界面语言（CI 是英文），原因是存储模块的固定文案
     const toast = page.locator('#pt-toast');
-    const listFailed = () =>
-      page.evaluate(() => chrome.i18n.getMessage('domainListFailed', ['暂时读不到存储里的数据，请稍后重试']));
+    const listFailed = (key: string) =>
+      page.evaluate((k) => chrome.i18n.getMessage(k, ['暂时读不到存储里的数据，请稍后重试']), key);
 
     // 设置页里的存储读取失败；另一上下文写入触发本页刷新列表
     await page.evaluate(() => {
@@ -1093,7 +1093,8 @@ test.describe('设置页：翻译领域 @extended', () => {
       stored.user.push({ id: 'user:e2e-2', name: '医学', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] });
       await chrome.storage.local.set({ 'pt-domains': stored });
     });
-    await expect(toast).toHaveText(await listFailed());
+    // 已显示过列表：提示列表没有刷新（#549）
+    await expect(toast).toHaveText(await listFailed('domainListNotRefreshed'));
     await expect(items).toHaveCount(2);
     await expect(page.locator('.pt-domain-item', { hasText: '医学' })).toHaveCount(0);
     await expect(terms).toHaveAttribute('open', '');
@@ -1107,7 +1108,8 @@ test.describe('设置页：翻译领域 @extended', () => {
     });
     await page.reload();
     await page.click('.pt-nav-btn[data-section="domains"]');
-    await expect(toast).toHaveText(await listFailed());
+    // 还没显示过列表：提示列表没有载入（#549）
+    await expect(toast).toHaveText(await listFailed('domainListNotLoaded'));
     await expect(items).toHaveCount(0);
   });
 });

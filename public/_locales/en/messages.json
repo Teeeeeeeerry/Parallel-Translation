@@ -436,5 +436,25 @@
   "siteRulesWrittenJoin": {
     "message": "$first$ $next$",
     "placeholders": { "first": { "content": "$1" }, "next": { "content": "$2" } }
+  },
+  "siteRulesListNotRefreshed": {
+    "message": "The site rules list was not refreshed: $error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesListNotLoaded": {
+    "message": "The site rules list was not loaded: $error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainListNotRefreshed": {
+    "message": "The domain list was not refreshed: $error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "domainListNotLoaded": {
+    "message": "The domain list was not loaded: $error$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "siteRulesListStaleNotLoaded": {
+    "message": "$done$ The site rules list was not loaded: $error$",
+    "placeholders": { "done": { "content": "$1" }, "error": { "content": "$2" } }
   }
 }

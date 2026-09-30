@@ -19,6 +19,7 @@
 import { siteCovers, siteMatches } from '~/src/dom/site-filter';
 import { BUILTIN_SITE_RULES } from './builtin-site-rules';
 import { isQuotaError, StorageQuotaError } from './quota';
+import { StorageReadError } from './read-error';
 
 /** 一个站点的页面规则：CSS 选择器列表。 */
 export interface SiteRules {
@@ -199,9 +200,7 @@ async function readUserSiteRulesStrict(): Promise<UserSiteRules[]> {
   try {
     stored = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY];
   } catch (e) {
-    // 设置页的失败提示显示去掉“[PT] ”前缀的原因。只描述读取本身：列表与
-    // 导出不改动数据，写入路径另外说明未作改动（#537）
-    throw new Error('[PT] 暂时读不到存储里的数据，请稍后重试', { cause: e });
+    throw new StorageReadError(e);
   }
   return parseStored(stored);
 }

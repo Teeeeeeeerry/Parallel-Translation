@@ -22,6 +22,7 @@ import {
   resetBuiltinDomain,
   DomainNotFoundError,
 } from '~/src/storage/domains';
+import { StorageReadError } from '~/src/storage/read-error';
 import { resetStorage, localStoreSnapshot } from '~/docs/testing/setup';
 import type { Domain } from '~/src/storage/domains';
 
@@ -95,6 +96,8 @@ describe('读取存储失败时设置页的领域列表抛错，翻译路径照�
     // 只读不改动数据：原因只说读不到，不说“未作改动”（#537）
     const err = await getEffectiveDomains().then(() => null, (e: unknown) => e);
     expect((err as Error).message).toBe('[PT] 暂时读不到存储里的数据，请稍后重试');
+    // 两个存储模块共用同一个读取失败错误（#549）
+    expect(err).toBeInstanceOf(StorageReadError);
     expect(await getEffectiveDomains()).toEqual(before);
   });
 

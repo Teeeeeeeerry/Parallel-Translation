@@ -369,6 +369,8 @@ export function initSiteRules(): void {
    * （#536），刷新成功才清空 —— 连续写入时前一次的结果不丢（#550）
    */
   let written: string[] = [];
+  /** 列表是否已按存储显示过：决定读取失败时说“没有载入”还是“没有刷新”（#549） */
+  let loaded = false;
 
   /**
    * 按存储重新渲染卡片，不会失败，返回列表是否已按最新存储刷新：读取失败时
@@ -384,7 +386,9 @@ export function initSiteRules(): void {
     if (done !== undefined && !written.includes(done)) written.push(done);
     const p = getUserSiteRules()
       .then((list) => {
-        if (seq === renderSeq) render(list, resetPending);
+        if (seq !== renderSeq) return;
+        render(list, resetPending);
+        loaded = true;
       })
       .then(
         () => {
@@ -396,13 +400,16 @@ export function initSiteRules(): void {
         (e: unknown) => {
           if (seq !== renderSeq) return latest;
           if (written.length === 0) {
-            showFailure('siteRulesListFailed', '读取站点卡片列表失败', e);
+            if (loaded) showFailure('siteRulesListNotRefreshed', '站点卡片列表没有刷新', e);
+            else showFailure('siteRulesListNotLoaded', '站点卡片列表没有载入', e);
           } else {
             console.error('[PT] 读取站点卡片列表失败:', e);
             const all = written.reduce((a, b) => tf('siteRulesWrittenJoin', `${a}；${b}`, a, b));
             const reason = failReason(e);
             showToast(
-              tf('siteRulesListStale', `${all}；站点卡片列表没有刷新：${reason}`, all, reason),
+              loaded
+                ? tf('siteRulesListStale', `${all}；站点卡片列表没有刷新：${reason}`, all, reason)
+                : tf('siteRulesListStaleNotLoaded', `${all}；站点卡片列表没有载入：${reason}`, all, reason),
               4000,
             );
           }
