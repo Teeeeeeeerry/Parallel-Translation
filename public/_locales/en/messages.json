@@ -277,7 +277,6 @@
     "message": "Delete the rules for \"$site$\"? Only the built-in rules will apply to this site afterwards.",
     "placeholders": { "site": { "content": "$1" } }
   },
-  "siteRulesDeleted": { "message": "Deleted. Reload the site to apply." },
   "siteRulesDisableBuiltin": { "message": "Disable built-in rules for this site" },
   "domainCreateFailed": {
     "message": "Failed to create domain: $error$",
@@ -415,14 +414,6 @@
   "siteRulesImportBadVersion": { "message": "Import failed: unsupported file version. Update the extension and try again." },
   "siteRulesExportFailed": {
     "message": "Failed to export site rules: $error$",
-    "placeholders": { "error": { "content": "$1" } }
-  },
-  "siteRulesListFailed": {
-    "message": "Failed to load site rules list: $error$",
-    "placeholders": { "error": { "content": "$1" } }
-  },
-  "domainListFailed": {
-    "message": "Failed to load domain list: $error$",
     "placeholders": { "error": { "content": "$1" } }
   },
   "siteRulesAdded": {

@@ -277,7 +277,6 @@
     "message": "確定刪除網站「$site$」的規則嗎？刪除後該網站只剩內建規則生效。",
     "placeholders": { "site": { "content": "$1" } }
   },
-  "siteRulesDeleted": { "message": "已刪除，重新整理該網站後生效" },
   "siteRulesDisableBuiltin": { "message": "停用這個網站的內建規則" },
   "domainCreateFailed": {
     "message": "新增領域失敗：$error$",
@@ -415,14 +414,6 @@
   "siteRulesImportBadVersion": { "message": "匯入失敗：檔案的版本號不支援，請更新擴充功能後再匯入" },
   "siteRulesExportFailed": {
     "message": "匯出網站規則失敗：$error$",
-    "placeholders": { "error": { "content": "$1" } }
-  },
-  "siteRulesListFailed": {
-    "message": "讀取網站卡片清單失敗：$error$",
-    "placeholders": { "error": { "content": "$1" } }
-  },
-  "domainListFailed": {
-    "message": "讀取領域清單失敗：$error$",
     "placeholders": { "error": { "content": "$1" } }
   },
   "siteRulesAdded": {

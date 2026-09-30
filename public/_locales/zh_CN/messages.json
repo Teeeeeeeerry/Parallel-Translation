@@ -277,7 +277,6 @@
     "message": "确定删除站点“$site$”的规则吗？删除后该站点只剩内置规则生效。",
     "placeholders": { "site": { "content": "$1" } }
   },
-  "siteRulesDeleted": { "message": "已删除，刷新该网站后生效" },
   "siteRulesDisableBuiltin": { "message": "停用这个站点的内置规则" },
   "domainCreateFailed": {
     "message": "新建领域失败：$error$",
@@ -415,14 +414,6 @@
   "siteRulesImportBadVersion": { "message": "导入失败：文件的版本号不支持，请更新扩展后再导入" },
   "siteRulesExportFailed": {
     "message": "导出站点规则失败：$error$",
-    "placeholders": { "error": { "content": "$1" } }
-  },
-  "siteRulesListFailed": {
-    "message": "读取站点卡片列表失败：$error$",
-    "placeholders": { "error": { "content": "$1" } }
-  },
-  "domainListFailed": {
-    "message": "读取领域列表失败：$error$",
     "placeholders": { "error": { "content": "$1" } }
   },
   "siteRulesAdded": {
