@@ -2141,4 +2141,66 @@ test.describe('站点页面规则', () => {
     await expect(error).toBeVisible();
     await expect(error).toContainText('a[');
   });
+
+  test('@core TC-E2E-99: 导入写入成功、刷新站点卡片列表时渲染出错，之后在导入改动过的字段与另一张卡片上编辑 → 下次刷新成功时导入改动过的字段显示导入后的内容，另一张卡片的编辑还在（#566）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-site-rules': {
+          user: [
+            { site: 'github.com', exclude: ['.old'] },
+            { site: 'example.com', exclude: ['.a'] },
+          ],
+        },
+      }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    const cards = page.locator('.pt-site-rules-card');
+    await expect(cards).toHaveCount(2);
+    const github = cards.filter({ hasText: 'github.com' }).locator('textarea[data-field="exclude"]');
+    const example = cards.filter({ hasText: 'example.com' }).locator('textarea[data-field="exclude"]');
+    // __ptFailRender 为 true 时，构造卡片的文本框抛错
+    await page.evaluate(() => {
+      const create = document.createElement.bind(document);
+      (document as any).createElement = (tag: string, options?: ElementCreationOptions) => {
+        if ((window as any).__ptFailRender && tag === 'textarea') throw new Error('[PT] 渲染出错');
+        return create(tag, options);
+      };
+      (window as any).__ptFailRender = true;
+    });
+
+    // 导入改动 github.com 并新增 new.com：渲染新站点的卡片时出错
+    await page.setInputFiles('#pt-site-rules-import-file', siteRulesFile({
+      'github.com': { scope: [], exclude: ['.new'], preserve: [], disableBuiltin: false },
+      'new.com': { scope: [], exclude: ['.n'], preserve: [], disableBuiltin: false },
+    }));
+    const stale = await page.evaluate(() =>
+      chrome.i18n.getMessage('siteRulesListStale', [
+        chrome.i18n.getMessage('siteRulesImported', ['2']),
+        '渲染出错',
+      ]),
+    );
+    await expect(page.locator('#pt-toast')).toHaveText(stale);
+    await expect(cards).toHaveCount(2);
+    await expect(github).toHaveValue('.old');
+
+    // 导入改动过的字段上的编辑会被导入后的内容覆盖；导入没改动的卡片上的编辑要保留
+    await github.fill('.edited');
+    await example.fill('.unsaved');
+    await page.evaluate(() => {
+      (window as any).__ptFailRender = false;
+    });
+    // 新增一个站点，触发一次成功的刷新
+    await page.fill('#pt-site-rules-site-input', 'third.com');
+    await page.click('#pt-site-rules-add-btn');
+    await expect(cards).toHaveCount(4);
+    await expect(github).toHaveValue('.old\n.new');
+    await expect(example).toHaveValue('.unsaved');
+    await expect(
+      cards.filter({ hasText: 'new.com' }).locator('textarea[data-field="exclude"]'),
+    ).toHaveValue('.n');
+  });
 });
