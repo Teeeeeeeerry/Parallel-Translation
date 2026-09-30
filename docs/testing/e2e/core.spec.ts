@@ -1974,4 +1974,62 @@ test.describe('站点页面规则', () => {
     await expect(githubExclude).toHaveValue('.old\n.new');
     await expect(github.locator('textarea[data-field="scope"]')).toHaveValue('main');
   });
+
+  test('@core TC-E2E-96: 渲染站点卡片列表时出错 → 提示列表没有刷新，已显示的卡片与未保存的编辑都保持刷新前的样子；之后刷新成功显示最新内容（#558）', async ({
+    page, serviceWorker,
+  }) => {
+    const write = (user: unknown[]) =>
+      serviceWorker.evaluate((u) => chrome.storage.local.set({ 'pt-site-rules': { user: u } }), user);
+    await write([
+      { site: 'github.com', exclude: ['.a'] },
+      { site: 'example.com', exclude: ['.b'] },
+    ]);
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    const cards = page.locator('.pt-site-rules-card');
+    await expect(cards).toHaveCount(2);
+    const github = cards.filter({ hasText: 'github.com' }).locator('textarea[data-field="exclude"]');
+    const example = cards.filter({ hasText: 'example.com' }).locator('textarea[data-field="exclude"]');
+    await example.fill('.unsaved');
+    // __ptFailRender 为 true 时，构造卡片的文本框抛错
+    await page.evaluate(() => {
+      const create = document.createElement.bind(document);
+      (document as any).createElement = (tag: string, options?: ElementCreationOptions) => {
+        if ((window as any).__ptFailRender && tag === 'textarea') throw new Error('[PT] 渲染出错');
+        return create(tag, options);
+      };
+      (window as any).__ptFailRender = true;
+    });
+
+    // 另一个标签页改了 github.com、新增了站点：渲染新站点的卡片时出错
+    await write([
+      { site: 'github.com', exclude: ['.a2'] },
+      { site: 'example.com', exclude: ['.b'] },
+      { site: 'new.com', exclude: ['.n'] },
+    ]);
+    const notRefreshed = await page.evaluate(() =>
+      chrome.i18n.getMessage('siteRulesListNotRefreshed', ['渲染出错']),
+    );
+    await expect(page.locator('#pt-toast')).toHaveText(notRefreshed);
+    await expect(cards).toHaveCount(2);
+    await expect(github).toHaveValue('.a');
+    await expect(example).toHaveValue('.unsaved');
+
+    // 渲染恢复正常后再刷新：列表显示最新内容，未保存的编辑还在
+    await page.evaluate(() => {
+      (window as any).__ptFailRender = false;
+    });
+    await write([
+      { site: 'github.com', exclude: ['.a2'] },
+      { site: 'example.com', exclude: ['.b'] },
+      { site: 'new.com', exclude: ['.n2'] },
+    ]);
+    await expect(cards).toHaveCount(3);
+    await expect(github).toHaveValue('.a2');
+    await expect(example).toHaveValue('.unsaved');
+    await expect(
+      cards.filter({ hasText: 'new.com' }).locator('textarea[data-field="exclude"]'),
+    ).toHaveValue('.n2');
+  });
 });

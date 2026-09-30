@@ -228,31 +228,35 @@ export function initSiteRules(): void {
    * 按读到的站点卡片重新渲染。导入改动过的字段（#377）丢弃文本框里未保存的
    * 改动 —— 否则再点保存会用旧文本覆盖刚导入的选择器；其他字段照常保留
    * 未保存的编辑，包括另一个标签页改动的字段（#550、#557）。
+   *
+   * 分两步（#558）：先算出每张卡片要显示的内容，新卡片建好但不放进列表，
+   * 不改动已显示的卡片；全部成功后才一次性写入并替换列表。第一步出错时
+   * 界面与已保存内容的记录都保持刷新前的样子，与提示“列表没有刷新”一致。
    */
   function render(list: UserSiteRules[]): void {
-    const els = list.map((u) => {
-      let card = cards.get(u.site);
-      if (!card) {
-        card = siteCard(u, remove);
-        cards.set(u.site, card);
-      }
-      // #443：已保存的规则也逐行校验。只标没有未保存改动的字段 ——
-      // 行号对应的是已保存的文本
+    const plans = list.map((u) => {
+      const card = cards.get(u.site) ?? siteCard(u, remove);
+      const texts = new Map<Field, string>();
+      // 没有未保存改动的字段：写入存储里的内容
       const clean: Field[] = [];
       for (const [field, input] of card.inputs) {
         const text = toText(u[field]);
         const saved = card.saved.get(field) ?? '';
-        if (input.value === saved || importChanges.get(u.site)?.has(field)) {
-          input.value = text;
-          clean.push(field);
-        }
-        card.saved.set(field, text);
+        if (input.value === saved || importChanges.get(u.site)?.has(field)) clean.push(field);
+        texts.set(field, text);
       }
-      card.showInvalid(findInvalidSelectors(u), clean);
-      card.builtinToggle?.classList.toggle('pt-on', u.disableBuiltin === true);
-      return card.el;
+      return { u, card, texts, clean, invalid: findInvalidSelectors(u) };
     });
-    listEl.replaceChildren(...els);
+    for (const { u, card, texts, clean, invalid } of plans) {
+      for (const field of clean) card.inputs.get(field)!.value = texts.get(field)!;
+      for (const [field, text] of texts) card.saved.set(field, text);
+      // #443：已保存的规则也逐行校验。只标没有未保存改动的字段 ——
+      // 行号对应的是已保存的文本
+      card.showInvalid(invalid, clean);
+      card.builtinToggle?.classList.toggle('pt-on', u.disableBuiltin === true);
+      cards.set(u.site, card);
+    }
+    listEl.replaceChildren(...plans.map((p) => p.card.el));
     // 已删除的站点不再复用旧卡片 —— 重新新增同名站点时从空白开始
     for (const site of cards.keys()) {
       if (!list.some((u) => u.site === site)) cards.delete(site);
