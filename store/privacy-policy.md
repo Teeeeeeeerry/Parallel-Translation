@@ -1,6 +1,6 @@
 # Parallel-Translation 隐私政策
 
-**最后更新日期：2026-09-29**
+**最后更新日期：2026-09-30**
 
 ## 数据收集
 
@@ -18,8 +18,8 @@ Parallel-Translation **不收集任何个人信息**。本扩展：
 | 引擎 | 目标服务 | 隐私政策 |
 |------|---------|---------|
 | Google 翻译 | translate.googleapis.com | [Google 隐私权政策](https://policies.google.com/privacy) |
-| Bing 翻译 | api-edge.cognitive.microsofttranslator.com | [Microsoft 隐私声明](https://privacy.microsoft.com/zh-cn/privacystatement) |
-| OpenAI | api.openai.com（或用户配置的自定义端点） | [OpenAI 隐私政策](https://openai.com/policies/privacy-policy) |
+| Bing 翻译 | api-edge.cognitive.microsofttranslator.com；edge.microsoft.com（仅获取短期访问令牌，不发送待翻译文本） | [Microsoft 隐私声明](https://privacy.microsoft.com/zh-cn/privacystatement) |
+| OpenAI | api.openai.com | [OpenAI 隐私政策](https://openai.com/policies/privacy-policy) |
 | DeepL | api.deepl.com / api-free.deepl.com | [DeepL 隐私政策](https://www.deepl.com/privacy) |
 | Gemini | generativelanguage.googleapis.com | [Google 隐私权政策](https://policies.google.com/privacy) |
 
