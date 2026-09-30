@@ -399,7 +399,7 @@
     "placeholders": { "site": { "content": "$1" } }
   },
   "siteRulesSkipList": {
-    "message": "“$site$”：“$field$”應為選擇器列表",
+    "message": "“$site$”：“$field$”應為選擇器清單",
     "placeholders": { "site": { "content": "$1" }, "field": { "content": "$2" } }
   },
   "siteRulesSkipDisable": {
@@ -418,7 +418,7 @@
     "placeholders": { "error": { "content": "$1" } }
   },
   "siteRulesListFailed": {
-    "message": "讀取網站卡片列表失敗：$error$",
+    "message": "讀取網站卡片清單失敗：$error$",
     "placeholders": { "error": { "content": "$1" } }
   },
   "domainListFailed": {
@@ -430,7 +430,7 @@
     "placeholders": { "site": { "content": "$1" } }
   },
   "siteRulesListStale": {
-    "message": "$done$；網站卡片列表沒有重新整理：$error$",
+    "message": "$done$；網站卡片清單沒有重新整理：$error$",
     "placeholders": { "done": { "content": "$1" }, "error": { "content": "$2" } }
   },
   "siteRulesWrittenJoin": {
