@@ -877,6 +877,29 @@ describe('站点规则 JSON 导入（#377）', () => {
     );
     expect(result.imported).toBe(2);
   });
+
+  test('返回导入实际改动的站点与字段，合并后与原内容相同的字段不算（#557）', async () => {
+    await options.saveUserSiteRules('github.com', { exclude: ['.a'], preserve: ['.p'] });
+    await options.saveUserSiteRules('example.com', { scope: ['main'] });
+    const result = await options.importUserSiteRules(
+      file({
+        'github.com': { scope: ['main'], exclude: ['.a'], preserve: ['.p'], disableBuiltin: false },
+        'example.com': { scope: ['main'], exclude: [], preserve: [], disableBuiltin: true },
+        'new.com': { scope: [], exclude: ['.x'], preserve: [], disableBuiltin: false },
+        'empty.com': { scope: [], exclude: [], preserve: [], disableBuiltin: false },
+      }),
+    );
+    expect(result.changed).toEqual([
+      { site: 'github.com', fields: ['scope'] },
+      { site: 'new.com', fields: ['exclude'] },
+    ]);
+  });
+
+  test('导入内容与现有规则完全相同时，没有改动的字段（#557）', async () => {
+    await options.saveUserSiteRules('github.com', { exclude: ['.a', '.b'], preserve: ['.p'] });
+    const result = await options.importUserSiteRules(await options.exportUserSiteRules());
+    expect(result).toEqual({ imported: 1, changed: [], skipped: [] });
+  });
 });
 
 /**
@@ -1048,6 +1071,7 @@ describe('站点规则 JSON 导入容错（#378）', () => {
     );
     expect(result).toEqual({
       imported: 1,
+      changed: [{ site: 'example.org', fields: ['exclude'] }],
       skipped: [
         { site: 'a.com', reason: 'field', field: 'exclude' },
         { site: 'b.com', reason: 'field', field: 'preserve' },
@@ -1066,20 +1090,20 @@ describe('站点规则 JSON 导入容错（#378）', () => {
 
   test('条目缺少的字段按空处理，不算格式错误', async () => {
     const result = await options.importUserSiteRules(file({ 'example.org': { exclude: ['.ad'] } }));
-    expect(result).toEqual({ imported: 1, skipped: [] });
+    expect(result).toEqual({ imported: 1, changed: [{ site: 'example.org', fields: ['exclude'] }], skipped: [] });
     expect((await options.getUserSiteRules())[1]).toEqual({ site: 'example.org', exclude: ['.ad'] });
   });
 
   test('无法解析的选择器不在导入时拦截，照常导入，运行时跳过', async () => {
     const result = await options.importUserSiteRules(file({ 'example.org': entry({ exclude: ['a[', '.ad'] }) }));
-    expect(result).toEqual({ imported: 1, skipped: [] });
+    expect(result).toEqual({ imported: 1, changed: [{ site: 'example.org', fields: ['exclude'] }], skipped: [] });
     expect((await options.getUserSiteRules())[1]!.exclude).toEqual(['a[', '.ad']);
     expect(options.getSiteRules('example.org').exclude).toEqual(['.ad']);
   });
 
   test('条目全部被跳过时不写入存储', async () => {
     const result = await options.importUserSiteRules(file({ '123': entry() }));
-    expect(result).toEqual({ imported: 0, skipped: [{ site: '123', reason: 'site' }] });
+    expect(result).toEqual({ imported: 0, changed: [], skipped: [{ site: '123', reason: 'site' }] });
     expect(chrome.storage.local.set).not.toHaveBeenCalled();
   });
 
@@ -1138,7 +1162,7 @@ describe('站点名统一规范化与校验（#512）', () => {
     const result = await options.importUserSiteRules(
       file({ ' GitHub.com ': entry(['.a', '.b']), 'github.com': entry(['.b', '.c'], true) }),
     );
-    expect(result).toEqual({ imported: 1, skipped: [] });
+    expect(result).toEqual({ imported: 1, changed: [{ site: 'github.com', fields: ['exclude'] }], skipped: [] });
     expect(await options.getUserSiteRules()).toEqual([
       { site: 'github.com', exclude: ['.a', '.b', '.c'], disableBuiltin: true },
     ]);
@@ -1162,6 +1186,7 @@ describe('站点名统一规范化与校验（#512）', () => {
     );
     expect(result).toEqual({
       imported: 0,
+      changed: [],
       skipped: [
         { site: ' HTTP://Example.com ', reason: 'site' },
         { site: ' 42 ', reason: 'site' },
