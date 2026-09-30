@@ -1641,6 +1641,7 @@ test.describe('站点页面规则', () => {
       const local = chrome.storage.local as any;
       const w = window as any;
       const { get, set } = local;
+      w.__ptSet = set;
       local.get = (...a: unknown[]) =>
         w.__ptFailGet ? Promise.reject(new Error('boom')) : get.apply(local, a);
       local.set = async (...a: unknown[]) => {
@@ -1700,7 +1701,8 @@ test.describe('站点页面规则', () => {
     await cards.locator('.pt-site-rules-delete').click();
     const deleted = await page.evaluate(() => chrome.i18n.getMessage('siteRulesDeleted'));
     await expect(toast).toHaveText(await listStale(page, deleted));
-    await expect(cards).toHaveCount(1);
+    // 删除已成功：被删站点的卡片立即移除（#548）
+    await expect(cards).toHaveCount(0);
 
     // 新增：写入成功，提示说明站点已加上；输入框里的站点名还在
     await page.evaluate(() => {
@@ -1714,5 +1716,52 @@ test.describe('站点页面规则', () => {
     await expect(page.locator('#pt-site-rules-site-input')).not.toHaveClass(/pt-error/);
     const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('pt-site-rules'));
     expect((stored['pt-site-rules'] as any).user.map((u: any) => u.site)).toEqual(['example.com']);
+  });
+
+  test('@core TC-E2E-91: 删除站点写入成功、刷新站点卡片列表失败 → 被删站点的卡片立即移除，其他卡片与未保存的编辑不变，再新增同名站点从空白开始（#548）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-site-rules': {
+          user: [
+            { site: 'github.com', exclude: ['.old'] },
+            { site: 'example.com', exclude: ['.a'] },
+          ],
+        },
+      }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    const cards = page.locator('.pt-site-rules-card');
+    await expect(cards).toHaveCount(2);
+    const github = cards.filter({ hasText: 'github.com' });
+    const example = cards.filter({ hasText: 'example.com' });
+    await example.locator('textarea[data-field="exclude"]').fill('.unsaved');
+    await failGetAfterWrite(page);
+
+    page.once('dialog', (d) => d.accept());
+    await github.locator('.pt-site-rules-delete').click();
+    const deleted = await page.evaluate(() => chrome.i18n.getMessage('siteRulesDeleted'));
+    await expect(page.locator('#pt-toast')).toHaveText(await listStale(page, deleted));
+    // 被删站点的卡片不在了，其他卡片与未保存的编辑还在
+    await expect(github).toHaveCount(0);
+    await expect(cards).toHaveCount(1);
+    await expect(example.locator('textarea[data-field="exclude"]')).toHaveValue('.unsaved');
+    const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('pt-site-rules'));
+    expect((stored['pt-site-rules'] as any).user.map((u: any) => u.site)).toEqual(['example.com']);
+
+    // 恢复读取后新增同名站点：新卡片从空白开始，不复用被删卡片的旧内容
+    await page.evaluate(() => {
+      const local = chrome.storage.local as any;
+      const w = window as any;
+      w.__ptFailGet = false;
+      local.set = w.__ptSet;
+    });
+    await page.fill('#pt-site-rules-site-input', 'github.com');
+    await page.click('#pt-site-rules-add-btn');
+    await expect(github).toHaveCount(1);
+    await expect(github.locator('textarea[data-field="exclude"]')).toHaveValue('');
   });
 });

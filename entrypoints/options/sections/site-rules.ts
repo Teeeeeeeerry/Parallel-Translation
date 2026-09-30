@@ -263,6 +263,10 @@ export function initSiteRules(): void {
     }
     deleteUserSiteRules(site)
       .then(() => {
+        // 删除已成功：不等列表刷新就移除这张卡片 —— 刷新失败时旧卡片留着，
+        // 再点保存会把站点写回来（#548）
+        cards.get(site)?.el.remove();
+        cards.delete(site);
         const done = tf('siteRulesDeleted', '已删除，刷新该网站后生效');
         showToast(done);
         return refresh(false, done);
