@@ -2074,4 +2074,71 @@ test.describe('站点页面规则', () => {
     await expect(toast).toHaveText(await listStale(page, both));
     await expect(cards).toHaveCount(0);
   });
+
+  test('@core TC-E2E-98: 渲染站点卡片列表时格式化无效选择器的提示出错 → 提示列表没有刷新，排在前面的卡片也保持刷新前的样子；之后刷新成功照常标出无效选择器（#564）', async ({
+    page, serviceWorker,
+  }) => {
+    const write = (user: unknown[]) =>
+      serviceWorker.evaluate((u) => chrome.storage.local.set({ 'pt-site-rules': { user: u } }), user);
+    await write([
+      { site: 'github.com', exclude: ['.a'] },
+      { site: 'example.com', scope: ['a['], exclude: ['.b'] },
+    ]);
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    const cards = page.locator('.pt-site-rules-card');
+    await expect(cards).toHaveCount(2);
+    const github = cards.filter({ hasText: 'github.com' }).locator('textarea[data-field="exclude"]');
+    const exampleCard = cards.filter({ hasText: 'example.com' });
+    const example = exampleCard.locator('textarea[data-field="exclude"]');
+    const scope = exampleCard.locator('textarea[data-field="scope"]');
+    const error = exampleCard.locator('textarea[data-field="scope"] + .pt-site-rules-error');
+    await expect(scope).toHaveClass(/pt-error/);
+    await example.fill('.unsaved');
+    // __ptFailFmt 为 true 时，“无效选择器”的文案转成文本时抛错
+    await page.evaluate(() => {
+      const i18n = chrome.i18n as any;
+      const getMessage = i18n.getMessage.bind(i18n);
+      i18n.getMessage = (key: string, subs?: string | string[]) => {
+        if ((window as any).__ptFailFmt && key === 'siteRulesInvalidSelector') {
+          return {
+            toString() {
+              throw new Error('[PT] 格式化出错');
+            },
+          };
+        }
+        return getMessage(key, subs);
+      };
+      (window as any).__ptFailFmt = true;
+    });
+
+    // 另一个标签页改了排在前面的 github.com：渲染到 example.com 的无效选择器时出错
+    await write([
+      { site: 'github.com', exclude: ['.a2'] },
+      { site: 'example.com', scope: ['a['], exclude: ['.b'] },
+    ]);
+    const notRefreshed = await page.evaluate(() =>
+      chrome.i18n.getMessage('siteRulesListNotRefreshed', ['格式化出错']),
+    );
+    await expect(page.locator('#pt-toast')).toHaveText(notRefreshed);
+    await expect(cards).toHaveCount(2);
+    await expect(github).toHaveValue('.a');
+    await expect(example).toHaveValue('.unsaved');
+
+    // 格式化恢复正常后再刷新：列表显示最新内容，无效选择器照常标出，未保存的编辑还在
+    await page.evaluate(() => {
+      (window as any).__ptFailFmt = false;
+    });
+    await write([
+      { site: 'github.com', exclude: ['.a3'] },
+      { site: 'example.com', scope: ['a['], exclude: ['.b'] },
+    ]);
+    await expect(github).toHaveValue('.a3');
+    await expect(example).toHaveValue('.unsaved');
+    await expect(scope).toHaveValue('a[');
+    await expect(scope).toHaveClass(/pt-error/);
+    await expect(error).toBeVisible();
+    await expect(error).toContainText('a[');
+  });
 });
