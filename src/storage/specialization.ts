@@ -457,10 +457,18 @@ export type SiteRulesImportSkip =
   | { site: string; reason: 'entry' }
   | { site: string; reason: 'field'; field: keyof ExportedSiteRules };
 
+/** 导入实际改动的一张站点卡片：合并后与原内容不同的字段，按判定顺序（#557）。 */
+export interface SiteRulesImportChange {
+  site: string;
+  fields: Array<keyof SiteRules>;
+}
+
 /** 导入结果。 */
 export interface ImportSiteRulesResult {
   /** 导入的站点数，不含跳过的条目 */
   imported: number;
+  /** 导入实际改动的站点与字段，按新增顺序；合并后内容不变的站点不列出 */
+  changed: SiteRulesImportChange[];
   /** 跳过的条目，按文件里的顺序 */
   skipped: SiteRulesImportSkip[];
 }
@@ -525,6 +533,9 @@ function entrySkip(site: string, raw: unknown): SiteRulesImportSkip | null {
  * 类型错误）只跳过它自己，原因放在结果的 skipped 里；整个文件无法导入时
  * 抛 SiteRulesImportError，不改动现有规则。无法解析的选择器照常导入，
  * 由运行时跳过（#368）。没有可导入的条目时不写入。
+ *
+ * 结果里的 changed 列出导入实际改动的站点与字段（#557）：设置页据此只让
+ * 这些字段按导入后的内容覆盖未保存的编辑。
  */
 export async function importUserSiteRules(json: string): Promise<ImportSiteRulesResult> {
   const skipped: SiteRulesImportSkip[] = [];
@@ -535,13 +546,18 @@ export async function importUserSiteRules(json: string): Promise<ImportSiteRules
     if (skip) skipped.push(skip);
     else if (key) incoming.push([key, raw as Partial<ExportedSiteRules>]);
   }
-  if (incoming.length === 0) return { imported: 0, skipped };
+  if (incoming.length === 0) return { imported: 0, changed: [], skipped };
   // 导入的站点数按规范化、合并之后的卡片计
   const imported = new Set(incoming.map(([site]) => site)).size;
+  const text = (card: UserSiteRules, field: keyof SiteRules) => JSON.stringify(card[field] ?? []);
   return updateUserSiteRules((user) => {
+    // 每张卡片导入前各字段的内容：合并完后与它比较，得出导入实际改动的字段（#557）
+    const before = new Map<string, { card: UserSiteRules; texts: string[] }>();
     for (const [site, rules] of incoming) {
       let card = user.find((u) => u.site === site);
       if (!card) user.push((card = { site }));
+      const c = card;
+      if (!before.has(site)) before.set(site, { card: c, texts: SITE_RULE_FIELDS.map((f) => text(c, f)) });
       for (const field of SITE_RULE_FIELDS) {
         const sels = (rules[field] ?? []).map((s) => s.trim()).filter(Boolean);
         const merged = [...new Set([...(card[field] ?? []), ...sels])];
@@ -549,7 +565,13 @@ export async function importUserSiteRules(json: string): Promise<ImportSiteRules
       }
       if (rules.disableBuiltin) card.disableBuiltin = true;
     }
-    return { user, result: { imported, skipped } };
+    const changed = [...before]
+      .map(([site, { card, texts }]) => ({
+        site,
+        fields: SITE_RULE_FIELDS.filter((f, i) => text(card, f) !== texts[i]),
+      }))
+      .filter((c) => c.fields.length > 0);
+    return { user, result: { imported, changed, skipped } };
   });
 }
 

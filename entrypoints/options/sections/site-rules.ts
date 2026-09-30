@@ -218,13 +218,18 @@ export function initSiteRules(): void {
 
   /** 已渲染的卡片，按站点复用 —— 保存一张卡片时，其他卡片未保存的改动不丢 */
   const cards = new Map<string, Card>();
+  /**
+   * 导入实际改动、还没按导入后的内容刷新进卡片的字段，按站点（#557）。
+   * 导入成功时记下，列表刷新成功才清空 —— 刷新失败时要求不丢。
+   */
+  let importChanges = new Map<string, Set<Field>>();
 
   /**
-   * 按读到的站点卡片重新渲染。reset 为 true 时（#377 导入后），存储内容变了的
-   * 字段丢弃文本框里未保存的改动 —— 否则再点保存会用旧文本覆盖刚导入的
-   * 选择器；存储内容没变的字段照常保留未保存的编辑（#550）。
+   * 按读到的站点卡片重新渲染。导入改动过的字段（#377）丢弃文本框里未保存的
+   * 改动 —— 否则再点保存会用旧文本覆盖刚导入的选择器；其他字段照常保留
+   * 未保存的编辑，包括另一个标签页改动的字段（#550、#557）。
    */
-  function render(list: UserSiteRules[], reset: boolean): void {
+  function render(list: UserSiteRules[]): void {
     const els = list.map((u) => {
       let card = cards.get(u.site);
       if (!card) {
@@ -237,7 +242,7 @@ export function initSiteRules(): void {
       for (const [field, input] of card.inputs) {
         const text = toText(u[field]);
         const saved = card.saved.get(field) ?? '';
-        if (input.value === saved || (reset && text !== saved)) {
+        if (input.value === saved || importChanges.get(u.site)?.has(field)) {
           input.value = text;
           clean.push(field);
         }
@@ -271,7 +276,7 @@ export function initSiteRules(): void {
         cards.delete(site);
         const done = tf('siteRulesDeleted', '已删除，刷新该网站后生效');
         showToast(done);
-        return refresh(false, done);
+        return refresh(done);
       })
       .catch((e) => showFailure('siteRulesDeleteFailed', '删除站点失败', e));
   }
@@ -279,7 +284,7 @@ export function initSiteRules(): void {
   function add(): void {
     const site = siteInput.value.trim().toLowerCase();
     saveUserSiteRules(site, {})
-      .then(() => refresh(false, tf('siteRulesAdded', `已新增站点“${site}”`, site)))
+      .then(() => refresh(tf('siteRulesAdded', `已新增站点“${site}”`, site)))
       .then((ok) => {
         // 列表没有刷新时看不到新卡片：站点名留在输入框里（#536）
         if (!ok) return;
@@ -316,12 +321,18 @@ export function initSiteRules(): void {
     file
       .text()
       .then(importUserSiteRules)
-      .then(({ imported, skipped }) => {
+      .then(({ imported, changed, skipped }) => {
+        // 导入改动过的字段，下一次成功刷新时按导入后的内容显示（#557）
+        for (const { site, fields } of changed) {
+          const set = importChanges.get(site) ?? new Set<Field>();
+          for (const field of fields) set.add(field);
+          importChanges.set(site, set);
+        }
         const n = String(imported);
         if (skipped.length === 0) {
           const done = tf('siteRulesImported', `已导入 ${n} 个站点，刷新网站后生效`, n);
           showToast(done);
-          return refresh(true, done);
+          return refresh(done);
         }
         const lines = skipped.slice(0, SKIP_LIST_MAX).map(skipLine);
         const more = String(skipped.length - SKIP_LIST_MAX);
@@ -333,7 +344,7 @@ export function initSiteRules(): void {
         const m = String(skipped.length);
         const done = tf('siteRulesImportedSkipped', `已导入 ${n} 个站点，跳过 ${m} 条，刷新网站后生效`, n, m);
         showToast(done, 4000);
-        return refresh(true, done);
+        return refresh(done);
       })
       .catch((e) => {
         if (!(e instanceof SiteRulesImportError)) {
@@ -362,8 +373,6 @@ export function initSiteRules(): void {
 
   let renderSeq = 0;
   let latest: Promise<boolean> = Promise.resolve(true);
-  /** 要丢弃未保存改动的刷新还没生效：先发起的被后发起的取代时不丢这个要求 */
-  let resetPending = false;
   /**
    * 写入成功、列表还没按它刷新的提示，按先后排列；刷新失败时与原因合成一条
    * （#536），刷新成功才清空 —— 连续写入时前一次的结果不丢（#550）
@@ -380,20 +389,19 @@ export function initSiteRules(): void {
    * 同时说明写入已成功、列表没有刷新，而不是只剩读取失败。渲染卡片出错与
    * 读取失败一样处理（#550）。
    */
-  function refresh(reset = false, done?: string): Promise<boolean> {
+  function refresh(done?: string): Promise<boolean> {
     const seq = ++renderSeq;
-    resetPending ||= reset;
     if (done !== undefined && !written.includes(done)) written.push(done);
     const p = getUserSiteRules()
       .then((list) => {
         if (seq !== renderSeq) return;
-        render(list, resetPending);
+        render(list);
         loaded = true;
       })
       .then(
         () => {
           if (seq !== renderSeq) return latest;
-          resetPending = false;
+          importChanges = new Map();
           written = [];
           return true;
         },

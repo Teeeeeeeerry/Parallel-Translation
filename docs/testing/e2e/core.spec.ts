@@ -1906,4 +1906,72 @@ test.describe('站点页面规则', () => {
     );
     await expect(toast).toHaveText(await listStale(page, both));
   });
+
+  test('@core TC-E2E-95: 连续两次导入写入成功、刷新站点卡片列表都失败，之后另一个标签页改了本页有未保存编辑的字段 → 下次刷新保留这个编辑，两次导入改动过的字段都显示导入后的内容（#557）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-site-rules': {
+          user: [
+            { site: 'github.com', exclude: ['.old'] },
+            { site: 'example.com', exclude: ['.a'] },
+          ],
+        },
+      }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="site-rules"]');
+    const cards = page.locator('.pt-site-rules-card');
+    await expect(cards).toHaveCount(2);
+    const github = cards.filter({ hasText: 'github.com' });
+    const example = cards.filter({ hasText: 'example.com' });
+    await failGetAfterWrite(page);
+
+    await page.setInputFiles('#pt-site-rules-import-file', siteRulesFile({
+      'github.com': { scope: [], exclude: ['.new'], preserve: [], disableBuiltin: false },
+    }));
+    const imported = await page.evaluate(() => chrome.i18n.getMessage('siteRulesImported', ['1']));
+    const toast = page.locator('#pt-toast');
+    await expect(toast).toHaveText(await listStale(page, imported));
+
+    // 在第一次导入改动过的字段上编辑，再导入一次改动另一个字段（导入要先读再写）
+    const githubExclude = github.locator('textarea[data-field="exclude"]');
+    await githubExclude.fill('.stale');
+    await page.evaluate(() => {
+      (window as any).__ptFailGet = false;
+    });
+    await page.setInputFiles('#pt-site-rules-import-file', siteRulesFile({
+      'github.com': { scope: ['main'], exclude: [], preserve: [], disableBuiltin: false },
+    }));
+    await expect(toast).toHaveText(await listStale(page, imported));
+
+    // 本页在 example.com 上编辑，另一个标签页保存了同一个字段：不是导入改动的，
+    // 编辑不该被之后的刷新清掉
+    await example.locator('textarea[data-field="exclude"]').fill('.unsaved');
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-site-rules': {
+          user: [
+            { site: 'github.com', exclude: ['.old', '.new'], scope: ['main'] },
+            { site: 'example.com', exclude: ['.b'] },
+          ],
+        },
+      }),
+    );
+    await page.evaluate(() => {
+      const local = chrome.storage.local as any;
+      const w = window as any;
+      w.__ptFailGet = false;
+      local.set = w.__ptSet;
+    });
+    // 新增一个站点，触发一次成功的刷新
+    await page.fill('#pt-site-rules-site-input', 'third.com');
+    await page.click('#pt-site-rules-add-btn');
+    await expect(cards).toHaveCount(3);
+    await expect(example.locator('textarea[data-field="exclude"]')).toHaveValue('.unsaved');
+    await expect(githubExclude).toHaveValue('.old\n.new');
+    await expect(github.locator('textarea[data-field="scope"]')).toHaveValue('main');
+  });
 });
