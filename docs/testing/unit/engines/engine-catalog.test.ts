@@ -53,6 +53,7 @@ describe('引擎清单删掉 DeepL（#608）', () => {
       'bing-edge',
       'openai',
       'gemini',
+      'deepseek',
     ]);
     expect(document.getElementById('pt-key-openai')).not.toBeNull();
     expect(document.getElementById('pt-key-gemini')).not.toBeNull();
@@ -80,7 +81,7 @@ describe('引擎清单删掉 DeepL（#608）', () => {
     const values = [...document.querySelectorAll<HTMLOptionElement>('#pt-engine-select option')].map(
       (o) => o.value,
     );
-    expect(values).toEqual(['google-web', 'bing-edge', 'openai', 'gemini']);
+    expect(values).toEqual(['google-web', 'bing-edge', 'openai', 'gemini', 'deepseek']);
   });
 
   test('恢复默认清 key 的范围不再有 DeepL', async () => {

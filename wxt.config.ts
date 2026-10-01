@@ -1,4 +1,5 @@
 import { defineConfig } from 'wxt';
+import { ENGINE_CATALOG, optionalOriginOf } from './src/storage/schema';
 
 /**
  * wxt.config.ts 需要的 Vite Plugin 接口子集。
@@ -53,8 +54,15 @@ function blockTestFiles(): VitePlugin {
   };
 }
 
+/**
+ * 走可选权限的引擎端点（#609），取自引擎清单。不进必需的 host 权限：升级时
+ * 不弹新的权限提示，Chrome 也不会因权限变多停用扩展。设置页在保存 key 的
+ * 点击里申请。
+ */
+const OPTIONAL_ORIGINS = ENGINE_CATALOG.flatMap((e) => optionalOriginOf(e.id) ?? []);
+
 export default defineConfig({
-  manifest: ({ browser }) => ({
+  manifest: ({ browser, manifestVersion }) => ({
     // 存在 _locales/ 时 default_locale 是硬性要求 —— 缺它 Chrome 会以
     // 「Localization used, but default_locale wasn't specified」拒绝加载整个扩展。
     default_locale: 'zh_CN',
@@ -75,6 +83,11 @@ export default defineConfig({
       'https://api.deepl.com/*',
       'https://api-free.deepl.com/*',
     ],
+    // MV3 用 optional_host_permissions；Firefox 的 MV2 没有这个键，主机
+    // 匹配模式写进 optional_permissions
+    ...(manifestVersion === 2
+      ? { optional_permissions: OPTIONAL_ORIGINS }
+      : { optional_host_permissions: OPTIONAL_ORIGINS }),
     action: { default_title: '__MSG_extName__' },
     options_ui: { open_in_tab: true },
     icons: {

@@ -468,5 +468,6 @@
     "message": "已新增領域「$name$」，匯入 $count$ 條術語，略過 $skipped$ 行",
     "placeholders": { "name": { "content": "$1" }, "count": { "content": "$2" }, "skipped": { "content": "$3" } }
   },
-  "domainImportNewNone": { "message": "檔案裡沒有可匯入的術語，沒有新增領域" }
+  "domainImportNewNone": { "message": "檔案裡沒有可匯入的術語，沒有新增領域" },
+  "descDeepseek": { "message": "DeepSeek API，key 可從 DeepSeek 開放平台取得。點「測試連線」時瀏覽器會詢問是否允許存取 api.deepseek.com，測試成功後儲存 key。" }
 }

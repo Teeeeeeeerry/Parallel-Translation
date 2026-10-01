@@ -468,5 +468,6 @@
     "message": "已新建领域“$name$”，导入 $count$ 条术语，跳过 $skipped$ 行",
     "placeholders": { "name": { "content": "$1" }, "count": { "content": "$2" }, "skipped": { "content": "$3" } }
   },
-  "domainImportNewNone": { "message": "文件里没有可导入的术语，没有新建领域" }
+  "domainImportNewNone": { "message": "文件里没有可导入的术语，没有新建领域" },
+  "descDeepseek": { "message": "DeepSeek API，key 可从 DeepSeek 开放平台获取。点“测试连接”时浏览器会询问是否允许访问 api.deepseek.com，测试成功后保存 key。" }
 }

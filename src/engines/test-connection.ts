@@ -19,6 +19,7 @@ import type { ProbeSpec } from './shared';
 import { openaiProbe } from './openai';
 import { deeplProbe } from './deepl';
 import { geminiProbe } from './gemini';
+import { deepseekProbe } from './deepseek';
 
 /** 已接入探测入口的自带 key 引擎 —— 引擎清单里的全部自带 key 引擎（#608）。 */
 export type TestableKeyedEngine = ByokEngineId;
@@ -28,6 +29,7 @@ const PROBES: Record<TestableKeyedEngine, ProbeSpec> = {
   openai: openaiProbe,
   deepl: deeplProbe,
   gemini: geminiProbe,
+  deepseek: deepseekProbe,
 };
 
 /** 测试连接结果 —— ok 与展示文案（文案已按失败类别区分）。 */

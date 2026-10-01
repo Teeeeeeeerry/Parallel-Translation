@@ -54,6 +54,9 @@ export function migrateStyle(style: unknown): StyleId {
  * 卡片（说明文案 key 与回落文案在这里），恢复默认时清掉它的 key，状态分类
  * 把它的 401/403 判为 key 无效，测试连接为它分派探测。
  *
+ * byok.optionalOrigin 是走可选权限的端点（#609）：manifest 把它声明为可选
+ * host 权限，设置页在保存 key 的点击里申请。现有引擎的端点是必需权限，没有这一项。
+ *
  * 新增引擎只改这份清单，再补上引擎自己的配置：显示名（ENGINE_LABELS）、
  * 默认模型（DEFAULT_MODELS，有模型概念时，同时是设置页模型名的占位）、
  * 适配器（router 的引擎表）与探测规格（测试连接的探测表）。
@@ -79,6 +82,15 @@ export const ENGINE_CATALOG = [
       fallbackDesc: 'Google Gemini API，key 可从 Google AI Studio 获取。',
     },
   },
+  {
+    id: 'deepseek',
+    byok: {
+      descKey: 'descDeepseek',
+      fallbackDesc: 'DeepSeek API，key 可从 DeepSeek 开放平台获取。点“测试连接”时浏览器会询问是否允许访问 api.deepseek.com，测试成功后保存 key。',
+      // #609: 端点走可选权限，在保存 key 的点击里申请，升级时不弹新的权限提示
+      optionalOrigin: 'https://api.deepseek.com/*',
+    },
+  },
 ] as const;
 
 type EngineEntry = (typeof ENGINE_CATALOG)[number];
@@ -93,6 +105,12 @@ export type ByokEngineEntry = Extract<EngineEntry, { byok: object }>;
 
 export function isByokEngine(e: EngineEntry): e is ByokEngineEntry {
   return 'byok' in e;
+}
+
+/** 引擎走可选权限的端点（#609）；端点是必需权限的引擎返回 undefined。 */
+export function optionalOriginOf(id: EngineId): string | undefined {
+  const byok = ENGINE_CATALOG.filter(isByokEngine).find((e) => e.id === id)?.byok;
+  return byok && 'optionalOrigin' in byok ? byok.optionalOrigin : undefined;
 }
 
 export type HotkeyAction =
@@ -158,6 +176,7 @@ export const ENGINE_LABELS: Record<EngineId, string> = {
   'openai': 'OpenAI (BYOK)',
   'deepl': 'DeepL (BYOK)',
   'gemini': 'Gemini (BYOK)',
+  'deepseek': 'DeepSeek (BYOK)',
 };
 
 export const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
@@ -192,6 +211,7 @@ export const CONCURRENCY_MAX = 10;
 export const DEFAULT_MODELS: Partial<Record<EngineId, string>> = {
   openai: 'gpt-4o-mini',
   gemini: 'gemini-2.0-flash',
+  deepseek: 'deepseek-flash',
 };
 
 /** 钳制并发数到合法范围 —— 导入/存储/写入口共用，防 0 或负数饿死闸门。 */
