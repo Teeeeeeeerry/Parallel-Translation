@@ -19,7 +19,9 @@
  *
  * 贡献图（#580）—— 格子表格整块不翻译：表格里多是读屏软件专用的隐藏
  * 文字（“Day of Week”、完整月份与星期名），译文插入后却是可见的，会把
- * 每格 10px 的日历撑坏；贡献数标题照常翻译。全页与逐段翻译两个入口分别验证
+ * 每格 10px 的日历撑坏；贡献数标题照常翻译。全页与逐段翻译两个入口分别验证。
+ * 表格的样式 class 与 JS 挂钩各排除一条，只剩其中一个时仍生效（#587）。
+ * 格子的悬停提示落在表格外，不被翻译靠的是采集规则，与排除无关
  *
  * 逐段翻译 —— closestUnit()（悬停按钮与点击翻译共用的入口，#409）：
  *   - 排除区内找不到段落，不出按钮也不翻译
@@ -134,10 +136,27 @@ describe('collect（github.com 内置排除）', () => {
     expect(ids(collect())).toEqual(['body']);
   });
 
-  test('#580：贡献图的格子表格（月份、星期标签）与悬停提示不采集，贡献数标题照常采集', () => {
+  test('#580：贡献图的格子表格（月份、星期标签）不采集，贡献数标题照常采集', () => {
     document.body.innerHTML = CONTRIBUTION_GRAPH;
     // 图下方的说明链接所在的 div 没有直接文字，按采集规则本来就不是翻译单元
     expect(ids(collect())).toEqual(['total']);
+  });
+
+  test.each([
+    ['只带样式 class', 'ContributionCalendar-grid'],
+    ['只带 JS 挂钩', 'js-calendar-graph-table'],
+  ])('#587：贡献图表格%s时同样不采集', (_, cls) => {
+    document.body.innerHTML = CONTRIBUTION_GRAPH.replace(
+      'class="ContributionCalendar-grid js-calendar-graph-table"',
+      `class="${cls}"`,
+    );
+    expect(ids(collect())).toEqual(['total']);
+  });
+
+  test('#587：悬停提示不采集 —— 它在表格外，靠的是采集规则（tool-tip 不是翻译单元），不是排除', () => {
+    document.body.innerHTML = CONTRIBUTION_GRAPH;
+    const texts = collect().map((u) => u.textContent);
+    expect(texts.some((t) => t?.includes('contributions on September'))).toBe(false);
   });
 
   test('含行内 code 的正文照常采集', () => {
@@ -159,12 +178,28 @@ describe('closestUnit（github.com 内置排除，逐段翻译入口）', () => 
     expect(closestUnit(document.getElementById('tree')!)).toBeNull();
   });
 
-  test('#580：贡献图格子表格里的月份、星期与悬停提示找不到段落，贡献数标题能找到', () => {
+  test('#580：贡献图格子表格里的月份、星期找不到段落，贡献数标题能找到', () => {
     document.body.innerHTML = CONTRIBUTION_GRAPH;
     expect(closestUnit(document.getElementById('month')!)).toBeNull();
     expect(closestUnit(document.getElementById('weekday')!)).toBeNull();
-    expect(closestUnit(document.getElementById('tip')!)).toBeNull();
     expect(closestUnit(document.getElementById('total')!)?.id).toBe('total');
+  });
+
+  test.each([
+    ['只带样式 class', 'ContributionCalendar-grid'],
+    ['只带 JS 挂钩', 'js-calendar-graph-table'],
+  ])('#587：贡献图表格%s时，月份、星期同样找不到段落', (_, cls) => {
+    document.body.innerHTML = CONTRIBUTION_GRAPH.replace(
+      'class="ContributionCalendar-grid js-calendar-graph-table"',
+      `class="${cls}"`,
+    );
+    expect(closestUnit(document.getElementById('month')!)).toBeNull();
+    expect(closestUnit(document.getElementById('weekday')!)).toBeNull();
+  });
+
+  test('#587：悬停提示上找不到段落 —— 靠的是采集规则，不是排除', () => {
+    document.body.innerHTML = CONTRIBUTION_GRAPH;
+    expect(closestUnit(document.getElementById('tip')!)).toBeNull();
   });
 
   test('排除区外的 README 正文照常找到段落', () => {
