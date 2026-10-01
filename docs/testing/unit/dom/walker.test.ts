@@ -172,7 +172,8 @@ describe('collect（compat 补丁优先于通用判定）', () => {
 
     const restore = mockAllBoundingRects();
     try {
-      setBody('<div><em id="t">inline but taken</em></div>');
+      // 外层用行内元素：只含行内元素的 div 自己就是翻译单元（#589）
+      setBody('<span><em id="t">inline but taken</em></span>');
       const units = collect();
       expect(units.map((u) => u.id)).toEqual(['t']);
     } finally {

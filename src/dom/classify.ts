@@ -276,6 +276,10 @@ function isMainlyNumeric(text: string): boolean {
  * div 型正文（CONTAINER_SET）走同一套规则，只多一道门槛：必须直接持有
  * 文本 —— 纯壳容器（文本全在更深层）不算。两条规则对称，祖先与后代
  * 不会同时成单元，无需额外去重。
+ *
+ * #589：没有直接文本、但子元素全是行内元素且带文字的容器（例如只包着
+ * 一个链接的 div）同样是单元 —— 行内元素自己不是单元，否则这段文字没有
+ * 任何元素能采集。子元素全是行内元素，就不会有后代单元，对称性不变。
  */
 export function isTranslationUnit(el: Element): boolean {
   const tag = el.tagName.toLowerCase();
@@ -285,7 +289,7 @@ export function isTranslationUnit(el: Element): boolean {
 
   const isContainer = CONTAINER_SET.has(tag);
 
-  if (isContainer && directTextLength(el) === 0) return false;
+  if (isContainer && directTextLength(el) === 0 && !hasInlineOnlyText(el, tag)) return false;
   if (!DIRECT_SET.has(tag) && !isContainer) return false;
 
   // #23：元素自身持有直接文本时，即使有带文本的块级子元素也接受为翻译单元。
@@ -303,6 +307,35 @@ export function isTranslationUnit(el: Element): boolean {
     }
   }
   return true;
+}
+
+/**
+ * #589：子元素全是行内元素，并且代码语义元素（code、kbd 等）与 SKIP_SET
+ * 元素（style、script 等）以外还有文字。只有图标等空行内元素的不算；只包着
+ * 代码的（<div><code>…</code></div>）、只包着样式表的（维基百科的
+ * <div><span><style>）也不算 —— 这些本来就不翻译。pre 不走这条：没有直接文字的 pre 多是 <pre><code>
+ * 代码块，纯文本 pre 的判定见 #64、#65。
+ */
+function hasInlineOnlyText(el: Element, tag: string): boolean {
+  if (tag === 'pre') return false;
+  for (const child of el.children) {
+    if (!INLINE_SET.has(child.tagName.toLowerCase())) return false;
+  }
+  return textOutsideCode(el);
+}
+
+/** 代码语义元素与 SKIP_SET 元素以外是否还有文字（#589） */
+function textOutsideCode(el: Element): boolean {
+  for (const node of el.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if ((node.textContent ?? '').trim()) return true;
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const child = node as Element;
+      const tag = child.tagName.toLowerCase();
+      if (!CODE_SEMANTIC_SET.has(tag) && !SKIP_SET.has(tag) && textOutsideCode(child)) return true;
+    }
+  }
+  return false;
 }
 
 /** 直接子文本节点的有效字符数（不深入子元素，trim 后计数，排除格式化空白）。div 型正文判定的依据 */
