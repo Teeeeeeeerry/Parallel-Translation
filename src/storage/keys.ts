@@ -5,6 +5,7 @@
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
 import type { EngineId } from './schema';
+import { ENGINE_CATALOG, isByokEngine } from './schema';
 
 const KEY = 'pt-keys';
 
@@ -39,5 +40,16 @@ export async function removeKey(engine: EngineId): Promise<void> {
   const result = await chrome.storage.local.get(KEY);
   const keys: KeyRecord = (result[KEY] as KeyRecord | undefined) ?? {};
   delete keys[engine];
+  await chrome.storage.local.set({ [KEY]: keys });
+}
+
+/**
+ * 清掉引擎清单里全部自带 key 引擎的密钥（恢复默认设置用，#608）。
+ * 范围从引擎清单派生，一次写入。
+ */
+export async function removeByokKeys(): Promise<void> {
+  const result = await chrome.storage.local.get(KEY);
+  const keys: KeyRecord = (result[KEY] as KeyRecord | undefined) ?? {};
+  for (const e of ENGINE_CATALOG.filter(isByokEngine)) delete keys[e.id];
   await chrome.storage.local.set({ [KEY]: keys });
 }

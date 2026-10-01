@@ -15,7 +15,7 @@ import {
 } from '~/src/storage/settings';
 import { importSettings as applyImport } from '~/src/storage/settings-import';
 import { cacheClear } from '~/src/storage/cache';
-import { removeKey } from '~/src/storage/keys';
+import { removeByokKeys } from '~/src/storage/keys';
 import { tf } from '~/src/i18n';
 import { showToast, downloadFile } from '../main';
 
@@ -53,10 +53,8 @@ async function importSettings(json: string): Promise<void> {
 async function resetSettings(): Promise<void> {
   // 清空缓存
   await cacheClear();
-  // 清空所有 BYOK 密钥
-  await removeKey('openai');
-  await removeKey('deepl');
-  await removeKey('gemini');
+  // 清空所有 BYOK 密钥（范围取自引擎清单，#608）
+  await removeByokKeys();
   // #169: 整体替换而非 patch —— patch 对 models 是合并语义，
   // DEFAULT_SETTINGS.models = {} 合并不掉自定义模型名，恢复默认后
   // openai/gemini 自定义模型会残留

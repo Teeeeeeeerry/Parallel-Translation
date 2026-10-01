@@ -7,6 +7,7 @@
 import '~/src/styles/popup.css';
 import {
   type EngineId,
+  ENGINE_CATALOG,
   ENGINE_LABELS,
   LANG_LIST,
 } from '~/src/storage/schema';
@@ -59,16 +60,10 @@ function buildLangOptions(selected: string, includeAuto: boolean): string {
 }
 
 function buildEngineOptions(priority: EngineId[]): string {
-  const engines: EngineId[] = [
-    'google-web',
-    'bing-edge',
-    'openai',
-    'deepl',
-    'gemini',
-  ];
-  return engines
+  // #608: 引擎取自引擎清单
+  return ENGINE_CATALOG
     .map(
-      (e) =>
+      ({ id: e }) =>
         `<option value="${e}"${e === priority[0] ? ' selected' : ''}>${ENGINE_LABELS[e]}</option>`,
     )
     .join('');

@@ -23,7 +23,7 @@ import {
 import { createByokEngine } from './byok';
 import { EngineError } from './types';
 import type { TranslateEngine } from './types';
-import { parseNumbered } from './openai';
+import { parseNumbered } from './openai-compat';
 
 /**
  * 按 Gemini 错误响应区分失败类别 —— #161 / #236 / #257 / #335。

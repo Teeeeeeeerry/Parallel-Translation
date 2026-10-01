@@ -10,6 +10,7 @@
 
 import { getSettings } from '~/src/storage/settings';
 import { DEFAULT_MODELS } from '~/src/storage/schema';
+import type { EngineId } from '~/src/storage/schema';
 import { cacheGet, cacheSet, cacheKey } from '~/src/storage/cache';
 import { getCachedEffectiveDomains } from '~/src/storage/domains';
 import type { Term } from '~/src/storage/domains';
@@ -22,7 +23,8 @@ import { gemini } from './gemini';
 import { EngineError, AllEnginesFailedError } from './types';
 import type { TranslateEngine, TranslateRequest, TranslateResponse } from './types';
 
-const REGISTRY: Record<string, TranslateEngine> = {
+/** 引擎表 —— 引擎清单（#608）里的每个引擎都要有适配器，缺项即类型错误。 */
+const REGISTRY: Record<EngineId, TranslateEngine> = {
   'google-web': googleWeb,
   'bing-edge': bingEdge,
   'openai': openai,

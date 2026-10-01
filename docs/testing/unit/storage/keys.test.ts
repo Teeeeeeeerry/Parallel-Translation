@@ -3,7 +3,7 @@
  */
 import { describe, test, expect, beforeEach } from 'vitest';
 import { resetStorage } from '~/docs/testing/setup';
-import { getKey, setKey, removeKey } from '~/src/storage/keys';
+import { getKey, setKey, removeKey, removeByokKeys } from '~/src/storage/keys';
 
 describe('keys', () => {
   beforeEach(() => {
@@ -34,5 +34,15 @@ describe('keys', () => {
   test('getKey 未设置引擎 → undefined', async () => {
     const key = await getKey('gemini');
     expect(key).toBeUndefined();
+  });
+
+  test('removeByokKeys 清掉全部自带 key 引擎的 key（#608）', async () => {
+    await setKey('openai', 'sk-1');
+    await setKey('deepl', 'dk-1');
+    await setKey('gemini', 'gk-1');
+    await removeByokKeys();
+    expect(await getKey('openai')).toBeUndefined();
+    expect(await getKey('deepl')).toBeUndefined();
+    expect(await getKey('gemini')).toBeUndefined();
   });
 });

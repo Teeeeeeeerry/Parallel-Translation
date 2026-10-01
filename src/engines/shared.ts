@@ -15,18 +15,21 @@
 // 401 会话失效清 JWT 等）留在适配器内显式处理，不再各自发明分类规则。
 
 import type { FailureCategory } from './types';
+import { ENGINE_CATALOG, isByokEngine } from '~/src/storage/schema';
 import type { Term } from '~/src/storage/domains';
 import { normalizeText } from '~/src/dom/normalize';
 import { fetchWithTimeout } from './fetch-timeout';
 
-/** 自带 key 的引擎 —— 401/403 才可能意味着「key 无效」。 */
-const KEYED_ENGINES: ReadonlySet<string> = new Set(['openai', 'deepl', 'gemini']);
+/** 自带 key 的引擎 —— 401/403 才可能意味着「key 无效」。取自引擎清单（#608）。 */
+const KEYED_ENGINES: ReadonlySet<string> = new Set(
+  ENGINE_CATALOG.filter(isByokEngine).map((e) => e.id),
+);
 
 /**
  * 统一状态分类（#239）：状态码 → 失败类别。
  *
  * 口径：
- * - 自带 key 引擎（openai / deepl / gemini）且请求携带 key：
+ * - 自带 key 引擎（引擎清单里带 byok 的）且请求携带 key：
  *   401/403 → invalid-key；429 → quota；其余非 2xx → transient
  * - 免 key 引擎（google-web / bing-edge）或请求未携带 key：
  *   一律 transient（bing-edge 的 401 是会话失效，仍瞬时可重试）
