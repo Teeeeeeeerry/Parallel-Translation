@@ -1290,3 +1290,79 @@ describe('当前领域按顶层页面判定（#471）', () => {
     expect(text).toHaveLength(0);
   });
 });
+
+describe('扩展上下文失效不按错误记录（#579）', () => {
+  test('上下文失效：不按错误级别记录，仍判失效并展示“请刷新页面后重试”', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const send = vi.fn(async () => ({
+      ok: false,
+      error: '[PT] 扩展上下文已失效（扩展已更新或重载），请刷新页面后重试',
+      invalidated: true,
+      contextInvalidated: true,
+      category: 'transient',
+      aborted: false,
+    }));
+    const orch = createOrchestrator({ send });
+    orch.start();
+
+    try {
+      const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+
+      expect(summary.invalidated).toBe(true);
+      expect(summary.allFailed).toBe(true);
+      expect(summary.display).toEqual({
+        showRealReason: true,
+        reason: '[PT] 扩展上下文已失效（扩展已更新或重载），请刷新页面后重试',
+      });
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      orch.stop();
+    }
+  });
+
+  test('配额耗尽（同样带失效标志）：仍按错误级别记录原因', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const send = vi.fn(async () => ({
+      ok: false,
+      error: '配额已用尽',
+      invalidated: true,
+      category: 'quota',
+      aborted: false,
+    }));
+    const orch = createOrchestrator({ send });
+    orch.start();
+
+    try {
+      const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+
+      expect(summary.invalidated).toBe(true);
+      expect(errorSpy).toHaveBeenCalledWith('[PT] 批次翻译失败:', '配额已用尽');
+    } finally {
+      errorSpy.mockRestore();
+      orch.stop();
+    }
+  });
+
+  test('瞬时故障：仍按错误级别记录原因', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const send = vi.fn(async () => ({
+      ok: false,
+      error: 'HTTP 503',
+      invalidated: false,
+      category: 'transient',
+      aborted: false,
+    }));
+    const orch = createOrchestrator({ send, sleep: async () => {} });
+    orch.start();
+
+    try {
+      await orch.translatePage(items(1), 'en', 'zh-CN');
+
+      expect(errorSpy).toHaveBeenCalledWith('[PT] 批次翻译失败:', 'HTTP 503');
+    } finally {
+      errorSpy.mockRestore();
+      orch.stop();
+    }
+  });
+});

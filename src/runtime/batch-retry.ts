@@ -46,6 +46,8 @@ export type BatchRetryResult =
       error: string;
       /** #247: 类型化失败类别（供渲染层按类别分支提示）。 */
       category?: FailureCategory;
+      /** #579: 扩展上下文失效（区别于配额耗尽），原样透传。 */
+      contextInvalidated?: boolean;
     };
 
 export interface BatchRetryOptions {
@@ -95,6 +97,8 @@ export async function attemptBatchWithRetry(
     category?: FailureCategory;
     /** #236/#246: 已中止。 */
     aborted?: boolean;
+    /** #579: messaging 透出的扩展上下文失效标志。 */
+    contextInvalidated?: boolean;
   }>,
   opts: BatchRetryOptions = {},
 ): Promise<BatchRetryResult> {
@@ -140,6 +144,7 @@ export async function attemptBatchWithRetry(
         aborted: false,
         error: lastError,
         category: resp.category,
+        ...(resp.contextInvalidated && { contextInvalidated: true }),
       };
     }
     // #246: aborted（用户中止）→ 立即停止，不记成失败
