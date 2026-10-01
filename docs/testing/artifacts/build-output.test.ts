@@ -62,6 +62,24 @@ describe('构建产物校验', () => {
     }
   });
 
+  test('隐私政策与权限说明列出 manifest 的每个 host 权限，可选权限注明“可选”（#612）', () => {
+    const chromeManifest = path.join(OUTPUT_DIR, 'chrome-mv3', 'manifest.json');
+    if (!fs.existsSync(chromeManifest)) return;
+    const m = JSON.parse(fs.readFileSync(chromeManifest, 'utf-8')) as Record<string, string[]>;
+    const privacy = fs.readFileSync(path.resolve('store/privacy-policy.md'), 'utf-8');
+    const justification = fs.readFileSync(path.resolve('store/permissions-justification.md'), 'utf-8');
+    const host = (pattern: string) => new URL(pattern.replace(/\*$/, '')).host;
+    for (const p of m.host_permissions ?? []) {
+      expect(privacy).toContain(`\`${p}\``);
+      expect(justification).toContain(host(p));
+    }
+    for (const p of m.optional_host_permissions ?? []) {
+      // 权限表里那一行写明是可选权限
+      expect(privacy).toMatch(new RegExp(`\\| \`${p.replace(/[.*]/g, '\\$&')}\` \\|[^\\n]*可选权限`));
+      expect(justification).toMatch(new RegExp(`optional host permission[\\s\\S]*${host(p).replace(/\./g, '\\.')}`));
+    }
+  });
+
   test('manifest.json content_scripts matches = ["<all_urls>"]', () => {
     if (!outputExists()) return;
     const manifest = readFirstManifest();

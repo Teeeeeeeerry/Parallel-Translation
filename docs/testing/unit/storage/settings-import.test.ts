@@ -129,3 +129,33 @@ describe('导入整体替换语义（#324）', () => {
     expect(settingsMod.getSettings().displayMode).toBe('translation-only');
   });
 });
+
+describe('导入识别新的引擎（#612）', () => {
+  test('优先级列表里的 deepseek 导入后保留', async () => {
+    const settingsMod = await import('~/src/storage/settings');
+    await settingsMod.settingsReady();
+    const { importSettings } = await load();
+    const result = await importSettings(
+      JSON.stringify({ enginePriority: ['deepseek', 'google-web'], models: { deepseek: 'deepseek-pro' } }),
+    );
+    expect(result.ok).toBe(true);
+    expect(settingsMod.getSettings().enginePriority).toEqual(['deepseek', 'google-web']);
+    expect(settingsMod.getSettings().models).toEqual({ deepseek: 'deepseek-pro' });
+  });
+
+  test('旧版本导出的文件（没有新引擎）照常导入', async () => {
+    const settingsMod = await import('~/src/storage/settings');
+    await settingsMod.settingsReady();
+    const { importSettings } = await load();
+    const result = await importSettings(
+      JSON.stringify({
+        ...DEFAULT_SETTINGS,
+        enginePriority: ['openai', 'google-web'],
+        models: { openai: 'gpt-4o' },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(settingsMod.getSettings().enginePriority).toEqual(['openai', 'google-web']);
+    expect(settingsMod.getSettings().models).toEqual({ openai: 'gpt-4o' });
+  });
+});

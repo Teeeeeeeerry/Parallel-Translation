@@ -1,6 +1,6 @@
 # Parallel-Translation 隐私政策
 
-**最后更新日期：2026-09-30**
+**最后更新日期：2026-10-02**
 
 ## 数据收集
 
@@ -22,8 +22,9 @@ Parallel-Translation **不收集任何个人信息**。本扩展：
 | OpenAI | api.openai.com | [OpenAI 隐私政策](https://openai.com/policies/privacy-policy) |
 | DeepL | api.deepl.com / api-free.deepl.com | [DeepL 隐私政策](https://www.deepl.com/privacy) |
 | Gemini | generativelanguage.googleapis.com | [Google 隐私权政策](https://policies.google.com/privacy) |
+| DeepSeek | api.deepseek.com | [DeepSeek 隐私政策](https://cdn.deepseek.com/policies/zh-CN/deepseek-privacy-policy.html) |
 
-**重要提示**：使用 BYOK 引擎（OpenAI / DeepL / Gemini）时，文本会直接发送至对应的第三方服务，请同时参考该服务的隐私政策。
+**重要提示**：使用 BYOK 引擎（OpenAI / DeepL / Gemini / DeepSeek）时，文本会直接发送至对应的第三方服务，请同时参考该服务的隐私政策。
 
 ## 本地存储
 
@@ -33,7 +34,7 @@ Parallel-Translation **不收集任何个人信息**。本扩展：
 |---------|------|------------------|
 | `chrome.storage.sync` | 用户设置（语言偏好、显示模式、样式等） | 是（跟随浏览器账号） |
 | `chrome.storage.local` | 翻译缓存 | 否 |
-| `chrome.storage.local` | API 密钥（OpenAI / DeepL / Gemini） | **否（明确不参与云端同步）** |
+| `chrome.storage.local` | API 密钥（OpenAI / DeepL / Gemini / DeepSeek） | **否（明确不参与云端同步）** |
 | `chrome.storage.local` | 领域与术语（用户新建的领域，以及对内置领域的术语和适用网址所做的修改） | 否 |
 | `chrome.storage.local` | 站点页面规则（用户为各网站添加的限定范围、排除与保留原文规则） | 否 |
 
@@ -62,6 +63,12 @@ API 密钥以明文形式存储在 `chrome.storage.local` 中，仅用于向对�
 | `https://generativelanguage.googleapis.com/*` | Gemini，仅在用户填入自己的 API 密钥后使用 |
 | `https://api.deepl.com/*` | DeepL，仅在用户填入自己的 API 密钥后使用 |
 | `https://api-free.deepl.com/*` | DeepL 免费版，仅在用户填入自己的 API 密钥后使用 |
+
+此外还有 1 个**可选权限**（Chrome 版写在 `optional_host_permissions`，Firefox 版写在 `optional_permissions`）。安装和升级扩展时不申请，只在用户填入 DeepSeek 的 API 密钥并点“测试连接”保存时，由浏览器询问是否允许；用户拒绝则不保存密钥，也不会访问该地址。授予后可随时在浏览器的扩展管理里撤销：
+
+| 地址 | 用途 |
+|------|-----|
+| `https://api.deepseek.com/*` | DeepSeek，可选权限，仅在用户填入自己的 API 密钥并授权后使用 |
 
 扩展只在用户选用对应引擎时向这些地址发送请求，请求里只有要翻译的文本和翻译所需的参数（例如目标语言、用户自己的 API 密钥）。
 
