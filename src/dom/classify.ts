@@ -164,6 +164,19 @@ export function isVisible(el: Element): boolean {
   return true;
 }
 
+/**
+ * #595：元素是否视觉上隐藏 —— 读屏专用文字（sr-only、visually-hidden 等）
+ * 的通行写法把元素缩成 1×1 像素再裁掉，眼睛看不到、读屏软件照常朗读。
+ * 按渲染尺寸判定，不看 class 名。宽高都为 0 的归不可见判定（isVisible），
+ * 这里不算。只缩小不裁剪、或只裁剪不缩小的写法不在判定内：判定裁剪要读
+ * 计算样式，对每个行内元素都读太贵，常见的读屏隐藏写法都同时缩成 1×1。
+ */
+export function isVisuallyHidden(el: Element): boolean {
+  const rect = (el as HTMLElement).getBoundingClientRect?.();
+  if (!rect) return false;
+  return rect.width <= 1 && rect.height <= 1 && (rect.width > 0 || rect.height > 0);
+}
+
 export function shouldSkip(el: Element): boolean {
   if (shouldSkipNonVisual(el)) return true;
   if (!isVisible(el)) return true;
