@@ -6,8 +6,8 @@
 
 // Phase 7 — 引擎分区：优先级拖拽排序 + 启用/停用 + BYOK 密钥与模型名 + 测试连接。
 
-import type { EngineId } from '~/src/storage/schema';
-import { ENGINE_LABELS } from '~/src/storage/schema';
+import type { ByokEngineEntry, ByokEngineId, EngineId } from '~/src/storage/schema';
+import { DEFAULT_MODELS, ENGINE_CATALOG, ENGINE_LABELS, isByokEngine } from '~/src/storage/schema';
 import {
   getSettings,
   patchSettings,
@@ -22,46 +22,24 @@ function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
   patchSettings(patch).catch((e) => console.error('[PT] 设置写入失败:', e));
 }
 
+// #608: 引擎列表、BYOK 卡片（说明文案与模型名占位）都取自引擎清单。
+// 模型名占位即引擎的默认模型；没有默认模型的引擎（DeepL）没有模型名一栏。
+
 /** 全部可用引擎，顺序即“未启用”区的展示顺序 */
-const ALL_ENGINES: EngineId[] = [
-  'google-web',
-  'bing-edge',
-  'openai',
-  'deepl',
-  'gemini',
-];
+const allEngines = (): EngineId[] => ENGINE_CATALOG.map((e) => e.id);
 
-/** BYOK 引擎的说明文案 key 与模型名占位符（deepl 无模型概念） */
-const BYOK_ENGINES: { id: EngineId; descKey: string; model?: string }[] = [
-  { id: 'openai', descKey: 'descOpenai', model: 'gpt-4o-mini' },
-  { id: 'deepl', descKey: 'descDeepl' },
-  { id: 'gemini', descKey: 'descGemini', model: 'gemini-2.0-flash' },
-];
-
-const BYOK_FALLBACK_DESC: Record<string, string> = {
-  descOpenai: '支持 OpenAI API 及其兼容端点（如 Azure、本地模型）。',
-  descDeepl: '免费版 key 以 :fx 结尾，请确认端点正确。',
-  descGemini: 'Google Gemini API，key 可从 Google AI Studio 获取。',
-};
+const byokEngines = (): ByokEngineEntry[] => ENGINE_CATALOG.filter(isByokEngine);
 
 // ---- Test connection ----
 //
-// #322/#323：三家 BYOK 引擎的测试连接统一走探测入口
+// #322/#323：BYOK 引擎的测试连接统一走探测入口
 // （src/engines/test-connection.ts），状态分类与翻译路径同一份口径
 // —— 401/403 → key 问题、429 → 配额、其余非 2xx → 瞬时（带真实原因）。
+// 模型名随设置传入：有模型概念的引擎（Gemini）探测要用它（#323：模型名
+// 填错时报模型名问题而非 key 问题），其余引擎的探测忽略它。
 
-async function runTest(
-  engine: EngineId,
-  key: string,
-): Promise<{ ok: boolean; msg: string }> {
-  // 仅三家 BYOK 引擎有测试连接按钮；其余引擎走到这里视为不可达
-  if (engine !== 'openai' && engine !== 'deepl' && engine !== 'gemini') {
-    return { ok: false, msg: `HTTP 0` };
-  }
-  // gemini 的探测需要模型名（#323：模型名填错时报模型名问题而非 key 问题）
-  const model =
-    engine === 'gemini' ? getSettings().models?.gemini ?? undefined : undefined;
-  return testConnection(engine, key, model);
+function runTest(engine: ByokEngineId, key: string): Promise<{ ok: boolean; msg: string }> {
+  return testConnection(engine, key, getSettings().models?.[engine] ?? undefined);
 }
 
 // ---- Drag & drop ----
@@ -134,7 +112,7 @@ function renderEngineList(): string {
  */
 function renderDisabledList(): string {
   const { enginePriority } = getSettings();
-  const rest = ALL_ENGINES.filter((id) => !enginePriority.includes(id));
+  const rest = allEngines().filter((id) => !enginePriority.includes(id));
   if (rest.length === 0) {
     return `<li class="pt-engine-empty">${tf('cardDisabledEmpty', '全部引擎均已启用。')}</li>`;
   }
@@ -159,8 +137,9 @@ function renderByokKeys(): string {
   const btnTest = tf('btnTest', '测试连接');
   const btnClear = tf('btnClear', '清除');
 
-  return BYOK_ENGINES.map(({ id, descKey, model }) => {
-    const desc = tf(descKey, BYOK_FALLBACK_DESC[descKey] ?? '');
+  return byokEngines().map(({ id, byok }) => {
+    const desc = tf(byok.descKey, byok.fallbackDesc);
+    const model = DEFAULT_MODELS[id];
     const modelRow = model
       ? `
       <div class="pt-row">
@@ -231,7 +210,7 @@ export function initEngines(): void {
   attachDragListeners(listEl);
 
   function bindByokEvents(): void {
-    for (const { id, model } of BYOK_ENGINES) {
+    for (const { id } of byokEngines()) {
       const resultEl = document.getElementById(`pt-key-result-${id}`)!;
       const inputEl = document.getElementById(`pt-key-${id}`) as HTMLInputElement;
 
@@ -262,7 +241,7 @@ export function initEngines(): void {
         showToast(tf('keyClearedToast', `${ENGINE_LABELS[id]} key 已清除`, ENGINE_LABELS[id]));
       });
 
-      if (!model) continue;
+      if (!DEFAULT_MODELS[id]) continue;
       const modelEl = document.getElementById(`pt-model-${id}`) as HTMLInputElement;
       // 空值即“用默认模型”，写回 undefined 而不是空串 ——
       // 空串会让 `models?.openai ?? 'gpt-4o-mini'` 的兜底失效，请求打到一个空 model。
@@ -275,12 +254,12 @@ export function initEngines(): void {
 
   async function loadKeys(): Promise<void> {
     const models = getSettings().models ?? {};
-    for (const { id, model } of BYOK_ENGINES) {
+    for (const { id } of byokEngines()) {
       const key = await getKey(id);
       const inputEl = document.getElementById(`pt-key-${id}`) as HTMLInputElement;
       if (inputEl && key) inputEl.value = key;
 
-      if (!model) continue;
+      if (!DEFAULT_MODELS[id]) continue;
       const modelEl = document.getElementById(`pt-model-${id}`) as HTMLInputElement;
       if (modelEl) modelEl.value = models[id] ?? '';
     }

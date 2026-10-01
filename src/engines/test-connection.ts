@@ -13,13 +13,22 @@
 // 401/403 → key 问题、429 → 配额、其余非 2xx → 瞬时（带真实原因）。
 // 本模块不持有任何 UI 依赖，可独立单测。
 
+import type { ByokEngineId } from '~/src/storage/schema';
 import { probeConnection } from './shared';
+import type { ProbeSpec } from './shared';
 import { openaiProbe } from './openai';
 import { deeplProbe } from './deepl';
 import { geminiProbe } from './gemini';
 
-/** 已接入探测入口的自带 key 引擎。 */
-export type TestableKeyedEngine = 'openai' | 'deepl' | 'gemini';
+/** 已接入探测入口的自带 key 引擎 —— 引擎清单里的全部自带 key 引擎（#608）。 */
+export type TestableKeyedEngine = ByokEngineId;
+
+/** 各自带 key 引擎的探测规格；清单新增引擎时这里缺项即类型错误。 */
+const PROBES: Record<TestableKeyedEngine, ProbeSpec> = {
+  openai: openaiProbe,
+  deepl: deeplProbe,
+  gemini: geminiProbe,
+};
 
 /** 测试连接结果 —— ok 与展示文案（文案已按失败类别区分）。 */
 export interface TestConnectionResult {
@@ -33,12 +42,6 @@ export async function testConnection(
   key: string,
   model?: string,
 ): Promise<TestConnectionResult> {
-  const spec =
-    engine === 'openai'
-      ? openaiProbe
-      : engine === 'deepl'
-        ? deeplProbe
-        : geminiProbe;
-  const result = await probeConnection(spec, { key, model });
+  const result = await probeConnection(PROBES[engine], { key, model });
   return { ok: result.ok, msg: result.message };
 }
