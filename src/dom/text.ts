@@ -15,7 +15,7 @@
 //   代码层判定
 
 import { shouldOmitText, shouldPreserveText } from './compat';
-import { INLINE_SET } from './classify';
+import { INLINE_SET, isVisuallyHidden } from './classify';
 import { getSiteRules } from '~/src/storage/specialization';
 import type { SiteRules } from '~/src/storage/specialization';
 
@@ -36,6 +36,8 @@ interface PreserveMap {
   nextIndex: number;
   /** 当前站点的排除与保留原文选择器 */
   rules: TextRules;
+  /** #595：提取时跳过了视觉上隐藏的元素 */
+  hiddenSkipped: boolean;
 }
 
 /**
@@ -48,6 +50,7 @@ function makePreserveMap(rules?: TextRules): PreserveMap {
     placeholders: new Map(),
     nextIndex: 0,
     rules: { exclude, preserve },
+    hiddenSkipped: false,
   };
 }
 
@@ -122,6 +125,13 @@ function walkTranslatable(el: Element, pm: PreserveMap | null): string {
       } else if (child.nodeType === Node.ELEMENT_NODE) {
         const c = child as Element;
 
+        // #595：读屏专用的隐藏文字不送翻 —— 译文不继承隐藏样式，会把原本
+        // 看不见的文字显示出来。原文留在原位，读屏软件照常朗读
+        if (isVisuallyHidden(c)) {
+          if (pm) pm.hiddenSkipped = true;
+          continue;
+        }
+
         // #58 preserve：不翻译但保留原文（用户名等标识符）
         if (pm) {
           const preserved = preservedText(c, pm.rules);
@@ -187,6 +197,12 @@ function walkShallow(el: Element, pm: PreserveMap | null): string {
       // 跳过块级子元素 —— 它们的文本由各自翻译单元覆盖
       if (!INLINE_SET.has(tag)) continue;
 
+      // #595：读屏专用的隐藏文字不送翻，同完整提取
+      if (isVisuallyHidden(c)) {
+        if (pm) pm.hiddenSkipped = true;
+        continue;
+      }
+
       // #58 preserve
       if (pm) {
         const preserved = preservedText(c, pm.rules);
@@ -234,17 +250,20 @@ const TRANSLATABLE_CHAR_RE = /[^\s\p{P}\p{S}\p{N}]/u;
  * 空白、标点、符号或数字即没有 —— 送去引擎只会原样回来，对照模式下
  * 同一段文字显示两遍。采集入口与逐段翻译入口共用这一判定。
  *
- * 没有保留原文的段落不在本判定范围内，一律返回 true：纯数字等短文本
- * 由通用判定（shouldSkipNonVisual）处理，.notranslate 与 compat omit
- * 的语义不变。
+ * #595：读屏专用的隐藏文字同样去掉 —— 段落自身视觉上隐藏，或去掉隐藏的
+ * 后代之后没有可翻译的文字，都不算翻译单元。
+ *
+ * 既没有保留原文、也没有隐藏文字的段落不在本判定范围内，一律返回 true：
+ * 纯数字等短文本由通用判定（shouldSkipNonVisual）处理，.notranslate 与
+ * compat omit 的语义不变。
  *
  * #468：两个入口把开头读取的站点页面规则传进来，逐段判定不再重复读取。
  */
 export function hasTranslatableText(el: Element, rules?: TextRules): boolean {
-  const { text, preserves } = hasBlockTextChildren(el)
-    ? shallowTranslatableTextEx(el, rules)
-    : translatableTextEx(el, rules);
-  if (preserves.size === 0) return true;
+  if (isVisuallyHidden(el)) return false;
+  const pm = makePreserveMap(rules);
+  const text = hasBlockTextChildren(el) ? walkShallow(el, pm) : walkTranslatable(el, pm);
+  if (pm.placeholders.size === 0 && !pm.hiddenSkipped) return true;
   return TRANSLATABLE_CHAR_RE.test(text.replace(PLACEHOLDER_RE, ''));
 }
 
