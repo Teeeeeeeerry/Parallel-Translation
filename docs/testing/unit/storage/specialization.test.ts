@@ -36,6 +36,7 @@ describe('getSiteRules（生效站点规则）', () => {
       '.BorderGrid',
       '.repository-lang-stats',
       '.ContributionCalendar-grid', // #580：贡献图格子表格
+      '.js-calendar-graph-table', // #587：贡献图格子表格的 JS 挂钩
     ]);
   });
 
