@@ -24,6 +24,7 @@
  * #527：TC-E2E-78 另断言术语导出触发下载时不立即释放临时链接。
  * #535：TC-E2E-88 覆盖设置页读取领域失败时的提示。
  * #590：TC-E2E-100 覆盖导入 GBK 编码、两列、带中文表头的术语 CSV。
+ * #603：TC-E2E-101 覆盖在“新建领域”卡片里从术语 CSV 直接新建领域。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -827,6 +828,80 @@ test.describe('设置页：翻译领域 @extended', () => {
     expect(await targets.evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual([
       '接口', '超时',
     ]);
+  });
+
+  test('TC-E2E-101: “新建领域”卡片从术语 CSV 导入 → 新建以文件名或名称框命名的领域，展开术语编辑区并列出跳过的行；没有可导入的术语时不新建（#603）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() => chrome.storage.local.set({ 'pt-domains': { user: [], builtin: {} } }));
+    const stored = () =>
+      serviceWorker.evaluate(async () => (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any);
+    // GBK 编码、不带 BOM：“原词,译法\r\nplaintiff,原告\r\ntort,侵权\r\nonly,two,three\r\n”，第 4 行比表头多一列
+    const gbk = Buffer.from(
+      'd4adb4ca2cd2ebb7a80d0a706c61696e746966662cd4adb8e60d0a746f72742cc7d6c8a80d0a6f6e6c792c74776f2c74687265650d0a',
+      'hex',
+    );
+
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const items = page.locator('.pt-domain-item');
+    await expect(items).toHaveCount(1);
+    const file = page.locator('#pt-domain-import-new-file');
+    const nameInput = page.locator('#pt-domain-name-input');
+    const toast = page.locator('#pt-toast');
+
+    // 提示文案随浏览器界面语言（CI 是英文）
+    const msg = (key: string, subs: string[] = []) =>
+      page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
+
+    // 不展开任何领域也能看到入口与格式说明
+    await expect(page.locator('#pt-domain-import-new-btn')).toHaveText(await msg('domainImportNewBtn'));
+    await expect(page.locator('#pt-domain-import-new-hint')).toContainText(await msg('domainImportNewHint'));
+    await expect(page.locator('#pt-domain-import-new-hint')).toContainText(await msg('domainTermsImportHint'));
+
+    // 名称框留空：用文件名命名，目标语言用卡片里选的
+    const lang = await page.locator('#pt-domain-lang-select').inputValue();
+    await file.setInputFiles({ name: '法律术语.csv', mimeType: 'text/csv', buffer: gbk });
+    await expect(toast).toHaveText(await msg('domainImportedNewSkipped', ['法律术语', '2', '1']));
+    await expect(items).toHaveCount(2);
+    const created = items.last();
+    await expect(created.locator('.pt-domain-name')).toHaveText('法律术语');
+    // 新领域的术语编辑区已展开，显示导入的术语与跳过的行
+    const terms = created.locator('.pt-domain-terms');
+    await expect(terms).toHaveJSProperty('open', true);
+    const targets = terms.locator('.pt-term-target');
+    await expect(targets).toHaveCount(2);
+    expect(await targets.evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual(['原告', '侵权']);
+    await expect(terms.locator('.pt-domain-terms-error')).toHaveText(await msg('domainTermsSkipColumnsHeader', ['4', '2']));
+    const user = (await stored()).user;
+    expect(user).toHaveLength(1);
+    expect(user[0]).toMatchObject({
+      name: '法律术语',
+      targetLang: lang,
+      sites: [],
+      terms: [
+        { source: 'plaintiff', target: '原告' },
+        { source: 'tort', target: '侵权' },
+      ],
+    });
+
+    // 名称框填了名字：用名称框里的名字，成功后清空名称框
+    await nameInput.fill('合同');
+    await file.setInputFiles({ name: 'contract.csv', mimeType: 'text/csv', buffer: Buffer.from('consideration,对价\r\n', 'utf-8') });
+    await expect(toast).toHaveText(await msg('domainImportedNew', ['合同', '1']));
+    await expect(items).toHaveCount(3);
+    await expect(items.last().locator('.pt-domain-name')).toHaveText('合同');
+    await expect(nameInput).toHaveValue('');
+
+    // 没有可导入的术语：不新建，跳过的原因列在卡片里，名称留在输入框
+    await nameInput.fill('空的');
+    await file.setInputFiles({ name: 'bad.csv', mimeType: 'text/csv', buffer: Buffer.from('a,b,c,d\r\n', 'utf-8') });
+    await expect(toast).toHaveText(await msg('domainImportNewNone'));
+    await expect(page.locator('#pt-domain-import-new-error')).toHaveText(await msg('domainTermsSkipColumnsTwoOrThree', ['1']));
+    await expect(nameInput).toHaveValue('空的');
+    await expect(items).toHaveCount(3);
+    expect((await stored()).user).toHaveLength(2);
   });
 
   test('TC-E2E-71: 新建或删除领域写入失败 → toast 提示原因，名称留在输入框、领域留在列表（#470）', async ({

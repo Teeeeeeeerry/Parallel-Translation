@@ -229,7 +229,12 @@
             <input class="pt-input" id="pt-domain-name-input" type="text" maxlength="60" data-i18n-placeholder="domainNamePlaceholder" placeholder="领域名称，例如“法律”" />
             <select class="pt-select" id="pt-domain-lang-select" data-i18n-title="domainRowLang" title="目标语言"></select>
             <button class="pt-btn" id="pt-domain-create-btn" data-i18n="domainCreateBtn">新建</button>
+            <!-- 从术语 CSV 直接新建领域（#603） -->
+            <button class="pt-btn pt-btn-secondary" id="pt-domain-import-new-btn" data-i18n="domainImportNewBtn">从 CSV 导入</button>
+            <input type="file" id="pt-domain-import-new-file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" hidden />
           </div>
+          <p class="pt-input-err pt-domain-import-new-error" id="pt-domain-import-new-error"></p>
+          <p class="pt-domain-terms-hint" id="pt-domain-import-new-hint"></p>
         </div>
         <!-- 机翻引擎“指定译法”开关（#390） -->
         <div class="pt-card">

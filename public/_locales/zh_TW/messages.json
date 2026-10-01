@@ -457,5 +457,16 @@
     "placeholders": { "line": { "content": "$1" }, "count": { "content": "$2" } }
   },
   "domainTermsImportHint": { "message": "每行一條術語：原詞、譯法、不翻譯（true / false，可省略）。首行可以是表頭；逗號、分號或定位字元分隔，UTF-8 或 GBK 編碼。" },
-  "domainStorageReadFailed": { "message": "暫時讀不到儲存的資料，請稍後重試" }
+  "domainStorageReadFailed": { "message": "暫時讀不到儲存的資料，請稍後重試" },
+  "domainImportNewBtn": { "message": "從 CSV 匯入" },
+  "domainImportNewHint": { "message": "「從 CSV 匯入」用一份術語 CSV 直接新增領域，名稱欄留空時用檔名命名。" },
+  "domainImportedNew": {
+    "message": "已新增領域「$name$」，匯入 $count$ 條術語",
+    "placeholders": { "name": { "content": "$1" }, "count": { "content": "$2" } }
+  },
+  "domainImportedNewSkipped": {
+    "message": "已新增領域「$name$」，匯入 $count$ 條術語，略過 $skipped$ 行",
+    "placeholders": { "name": { "content": "$1" }, "count": { "content": "$2" }, "skipped": { "content": "$3" } }
+  },
+  "domainImportNewNone": { "message": "檔案裡沒有可匯入的術語，沒有新增領域" }
 }

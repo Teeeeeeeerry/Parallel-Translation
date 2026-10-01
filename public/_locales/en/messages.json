@@ -457,5 +457,16 @@
     "placeholders": { "line": { "content": "$1" }, "count": { "content": "$2" } }
   },
   "domainTermsImportHint": { "message": "One term per line: source, translation, don't translate (true / false, optional). The first line may be a header. Comma, semicolon or tab separated; UTF-8 or GBK encoded." },
-  "domainStorageReadFailed": { "message": "couldn't read the stored data right now, please try again later" }
+  "domainStorageReadFailed": { "message": "couldn't read the stored data right now, please try again later" },
+  "domainImportNewBtn": { "message": "Import from CSV" },
+  "domainImportNewHint": { "message": "\"Import from CSV\" creates a domain from a terms CSV. If the name is empty, the file name is used." },
+  "domainImportedNew": {
+    "message": "Created domain \"$name$\" with $count$ term(s)",
+    "placeholders": { "name": { "content": "$1" }, "count": { "content": "$2" } }
+  },
+  "domainImportedNewSkipped": {
+    "message": "Created domain \"$name$\" with $count$ term(s), skipped $skipped$ line(s)",
+    "placeholders": { "name": { "content": "$1" }, "count": { "content": "$2" }, "skipped": { "content": "$3" } }
+  },
+  "domainImportNewNone": { "message": "No terms to import in this file; no domain was created" }
 }

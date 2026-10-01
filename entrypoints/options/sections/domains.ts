@@ -28,6 +28,7 @@ import {
   resetBuiltinDomain,
   exportDomainTermsCsv,
   importDomainTermsCsv,
+  createDomainFromTermsCsv,
 } from '~/src/storage/domains';
 import { getSettings, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import type { Domain, Term, TermsCsvSkip } from '~/src/storage/domains';
@@ -187,6 +188,17 @@ function skipLine({ line, reason }: TermsCsvSkip, headerColumns?: number): strin
 
 /** 跳过的行最多列出这么多条，其余只给条数。 */
 const SKIP_LIST_MAX = 20;
+
+/**
+ * 导入跳过的行的说明（#404）：最多列出 SKIP_LIST_MAX 条，其余只给条数。
+ * 往已有领域导入与从 CSV 新建领域（#603）共用。
+ */
+function skipReport(skipped: TermsCsvSkip[], headerColumns?: number): string {
+  const lines = skipped.slice(0, SKIP_LIST_MAX).map((s) => skipLine(s, headerColumns));
+  const more = String(skipped.length - SKIP_LIST_MAX);
+  if (skipped.length > SKIP_LIST_MAX) lines.push(tf('domainTermsSkipMore', `另有 ${more} 行没有导入`, more));
+  return lines.join('\n');
+}
 
 /**
  * 最近一次导入跳过的行（#404），按领域 ID。导入后列表会重绘、换掉术语
@@ -394,10 +406,7 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
           return;
         }
         // #404：跳过的行列在编辑区下方；列表可能已经重绘，写到当前的编辑区
-        const lines = skipped.slice(0, SKIP_LIST_MAX).map((s) => skipLine(s, headerColumns));
-        const more = String(skipped.length - SKIP_LIST_MAX);
-        if (skipped.length > SKIP_LIST_MAX) lines.push(tf('domainTermsSkipMore', `另有 ${more} 行没有导入`, more));
-        importReports.set(d.id, lines.join('\n'));
+        importReports.set(d.id, skipReport(skipped, headerColumns));
         showImportReport(current);
         const m = String(skipped.length);
         showToast(tf('domainTermsImportedSkipped', `已导入 ${imported} 条术语，跳过 ${m} 行`, n, m), 4000);
@@ -516,6 +525,9 @@ export function initDomains(): void {
   const nameInput = document.getElementById('pt-domain-name-input') as HTMLInputElement;
   const langSelect = document.getElementById('pt-domain-lang-select') as HTMLSelectElement;
   const createBtn = document.getElementById('pt-domain-create-btn')!;
+  const importNewBtn = document.getElementById('pt-domain-import-new-btn')!;
+  const importNewFile = document.getElementById('pt-domain-import-new-file') as HTMLInputElement;
+  const importNewError = document.getElementById('pt-domain-import-new-error')!;
   const toggleMtTermTargets = document.getElementById('pt-toggle-mt-term-targets')!;
 
   langSelect.innerHTML = LANG_LIST.filter((l) => l.code !== 'auto')
@@ -525,6 +537,8 @@ export function initDomains(): void {
   langSelect.value = getSettings().to;
 
   let renderSeq = 0;
+  /** 从 CSV 新建的领域（#603）：出现在列表里后展开它的术语编辑区并滚动到可见处。 */
+  let reveal: string | null = null;
   /** 列表是否已按存储显示过：决定读取失败时说“没有载入”还是“没有刷新”（#549） */
   let loaded = false;
   async function render(): Promise<void> {
@@ -566,6 +580,14 @@ export function initDomains(): void {
         : null;
     listEl.replaceChildren(...items);
     loaded = true;
+    const revealed = items.find((el) => el.dataset.id === reveal);
+    if (revealed) {
+      reveal = null;
+      const terms = revealed.querySelector<HTMLDetailsElement>('details[data-editor="terms"]');
+      if (terms) terms.open = true;
+      // 术语表格在展开后的微任务里才生成（#509）：等它画出来再滚到新领域顶部
+      requestAnimationFrame(() => revealed.scrollIntoView({ block: 'start' }));
+    }
     if (focusedBtn) {
       const li = items.find((el) => el.dataset.id === focusedBtn.id);
       const reset = focusedBtn.dir ? null : li?.querySelector<HTMLButtonElement>(':scope > .pt-domain-reset');
@@ -614,6 +636,7 @@ export function initDomains(): void {
   }
 
   function create(): void {
+    importNewError.classList.remove('pt-visible');
     if (!nameInput.value.trim()) {
       nameInput.classList.add('pt-error');
       return;
@@ -632,7 +655,63 @@ export function initDomains(): void {
   }
 
   createBtn.addEventListener('click', create);
-  nameInput.addEventListener('input', () => nameInput.classList.remove('pt-error'));
+
+  // #603：从术语 CSV 直接新建领域。名称框留空时用文件名，目标语言用卡片里选的
+  document.getElementById('pt-domain-import-new-hint')!.textContent =
+    tf('domainImportNewHint', '“从 CSV 导入”用一份术语 CSV 直接新建领域，名称框留空时用文件名命名。') +
+    '\n' +
+    tf(
+      'domainTermsImportHint',
+      '每行一条术语：原词、译法、不翻译（true / false，可省略）。首行可以是表头；逗号、分号或制表符分隔，UTF-8 或 GBK 编码。',
+    );
+  importNewBtn.addEventListener('click', () => importNewFile.click());
+  importNewFile.addEventListener('change', () => {
+    const file = importNewFile.files?.[0];
+    // 清空选择：再次选同一个文件也会触发 change
+    importNewFile.value = '';
+    if (!file) return;
+    const max = nameInput.maxLength > 0 ? nameInput.maxLength : undefined;
+    const name = nameInput.value.trim() || (file.name.replace(/\.[^.]*$/, '') || file.name).slice(0, max);
+    importNewError.classList.remove('pt-visible');
+    file
+      .arrayBuffer()
+      .then((buf) => createDomainFromTermsCsv({ name, targetLang: langSelect.value }, buf))
+      .then(({ domain, imported, skipped, headerColumns }) => {
+        // 没有可导入的行：没有新建，跳过的原因列在卡片里，名称留在输入框
+        if (!domain) {
+          importNewError.textContent = skipReport(skipped, headerColumns);
+          importNewError.classList.toggle('pt-visible', skipped.length > 0);
+          showToast(tf('domainImportNewNone', '文件里没有可导入的术语，没有新建领域'), 4000);
+          return;
+        }
+        nameInput.value = '';
+        nameInput.classList.remove('pt-error');
+        // 跳过的行列在新领域的术语编辑区下方（#404 的展示）
+        if (skipped.length > 0) importReports.set(domain.id, skipReport(skipped, headerColumns));
+        reveal = domain.id;
+        refresh();
+        const n = String(imported);
+        if (skipped.length === 0) {
+          showToast(tf('domainImportedNew', `已新建领域“${domain.name}”，导入 ${n} 条术语`, domain.name, n));
+          return;
+        }
+        const m = String(skipped.length);
+        showToast(
+          tf('domainImportedNewSkipped', `已新建领域“${domain.name}”，导入 ${n} 条术语，跳过 ${m} 行`, domain.name, n, m),
+          4000,
+        );
+      })
+      // #470: 失败时提示原因，名称留在输入框里方便重试
+      .catch((e) => {
+        console.error('[PT] 从 CSV 新建领域失败:', e);
+        const reason = failReason(e);
+        showToast(tf('domainCreateFailed', `新建领域失败：${reason}`, reason), 4000);
+      });
+  });
+  nameInput.addEventListener('input', () => {
+    nameInput.classList.remove('pt-error');
+    importNewError.classList.remove('pt-visible');
+  });
   nameInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') create();
   });
