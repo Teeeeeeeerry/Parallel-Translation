@@ -16,6 +16,7 @@ import {
 } from '~/src/storage/settings';
 import { detectOS } from '~/src/hotkeys/platform';
 import { StorageQuotaError } from '~/src/storage/quota';
+import { StorageReadError } from '~/src/storage/read-error';
 import { applyI18n, tf } from '~/src/i18n';
 import { initGeneral } from './sections/general';
 import { initEngines } from './sections/engines';
@@ -63,11 +64,15 @@ export function showToast(msg: string, duration = 2000): void {
 
 /**
  * 给用户看的失败原因：去掉内部日志用的“[PT] ”前缀；存储空间不足时说明
- * 办法（#510）。设置页各分区的失败提示都用它（#528）。
+ * 办法（#510）；存储读取失败时按界面语言显示（#588，错误本身的文字只给日志用）。
+ * 设置页各分区的失败提示都用它（#528）。
  */
 export function failReason(e: unknown): string {
   if (e instanceof StorageQuotaError) {
     return tf('domainStorageFull', '存储空间不足，可以在“高级”分区点“清空缓存”后重试');
+  }
+  if (e instanceof StorageReadError) {
+    return tf('domainStorageReadFailed', '暂时读不到存储里的数据，请稍后重试');
   }
   return (e instanceof Error ? e.message : String(e)).replace(/^\[PT\]\s*/, '');
 }

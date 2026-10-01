@@ -1197,7 +1197,10 @@ test.describe('站点页面规则', () => {
   const writeUserSiteRules = (serviceWorker: import('@playwright/test').Worker, user: unknown[]) =>
     serviceWorker.evaluate((u) => chrome.storage.local.set({ 'pt-site-rules': { user: u } }), user);
 
-  /** 经后台读取站点规则存储里的用户规则列表，用来断言写入结果 */
+  /**
+   * 经后台读取站点规则存储里的用户规则列表，用来断言写入结果。返回类型按
+   * 存储模块的类型断言，不做运行时校验：读到旧结构的数据时类型检查不会报错
+   */
   const readUserSiteRules = (serviceWorker: import('@playwright/test').Worker): Promise<UserSiteRules[]> =>
     serviceWorker.evaluate(
       async () => ((await chrome.storage.local.get('pt-site-rules'))['pt-site-rules'] as any).user,
@@ -1235,11 +1238,14 @@ test.describe('站点页面规则', () => {
       (window as any).__ptFailRender = true;
     });
 
-  /** 列表没刷新的提示文案：done 是已完成操作的提示文案，返回与读取失败原因合成后的整句提示 */
+  /**
+   * 列表没刷新的提示文案：done 是已完成操作的提示文案，返回与存储读取失败的
+   * 原因（domainStorageReadFailed，随界面语言）合成后的整句提示
+   */
   const listStale = (page: import('@playwright/test').Page, done: string) =>
     page.evaluate(
-      ({ d, r }) => chrome.i18n.getMessage('siteRulesListStale', [d, r]),
-      { d: done, r: '暂时读不到存储里的数据，请稍后重试' },
+      (d) => chrome.i18n.getMessage('siteRulesListStale', [d, chrome.i18n.getMessage('domainStorageReadFailed')]),
+      done,
     );
 
   test('@core TC-E2E-60: 设置页新增排除 → 刷新 → 元素不翻译（#370）', async ({
@@ -1630,10 +1636,9 @@ test.describe('站点页面规则', () => {
     });
     await page.click('#pt-site-rules-export-btn');
     const toast = page.locator('#pt-toast');
-    // 提示文案随浏览器界面语言（CI 是英文），原因是存储模块的固定文案
-    const reason = '暂时读不到存储里的数据，请稍后重试';
+    // 提示文案与原因都随浏览器界面语言（CI 是英文，#588）
     const msg = (key: string) =>
-      page.evaluate(({ k, r }) => chrome.i18n.getMessage(k, [r]), { k: key, r: reason });
+      page.evaluate((k) => chrome.i18n.getMessage(k, [chrome.i18n.getMessage('domainStorageReadFailed')]), key);
     await expect(toast).toHaveText(await msg('siteRulesExportFailed'));
     expect(downloaded).toBe(false);
 
@@ -1665,7 +1670,7 @@ test.describe('站点页面规则', () => {
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="site-rules"]');
-    const reason = '暂时读不到存储里的数据，请稍后重试';
+    const reason = await page.evaluate(() => chrome.i18n.getMessage('domainStorageReadFailed'));
     const notLoaded = await page.evaluate(
       (r) => chrome.i18n.getMessage('siteRulesListNotLoaded', [r]),
       reason,

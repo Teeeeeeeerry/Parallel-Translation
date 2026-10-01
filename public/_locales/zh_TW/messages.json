@@ -460,5 +460,6 @@
     "message": "第 $line$ 行：欄數不對，應為 $count$ 欄",
     "placeholders": { "line": { "content": "$1" }, "count": { "content": "$2" } }
   },
-  "domainTermsImportHint": { "message": "每行一條術語：原詞、譯法、不翻譯（true / false，可省略）。首行可以是表頭；逗號、分號或定位字元分隔，UTF-8 或 GBK 編碼。" }
+  "domainTermsImportHint": { "message": "每行一條術語：原詞、譯法、不翻譯（true / false，可省略）。首行可以是表頭；逗號、分號或定位字元分隔，UTF-8 或 GBK 編碼。" },
+  "domainStorageReadFailed": { "message": "暫時讀不到儲存的資料，請稍後重試" }
 }

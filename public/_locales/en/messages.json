@@ -460,5 +460,6 @@
     "message": "Line $line$: expected $count$ columns",
     "placeholders": { "line": { "content": "$1" }, "count": { "content": "$2" } }
   },
-  "domainTermsImportHint": { "message": "One term per line: source, translation, don't translate (true / false, optional). The first line may be a header. Comma, semicolon or tab separated; UTF-8 or GBK encoded." }
+  "domainTermsImportHint": { "message": "One term per line: source, translation, don't translate (true / false, optional). The first line may be a header. Comma, semicolon or tab separated; UTF-8 or GBK encoded." },
+  "domainStorageReadFailed": { "message": "couldn't read the stored data right now, please try again later" }
 }
