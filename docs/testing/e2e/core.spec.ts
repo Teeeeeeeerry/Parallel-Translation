@@ -1167,6 +1167,47 @@ test.describe('设置页：导出', () => {
   });
 });
 
+test.describe('设置页：侧栏品牌头', () => {
+  test('@core TC-E2E-102: 设置页侧栏顶部是与 popup 头部同源的标识、单行名称与副标题（#605）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    const popup = await page.context().newPage();
+    await popup.goto(`chrome-extension://${extId}/popup.html`);
+    const popupLogo = await popup.locator('.pt-hdr .pt-logo').innerHTML();
+    expect(popupLogo).toContain('<svg');
+    await popup.close();
+
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    const hdr = page.locator('.pt-nav .pt-nav-hdr');
+    const logo = hdr.locator('.pt-logo');
+    // 标识与 popup 同源同尺寸：SVG 标记逐字相同，标为装饰
+    expect(await logo.innerHTML()).toBe(popupLogo);
+    await expect(logo.locator('svg')).toHaveAttribute('aria-hidden', 'true');
+
+    const name = hdr.locator('.pt-hdr-name');
+    await expect(name).toHaveText('Parallel-Translation');
+    // 名称只占一行，也没有被截断
+    const box = await name.evaluate((el) => ({
+      height: el.getBoundingClientRect().height,
+      fontSize: parseFloat(getComputedStyle(el).fontSize),
+      clipped: el.scrollWidth > el.clientWidth,
+    }));
+    expect(box.height).toBeLessThan(box.fontSize * 2);
+    expect(box.clipped).toBe(false);
+    await expect(hdr.locator('.pt-hdr-sub')).toHaveText('Bilingual Reader');
+
+    // 导航按钮照常切换分区
+    await page.click('.pt-nav-btn[data-section="engines"]');
+    await expect(page.locator('#pt-section-engines')).toBeVisible();
+    // 主内容区在常见窗口宽度下没有横向滚动
+    await page.setViewportSize({ width: 1280, height: 800 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+  });
+});
+
 // ================================================================
 // 站点页面规则（#365）
 // ================================================================

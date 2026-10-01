@@ -18,6 +18,7 @@ import { detectOS } from '~/src/hotkeys/platform';
 import { StorageQuotaError } from '~/src/storage/quota';
 import { StorageReadError } from '~/src/storage/read-error';
 import { applyI18n, tf } from '~/src/i18n';
+import { logoMarkSvg } from '~/src/ui/logo';
 import { initGeneral } from './sections/general';
 import { initEngines } from './sections/engines';
 import { initAppearance } from './sections/appearance';
@@ -101,6 +102,10 @@ export function downloadFile(content: string, filename: string, type: string): v
 // ---- Init ----
 
 async function init(): Promise<void> {
+  // #605: 侧栏品牌头的标识与 popup 头部、悬浮球、扩展图标同源（src/ui/logo.ts），
+  // 尺寸与字形变体同 popup：标记框 32px，compact 字形。不依赖设置，先画
+  document.getElementById('pt-logo')!.innerHTML = logoMarkSvg(32, { compact: true });
+
   await settingsReady();
   const os = await detectOS();
 

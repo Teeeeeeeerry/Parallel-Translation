@@ -38,7 +38,8 @@ body {
 /* ===== Sidebar ===== */
 
 .pt-nav {
-  width: 200px;
+  /* #605: 放得下“标识 + 单行名称”（标识 32 + 间距 10 + 名称约 170 + 左右内边距 40） */
+  width: 252px;
   flex-shrink: 0;
   background: var(--pt-surface);
   border-right: 1px solid var(--pt-forest-08);
@@ -47,14 +48,56 @@ body {
   flex-direction: column;
 }
 
-.pt-nav-title {
+/*
+ * 品牌头（#605）—— 与 popup 头部同一套：森林绿圆角方块里的标识、单行
+ * 名称、小号大写副标题。字体、字号、字距、颜色取与 popup 相同的设计变量。
+ * 底部分隔线与导航按钮的间距沿用原侧栏标题。
+ */
+.pt-nav-hdr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 20px 20px;
+  border-bottom: 1px solid var(--pt-forest-08);
+  margin-bottom: 8px;
+}
+
+.pt-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--pt-r-md);
+  background: var(--pt-forest);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* 标识由 options/main.ts 注入，自带颜色，方块只负责底色与圆角 */
+.pt-logo svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.pt-hdr-name {
   font-family: var(--pt-font-mono);
   font-size: 14px;
   font-weight: 700;
   letter-spacing: -.02em;
-  padding: 0 20px 20px;
-  border-bottom: 1px solid var(--pt-forest-08);
-  margin-bottom: 8px;
+  color: var(--pt-forest);
+  /* 名称在连字符处不折行 */
+  white-space: nowrap;
+}
+
+.pt-hdr-sub {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--pt-forest-55);
+  font-family: var(--pt-font-mono);
+  margin-top: 1px;
 }
 
 .pt-nav-btn {
