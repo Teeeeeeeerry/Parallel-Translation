@@ -2168,3 +2168,87 @@ test.describe('站点页面规则', () => {
     ).toHaveValue('.n');
   });
 });
+
+// ================================================================
+// 自带 key 引擎：DeepSeek（#609）
+// ================================================================
+
+/** 在 SW 内 stub DeepSeek 的 chat 端点：按请求的编号行回显，译文加上前缀。 */
+async function stubDeepSeek(sw: import('@playwright/test').Worker, prefix: string) {
+  await sw.evaluate((p: string) => {
+    const realFetch = self.fetch.bind(self);
+    (self as any).fetch = async (input: any, init?: any) => {
+      const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
+      if (url === 'https://api.deepseek.com/chat/completions') {
+        const req = JSON.parse(String(init?.body ?? '{}')) as {
+          messages?: Array<{ content?: string }>;
+        };
+        const lines = (req.messages?.[0]?.content ?? '')
+          .split('\n')
+          .flatMap((l) => {
+            const m = l.match(/^(\d+)\. (.+)$/);
+            return m ? [`${m[1]}. ${p}${m[2]}`] : [];
+          });
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: lines.join('\n') } }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return realFetch(input, init);
+    };
+  }, prefix);
+}
+
+test.describe('自带 key 引擎：DeepSeek', () => {
+  test('@core TC-E2E-103: 设置页填 DeepSeek key 并保存、拖到优先级首位 → 整页翻译用 DeepSeek（#609）', async ({
+    page, serviceWorker, gotoFixture,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    // e2e 环境自动同意权限申请；测试连接的探测请求在设置页发出
+    await page.addInitScript(() => {
+      chrome.permissions.request = (async () => true) as typeof chrome.permissions.request;
+    });
+    await page.context().route('https://api.deepseek.com/models', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '{"data":[]}' }),
+    );
+
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="engines"]');
+    const label = await page.evaluate(() => chrome.i18n.getMessage('descDeepseek'));
+    await expect(page.locator('#pt-byok-keys')).toContainText('DeepSeek (BYOK)');
+    await expect(page.locator('#pt-byok-keys')).toContainText(label);
+
+    // 填 key、保存（测试连接成功即保存）
+    await page.fill('#pt-key-deepseek', 'sk-deepseek-test');
+    await page.click('#pt-test-deepseek');
+    await expect(page.locator('#pt-key-result-deepseek')).toHaveClass(/pt-success/);
+    await expect
+      .poll(() =>
+        serviceWorker.evaluate(async () => {
+          const r = await chrome.storage.local.get('pt-keys');
+          return (r['pt-keys'] as Record<string, string> | undefined)?.deepseek;
+        }),
+      )
+      .toBe('sk-deepseek-test');
+
+    // 启用后拖到优先级列表首位
+    await page.click('#pt-engine-disabled .pt-engine-enable[data-engine="deepseek"]');
+    const enabled = page.locator('#pt-engine-list .pt-engine-item[data-engine="deepseek"]');
+    await enabled.dragTo(page.locator('#pt-engine-list .pt-engine-item').first());
+    await expect(page.locator('#pt-engine-list .pt-engine-item').first()).toHaveAttribute(
+      'data-engine',
+      'deepseek',
+    );
+
+    // popup 的引擎下拉框里也有 DeepSeek，并且选中它
+    const popup = await page.context().newPage();
+    await popup.goto(`chrome-extension://${extId}/popup.html`);
+    await expect(popup.locator('#pt-engine-select option:checked')).toHaveText('DeepSeek (BYOK)');
+    await popup.close();
+
+    await stubDeepSeek(serviceWorker, '[DS] ');
+    await gotoFixture('basic');
+    await translateAndWait(page);
+    await expect(page.locator('.pt-trans').first()).toContainText('[DS] ');
+  });
+});

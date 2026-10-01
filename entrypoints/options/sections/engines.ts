@@ -7,7 +7,13 @@
 // Phase 7 — 引擎分区：优先级拖拽排序 + 启用/停用 + BYOK 密钥与模型名 + 测试连接。
 
 import type { ByokEngineEntry, ByokEngineId, EngineId } from '~/src/storage/schema';
-import { DEFAULT_MODELS, ENGINE_CATALOG, ENGINE_LABELS, isByokEngine } from '~/src/storage/schema';
+import {
+  DEFAULT_MODELS,
+  ENGINE_CATALOG,
+  ENGINE_LABELS,
+  isByokEngine,
+  optionalOriginOf,
+} from '~/src/storage/schema';
 import {
   getSettings,
   patchSettings,
@@ -221,6 +227,11 @@ export function initEngines(): void {
           resultEl.textContent = tf('keyRequired', '请输入 API key');
           return;
         }
+        // #609: 端点走可选权限的引擎在这次点击里申请访问权限 —— 申请要用户
+        // 手势，放在任何其他等待之前。key 在测试成功后保存，这次点击也就是
+        // “保存 key”
+        const origin = optionalOriginOf(id);
+        if (origin) await chrome.permissions.request({ origins: [origin] });
         resultEl.className = 'pt-key-result';
         resultEl.textContent = tf('testing', '测试中…');
         const result = await runTest(id, key);

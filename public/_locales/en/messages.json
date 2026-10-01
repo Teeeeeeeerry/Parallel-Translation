@@ -468,5 +468,6 @@
     "message": "Created domain \"$name$\" with $count$ term(s), skipped $skipped$ line(s)",
     "placeholders": { "name": { "content": "$1" }, "count": { "content": "$2" }, "skipped": { "content": "$3" } }
   },
-  "domainImportNewNone": { "message": "No terms to import in this file; no domain was created" }
+  "domainImportNewNone": { "message": "No terms to import in this file; no domain was created" },
+  "descDeepseek": { "message": "DeepSeek API. Get a key from the DeepSeek platform. Clicking “Test connection” asks your browser to allow access to api.deepseek.com; the key is saved once the test succeeds." }
 }
