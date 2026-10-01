@@ -21,7 +21,9 @@
  * 文字（“Day of Week”、完整月份与星期名），译文插入后却是可见的，会把
  * 每格 10px 的日历撑坏；贡献数标题照常翻译。全页与逐段翻译两个入口分别验证。
  * 表格的样式 class 与 JS 挂钩各排除一条，只剩其中一个时仍生效（#587）。
- * 格子的悬停提示落在表格外，不被翻译靠的是采集规则，与排除无关
+ * 格子的悬停提示落在表格外，不被翻译靠的是采集规则，与排除无关。
+ * 图下方只包着一个链接的说明文字照常翻译（#589）；图例格子里只有读屏
+ * 隐藏文字，不翻译（#595）
  *
  * 逐段翻译 —— closestUnit()（悬停按钮与点击翻译共用的入口，#409）：
  *   - 排除区内找不到段落，不出按钮也不翻译
@@ -40,7 +42,7 @@
  * jsdom 的 location.hostname 是文件级选项，与其他域名的测试文件分离。
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { mockAllBoundingRects } from '../../setup';
+import { mockAllBoundingRects, mockBoundingRect } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
 import {
@@ -91,11 +93,22 @@ const CONTRIBUTION_GRAPH = `
         </table>
       </div>
       <div class="width-full f6">
-        <div class="float-left"><a href="https://docs.github.com/articles/why-are-my-contributions-not-showing-up-on-my-profile">Learn how we count contributions</a></div>
-        <div class="float-right"><span>Less</span><div class="ContributionCalendar-day"><span class="sr-only">No contributions.</span></div><span>More</span></div>
+        <div class="float-left" id="learn"><a id="learn-link" href="https://docs.github.com/articles/why-are-my-contributions-not-showing-up-on-my-profile">Learn how we count contributions</a></div>
+        <div class="float-right"><span>Less</span><div class="ContributionCalendar-day"><span class="sr-only" id="legend">No contributions.</span></div><span>More</span></div>
       </div>
     </div>
   </div>`;
+
+/**
+ * 放入贡献图片段，并把 .sr-only 元素设成 1×1 的渲染尺寸 —— 与浏览器里
+ * sr-only 样式的结果一致（#595）。cls 替换格子表格的 class（#587）
+ */
+function setContributionGraph(cls?: string) {
+  document.body.innerHTML = cls
+    ? CONTRIBUTION_GRAPH.replace('class="ContributionCalendar-grid js-calendar-graph-table"', `class="${cls}"`)
+    : CONTRIBUTION_GRAPH;
+  for (const el of document.querySelectorAll('.sr-only')) mockBoundingRect(el, { width: 1, height: 1 });
+}
 
 describe('collect（github.com 内置排除）', () => {
   test('仓库首页与 blob 页典型片段：迁移前后采集到的单元一致', () => {
@@ -137,24 +150,22 @@ describe('collect（github.com 内置排除）', () => {
   });
 
   test('#580：贡献图的格子表格（月份、星期标签）不采集，贡献数标题照常采集', () => {
-    document.body.innerHTML = CONTRIBUTION_GRAPH;
-    // 图下方的说明链接所在的 div 没有直接文字，按采集规则本来就不是翻译单元
-    expect(ids(collect())).toEqual(['total']);
+    setContributionGraph();
+    // 图下方只包着一个链接的说明文字照常采集（#589）；图例格子里只有读屏
+    // 隐藏文字，不采集（#595）
+    expect(ids(collect())).toEqual(['total', 'learn']);
   });
 
   test.each([
     ['只带样式 class', 'ContributionCalendar-grid'],
     ['只带 JS 挂钩', 'js-calendar-graph-table'],
   ])('#587：贡献图表格%s时同样不采集', (_, cls) => {
-    document.body.innerHTML = CONTRIBUTION_GRAPH.replace(
-      'class="ContributionCalendar-grid js-calendar-graph-table"',
-      `class="${cls}"`,
-    );
-    expect(ids(collect())).toEqual(['total']);
+    setContributionGraph(cls);
+    expect(ids(collect())).toEqual(['total', 'learn']);
   });
 
   test('#587：悬停提示不采集 —— 它在表格外，靠的是采集规则（tool-tip 不是翻译单元），不是排除', () => {
-    document.body.innerHTML = CONTRIBUTION_GRAPH;
+    setContributionGraph();
     const texts = collect().map((u) => u.textContent);
     expect(texts.some((t) => t?.includes('contributions on September'))).toBe(false);
   });
@@ -179,7 +190,7 @@ describe('closestUnit（github.com 内置排除，逐段翻译入口）', () => 
   });
 
   test('#580：贡献图格子表格里的月份、星期找不到段落，贡献数标题能找到', () => {
-    document.body.innerHTML = CONTRIBUTION_GRAPH;
+    setContributionGraph();
     expect(closestUnit(document.getElementById('month')!)).toBeNull();
     expect(closestUnit(document.getElementById('weekday')!)).toBeNull();
     expect(closestUnit(document.getElementById('total')!)?.id).toBe('total');
@@ -189,17 +200,20 @@ describe('closestUnit（github.com 内置排除，逐段翻译入口）', () => 
     ['只带样式 class', 'ContributionCalendar-grid'],
     ['只带 JS 挂钩', 'js-calendar-graph-table'],
   ])('#587：贡献图表格%s时，月份、星期同样找不到段落', (_, cls) => {
-    document.body.innerHTML = CONTRIBUTION_GRAPH.replace(
-      'class="ContributionCalendar-grid js-calendar-graph-table"',
-      `class="${cls}"`,
-    );
+    setContributionGraph(cls);
     expect(closestUnit(document.getElementById('month')!)).toBeNull();
     expect(closestUnit(document.getElementById('weekday')!)).toBeNull();
   });
 
   test('#587：悬停提示上找不到段落 —— 靠的是采集规则，不是排除', () => {
-    document.body.innerHTML = CONTRIBUTION_GRAPH;
+    setContributionGraph();
     expect(closestUnit(document.getElementById('tip')!)).toBeNull();
+  });
+
+  test('#589、#595：说明链接上能找到段落，图例格子里的读屏隐藏文字上找不到', () => {
+    setContributionGraph();
+    expect(closestUnit(document.getElementById('learn-link')!)?.id).toBe('learn');
+    expect(closestUnit(document.getElementById('legend')!)).toBeNull();
   });
 
   test('排除区外的 README 正文照常找到段落', () => {
