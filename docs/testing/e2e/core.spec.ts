@@ -1320,17 +1320,15 @@ test.describe('站点页面规则', () => {
     await expect(page.locator('#pt-toast')).toBeVisible();
   });
 
+  /** 经后台直接写入站点规则的用户规则列表：打开设置页前用来准备数据，打开后相当于另一个设置页标签页保存了改动 */
+  const writeUserSiteRules = (serviceWorker: import('@playwright/test').Worker, user: unknown[]) =>
+    serviceWorker.evaluate((u) => chrome.storage.local.set({ 'pt-site-rules': { user: u } }), user);
+
   test('@core TC-E2E-68: 存储里带无效行的站点卡片 → 打开设置页即标红并提示行号 → 改正后保存（#443）', async ({
     page, serviceWorker,
   }) => {
     // 导入等途径不经保存时校验，直接写入 storage.local
-    await serviceWorker.evaluate(() =>
-      chrome.storage.local.set({
-        'pt-site-rules': {
-          user: [{ site: 'localhost', scope: ['main,', '.post'], exclude: ['.ad'] }],
-        },
-      }),
-    );
+    await writeUserSiteRules(serviceWorker, [{ site: 'localhost', scope: ['main,', '.post'], exclude: ['.ad'] }]);
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="site-rules"]');
@@ -1628,9 +1626,7 @@ test.describe('站点页面规则', () => {
 
     // 其他标签页保存后本页刷新列表：读取失败，提示列表没有刷新（#549），
     // 已显示的卡片与未保存的编辑都还在
-    await serviceWorker.evaluate(() =>
-      chrome.storage.local.set({ 'pt-site-rules': { user: [{ site: 'github.com', exclude: ['.b'] }] } }),
-    );
+    await writeUserSiteRules(serviceWorker, [{ site: 'github.com', exclude: ['.b'] }]);
     await expect(toast).toHaveText(await msg('siteRulesListNotRefreshed'));
     await expect(page.locator('.pt-site-rules-card')).toHaveCount(1);
     await expect(exclude).toHaveValue('.unsaved');
@@ -1639,9 +1635,7 @@ test.describe('站点页面规则', () => {
   test('@core TC-E2E-94: 首次打开设置页就读取站点规则失败 → 提示站点卡片列表没有载入，不显示卡片（#549）', async ({
     page, serviceWorker,
   }) => {
-    await serviceWorker.evaluate(() =>
-      chrome.storage.local.set({ 'pt-site-rules': { user: [{ site: 'github.com', exclude: ['.a'] }] } }),
-    );
+    await writeUserSiteRules(serviceWorker, [{ site: 'github.com', exclude: ['.a'] }]);
     // 读取站点规则失败，直到 __ptFailGet 被清掉；每次写入之后又失败
     await page.addInitScript(() => {
       const local = chrome.storage.local as any;
@@ -1777,16 +1771,10 @@ test.describe('站点页面规则', () => {
   test('@core TC-E2E-91: 删除站点写入成功、刷新站点卡片列表失败 → 被删站点的卡片立即移除，其他卡片与未保存的编辑不变，再新增同名站点从空白开始（#548）', async ({
     page, serviceWorker,
   }) => {
-    await serviceWorker.evaluate(() =>
-      chrome.storage.local.set({
-        'pt-site-rules': {
-          user: [
-            { site: 'github.com', exclude: ['.old'] },
-            { site: 'example.com', exclude: ['.a'] },
-          ],
-        },
-      }),
-    );
+    await writeUserSiteRules(serviceWorker, [
+      { site: 'github.com', exclude: ['.old'] },
+      { site: 'example.com', exclude: ['.a'] },
+    ]);
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="site-rules"]');
@@ -1827,9 +1815,6 @@ test.describe('站点页面规则', () => {
     mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify({ format: 'parallel-translation-site-rules', version: 1, sites })),
   });
-  /** 经后台直接写入站点规则的用户规则列表：打开设置页前用来准备数据，打开后相当于另一个设置页标签页保存了改动 */
-  const writeUserSiteRules = (serviceWorker: import('@playwright/test').Worker, user: unknown[]) =>
-    serviceWorker.evaluate((u) => chrome.storage.local.set({ 'pt-site-rules': { user: u } }), user);
   /** 页面里打桩：__ptFailRender 为 true 时，构造卡片的文本框抛错（#558）。打桩后标记即为 true */
   const failCardRender = (page: import('@playwright/test').Page) =>
     page.evaluate(() => {
@@ -1844,16 +1829,10 @@ test.describe('站点页面规则', () => {
   test('@core TC-E2E-92: 导入写入成功、刷新站点卡片列表失败，之后在导入没改动的卡片上编辑 → 下次刷新保留这个编辑，导入改动过的字段显示导入后的内容（#550）', async ({
     page, serviceWorker,
   }) => {
-    await serviceWorker.evaluate(() =>
-      chrome.storage.local.set({
-        'pt-site-rules': {
-          user: [
-            { site: 'github.com', exclude: ['.old'] },
-            { site: 'example.com', exclude: ['.a'] },
-          ],
-        },
-      }),
-    );
+    await writeUserSiteRules(serviceWorker, [
+      { site: 'github.com', exclude: ['.old'] },
+      { site: 'example.com', exclude: ['.a'] },
+    ]);
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="site-rules"]');
@@ -1888,9 +1867,7 @@ test.describe('站点页面规则', () => {
   test('@core TC-E2E-93: 导入后又删除站点，两次刷新站点卡片列表都失败 → 提示同时说明导入与删除都已成功（#550）', async ({
     page, serviceWorker,
   }) => {
-    await serviceWorker.evaluate(() =>
-      chrome.storage.local.set({ 'pt-site-rules': { user: [{ site: 'example.com', exclude: ['.a'] }] } }),
-    );
+    await writeUserSiteRules(serviceWorker, [{ site: 'example.com', exclude: ['.a'] }]);
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="site-rules"]');
@@ -1923,16 +1900,10 @@ test.describe('站点页面规则', () => {
   test('@core TC-E2E-95: 连续两次导入写入成功、刷新站点卡片列表都失败，之后另一个标签页改了本页有未保存编辑的字段 → 下次刷新保留这个编辑，两次导入改动过的字段都显示导入后的内容（#557）', async ({
     page, serviceWorker,
   }) => {
-    await serviceWorker.evaluate(() =>
-      chrome.storage.local.set({
-        'pt-site-rules': {
-          user: [
-            { site: 'github.com', exclude: ['.old'] },
-            { site: 'example.com', exclude: ['.a'] },
-          ],
-        },
-      }),
-    );
+    await writeUserSiteRules(serviceWorker, [
+      { site: 'github.com', exclude: ['.old'] },
+      { site: 'example.com', exclude: ['.a'] },
+    ]);
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="site-rules"]');
@@ -1963,16 +1934,10 @@ test.describe('站点页面规则', () => {
     // 本页在 example.com 上编辑，另一个标签页保存了同一个字段：不是导入改动的，
     // 编辑不该被之后的刷新清掉
     await example.locator('textarea[data-field="exclude"]').fill('.unsaved');
-    await serviceWorker.evaluate(() =>
-      chrome.storage.local.set({
-        'pt-site-rules': {
-          user: [
-            { site: 'github.com', exclude: ['.old', '.new'], scope: ['main'] },
-            { site: 'example.com', exclude: ['.b'] },
-          ],
-        },
-      }),
-    );
+    await writeUserSiteRules(serviceWorker, [
+      { site: 'github.com', exclude: ['.old', '.new'], scope: ['main'] },
+      { site: 'example.com', exclude: ['.b'] },
+    ]);
     await page.evaluate(() => {
       const local = chrome.storage.local as any;
       const w = window as any;
@@ -2039,16 +2004,10 @@ test.describe('站点页面规则', () => {
   test('@core TC-E2E-97: 连续删除两个站点，两次刷新站点卡片列表都失败 → 提示逐条列出两个被删的站点（#556）', async ({
     page, serviceWorker,
   }) => {
-    await serviceWorker.evaluate(() =>
-      chrome.storage.local.set({
-        'pt-site-rules': {
-          user: [
-            { site: 'github.com', exclude: ['.a'] },
-            { site: 'example.com', exclude: ['.b'] },
-          ],
-        },
-      }),
-    );
+    await writeUserSiteRules(serviceWorker, [
+      { site: 'github.com', exclude: ['.a'] },
+      { site: 'example.com', exclude: ['.b'] },
+    ]);
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="site-rules"]');
