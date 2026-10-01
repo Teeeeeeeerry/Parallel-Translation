@@ -87,6 +87,16 @@ vi.mock('~/src/engines/deepseek', () => ({
   },
 }));
 
+vi.mock('~/src/engines/grok', () => ({
+  grok: {
+    id: 'grok',
+    displayName: 'Grok',
+    requiresKey: true,
+    supportedLangs: 'all' as const,
+    translate: vi.fn(),
+  },
+}));
+
 import { route } from '~/src/engines/router';
 import { getSettings } from '~/src/storage/settings';
 import { cacheGet, cacheSet } from '~/src/storage/cache';

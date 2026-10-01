@@ -12,7 +12,7 @@ storage is used for six things:
 
 1. User settings (chrome.storage.sync) — target language, display mode (side-by-side or translation-only), translation styling, engine priority order, keyboard shortcuts, and the site allowlist/blocklist. These must survive browser restarts and follow the user across their signed-in browsers.
 
-2. Optional API keys (chrome.storage.local) — if a user chooses to bring their own key for OpenAI, DeepL, Gemini or DeepSeek, it is kept here. The local area is used deliberately so that keys never leave the device through browser account sync, and they are excluded when the user exports their settings.
+2. Optional API keys (chrome.storage.local) — if a user chooses to bring their own key for OpenAI, DeepL, Gemini, DeepSeek or Grok, it is kept here. The local area is used deliberately so that keys never leave the device through browser account sync, and they are excluded when the user exports their settings.
 
 3. Translation cache (chrome.storage.local) — translated text is cached for 30 days, so revisiting a page does not re-request the same sentences. This saves the user's API quota and reduces load on the translation service.
 
@@ -56,9 +56,10 @@ Every host permission is the API endpoint of one translation service the user ca
 - generativelanguage.googleapis.com — Google Gemini, used only with the user's own key
 - api.deepl.com and api-free.deepl.com — DeepL, used only with the user's own key
 
-One more endpoint is an optional host permission (optional_host_permissions), so it is not granted at install or update time:
+Two more endpoints are optional host permissions (optional_host_permissions), so they are not granted at install or update time:
 
 - api.deepseek.com — DeepSeek, used only with the user's own key. The browser asks for this permission only when the user saves a DeepSeek key on the settings page (the "Test connection" click); if the user declines, the key is not saved and the endpoint is never contacted. The user can revoke it at any time from the browser's extension settings.
+- api.x.ai — Grok (xAI), used only with the user's own key. As with DeepSeek, the browser asks for this permission only when the user saves a Grok key; declining means the key is not saved and the endpoint is never contacted, and the permission can be revoked at any time.
 
 The extension sends only the text the user asked to have translated, and only to the engine currently selected. These endpoints are declared explicitly rather than requesting broad host access, and no other network destination is ever contacted.
 

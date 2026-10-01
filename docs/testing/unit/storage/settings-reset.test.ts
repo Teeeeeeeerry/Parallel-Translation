@@ -39,6 +39,21 @@ describe('恢复默认设置（#612）', () => {
     expect(JSON.stringify(stored)).not.toContain('deepseek');
   });
 
+  test('Grok 的 key 与自定义模型名也被清掉（#613）', async () => {
+    const settings = await import('~/src/storage/settings');
+    const keys = await import('~/src/storage/keys');
+    await settings.settingsReady();
+    await settings.patchSettings({ enginePriority: ['grok'], models: { grok: 'grok-4.3' } });
+    await keys.setKey('grok', 'xai-k');
+
+    const { resetSettings } = await import('~/src/storage/settings-reset');
+    await resetSettings();
+
+    expect(await keys.getKey('grok')).toBeUndefined();
+    expect(settings.getSettings().models).toEqual({});
+    expect(settings.getSettings().enginePriority).toEqual(['google-web', 'bing-edge']);
+  });
+
   test('翻译缓存被清空', async () => {
     const cache = await import('~/src/storage/cache');
     await cache.cacheSet('pt-c:deepseek:k', '译文');

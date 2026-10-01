@@ -159,3 +159,17 @@ describe('导入识别新的引擎（#612）', () => {
     expect(settingsMod.getSettings().models).toEqual({ openai: 'gpt-4o' });
   });
 });
+
+describe('导入识别 Grok（#613）', () => {
+  test('优先级列表里的 grok 导入后保留', async () => {
+    const settingsMod = await import('~/src/storage/settings');
+    await settingsMod.settingsReady();
+    const { importSettings } = await load();
+    const result = await importSettings(
+      JSON.stringify({ enginePriority: ['grok', 'google-web'], models: { grok: 'grok-4.3' } }),
+    );
+    expect(result.ok).toBe(true);
+    expect(settingsMod.getSettings().enginePriority).toEqual(['grok', 'google-web']);
+    expect(settingsMod.getSettings().models).toEqual({ grok: 'grok-4.3' });
+  });
+});

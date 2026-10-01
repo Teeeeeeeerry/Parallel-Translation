@@ -2240,13 +2240,17 @@ test.describe('站点页面规则', () => {
 // 自带 key 引擎：DeepSeek（#609）
 // ================================================================
 
-/** 在 SW 内 stub DeepSeek 的 chat 端点：按请求的编号行回显，译文加上前缀。 */
-async function stubDeepSeek(sw: import('@playwright/test').Worker, prefix: string) {
-  await sw.evaluate((p: string) => {
+/** 在 SW 内 stub 一个 OpenAI 兼容的 chat 端点：按请求的编号行回显，译文加上前缀。 */
+async function stubChatEndpoint(
+  sw: import('@playwright/test').Worker,
+  endpoint: string,
+  prefix: string,
+) {
+  await sw.evaluate(({ endpoint, p }: { endpoint: string; p: string }) => {
     const realFetch = self.fetch.bind(self);
     (self as any).fetch = async (input: any, init?: any) => {
       const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
-      if (url === 'https://api.deepseek.com/chat/completions') {
+      if (url === endpoint) {
         const req = JSON.parse(String(init?.body ?? '{}')) as {
           messages?: Array<{ content?: string }>;
         };
@@ -2263,8 +2267,10 @@ async function stubDeepSeek(sw: import('@playwright/test').Worker, prefix: strin
       }
       return realFetch(input, init);
     };
-  }, prefix);
+  }, { endpoint, p: prefix });
 }
+
+const DEEPSEEK_CHAT = 'https://api.deepseek.com/chat/completions';
 
 test.describe('自带 key 引擎：DeepSeek', () => {
   test('@core TC-E2E-103: 设置页填 DeepSeek key 并保存、拖到优先级首位 → 整页翻译用 DeepSeek（#609）', async ({
@@ -2301,6 +2307,8 @@ test.describe('自带 key 引擎：DeepSeek', () => {
     // 启用后拖到优先级列表首位
     await page.click('#pt-engine-disabled .pt-engine-enable[data-engine="deepseek"]');
     const enabled = page.locator('#pt-engine-list .pt-engine-item[data-engine="deepseek"]');
+    // 先把优先级列表滚进视口：拖拽途中再滚动页面，HTML5 拖放事件不会触发
+    await page.locator('#pt-engine-list').scrollIntoViewIfNeeded();
     await enabled.dragTo(page.locator('#pt-engine-list .pt-engine-item').first());
     await expect(page.locator('#pt-engine-list .pt-engine-item').first()).toHaveAttribute(
       'data-engine',
@@ -2317,7 +2325,7 @@ test.describe('自带 key 引擎：DeepSeek', () => {
     await serviceWorker.evaluate(() => {
       chrome.permissions.contains = (async () => true) as typeof chrome.permissions.contains;
     });
-    await stubDeepSeek(serviceWorker, '[DS] ');
+    await stubChatEndpoint(serviceWorker, DEEPSEEK_CHAT, '[DS] ');
     await gotoFixture('basic');
     await translateAndWait(page);
     await expect(page.locator('.pt-trans').first()).toContainText('[DS] ');
@@ -2374,7 +2382,7 @@ test.describe('自带 key 引擎：DeepSeek', () => {
       // 在浏览器扩展管理里撤销了访问权限
       chrome.permissions.contains = (async () => false) as typeof chrome.permissions.contains;
     });
-    await stubDeepSeek(serviceWorker, '[DS] ');
+    await stubChatEndpoint(serviceWorker, DEEPSEEK_CHAT, '[DS] ');
     await serviceWorker.evaluate(() => {
       const inner = (self as any).fetch.bind(self);
       (self as any).__ptDeepSeekCalls = 0;
@@ -2394,5 +2402,77 @@ test.describe('自带 key 引擎：DeepSeek', () => {
     const toast = page.locator('#pt-host-toast .pt-toast[data-kind="error"]');
     await expect(toast).toHaveText(expected, { timeout: 30_000 });
     expect(await serviceWorker.evaluate(() => (self as any).__ptDeepSeekCalls)).toBe(0);
+  });
+});
+
+// ================================================================
+// 自带 key 引擎：Grok（#613）
+// ================================================================
+
+test.describe('自带 key 引擎：Grok', () => {
+  test('@core TC-E2E-107: 设置页填 Grok key 并保存、拖到优先级首位 → 整页翻译用 Grok（#613）', async ({
+    page, serviceWorker, gotoFixture,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    // e2e 环境自动同意权限申请；测试连接发的最小 chat 请求在设置页发出
+    await page.addInitScript(() => {
+      chrome.permissions.request = (async () => true) as typeof chrome.permissions.request;
+    });
+    let probeBody: { model?: string; max_tokens?: number } = {};
+    await page.context().route('https://api.x.ai/v1/chat/completions', (route) => {
+      probeBody = JSON.parse(route.request().postData() ?? '{}');
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ choices: [{ message: { content: 'p' } }] }),
+      });
+    });
+
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="engines"]');
+    const label = await page.evaluate(() => chrome.i18n.getMessage('descGrok'));
+    await expect(page.locator('#pt-byok-keys')).toContainText('Grok (BYOK)');
+    await expect(page.locator('#pt-byok-keys')).toContainText(label);
+
+    // 填 key、保存（测试连接成功即保存）；探测是最小的 chat 请求
+    await page.fill('#pt-key-grok', 'xai-test');
+    await page.click('#pt-test-grok');
+    await expect(page.locator('#pt-key-result-grok')).toHaveClass(/pt-success/);
+    expect(probeBody.max_tokens).toBe(1);
+    expect(probeBody.model).toBe('grok-4.20-0309-non-reasoning');
+    await expect
+      .poll(() =>
+        serviceWorker.evaluate(async () => {
+          const r = await chrome.storage.local.get('pt-keys');
+          return (r['pt-keys'] as Record<string, string> | undefined)?.grok;
+        }),
+      )
+      .toBe('xai-test');
+
+    // 启用后拖到优先级列表首位
+    await page.click('#pt-engine-disabled .pt-engine-enable[data-engine="grok"]');
+    const enabled = page.locator('#pt-engine-list .pt-engine-item[data-engine="grok"]');
+    // 先把优先级列表滚进视口：拖拽途中再滚动页面，HTML5 拖放事件不会触发
+    await page.locator('#pt-engine-list').scrollIntoViewIfNeeded();
+    await enabled.dragTo(page.locator('#pt-engine-list .pt-engine-item').first());
+    await expect(page.locator('#pt-engine-list .pt-engine-item').first()).toHaveAttribute(
+      'data-engine',
+      'grok',
+    );
+
+    // popup 的引擎下拉框里也有 Grok，并且选中它
+    const popup = await page.context().newPage();
+    await popup.goto(`chrome-extension://${extId}/popup.html`);
+    await expect(popup.locator('#pt-engine-select option:checked')).toHaveText('Grok (BYOK)');
+    await popup.close();
+
+    // 设置页那次授权只是 stub，SW 里的权限查询同样按已授权处理
+    await serviceWorker.evaluate(() => {
+      chrome.permissions.contains = (async () => true) as typeof chrome.permissions.contains;
+    });
+    await stubChatEndpoint(serviceWorker, 'https://api.x.ai/v1/chat/completions', '[GK] ');
+    await gotoFixture('basic');
+    await translateAndWait(page);
+    await expect(page.locator('.pt-trans').first()).toContainText('[GK] ');
   });
 });
