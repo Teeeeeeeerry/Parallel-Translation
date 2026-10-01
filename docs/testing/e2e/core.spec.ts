@@ -1827,6 +1827,19 @@ test.describe('站点页面规则', () => {
     mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify({ format: 'parallel-translation-site-rules', version: 1, sites })),
   });
+  /** 经后台直接写入站点规则的用户规则列表：打开设置页前用来准备数据，打开后相当于另一个设置页标签页保存了改动 */
+  const writeUserSiteRules = (serviceWorker: import('@playwright/test').Worker, user: unknown[]) =>
+    serviceWorker.evaluate((u) => chrome.storage.local.set({ 'pt-site-rules': { user: u } }), user);
+  /** 页面里打桩：__ptFailRender 为 true 时，构造卡片的文本框抛错（#558）。打桩后标记即为 true */
+  const failCardRender = (page: import('@playwright/test').Page) =>
+    page.evaluate(() => {
+      const create = document.createElement.bind(document);
+      (document as any).createElement = (tag: string, options?: ElementCreationOptions) => {
+        if ((window as any).__ptFailRender && tag === 'textarea') throw new Error('[PT] 渲染出错');
+        return create(tag, options);
+      };
+      (window as any).__ptFailRender = true;
+    });
 
   test('@core TC-E2E-92: 导入写入成功、刷新站点卡片列表失败，之后在导入没改动的卡片上编辑 → 下次刷新保留这个编辑，导入改动过的字段显示导入后的内容（#550）', async ({
     page, serviceWorker,
@@ -1978,9 +1991,7 @@ test.describe('站点页面规则', () => {
   test('@core TC-E2E-96: 渲染站点卡片列表时出错 → 提示列表没有刷新，已显示的卡片与未保存的编辑都保持刷新前的样子；之后刷新成功显示最新内容（#558）', async ({
     page, serviceWorker,
   }) => {
-    const write = (user: unknown[]) =>
-      serviceWorker.evaluate((u) => chrome.storage.local.set({ 'pt-site-rules': { user: u } }), user);
-    await write([
+    await writeUserSiteRules(serviceWorker, [
       { site: 'github.com', exclude: ['.a'] },
       { site: 'example.com', exclude: ['.b'] },
     ]);
@@ -1992,18 +2003,10 @@ test.describe('站点页面规则', () => {
     const github = cards.filter({ hasText: 'github.com' }).locator('textarea[data-field="exclude"]');
     const example = cards.filter({ hasText: 'example.com' }).locator('textarea[data-field="exclude"]');
     await example.fill('.unsaved');
-    // __ptFailRender 为 true 时，构造卡片的文本框抛错
-    await page.evaluate(() => {
-      const create = document.createElement.bind(document);
-      (document as any).createElement = (tag: string, options?: ElementCreationOptions) => {
-        if ((window as any).__ptFailRender && tag === 'textarea') throw new Error('[PT] 渲染出错');
-        return create(tag, options);
-      };
-      (window as any).__ptFailRender = true;
-    });
+    await failCardRender(page);
 
     // 另一个标签页改了 github.com、新增了站点：渲染新站点的卡片时出错
-    await write([
+    await writeUserSiteRules(serviceWorker, [
       { site: 'github.com', exclude: ['.a2'] },
       { site: 'example.com', exclude: ['.b'] },
       { site: 'new.com', exclude: ['.n'] },
@@ -2020,7 +2023,7 @@ test.describe('站点页面规则', () => {
     await page.evaluate(() => {
       (window as any).__ptFailRender = false;
     });
-    await write([
+    await writeUserSiteRules(serviceWorker, [
       { site: 'github.com', exclude: ['.a2'] },
       { site: 'example.com', exclude: ['.b'] },
       { site: 'new.com', exclude: ['.n2'] },
@@ -2078,9 +2081,7 @@ test.describe('站点页面规则', () => {
   test('@core TC-E2E-98: 渲染站点卡片列表时格式化无效选择器的提示出错 → 提示列表没有刷新，排在前面的卡片也保持刷新前的样子；之后刷新成功照常标出无效选择器（#564）', async ({
     page, serviceWorker,
   }) => {
-    const write = (user: unknown[]) =>
-      serviceWorker.evaluate((u) => chrome.storage.local.set({ 'pt-site-rules': { user: u } }), user);
-    await write([
+    await writeUserSiteRules(serviceWorker, [
       { site: 'github.com', exclude: ['.a'] },
       { site: 'example.com', scope: ['a['], exclude: ['.b'] },
     ]);
@@ -2096,7 +2097,10 @@ test.describe('站点页面规则', () => {
     const error = exampleCard.locator('textarea[data-field="scope"] + .pt-site-rules-error');
     await expect(scope).toHaveClass(/pt-error/);
     await example.fill('.unsaved');
-    // __ptFailFmt 为 true 时，“无效选择器”的文案转成文本时抛错
+    // __ptFailFmt 为 true 时，“无效选择器”的文案转成文本时抛错。
+    // 前提：扩展取文案的函数原样返回读到的结果。如果它改成先转成字符串再返回，
+    // 错误会在函数内部被接住、换成默认文案，这里就模拟不出错误 —— 本用例会卡在
+    // 等“列表没有刷新”的提示那一步，那时先检查这个前提，不是产品出了问题
     await page.evaluate(() => {
       const i18n = chrome.i18n as any;
       const getMessage = i18n.getMessage.bind(i18n);
@@ -2114,7 +2118,7 @@ test.describe('站点页面规则', () => {
     });
 
     // 另一个标签页改了排在前面的 github.com：渲染到 example.com 的无效选择器时出错
-    await write([
+    await writeUserSiteRules(serviceWorker, [
       { site: 'github.com', exclude: ['.a2'] },
       { site: 'example.com', scope: ['a['], exclude: ['.b'] },
     ]);
@@ -2130,7 +2134,7 @@ test.describe('站点页面规则', () => {
     await page.evaluate(() => {
       (window as any).__ptFailFmt = false;
     });
-    await write([
+    await writeUserSiteRules(serviceWorker, [
       { site: 'github.com', exclude: ['.a3'] },
       { site: 'example.com', scope: ['a['], exclude: ['.b'] },
     ]);
@@ -2145,16 +2149,10 @@ test.describe('站点页面规则', () => {
   test('@core TC-E2E-99: 导入写入成功、刷新站点卡片列表时渲染出错，之后在导入改动过的字段与另一张卡片上编辑 → 下次刷新成功时导入改动过的字段显示导入后的内容，另一张卡片的编辑还在（#566）', async ({
     page, serviceWorker,
   }) => {
-    await serviceWorker.evaluate(() =>
-      chrome.storage.local.set({
-        'pt-site-rules': {
-          user: [
-            { site: 'github.com', exclude: ['.old'] },
-            { site: 'example.com', exclude: ['.a'] },
-          ],
-        },
-      }),
-    );
+    await writeUserSiteRules(serviceWorker, [
+      { site: 'github.com', exclude: ['.old'] },
+      { site: 'example.com', exclude: ['.a'] },
+    ]);
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="site-rules"]');
@@ -2162,15 +2160,7 @@ test.describe('站点页面规则', () => {
     await expect(cards).toHaveCount(2);
     const github = cards.filter({ hasText: 'github.com' }).locator('textarea[data-field="exclude"]');
     const example = cards.filter({ hasText: 'example.com' }).locator('textarea[data-field="exclude"]');
-    // __ptFailRender 为 true 时，构造卡片的文本框抛错
-    await page.evaluate(() => {
-      const create = document.createElement.bind(document);
-      (document as any).createElement = (tag: string, options?: ElementCreationOptions) => {
-        if ((window as any).__ptFailRender && tag === 'textarea') throw new Error('[PT] 渲染出错');
-        return create(tag, options);
-      };
-      (window as any).__ptFailRender = true;
-    });
+    await failCardRender(page);
 
     // 导入改动 github.com 并新增 new.com：渲染新站点的卡片时出错
     await page.setInputFiles('#pt-site-rules-import-file', siteRulesFile({
