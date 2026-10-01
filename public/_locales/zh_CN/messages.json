@@ -457,5 +457,16 @@
     "placeholders": { "line": { "content": "$1" }, "count": { "content": "$2" } }
   },
   "domainTermsImportHint": { "message": "每行一条术语：原词、译法、不翻译（true / false，可省略）。首行可以是表头；逗号、分号或制表符分隔，UTF-8 或 GBK 编码。" },
-  "domainStorageReadFailed": { "message": "暂时读不到存储里的数据，请稍后重试" }
+  "domainStorageReadFailed": { "message": "暂时读不到存储里的数据，请稍后重试" },
+  "domainImportNewBtn": { "message": "从 CSV 导入" },
+  "domainImportNewHint": { "message": "“从 CSV 导入”用一份术语 CSV 直接新建领域，名称框留空时用文件名命名。" },
+  "domainImportedNew": {
+    "message": "已新建领域“$name$”，导入 $count$ 条术语",
+    "placeholders": { "name": { "content": "$1" }, "count": { "content": "$2" } }
+  },
+  "domainImportedNewSkipped": {
+    "message": "已新建领域“$name$”，导入 $count$ 条术语，跳过 $skipped$ 行",
+    "placeholders": { "name": { "content": "$1" }, "count": { "content": "$2" }, "skipped": { "content": "$3" } }
+  },
+  "domainImportNewNone": { "message": "文件里没有可导入的术语，没有新建领域" }
 }

@@ -333,20 +333,27 @@ export async function createDomain(input: {
   name: string;
   targetLang: string;
 }): Promise<Domain> {
+  const domain = newUserDomain(input, []);
+  return updateUserDomains((user) => ({ user: [...user, domain], result: domain }));
+}
+
+/**
+ * 新的自建领域（#391）：名称与目标语言去首尾空白，为空时抛错；适用网址为空。
+ * 新建领域与从 CSV 新建领域（#603）共用。
+ */
+function newUserDomain(input: { name: string; targetLang: string }, terms: Term[]): Domain {
   const name = input.name.trim();
   const targetLang = input.targetLang.trim();
   if (!name) throw new Error('[PT] 领域名称不能为空');
   if (!targetLang) throw new Error('[PT] 领域目标语言不能为空');
-
-  const domain: Domain = {
+  return {
     id: `user:${crypto.randomUUID()}`,
     name,
     targetLang,
     sites: [],
-    terms: [],
+    terms,
     origin: 'user',
   };
-  return updateUserDomains((user) => ({ user: [...user, domain], result: domain }));
 }
 
 /**
@@ -896,7 +903,72 @@ export interface TermsCsvSkip {
 export async function importDomainTermsCsv(
   id: string,
   csv: string | ArrayBuffer | ArrayBufferView,
-): Promise<{ imported: number; skipped: TermsCsvSkip[]; headerColumns?: number }> {
+): Promise<TermsCsvImport> {
+  const { incoming, skipped, extra } = parseTermsCsv(csv);
+  return updateStored((stored) => {
+    const domain = effectiveDomains(stored).find((d) => d.id === id);
+    if (!domain) throw new DomainNotFoundError(id);
+    // 没有可导入的行：不写入
+    if (incoming.length === 0) return { stored: null, result: { imported: 0, skipped, ...extra } };
+    // 逐行校验过，这里只做整理（去首尾空格），不会再有不合法的行
+    const { stored: next } = withTerms(stored, id, cleanTerms(mergeTerms(domain.terms, incoming)));
+    return { stored: next, result: { imported: incoming.length, skipped, ...extra } };
+  });
+}
+
+/** 导入术语 CSV 的结果（#403、#404、#590）：导入的行数、跳过的行，有表头时带表头的列数。 */
+export interface TermsCsvImport {
+  imported: number;
+  skipped: TermsCsvSkip[];
+  headerColumns?: number;
+}
+
+/**
+ * 从术语 CSV 新建自建领域（#603）：名称与目标语言同 createDomain，术语为
+ * 文件里可导入的行，一次写入。文件格式、跳过的行与往已有领域导入相同；
+ * 文件里同一原词出现多次时后出现的为准。名称或目标语言为空时抛错；
+ * 没有可导入的行时不新建，domain 为 null；写入失败时抛错，不留下领域。
+ */
+export async function createDomainFromTermsCsv(
+  input: { name: string; targetLang: string },
+  csv: string | ArrayBuffer | ArrayBufferView,
+): Promise<TermsCsvImport & { domain: Domain | null }> {
+  // 先校验名称与目标语言：为空时不必解析文件
+  newUserDomain(input, []);
+  const { incoming, skipped, extra } = parseTermsCsv(csv);
+  if (incoming.length === 0) return { domain: null, imported: 0, skipped, ...extra };
+  const domain = newUserDomain(input, cleanTerms(mergeTerms([], incoming)));
+  return updateUserDomains((user) => ({
+    user: [...user, domain],
+    result: { domain, imported: incoming.length, skipped, ...extra },
+  }));
+}
+
+/**
+ * 把术语合并进已有术语（#403）：同一原词（不区分大小写）以后来的为准、
+ * 留在原位，新原词追加在后。
+ */
+function mergeTerms(base: readonly Term[], incoming: readonly Term[]): Term[] {
+  const merged = [...base];
+  const at = new Map(merged.map((t, i) => [termKey(t), i]));
+  for (const t of incoming) {
+    const i = at.get(termKey(t));
+    if (i === undefined) at.set(termKey(t), merged.push(t) - 1);
+    else merged[i] = t;
+  }
+  return merged;
+}
+
+/**
+ * 解析术语 CSV（#403、#404、#590）：识别编码、分隔符与表头，逐行校验。
+ * 返回可导入的术语、跳过的行，以及有表头时的表头列数。往已有领域导入与
+ * 从 CSV 新建领域（#603）共用。
+ */
+function parseTermsCsv(csv: string | ArrayBuffer | ArrayBufferView): {
+  incoming: Term[];
+  skipped: TermsCsvSkip[];
+  extra: { headerColumns?: number };
+} {
   const text = decodeTermsCsv(csv).replace(/^\uFEFF/, '');
   const records = parseCsv(text, detectDelimiter(text));
   // 表头在第一条非空记录（开头的空行不算），与识别分隔符取同一条
@@ -936,22 +1008,7 @@ export async function importDomainTermsCsv(
       incoming.push({ source, target });
     }
   }
-  return updateStored((stored) => {
-    const domain = effectiveDomains(stored).find((d) => d.id === id);
-    if (!domain) throw new DomainNotFoundError(id);
-    // 没有可导入的行：不写入
-    if (incoming.length === 0) return { stored: null, result: { imported: 0, skipped, ...extra } };
-    const merged = [...domain.terms];
-    const at = new Map(merged.map((t, i) => [termKey(t), i]));
-    for (const t of incoming) {
-      const i = at.get(termKey(t));
-      if (i === undefined) at.set(termKey(t), merged.push(t) - 1);
-      else merged[i] = t;
-    }
-    // 逐行校验过，这里只做整理（去首尾空格），不会再有不合法的行
-    const { stored: next } = withTerms(stored, id, cleanTerms(merged));
-    return { stored: next, result: { imported: incoming.length, skipped, ...extra } };
-  });
+  return { incoming, skipped, extra };
 }
 
 /**
