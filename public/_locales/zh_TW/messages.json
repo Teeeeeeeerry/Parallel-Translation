@@ -451,5 +451,14 @@
   "siteRulesDeletedSite": {
     "message": "已刪除網站“$site$”，重新整理該網站後生效",
     "placeholders": { "site": { "content": "$1" } }
-  }
+  },
+  "domainTermsSkipColumnsTwoOrThree": {
+    "message": "第 $line$ 行：欄數不對，應為 2 或 3 欄",
+    "placeholders": { "line": { "content": "$1" } }
+  },
+  "domainTermsSkipColumnsHeader": {
+    "message": "第 $line$ 行：欄數不對，應為 $count$ 欄",
+    "placeholders": { "line": { "content": "$1" }, "count": { "content": "$2" } }
+  },
+  "domainTermsImportHint": { "message": "每行一條術語：原詞、譯法、不翻譯（true / false，可省略）。首行可以是表頭；逗號、分號或定位字元分隔，UTF-8 或 GBK 編碼。" }
 }
