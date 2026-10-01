@@ -1677,6 +1677,9 @@ test.describe('站点页面规则', () => {
     );
     await expect(toast).toHaveText(stale);
     await expect(page.locator('.pt-site-rules-card')).toHaveCount(0);
+    // 新增没有覆盖准备的规则：存储里同时有 github.com 与 example.com
+    const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('pt-site-rules'));
+    expect((stored['pt-site-rules'] as any).user.map((u: any) => u.site)).toEqual(['github.com', 'example.com']);
   });
 
   /** 设置页里每次写入存储之后，读取都失败，直到 __ptFailGet 被清掉 */
