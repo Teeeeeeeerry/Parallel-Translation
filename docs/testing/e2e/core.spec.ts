@@ -1208,6 +1208,73 @@ test.describe('设置页：侧栏品牌头', () => {
   });
 });
 
+test.describe('设置页：布局', () => {
+  test('@core TC-E2E-106: 设置页侧栏是离开窗口边缘、固定在视口内的圆角卡片，内容区加宽，小窗口不横向滚动（#607）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    const nav = page.locator('.pt-nav');
+    await expect(nav.locator('.pt-nav-btn.pt-active')).toBeVisible();
+
+    const navBox = () =>
+      nav.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          left: r.left,
+          right: r.right,
+          top: r.top,
+          bottom: r.bottom,
+          radius: parseFloat(getComputedStyle(el).borderTopLeftRadius),
+        };
+      });
+    // 圆角卡片，离视口左边和上边都留有空隙
+    const box = await navBox();
+    expect(box.radius).toBeGreaterThan(0);
+    expect(box.left).toBeGreaterThan(0);
+    expect(box.top).toBeGreaterThan(0);
+
+    // 内容区明显宽于原来的 720px
+    const mainWidth = await page.locator('.pt-main').evaluate((el) => el.getBoundingClientRect().width);
+    expect(mainWidth).toBeGreaterThanOrEqual(900);
+
+    // 选中的一级菜单项仍有左侧竖线，且竖线在侧栏卡片之内
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const active = page.locator('.pt-nav-btn.pt-active');
+    await expect(active).toHaveAttribute('data-section', 'domains');
+    const bar = await active.evaluate((el) => ({
+      width: parseFloat(getComputedStyle(el).borderLeftWidth),
+      left: el.getBoundingClientRect().left,
+    }));
+    expect(bar.width).toBeGreaterThan(0);
+    expect(bar.left).toBeGreaterThanOrEqual(box.left);
+    expect(bar.left + bar.width).toBeLessThanOrEqual(box.right);
+
+    // 长分区滚到底部，侧栏仍在视口内
+    await page.locator('.pt-main').evaluate((el) => {
+      // 保证页面足够长，滚动判据才有意义
+      const filler = document.createElement('div');
+      filler.style.height = '3000px';
+      el.querySelector('.pt-section.pt-active')!.appendChild(filler);
+    });
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+    const scrolled = await navBox();
+    expect(scrolled.top).toBeGreaterThanOrEqual(0);
+    expect(scrolled.bottom).toBeLessThanOrEqual(900);
+
+    // 小窗口：文档宽度不超过视口，没有横向滚动
+    await page.setViewportSize({ width: 1024, height: 768 });
+    for (const section of ['general', 'domains', 'site-rules', 'engines']) {
+      await page.click(`.pt-nav-btn[data-section="${section}"]`);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+    }
+  });
+});
+
 // ================================================================
 // 站点页面规则（#365）
 // ================================================================

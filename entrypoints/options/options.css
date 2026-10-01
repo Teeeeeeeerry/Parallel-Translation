@@ -30,9 +30,19 @@ body {
 
 /* ===== Layout ===== */
 
+/*
+ * #607: 浮起的圆角侧栏 + 宽内容区。两栏作为整体水平居中，四周留出与
+ * 内容区一致的 32px 空隙；两栏之间的间距随窗口宽度在 40～140px 之间伸缩，
+ * 窄窗口先让出间距，再让内容区变窄（侧栏宽度不变）。
+ * align-items: flex-start 让侧栏保持自身高度，sticky 才能生效。
+ */
 .pt-options-layout {
   display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: clamp(40px, 10vw, 140px);
   min-height: 100vh;
+  padding: 32px;
 }
 
 /* ===== Sidebar ===== */
@@ -42,10 +52,17 @@ body {
   width: 252px;
   flex-shrink: 0;
   background: var(--pt-surface);
-  border-right: 1px solid var(--pt-forest-08);
+  /* #607: 与内容区卡片同一套描边，圆角用大号 */
+  border: 1px solid var(--pt-forest-09);
+  border-radius: var(--pt-r-lg);
   padding: 24px 0;
   display: flex;
   flex-direction: column;
+  /* #607: 固定在视口内，上下各留 32px，高度随视口；菜单项超出时卡片内部滚动 */
+  position: sticky;
+  top: 32px;
+  height: calc(100vh - 64px);
+  overflow-y: auto;
 }
 
 /*
@@ -129,10 +146,11 @@ body {
 
 /* ===== Main Content ===== */
 
+/* #607: 内容区从 720px 放宽到 940px；min-width: 0 让它在窄窗口里随之变窄 */
 .pt-main {
-  flex: 1;
-  padding: 32px 40px;
-  max-width: 720px;
+  flex: 1 1 940px;
+  min-width: 0;
+  max-width: 940px;
 }
 
 .pt-section {
