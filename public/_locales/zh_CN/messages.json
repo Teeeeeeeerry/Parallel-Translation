@@ -344,10 +344,6 @@
     "message": "已导入 $count$ 条术语，跳过 $skipped$ 行",
     "placeholders": { "count": { "content": "$1" }, "skipped": { "content": "$2" } }
   },
-  "domainTermsSkipColumns": {
-    "message": "第 $line$ 行：列数不对，应为 3 列",
-    "placeholders": { "line": { "content": "$1" } }
-  },
   "domainTermsSkipMissingSource": {
     "message": "第 $line$ 行：原词为空",
     "placeholders": { "line": { "content": "$1" } }
