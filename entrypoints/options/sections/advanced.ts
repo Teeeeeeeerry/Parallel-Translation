@@ -6,16 +6,14 @@
 
 // Phase 7 — 高级分区：并发数、缓存管理、设置导入/导出。
 
-import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 import {
   getSettings,
   patchSettings,
-  replaceSettings,
   onSettingsChanged,
 } from '~/src/storage/settings';
 import { importSettings as applyImport } from '~/src/storage/settings-import';
 import { cacheClear } from '~/src/storage/cache';
-import { removeByokKeys } from '~/src/storage/keys';
+import { resetSettings as resetAllSettings } from '~/src/storage/settings-reset';
 import { tf } from '~/src/i18n';
 import { showToast, downloadFile } from '../main';
 
@@ -51,14 +49,9 @@ async function importSettings(json: string): Promise<void> {
 }
 
 async function resetSettings(): Promise<void> {
-  // 清空缓存
-  await cacheClear();
-  // 清空所有 BYOK 密钥（范围取自引擎清单，#608）
-  await removeByokKeys();
-  // #169: 整体替换而非 patch —— patch 对 models 是合并语义，
-  // DEFAULT_SETTINGS.models = {} 合并不掉自定义模型名，恢复默认后
-  // openai/gemini 自定义模型会残留
-  await replaceSettings(DEFAULT_SETTINGS);
+  // #612: 清缓存、清全部自带 key 引擎的 key、设置整体替换为默认值，
+  // 都在存储模块里
+  await resetAllSettings();
   showToast(tf('toastReset', '已恢复默认设置'));
 }
 
