@@ -477,5 +477,7 @@
   "enginePermissionMissing": {
     "message": "No access to $host$. Save the key again in Settings",
     "placeholders": { "host": { "content": "$1" } }
-  }
+  },
+  "descGrok": { "message": "xAI Grok API. Get a key from the xAI console and grant it the chat endpoint and the model you use. Clicking “Test connection” asks your browser to allow access to api.x.ai; the key is saved once the test succeeds." },
+  "grokKeyInvalid": { "message": "Invalid API key, or the key lacks access to the chat endpoint or the selected model. Grant it in the xAI console" }
 }

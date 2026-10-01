@@ -91,6 +91,14 @@ export const ENGINE_CATALOG = [
       optionalOrigin: 'https://api.deepseek.com/*',
     },
   },
+  {
+    id: 'grok',
+    byok: {
+      descKey: 'descGrok',
+      fallbackDesc: 'xAI Grok API，key 可从 xAI 控制台获取，需要为 key 授权 chat 端点与所选模型。点“测试连接”时浏览器会询问是否允许访问 api.x.ai，测试成功后保存 key。',
+      optionalOrigin: 'https://api.x.ai/*',
+    },
+  },
 ] as const;
 
 type EngineEntry = (typeof ENGINE_CATALOG)[number];
@@ -182,6 +190,7 @@ export const ENGINE_LABELS: Record<EngineId, string> = {
   'deepl': 'DeepL (BYOK)',
   'gemini': 'Gemini (BYOK)',
   'deepseek': 'DeepSeek (BYOK)',
+  'grok': 'Grok (BYOK)',
 };
 
 export const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
@@ -217,6 +226,8 @@ export const DEFAULT_MODELS: Partial<Record<EngineId, string>> = {
   openai: 'gpt-4o-mini',
   gemini: 'gemini-2.0-flash',
   deepseek: 'deepseek-flash',
+  // 非推理的低价模型（#613，按 xAI 模型列表核对）
+  grok: 'grok-4.20-0309-non-reasoning',
 };
 
 /** 钳制并发数到合法范围 —— 导入/存储/写入口共用，防 0 或负数饿死闸门。 */

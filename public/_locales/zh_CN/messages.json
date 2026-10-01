@@ -477,5 +477,7 @@
   "enginePermissionMissing": {
     "message": "没有访问 $host$ 的权限，请在设置页重新保存 key",
     "placeholders": { "host": { "content": "$1" } }
-  }
+  },
+  "descGrok": { "message": "xAI Grok API，key 可从 xAI 控制台获取，需要为 key 授权 chat 端点与所选模型。点“测试连接”时浏览器会询问是否允许访问 api.x.ai，测试成功后保存 key。" },
+  "grokKeyInvalid": { "message": "API key 无效，或 key 没有 chat 端点、所选模型的权限，请在 xAI 控制台授权" }
 }

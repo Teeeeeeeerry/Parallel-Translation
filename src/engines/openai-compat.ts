@@ -11,7 +11,7 @@
 //   - messages 请求体：编号提示词走公共模板，本批命中的术语追加在
 //     user 消息末尾（#258/#381）
 //   - choices[0].message.content 的编号解析，按预期长度回填
-//   - 连通性探测规格（#321）：默认 GET 探测地址，凭据走请求头
+//   - 连通性探测规格（#321）：GET 探测地址，或最小 chat 请求（#613），凭据走请求头
 // 骨架（闸门 / 取 key / 分类抛错）仍由 createByokEngine 提供。各引擎
 // 只保留配置：端点、默认模型（DEFAULT_MODELS）、探测地址与错误分类特例。
 
@@ -44,8 +44,12 @@ export interface OpenAICompatConfig {
   displayName: string;
   /** Chat Completions 端点。 */
   endpoint: string;
-  /** 连通性探测地址（GET，凭据走请求头）。 */
-  probeUrl: string;
+  /**
+   * 连通性探测地址（GET，凭据走请求头）。不给时改为向 Chat Completions 端点
+   * 发一个最小请求（所选模型、最多输出 1 个 token）—— 适用于 key 要逐个
+   * 授权端点和模型的服务（xAI，#613），只测模型列表会误判。
+   */
+  probeUrl?: string;
   /** 翻译路径的错误分类特例（见 ByokEngineSpec.classifyError）。 */
   classifyError?: ByokEngineSpec['classifyError'];
   /** 探测的错误分类特例（见 ProbeSpec.classifyError）。 */
@@ -98,12 +102,25 @@ export function createOpenAICompatEngine(config: OpenAICompatConfig): OpenAIComp
     },
   });
 
+  const { probeUrl } = config;
   const probe: ProbeSpec = {
     engineId: id,
-    buildRequest: ({ key }) => ({
-      url: config.probeUrl,
-      headers: { Authorization: `Bearer ${key}` },
-    }),
+    buildRequest: ({ key, model }): ReturnType<ProbeSpec['buildRequest']> => {
+      if (probeUrl) return { url: probeUrl, headers: { Authorization: `Bearer ${key}` } };
+      return {
+        url: config.endpoint,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model: model || DEFAULT_MODELS[id]!,
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 1,
+        }),
+      };
+    },
     ...(config.classifyProbeError && { classifyError: config.classifyProbeError }),
   };
 

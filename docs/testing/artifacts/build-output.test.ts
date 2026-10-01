@@ -45,20 +45,25 @@ describe('构建产物校验', () => {
     // 不应包含 host_permissions（扩展使用 activeTab 风格）
   });
 
-  test('DeepSeek 端点是可选权限，必需的 host 权限不变（#609）', () => {
+  test('DeepSeek、Grok 的端点是可选权限，必需的 host 权限不变（#609/#613）', () => {
+    const optional = ['https://api.deepseek.com/*', 'https://api.x.ai/*'];
     const chromeManifest = path.join(OUTPUT_DIR, 'chrome-mv3', 'manifest.json');
     if (fs.existsSync(chromeManifest)) {
       const m = JSON.parse(fs.readFileSync(chromeManifest, 'utf-8')) as Record<string, string[]>;
-      expect(m.optional_host_permissions).toContain('https://api.deepseek.com/*');
       expect(m.host_permissions).toHaveLength(7);
-      expect(m.host_permissions).not.toContain('https://api.deepseek.com/*');
+      for (const p of optional) {
+        expect(m.optional_host_permissions).toContain(p);
+        expect(m.host_permissions).not.toContain(p);
+      }
     }
     // Firefox 的 MV2 没有 optional_host_permissions，写进 optional_permissions
     const firefoxManifest = path.join(OUTPUT_DIR, 'firefox-mv2', 'manifest.json');
     if (fs.existsSync(firefoxManifest)) {
       const m = JSON.parse(fs.readFileSync(firefoxManifest, 'utf-8')) as Record<string, string[]>;
-      expect(m.optional_permissions).toContain('https://api.deepseek.com/*');
-      expect(m.permissions).not.toContain('https://api.deepseek.com/*');
+      for (const p of optional) {
+        expect(m.optional_permissions).toContain(p);
+        expect(m.permissions).not.toContain(p);
+      }
     }
   });
 

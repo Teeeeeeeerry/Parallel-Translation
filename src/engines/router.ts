@@ -21,6 +21,7 @@ import { openai } from './openai';
 import { deepl } from './deepl';
 import { gemini } from './gemini';
 import { deepseek } from './deepseek';
+import { grok } from './grok';
 import { EngineError, EngineUnavailableError, AllEnginesFailedError } from './types';
 import type { TranslateEngine, TranslateRequest, TranslateResponse } from './types';
 
@@ -32,6 +33,7 @@ const REGISTRY: Record<EngineId, TranslateEngine> = {
   'deepl': deepl,
   'gemini': gemini,
   'deepseek': deepseek,
+  'grok': grok,
 };
 
 /**

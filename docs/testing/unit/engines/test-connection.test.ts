@@ -239,3 +239,51 @@ describe('testConnection（deepseek，#611）', () => {
     }
   });
 });
+
+describe('testConnection（grok，#613）', () => {
+  // 授权提示按界面语言取文案；本文件每条用例后撤掉全部全局 stub，这里自备
+  beforeEach(() => {
+    vi.stubGlobal('chrome', {
+      i18n: {
+        getMessage: (key: string) =>
+          key === 'grokKeyInvalid' ? 'invalid key, or no access to chat / model in xAI console' : '',
+      },
+    });
+  });
+
+  test('探测是最小的 chat 请求：所选模型、最多输出 1 个 token，key 走 Bearer 请求头', async () => {
+    respond(200);
+    await testConnection('grok', 'xai-k', 'grok-4.3');
+    const [url, init] = fetchMock.mock.calls[0]! as [string, RequestInit];
+    expect(String(url)).toBe('https://api.x.ai/v1/chat/completions');
+    expect(init.method).toBe('POST');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer xai-k');
+    const body = JSON.parse(String(init.body)) as { model: string; max_tokens: number; messages: unknown[] };
+    expect(body.model).toBe('grok-4.3');
+    expect(body.max_tokens).toBe(1);
+    expect(body.messages).toHaveLength(1);
+  });
+
+  test('没填模型名 → 探测用默认模型', async () => {
+    respond(200);
+    await testConnection('grok', 'xai-k');
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(JSON.parse(String(init.body)).model).toBe('grok-4.20-0309-non-reasoning');
+  });
+
+  test('成功 → 连接成功；401、403 → key 无效且带授权提示；429 → 配额；5xx → 裸状态码', async () => {
+    respond(200);
+    expect(await testConnection('grok', 'xai-k')).toEqual({ ok: true, msg: '连接成功' });
+    for (const status of [401, 403]) {
+      respond(status);
+      expect(await testConnection('grok', 'xai-k')).toEqual({
+        ok: false,
+        msg: 'invalid key, or no access to chat / model in xAI console',
+      });
+    }
+    respond(429);
+    expect(await testConnection('grok', 'xai-k')).toEqual({ ok: false, msg: '配额已用尽' });
+    respond(502);
+    expect(await testConnection('grok', 'xai-k')).toEqual({ ok: false, msg: 'HTTP 502' });
+  });
+});
