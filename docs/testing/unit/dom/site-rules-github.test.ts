@@ -17,6 +17,10 @@
  *   - 原 compat-github.test.ts 中 applyCompat 的各选择器用例照常不采集，
  *     正文与含行内 code 的正文照常采集
  *
+ * 贡献图（#580）—— 格子表格整块不翻译：表格里多是读屏软件专用的隐藏
+ * 文字（“Day of Week”、完整月份与星期名），译文插入后却是可见的，会把
+ * 每格 10px 的日历撑坏；贡献数标题照常翻译。全页与逐段翻译两个入口分别验证
+ *
  * 逐段翻译 —— closestUnit()（悬停按钮与点击翻译共用的入口，#409）：
  *   - 排除区内找不到段落，不出按钮也不翻译
  *   - 排除区外的正文照常找到段落
@@ -53,6 +57,43 @@ afterEach(() => {
 });
 
 const ids = (units: Element[]) => units.map((u) => u.id);
+
+/**
+ * GitHub 个人主页贡献图的典型片段（#580）。格子上的悬停提示 tool-tip 在
+ * GitHub 的源码里写在表格行内，HTML 解析会把它们挪到表格前面，这里直接
+ * 写成解析后的位置
+ */
+const CONTRIBUTION_GRAPH = `
+  <div class="js-yearly-contributions">
+    <h2 id="total">1,885 contributions in the last year</h2>
+    <div class="js-calendar-graph ContributionCalendar">
+      <div>
+        <tool-tip id="tip" for="contribution-day-component-0-0" popover="manual" class="sr-only position-absolute">No contributions on September 28th.</tool-tip>
+        <tool-tip for="contribution-day-component-1-0" popover="manual" class="sr-only position-absolute">3 contributions on September 29th.</tool-tip>
+        <table class="ContributionCalendar-grid js-calendar-graph-table" role="grid">
+          <caption class="sr-only">Contribution Graph</caption>
+          <thead><tr>
+            <td><span class="sr-only">Day of Week</span></td>
+            <td class="ContributionCalendar-label" colspan="4"><span class="sr-only" id="month">October</span><span aria-hidden="true">Oct</span></td>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td class="ContributionCalendar-label"><span class="sr-only" id="weekday">Sunday</span><span aria-hidden="true">Sun</span></td>
+              <td class="ContributionCalendar-day" data-date="2025-09-28" id="contribution-day-component-0-0"></td>
+            </tr>
+            <tr>
+              <td class="ContributionCalendar-label"><span class="sr-only">Monday</span><span aria-hidden="true">Mon</span></td>
+              <td class="ContributionCalendar-day" data-date="2025-09-29" id="contribution-day-component-1-0"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="width-full f6">
+        <div class="float-left"><a href="https://docs.github.com/articles/why-are-my-contributions-not-showing-up-on-my-profile">Learn how we count contributions</a></div>
+        <div class="float-right"><span>Less</span><div class="ContributionCalendar-day"><span class="sr-only">No contributions.</span></div><span>More</span></div>
+      </div>
+    </div>
+  </div>`;
 
 describe('collect（github.com 内置排除）', () => {
   test('仓库首页与 blob 页典型片段：迁移前后采集到的单元一致', () => {
@@ -93,6 +134,12 @@ describe('collect（github.com 内置排除）', () => {
     expect(ids(collect())).toEqual(['body']);
   });
 
+  test('#580：贡献图的格子表格（月份、星期标签）与悬停提示不采集，贡献数标题照常采集', () => {
+    document.body.innerHTML = CONTRIBUTION_GRAPH;
+    // 图下方的说明链接所在的 div 没有直接文字，按采集规则本来就不是翻译单元
+    expect(ids(collect())).toEqual(['total']);
+  });
+
   test('含行内 code 的正文照常采集', () => {
     document.body.innerHTML = '<p id="body">Run <code>pnpm build</code> first.</p>';
     expect(ids(collect())).toEqual(['body']);
@@ -110,6 +157,14 @@ describe('closestUnit（github.com 内置排除，逐段翻译入口）', () => 
     document.body.innerHTML =
       '<div class="file-tree"><p id="tree">src directory</p></div>';
     expect(closestUnit(document.getElementById('tree')!)).toBeNull();
+  });
+
+  test('#580：贡献图格子表格里的月份、星期与悬停提示找不到段落，贡献数标题能找到', () => {
+    document.body.innerHTML = CONTRIBUTION_GRAPH;
+    expect(closestUnit(document.getElementById('month')!)).toBeNull();
+    expect(closestUnit(document.getElementById('weekday')!)).toBeNull();
+    expect(closestUnit(document.getElementById('tip')!)).toBeNull();
+    expect(closestUnit(document.getElementById('total')!)?.id).toBe('total');
   });
 
   test('排除区外的 README 正文照常找到段落', () => {

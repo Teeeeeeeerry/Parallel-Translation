@@ -55,6 +55,10 @@ export const BUILTIN_SITE_RULES: Record<string, Partial<SiteRules>> = {
       '.tree-browser',          // blob 页文件树（旧版）
       '.BorderGrid',            // 仓库首页贡献者网格
       '.repository-lang-stats', // 仓库首页语言统计条
+      // #580：个人主页贡献图。取样式 class 而非 JS 挂钩 .js-calendar-graph-table，
+      // 与上面 .file-tree 一样以样式 class 为主。格子的悬停提示 tool-tip 解析后
+      // 落在表格外，但它不是翻译单元，本来就不采集
+      '.ContributionCalendar-grid', // 贡献图格子表格：月份与星期标签（多为读屏专用的隐藏文字），非正文
     ],
     // #369：迁自 compat.ts 的 github.com preserve 补丁
     preserve: [
