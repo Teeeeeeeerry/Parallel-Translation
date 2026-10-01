@@ -344,10 +344,6 @@
     "message": "Imported $count$ term(s), skipped $skipped$ line(s)",
     "placeholders": { "count": { "content": "$1" }, "skipped": { "content": "$2" } }
   },
-  "domainTermsSkipColumns": {
-    "message": "Line $line$: expected 3 columns",
-    "placeholders": { "line": { "content": "$1" } }
-  },
   "domainTermsSkipMissingSource": {
     "message": "Line $line$: source term is empty",
     "placeholders": { "line": { "content": "$1" } }
