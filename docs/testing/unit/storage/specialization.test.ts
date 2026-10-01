@@ -35,6 +35,7 @@ describe('getSiteRules（生效站点规则）', () => {
       '.tree-browser',
       '.BorderGrid',
       '.repository-lang-stats',
+      '.ContributionCalendar-grid', // #580：贡献图格子表格
     ]);
   });
 

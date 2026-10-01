@@ -56,6 +56,20 @@ describe('停用 github.com 的内置规则（#375）', () => {
     expect(closestUnit(document.getElementById('ad')!)).toBeNull();
   });
 
+  test('#580：开关打开后，贡献图格子表格里的月份、星期重新可以全页翻译与逐段翻译', async () => {
+    document.body.innerHTML =
+      '<h2 id="total">1,885 contributions in the last year</h2>' +
+      '<table class="ContributionCalendar-grid js-calendar-graph-table"><tbody><tr>' +
+      '<td id="weekday"><span class="sr-only" id="weekday-full">Sunday</span><span aria-hidden="true">Sun</span></td>' +
+      '</tr></tbody></table>';
+    expect(ids(collect())).toEqual(['total']);
+    expect(closestUnit(document.getElementById('weekday-full')!)).toBeNull();
+
+    await setBuiltinSiteRulesDisabled('github.com', true);
+    expect(ids(collect())).toEqual(['total', 'weekday']);
+    expect(closestUnit(document.getElementById('weekday-full')!)?.id).toBe('weekday');
+  });
+
   test('再关闭开关：恢复追加合并', async () => {
     await setBuiltinSiteRulesDisabled('github.com', true);
     await setBuiltinSiteRulesDisabled('github.com', false);
