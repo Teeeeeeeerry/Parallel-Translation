@@ -37,6 +37,8 @@ describe('getSiteRules（生效站点规则）', () => {
       '.repository-lang-stats',
       '.ContributionCalendar-grid', // #580：贡献图格子表格
       '.js-calendar-graph-table', // #587：贡献图格子表格的 JS 挂钩
+      '.react-directory-filename-column', // #598：仓库文件列表的文件名列
+      'tool-tip', // #598：Primer 悬停提示组件
     ]);
   });
 
@@ -46,6 +48,9 @@ describe('getSiteRules（生效站点规则）', () => {
       '[data-hovercard-url^="/users/"]',
       '[rel="author"]',
       '[itemprop="author"]',
+      '.repo', // #598：置顶仓库卡片等处的仓库名
+      'strong[itemprop="name"]', // #598：仓库页标题里的仓库名
+      '.user-profile-mini-vcard strong', // #598：迷你资料卡的用户名
     ]);
   });
 
