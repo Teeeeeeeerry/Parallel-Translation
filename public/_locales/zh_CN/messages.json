@@ -469,5 +469,13 @@
     "placeholders": { "name": { "content": "$1" }, "count": { "content": "$2" }, "skipped": { "content": "$3" } }
   },
   "domainImportNewNone": { "message": "文件里没有可导入的术语，没有新建领域" },
-  "descDeepseek": { "message": "DeepSeek API，key 可从 DeepSeek 开放平台获取。点“测试连接”时浏览器会询问是否允许访问 api.deepseek.com，测试成功后保存 key。" }
+  "descDeepseek": { "message": "DeepSeek API，key 可从 DeepSeek 开放平台获取。点“测试连接”时浏览器会询问是否允许访问 api.deepseek.com，测试成功后保存 key。" },
+  "keyPermissionDenied": {
+    "message": "没有授予访问 $host$ 的权限，key 未保存",
+    "placeholders": { "host": { "content": "$1" } }
+  },
+  "enginePermissionMissing": {
+    "message": "没有访问 $host$ 的权限，请在设置页重新保存 key",
+    "placeholders": { "host": { "content": "$1" } }
+  }
 }

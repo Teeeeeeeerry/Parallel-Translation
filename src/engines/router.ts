@@ -21,7 +21,7 @@ import { openai } from './openai';
 import { deepl } from './deepl';
 import { gemini } from './gemini';
 import { deepseek } from './deepseek';
-import { EngineError, AllEnginesFailedError } from './types';
+import { EngineError, EngineUnavailableError, AllEnginesFailedError } from './types';
 import type { TranslateEngine, TranslateRequest, TranslateResponse } from './types';
 
 /** 引擎表 —— 引擎清单（#608）里的每个引擎都要有适配器，缺项即类型错误。 */
@@ -253,6 +253,8 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
         e instanceof EngineError ? e : new EngineError(id, true, e instanceof Error ? e.message : String(e));
       errors.push(err);
       if (err.retryable) continue; // retryable → 下一个引擎重试
+      // #610: 引擎不可用（缺可选权限）—— 没发请求，照常切到下一个引擎
+      if (err instanceof EngineUnavailableError) continue;
       // #440: 还没有任何段落取得译文（含缓存命中）时照旧抛出；否则不再
       // 尝试后面的引擎，已成功的段落随部分失败结果返回
       if (translations.every((t) => t === null)) throw err;
@@ -275,6 +277,11 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
       ...(fatal && { failure: { category: fatal.category, error: fatal.message } }),
     };
   }
+
+  // #610: 只有一个不可用的引擎出了错（它是唯一或最后一个可用的引擎）—— 把
+  // 它的原因交给调用方展示，不重试
+  const [only] = errors;
+  if (errors.length === 1 && only instanceof EngineUnavailableError) throw only;
 
   // #237: 聚合失败显式构造类型化结果（瞬时、可重试）—— 不再抛裸普通
   // Error，消除「普通 Error 即隐式可重试」的启发式

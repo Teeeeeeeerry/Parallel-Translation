@@ -18,9 +18,11 @@
 
 import { getKey } from '~/src/storage/keys';
 import type { EngineId } from '~/src/storage/schema';
+import { optionalOriginOf, originHost } from '~/src/storage/schema';
+import { tf } from '~/src/i18n';
 import { fetchWithTimeout } from './fetch-timeout';
 import { engineGate } from './engine-gate';
-import { EngineError } from './types';
+import { EngineError, EngineUnavailableError } from './types';
 import { classifyStatus } from './shared';
 import type { TranslateEngine, TranslateRequest, TranslateResponse } from './types';
 
@@ -56,7 +58,7 @@ export interface ByokEngineSpec {
 /**
  * 自带 key 引擎公共构造（#333）。
  * 骨架顺序：闸门包裹整个请求体（含取 key）→ 缺 key 抛不可重试的
- * key 无效类错误 → 构造请求 → 发送 → 公共分类 / 适配器特例 → 按类别
+ * key 无效类错误 → 缺可选权限抛引擎不可用错误（#610）→ 构造请求 → 发送 → 公共分类 / 适配器特例 → 按类别
  * 抛错 → 成功解析。
  */
 export function createByokEngine(spec: ByokEngineSpec): TranslateEngine {
@@ -82,6 +84,20 @@ export function createByokEngine(spec: ByokEngineSpec): TranslateEngine {
             '未配置 API key',
             'invalid-key',
           );
+
+        // #610: 端点走可选权限的引擎先查权限，没有就不发请求
+        const origin = optionalOriginOf(spec.id);
+        if (origin && !(await chrome.permissions.contains({ origins: [origin] }))) {
+          const host = originHost(origin);
+          throw new EngineUnavailableError(
+            spec.id,
+            tf(
+              'enginePermissionMissing',
+              `没有访问 ${host} 的权限，请在设置页重新保存 key`,
+              host,
+            ),
+          );
+        }
 
         const model = spec.model?.();
         const { url, headers, body } = spec.buildRequest(req, key, model);

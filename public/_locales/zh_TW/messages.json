@@ -469,5 +469,13 @@
     "placeholders": { "name": { "content": "$1" }, "count": { "content": "$2" }, "skipped": { "content": "$3" } }
   },
   "domainImportNewNone": { "message": "檔案裡沒有可匯入的術語，沒有新增領域" },
-  "descDeepseek": { "message": "DeepSeek API，key 可從 DeepSeek 開放平台取得。點「測試連線」時瀏覽器會詢問是否允許存取 api.deepseek.com，測試成功後儲存 key。" }
+  "descDeepseek": { "message": "DeepSeek API，key 可從 DeepSeek 開放平台取得。點「測試連線」時瀏覽器會詢問是否允許存取 api.deepseek.com，測試成功後儲存 key。" },
+  "keyPermissionDenied": {
+    "message": "沒有授予存取 $host$ 的權限，key 未儲存",
+    "placeholders": { "host": { "content": "$1" } }
+  },
+  "enginePermissionMissing": {
+    "message": "沒有存取 $host$ 的權限，請在設定頁重新儲存 key",
+    "placeholders": { "host": { "content": "$1" } }
+  }
 }

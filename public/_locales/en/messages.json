@@ -469,5 +469,13 @@
     "placeholders": { "name": { "content": "$1" }, "count": { "content": "$2" }, "skipped": { "content": "$3" } }
   },
   "domainImportNewNone": { "message": "No terms to import in this file; no domain was created" },
-  "descDeepseek": { "message": "DeepSeek API. Get a key from the DeepSeek platform. Clicking “Test connection” asks your browser to allow access to api.deepseek.com; the key is saved once the test succeeds." }
+  "descDeepseek": { "message": "DeepSeek API. Get a key from the DeepSeek platform. Clicking “Test connection” asks your browser to allow access to api.deepseek.com; the key is saved once the test succeeds." },
+  "keyPermissionDenied": {
+    "message": "Access to $host$ was not granted, so the key was not saved",
+    "placeholders": { "host": { "content": "$1" } }
+  },
+  "enginePermissionMissing": {
+    "message": "No access to $host$. Save the key again in Settings",
+    "placeholders": { "host": { "content": "$1" } }
+  }
 }
