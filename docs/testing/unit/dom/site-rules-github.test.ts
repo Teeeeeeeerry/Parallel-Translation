@@ -21,9 +21,14 @@
  * 文字（“Day of Week”、完整月份与星期名），译文插入后却是可见的，会把
  * 每格 10px 的日历撑坏；贡献数标题照常翻译。全页与逐段翻译两个入口分别验证。
  * 表格的样式 class 与 JS 挂钩各排除一条，只剩其中一个时仍生效（#587）。
- * 格子的悬停提示落在表格外，不被翻译靠的是采集规则，与排除无关。
+ * 格子的悬停提示落在表格外，不在表格的排除范围内；它本来就不是翻译单元，
+ * #598 起 tool-tip 也整体排除。
  * 图下方只包着一个链接的说明文字照常翻译（#589）；图例格子里只有读屏
  * 隐藏文字，不翻译（#595）
+ *
+ * 仓库与用户的标识符（#598）—— 只含行内元素的容器成为翻译单元（#589）
+ * 之后，文件列表的文件名、仓库名、迷你资料卡用户名也会被采集：文件名列
+ * 整块不翻译，仓库名与用户名原文保留，同一单元里的其他文字照常翻译
  *
  * 逐段翻译 —— closestUnit()（悬停按钮与点击翻译共用的入口，#409）：
  *   - 排除区内找不到段落，不出按钮也不翻译
@@ -164,7 +169,7 @@ describe('collect（github.com 内置排除）', () => {
     expect(ids(collect())).toEqual(['total', 'learn']);
   });
 
-  test('#587：悬停提示不采集 —— 它在表格外，靠的是采集规则（tool-tip 不是翻译单元），不是排除', () => {
+  test('#587：悬停提示不采集 —— 它在表格外，表格的排除管不到（tool-tip 不是翻译单元，#598 起也整体排除）', () => {
     setContributionGraph();
     const texts = collect().map((u) => u.textContent);
     expect(texts.some((t) => t?.includes('contributions on September'))).toBe(false);
@@ -205,7 +210,7 @@ describe('closestUnit（github.com 内置排除，逐段翻译入口）', () => 
     expect(closestUnit(document.getElementById('weekday')!)).toBeNull();
   });
 
-  test('#587：悬停提示上找不到段落 —— 靠的是采集规则，不是排除', () => {
+  test('#587：悬停提示上找不到段落 —— 表格的排除管不到它（tool-tip 不是翻译单元，#598 起也整体排除）', () => {
     setContributionGraph();
     expect(closestUnit(document.getElementById('tip')!)).toBeNull();
   });
@@ -315,6 +320,65 @@ describe('保留原文（github.com 内置规则，采集后提取文本）', ()
     const unit = closestUnit(document.getElementById('m')!)!;
     expect(unit.id).toBe('c');
     expect([...translatableTextEx(unit).preserves.values()]).toEqual(['@torvalds']);
+  });
+});
+
+/** GitHub 仓库首页文件列表的一行（#598）：文件名列与提交说明列 */
+const FILE_ROW = `
+  <table><tbody><tr class="react-directory-row">
+    <td class="react-directory-row-name-cell-large-screen"><div class="react-directory-filename-column"><svg class="octicon"></svg>
+      <div class="overflow-hidden"><div class="react-directory-filename-cell"><div class="react-directory-truncate">
+        <a id="fname" title="scripts" class="Link--primary" href="/anthropics/claude-code/tree/main/scripts">scripts</a>
+      </div></div></div></div></td>
+    <td class="react-directory-row-commit-cell"><div><div class="react-directory-commit-message" id="commit">
+      <a id="cmsg" class="Link--secondary" href="/anthropics/claude-code/commit/abc">Read issue number from workflow event in helper scripts</a>
+    </div></div></td>
+  </tr></tbody></table>`;
+
+describe('仓库与用户的标识符（#598）', () => {
+  test('文件列表：文件名不采集，也找不到段落；提交说明照常采集', () => {
+    document.body.innerHTML = FILE_ROW;
+    expect(ids(collect())).toEqual(['commit']);
+    expect(closestUnit(document.getElementById('fname')!)).toBeNull();
+    expect(closestUnit(document.getElementById('cmsg')!)?.id).toBe('commit');
+  });
+
+  test('置顶仓库卡片：仓库名原文保留，“Public”标签照常送翻', () => {
+    document.body.innerHTML =
+      '<div class="pinned-item-list-item-content"><div class="d-flex width-full position-relative">' +
+      '<div class="flex-1" id="pin"><svg class="octicon octicon-repo"></svg> <span class="position-relative">' +
+      '<a id="r1" href="/Teeeeeeeerry/Parallel-Translation" class="Link text-bold"><span class="repo" id="repo">Parallel-Translation</span></a>' +
+      // 悬停提示里也写着仓库名：未打开时 display:none，文字仍在提取范围内
+      ' <tool-tip for="r1" popover="manual" class="sr-only position-absolute">Parallel-Translation</tool-tip>' +
+      '</span> <span class="Label Label--secondary">Public</span></div></div></div>';
+    const units = collect();
+    expect(ids(units)).toEqual(['pin']);
+    const { text, preserves } = translatableTextEx(units[0]!);
+    expect([...new Set(preserves.values())]).toEqual(['Parallel-Translation']);
+    expect(text).toContain('Public');
+    expect(text).not.toContain('Parallel-Translation');
+    expect(closestUnit(document.getElementById('repo')!)?.id).toBe('pin');
+  });
+
+  test('仓库页标题：所有者与仓库名都原文保留', () => {
+    document.body.innerHTML =
+      '<div class="d-flex flex-wrap flex-items-center" id="title"><svg class="octicon octicon-repo"></svg> ' +
+      '<span class="author" itemprop="author"><a class="url fn" rel="author" href="/anthropics">anthropics</a></span> ' +
+      '<span class="mx-1">/</span> <strong itemprop="name" class="mr-2"><a href="/anthropics/claude-code">claude-code</a></strong> ' +
+      '<span class="Label Label--secondary">Public</span></div>';
+    const units = collect();
+    expect(ids(units)).toEqual(['title']);
+    const { text, preserves } = translatableTextEx(units[0]!);
+    expect([...preserves.values()]).toEqual(['anthropics', 'claude-code']);
+    expect(text).toContain('Public');
+  });
+
+  test('迷你资料卡：只有用户名，原文保留后没有可翻译的文字，不采集，也找不到段落', () => {
+    document.body.innerHTML =
+      '<div class="user-profile-mini-vcard d-table"><span class="d-table-cell v-align-middle">' +
+      '<strong id="mini">Teeeeeeeerry</strong></span></div><p id="body">Body text here.</p>';
+    expect(ids(collect())).toEqual(['body']);
+    expect(closestUnit(document.getElementById('mini')!)).toBeNull();
   });
 });
 

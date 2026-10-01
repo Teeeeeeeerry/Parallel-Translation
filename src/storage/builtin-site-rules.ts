@@ -57,10 +57,17 @@ export const BUILTIN_SITE_RULES: Record<string, Partial<SiteRules>> = {
       '.repository-lang-stats', // 仓库首页语言统计条
       // #580：个人主页贡献图的格子表格，月份与星期标签（多为读屏专用的隐藏
       // 文字），非正文。#587：样式 class 与 JS 挂钩都列，GitHub 改版只去掉其中
-      // 一个时仍然生效。格子的悬停提示 tool-tip 解析后落在表格外，但它不是
-      // 翻译单元，本来就不采集
+      // 一个时仍然生效。格子的悬停提示 tool-tip 解析后落在表格外，由下面
+      // #598 的 tool-tip 排除覆盖（它本来也不是翻译单元）
       '.ContributionCalendar-grid', // 贡献图格子表格（样式 class）
       '.js-calendar-graph-table',   // 贡献图格子表格（JS 挂钩）
+      // #598：仓库首页文件列表的文件名、目录名，是路径不是正文。只排除
+      // 文件名列，同一行的提交说明列（.react-directory-commit-message）照常翻译
+      '.react-directory-filename-column',
+      // #598：Primer 的悬停提示组件。未打开时 display:none，但文字仍在提取
+      // 范围内；置顶仓库卡片的提示写着仓库名，贡献图格子的提示写着日期。
+      // 段落里的提示按 #441 原文保留，不送翻
+      'tool-tip',
     ],
     // #369：迁自 compat.ts 的 github.com preserve 补丁
     preserve: [
@@ -68,6 +75,11 @@ export const BUILTIN_SITE_RULES: Record<string, Partial<SiteRules>> = {
       '[data-hovercard-url^="/users/"]', // hovercard 用户名链接，覆盖几乎所有用户名
       '[rel="author"]',                 // 微数据：author 关联
       '[itemprop="author"]',
+      // #598：只含行内元素的容器成为翻译单元（#589）之后才会被采集的标识符。
+      // 原文保留，同一单元里的其他文字（如“Public”标签）照常翻译
+      '.repo',                            // 置顶仓库卡片等处的仓库名（span.repo）
+      'strong[itemprop="name"]',          // 仓库页标题里的仓库名；限定 strong，不碰个人主页的显示名
+      '.user-profile-mini-vcard strong',  // 个人主页迷你资料卡的用户名
     ],
   },
 };

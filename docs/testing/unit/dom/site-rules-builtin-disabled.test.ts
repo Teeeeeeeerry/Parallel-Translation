@@ -70,6 +70,18 @@ describe('停用 github.com 的内置规则（#375）', () => {
     expect(closestUnit(document.getElementById('weekday-full')!)?.id).toBe('weekday');
   });
 
+  test('#598：开关打开后，文件列表的文件名重新可以全页翻译与逐段翻译', async () => {
+    document.body.innerHTML =
+      '<div class="react-directory-filename-column"><div class="react-directory-truncate" id="fname">' +
+      '<a id="flink" href="/x/y/tree/main/scripts">helper scripts</a></div></div>';
+    expect(ids(collect())).toEqual([]);
+    expect(closestUnit(document.getElementById('flink')!)).toBeNull();
+
+    await setBuiltinSiteRulesDisabled('github.com', true);
+    expect(ids(collect())).toEqual(['fname']);
+    expect(closestUnit(document.getElementById('flink')!)?.id).toBe('fname');
+  });
+
   test('再关闭开关：恢复追加合并', async () => {
     await setBuiltinSiteRulesDisabled('github.com', true);
     await setBuiltinSiteRulesDisabled('github.com', false);
