@@ -1552,19 +1552,10 @@ test.describe('站点页面规则', () => {
     // 用旧文本覆盖刚导入的选择器
     await github.locator('textarea[data-field="exclude"]').fill('.unsaved');
 
-    const json = JSON.stringify({
-      format: 'parallel-translation-site-rules',
-      version: 1,
-      sites: {
-        'github.com': { scope: [], exclude: ['.a', '.b'], preserve: [], disableBuiltin: false },
-        'example.com': { scope: ['main'], exclude: [], preserve: [], disableBuiltin: false },
-      },
-    });
-    await page.setInputFiles('#pt-site-rules-import-file', {
-      name: 'parallel-translation-site-rules.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from(json),
-    });
+    await page.setInputFiles('#pt-site-rules-import-file', siteRulesFile({
+      'github.com': { scope: [], exclude: ['.a', '.b'], preserve: [], disableBuiltin: false },
+      'example.com': { scope: ['main'], exclude: [], preserve: [], disableBuiltin: false },
+    }));
 
     await expect(github.locator('textarea[data-field="exclude"]')).toHaveValue('.a\n.b');
     const example = page.locator('.pt-site-rules-card', { hasText: 'example.com' });
@@ -1582,21 +1573,11 @@ test.describe('站点页面规则', () => {
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="site-rules"]');
-    const importFile = (name: string, text: string) =>
-      page.setInputFiles('#pt-site-rules-import-file', {
-        name,
-        mimeType: 'application/json',
-        buffer: Buffer.from(text),
-      });
 
-    await importFile('rules.json', JSON.stringify({
-      format: 'parallel-translation-site-rules',
-      version: 1,
-      sites: {
-        'example.com': { scope: [], exclude: ['.ad'], preserve: [], disableBuiltin: false },
-        'example.org': { scope: [], exclude: '.ad', preserve: [], disableBuiltin: false },
-        'http://example.net': { scope: [], exclude: [], preserve: [], disableBuiltin: false },
-      },
+    await page.setInputFiles('#pt-site-rules-import-file', siteRulesFile({
+      'example.com': { scope: [], exclude: ['.ad'], preserve: [], disableBuiltin: false },
+      'example.org': { scope: [], exclude: '.ad', preserve: [], disableBuiltin: false },
+      'http://example.net': { scope: [], exclude: [], preserve: [], disableBuiltin: false },
     }));
     const toast = page.locator('#pt-toast');
     // 导入 1 个站点、跳过 2 条：先出现的是导入数
@@ -1610,7 +1591,11 @@ test.describe('站点页面规则', () => {
       page.locator('.pt-site-rules-card', { hasText: 'example.com' }).locator('textarea[data-field="exclude"]'),
     ).toHaveValue('.ad');
 
-    await importFile('broken.json', '{"format":');
+    await page.setInputFiles('#pt-site-rules-import-file', {
+      name: 'broken.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from('{"format":'),
+    });
     await expect(toast).toContainText('JSON');
     await expect(report).toBeHidden();
     await expect(page.locator('.pt-site-rules-card')).toHaveCount(1);
@@ -1715,18 +1700,10 @@ test.describe('站点页面规则', () => {
     await page.click('.pt-nav-btn[data-section="site-rules"]');
     await failGetAfterWrite(page);
 
-    await page.setInputFiles('#pt-site-rules-import-file', {
-      name: 'parallel-translation-site-rules.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from(JSON.stringify({
-        format: 'parallel-translation-site-rules',
-        version: 1,
-        sites: {
-          'github.com': { scope: [], exclude: ['.a'], preserve: [], disableBuiltin: false },
-          'example.com': { scope: ['main'], exclude: [], preserve: [], disableBuiltin: false },
-        },
-      })),
-    });
+    await page.setInputFiles('#pt-site-rules-import-file', siteRulesFile({
+      'github.com': { scope: [], exclude: ['.a'], preserve: [], disableBuiltin: false },
+      'example.com': { scope: ['main'], exclude: [], preserve: [], disableBuiltin: false },
+    }));
 
     const imported = await page.evaluate(() => chrome.i18n.getMessage('siteRulesImported', ['2']));
     await expect(page.locator('#pt-toast')).toHaveText(await listStale(page, imported));
