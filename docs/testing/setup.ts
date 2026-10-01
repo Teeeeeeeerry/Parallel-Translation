@@ -147,6 +147,11 @@ vi.stubGlobal('chrome', {
       removeListener: vi.fn(),
     },
   },
+  // #610: 可选权限默认已授予；用例按需改成未授予或拒绝
+  permissions: {
+    contains: vi.fn().mockResolvedValue(true),
+    request: vi.fn().mockResolvedValue(true),
+  },
   i18n: {
     getMessage: vi.fn().mockImplementation((key: string) => key),
     getUILanguage: vi.fn().mockReturnValue('zh-CN'),

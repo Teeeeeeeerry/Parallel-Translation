@@ -2246,9 +2246,76 @@ test.describe('自带 key 引擎：DeepSeek', () => {
     await expect(popup.locator('#pt-engine-select option:checked')).toHaveText('DeepSeek (BYOK)');
     await popup.close();
 
+    // 设置页那次授权只是 stub，SW 里的权限查询同样按已授权处理（#610）
+    await serviceWorker.evaluate(() => {
+      chrome.permissions.contains = (async () => true) as typeof chrome.permissions.contains;
+    });
     await stubDeepSeek(serviceWorker, '[DS] ');
     await gotoFixture('basic');
     await translateAndWait(page);
     await expect(page.locator('.pt-trans').first()).toContainText('[DS] ');
+  });
+
+  test('@core TC-E2E-104: 设置页保存 DeepSeek key 时拒绝授权 → 不发探测、key 不保存，提示缺权限（#610）', async ({
+    page, serviceWorker,
+  }) => {
+    const extId = new URL(serviceWorker.url()).host;
+    await page.addInitScript(() => {
+      chrome.permissions.request = (async () => false) as typeof chrome.permissions.request;
+    });
+    let probes = 0;
+    await page.context().route('https://api.deepseek.com/**', (route) => {
+      probes++;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{"data":[]}' });
+    });
+
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="engines"]');
+    await page.fill('#pt-key-deepseek', 'sk-deepseek-test');
+    await page.click('#pt-test-deepseek');
+
+    const expected = await page.evaluate(() =>
+      chrome.i18n.getMessage('keyPermissionDenied', ['api.deepseek.com']),
+    );
+    const result = page.locator('#pt-key-result-deepseek');
+    await expect(result).toHaveText(expected);
+    await expect(result).toHaveClass(/pt-fail/);
+    expect(probes).toBe(0);
+    const saved = await serviceWorker.evaluate(async () => {
+      const r = await chrome.storage.local.get('pt-keys');
+      return (r['pt-keys'] as Record<string, string> | undefined)?.deepseek ?? null;
+    });
+    expect(saved).toBeNull();
+  });
+
+  test('@core TC-E2E-105: DeepSeek 的访问权限被撤销 → 整页翻译不发请求，提示缺权限的真实原因（#610）', async ({
+    page, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ enginePriority: ['deepseek'] });
+    await serviceWorker.evaluate(async () => {
+      await chrome.storage.local.set({ 'pt-keys': { deepseek: 'sk-deepseek-test' } });
+      // 在浏览器扩展管理里撤销了访问权限
+      chrome.permissions.contains = (async () => false) as typeof chrome.permissions.contains;
+    });
+    await stubDeepSeek(serviceWorker, '[DS] ');
+    await serviceWorker.evaluate(() => {
+      const inner = (self as any).fetch.bind(self);
+      (self as any).__ptDeepSeekCalls = 0;
+      (self as any).fetch = async (input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
+        if (url.startsWith('https://api.deepseek.com/')) (self as any).__ptDeepSeekCalls++;
+        return inner(input, init);
+      };
+    });
+    await gotoFixture('basic');
+
+    const ball = await waitForBall(page);
+    await ball.click();
+    const expected = await serviceWorker.evaluate(() =>
+      chrome.i18n.getMessage('enginePermissionMissing', ['api.deepseek.com']),
+    );
+    const toast = page.locator('#pt-host-toast .pt-toast[data-kind="error"]');
+    await expect(toast).toHaveText(expected, { timeout: 30_000 });
+    expect(await serviceWorker.evaluate(() => (self as any).__ptDeepSeekCalls)).toBe(0);
   });
 });

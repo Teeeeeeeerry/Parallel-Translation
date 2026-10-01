@@ -107,6 +107,11 @@ export function isByokEngine(e: EngineEntry): e is ByokEngineEntry {
   return 'byok' in e;
 }
 
+/** 主机匹配模式里的主机名（#610）：'https://api.deepseek.com/*' → 'api.deepseek.com'。 */
+export function originHost(origin: string): string {
+  return new URL(origin.replace(/\*$/, '')).host;
+}
+
 /** 引擎走可选权限的端点（#609）；端点是必需权限的引擎返回 undefined。 */
 export function optionalOriginOf(id: EngineId): string | undefined {
   const byok = ENGINE_CATALOG.filter(isByokEngine).find((e) => e.id === id)?.byok;

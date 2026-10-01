@@ -118,6 +118,19 @@ export class EngineError extends Error implements AttemptOutcome {
 }
 
 /**
+ * 引擎当前不可用（#610）—— 走可选权限的引擎没有访问端点的权限（用户在
+ * 浏览器扩展管理里撤销了）。不发请求，按不可重试的配置问题失败（类别
+ * 同 key 无效：要用户到设置页重新保存 key），但与 key 无效不同，router
+ * 照常按优先级切到下一个引擎；只有它出了错时，失败结果带上它的原因。
+ */
+export class EngineUnavailableError extends EngineError {
+  constructor(engineId: string, message: string) {
+    super(engineId, false, message, 'invalid-key');
+    this.name = 'EngineUnavailableError';
+  }
+}
+
+/**
  * router 的「所有引擎均失败」聚合错误 —— #237。
  * 显式构造类型化结果（瞬时、可重试），不再抛裸普通 Error ——
  * 消除「普通 Error 即隐式可重试」的启发式：聚合失败的可重试性
