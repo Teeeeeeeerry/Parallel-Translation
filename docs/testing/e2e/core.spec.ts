@@ -2323,12 +2323,18 @@ test.describe('自带 key 引擎：DeepSeek', () => {
     await expect(page.locator('.pt-trans').first()).toContainText('[DS] ');
   });
 
-  test('@core TC-E2E-104: 设置页保存 DeepSeek key 时拒绝授权 → 不发探测、key 不保存，提示缺权限（#610）', async ({
+  test('@core TC-E2E-104: 设置页保存 DeepSeek key（测试连接）时拒绝授权 → 不发探测、key 不保存，提示缺权限（#610/#611）', async ({
     page, serviceWorker,
   }) => {
     const extId = new URL(serviceWorker.url()).host;
     await page.addInitScript(() => {
-      chrome.permissions.request = (async () => false) as typeof chrome.permissions.request;
+      chrome.permissions.request = (async (p: chrome.permissions.Permissions) => {
+        (window as any).__ptPermissionRequests = [
+          ...((window as any).__ptPermissionRequests ?? []),
+          p.origins,
+        ];
+        return false;
+      }) as typeof chrome.permissions.request;
     });
     let probes = 0;
     await page.context().route('https://api.deepseek.com/**', (route) => {
@@ -2348,6 +2354,10 @@ test.describe('自带 key 引擎：DeepSeek', () => {
     await expect(result).toHaveText(expected);
     await expect(result).toHaveClass(/pt-fail/);
     expect(probes).toBe(0);
+    // #611: 权限在“测试连接”的这次点击里申请
+    expect(await page.evaluate(() => (window as any).__ptPermissionRequests)).toEqual([
+      ['https://api.deepseek.com/*'],
+    ]);
     const saved = await serviceWorker.evaluate(async () => {
       const r = await chrome.storage.local.get('pt-keys');
       return (r['pt-keys'] as Record<string, string> | undefined)?.deepseek ?? null;
