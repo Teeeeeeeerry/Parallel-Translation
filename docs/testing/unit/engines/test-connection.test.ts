@@ -197,3 +197,45 @@ describe('testConnection（gemini，#323）', () => {
     expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe('k');
   });
 });
+
+describe('testConnection（deepseek，#611）', () => {
+  test('探测请求是 GET /models，key 走 Bearer 请求头', async () => {
+    respond(200);
+    await testConnection('deepseek', 'sk-ds');
+    const [url, init] = fetchMock.mock.calls[0]! as [string, RequestInit];
+    expect(String(url)).toBe('https://api.deepseek.com/models');
+    expect(init.method).toBe('GET');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk-ds');
+  });
+
+  test('成功 → 连接成功', async () => {
+    respond(200);
+    expect(await testConnection('deepseek', 'sk-ds')).toEqual({ ok: true, msg: '连接成功' });
+  });
+
+  test('401、403 → key 问题', async () => {
+    for (const status of [401, 403]) {
+      respond(status);
+      expect(await testConnection('deepseek', 'sk-ds')).toEqual({ ok: false, msg: 'API key 无效' });
+    }
+  });
+
+  test('402 余额不足 → 配额问题；429 → 配额问题', async () => {
+    respond(402, '{"error":{"message":"Insufficient Balance"}}');
+    expect(await testConnection('deepseek', 'sk-ds')).toEqual({ ok: false, msg: '余额不足' });
+    respond(429);
+    expect(await testConnection('deepseek', 'sk-ds')).toEqual({ ok: false, msg: '配额已用尽' });
+  });
+
+  test('5xx → 带真实状态码的瞬时错误', async () => {
+    respond(503);
+    expect(await testConnection('deepseek', 'sk-ds')).toEqual({ ok: false, msg: 'HTTP 503' });
+  });
+
+  test('402 只对 DeepSeek 算配额：OpenAI、DeepL、Gemini 照旧报裸状态码', async () => {
+    for (const engine of ['openai', 'deepl', 'gemini'] as const) {
+      respond(402);
+      expect(await testConnection(engine, 'k')).toEqual({ ok: false, msg: 'HTTP 402' });
+    }
+  });
+});

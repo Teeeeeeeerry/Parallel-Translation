@@ -7,7 +7,7 @@
 // DeepSeek 翻译引擎（BYOK，#609）。
 // 兼容 OpenAI Chat Completions 格式，请求构造、响应解析与探测规格来自
 // OpenAI 兼容引擎的通用构造；本文件只保留配置：端点、探测地址与 402 特例
-// （默认模型在 DEFAULT_MODELS）。
+// （翻译与测试连接各一处；默认模型在 DEFAULT_MODELS）。
 
 import { createOpenAICompatEngine } from './openai-compat';
 import { EngineError } from './types';
@@ -21,6 +21,9 @@ const compat = createOpenAICompatEngine({
   // 认 402，公共状态分类对其他引擎的口径不变
   classifyError: async (resp) =>
     resp.status === 402 ? new EngineError('deepseek', false, '余额不足', 'quota', true) : null,
+  // 测试连接与翻译路径同一口径（#611）：402 报配额问题（余额不足）
+  classifyProbeError: async (resp) =>
+    resp.status === 402 ? { ok: false, category: 'quota', message: '余额不足' } : null,
 });
 
 export const deepseek = compat.engine;
