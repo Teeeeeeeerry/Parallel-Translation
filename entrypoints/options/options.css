@@ -738,6 +738,13 @@ body {
   gap: 8px;
 }
 
+/* 导入文件的格式说明（#590） */
+.pt-domain-terms-hint {
+  font-size: 12px;
+  color: var(--pt-forest-40);
+  margin: 8px 0 0;
+}
+
 /* ===== Site rules（#370） ===== */
 
 .pt-site-rules-site {

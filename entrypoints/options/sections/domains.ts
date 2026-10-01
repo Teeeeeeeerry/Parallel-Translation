@@ -161,12 +161,19 @@ function termRow(onRemove: () => void, t?: Term, builtin = false): HTMLTableRowE
   return tr;
 }
 
-/** 导入时跳过一行的说明（#404）。 */
-function skipLine({ line, reason }: TermsCsvSkip): string {
+/**
+ * 导入时跳过一行的说明（#404）。列数不对时，有表头说明应为表头的列数，
+ * 没有表头说明应为 2 或 3 列（#590）。
+ */
+function skipLine({ line, reason }: TermsCsvSkip, headerColumns?: number): string {
   const n = String(line);
   switch (reason) {
     case 'columns':
-      return tf('domainTermsSkipColumns', `第 ${n} 行：列数不对，应为 3 列`, n);
+      if (headerColumns !== undefined) {
+        const c = String(headerColumns);
+        return tf('domainTermsSkipColumnsHeader', `第 ${n} 行：列数不对，应为 ${c} 列`, n, c);
+      }
+      return tf('domainTermsSkipColumnsTwoOrThree', `第 ${n} 行：列数不对，应为 2 或 3 列`, n);
     case 'missingSource':
       return tf('domainTermsSkipMissingSource', `第 ${n} 行：原词为空`, n);
     case 'missingTarget':
@@ -352,7 +359,8 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
   // #403：导入 CSV，与已保存的术语合并（同一原词以导入为准）
   const importFile = document.createElement('input');
   importFile.type = 'file';
-  importFile.accept = '.csv,text/csv';
+  // #590：制表符分隔的术语表常存成 .tsv 或 .txt
+  importFile.accept = '.csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain';
   importFile.hidden = true;
   const importBtn = document.createElement('button');
   importBtn.className = 'pt-btn pt-btn-secondary pt-domain-terms-import';
@@ -369,10 +377,11 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
     // 清空选择：再次选同一个文件也会触发 change
     importFile.value = '';
     if (!file) return;
+    // #590：交原始字节，编码由存储模块识别（UTF-8 或 GBK）
     file
-      .text()
-      .then((csv) => importDomainTermsCsv(d.id, csv))
-      .then(({ imported, skipped }) => {
+      .arrayBuffer()
+      .then((buf) => importDomainTermsCsv(d.id, buf))
+      .then(({ imported, skipped, headerColumns }) => {
         const n = String(imported);
         const current = document.querySelector<HTMLDetailsElement>(
           `details[data-editor="terms"][data-domain-id="${CSS.escape(d.id)}"]`,
@@ -385,7 +394,7 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
           return;
         }
         // #404：跳过的行列在编辑区下方；列表可能已经重绘，写到当前的编辑区
-        const lines = skipped.slice(0, SKIP_LIST_MAX).map(skipLine);
+        const lines = skipped.slice(0, SKIP_LIST_MAX).map((s) => skipLine(s, headerColumns));
         const more = String(skipped.length - SKIP_LIST_MAX);
         if (skipped.length > SKIP_LIST_MAX) lines.push(tf('domainTermsSkipMore', `另有 ${more} 行没有导入`, more));
         importReports.set(d.id, lines.join('\n'));
@@ -409,7 +418,15 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
   actions.className = 'pt-domain-terms-actions';
   actions.append(add, save, exportBtn, importBtn, importFile);
 
-  details.append(table, error, actions);
+  // #590：导入文件的格式说明
+  const hint = document.createElement('p');
+  hint.className = 'pt-domain-terms-hint';
+  hint.textContent = tf(
+    'domainTermsImportHint',
+    '每行一条术语：原词、译法、不翻译（true / false，可省略）。首行可以是表头；逗号、分号或制表符分隔，UTF-8 或 GBK 编码。',
+  );
+
+  details.append(table, error, actions, hint);
   showImportReport(details);
 }
 

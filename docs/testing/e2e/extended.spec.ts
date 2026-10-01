@@ -23,6 +23,7 @@
  * #510：TC-E2E-85 覆盖设置页保存术语遇到存储空间不足时的提示。
  * #527：TC-E2E-78 另断言术语导出触发下载时不立即释放临时链接。
  * #535：TC-E2E-88 覆盖设置页读取领域失败时的提示。
+ * #590：TC-E2E-100 覆盖导入 GBK 编码、两列、带中文表头的术语 CSV。
  * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -775,6 +776,57 @@ test.describe('设置页：翻译领域 @extended', () => {
     await expect
       .poll(() => serviceWorker.evaluate(async () => ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any)?.to))
       .toBe('ja');
+  });
+
+  test('TC-E2E-100: 领域卡片导入 GBK 编码、两列、带中文表头的术语 CSV → 中文正确，表头不导入，列数不对的行按表头列数说明（#590）', async ({
+    page, serviceWorker,
+  }) => {
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [{ id: 'user:e2e', name: '我的术语表', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }],
+          builtin: {},
+        },
+      }),
+    );
+    const stored = () =>
+      serviceWorker.evaluate(async () => (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any);
+    // 中文 Windows 上 Excel 另存的 CSV：GBK 编码、不带 BOM。内容为
+    // “原词,译法\r\nAPI,接口\r\ntimeout,超时\r\nGitHub,,true\r\n”，第 4 行比表头多一列
+    const gbk = Buffer.from(
+      'd4adb4ca2cd2ebb7a80d0a4150492cbdd3bfda0d0a74696d656f75742cb3accab10d0a4769744875622c2c747275650d0a',
+      'hex',
+    );
+
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const terms = page.locator('.pt-domain-item', { hasText: '我的术语表' }).locator('.pt-domain-terms');
+    await terms.locator('summary').click();
+
+    // 提示文案随浏览器界面语言（CI 是英文）
+    const msg = (key: string, subs: string[] = []) =>
+      page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
+
+    // 导入按钮旁有格式说明；文件选择框接受制表符分隔的 .tsv、.txt
+    await expect(terms.locator('.pt-domain-terms-hint')).toHaveText(await msg('domainTermsImportHint'));
+    expect(await terms.locator('input[type="file"]').getAttribute('accept')).toContain('.tsv');
+
+    await terms.locator('input[type="file"]').setInputFiles({ name: 'terms.csv', mimeType: 'text/csv', buffer: gbk });
+    await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsImportedSkipped', ['2', '1']));
+    await expect(terms.locator('.pt-domain-terms-error')).toHaveText(
+      await msg('domainTermsSkipColumnsHeader', ['4', '2']),
+    );
+    expect((await stored()).user[0].terms).toEqual([
+      { source: 'API', target: '接口' },
+      { source: 'timeout', target: '超时' },
+    ]);
+    // 编辑区显示正确的中文
+    const targets = terms.locator('.pt-term-target');
+    await expect(targets).toHaveCount(2);
+    expect(await targets.evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual([
+      '接口', '超时',
+    ]);
   });
 
   test('TC-E2E-71: 新建或删除领域写入失败 → toast 提示原因，名称留在输入框、领域留在列表（#470）', async ({

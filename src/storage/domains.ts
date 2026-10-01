@@ -706,11 +706,61 @@ interface CsvRecord {
 }
 
 /**
- * 按 RFC 4180 把 CSV 文本拆成记录（#403）：字段开头的双引号起引号，引号内
- * 可含逗号、换行与写两遍的双引号；行尾 CRLF、LF 或单独的 CR 都认；开头的 BOM 去掉，结尾的空行
- * 不算。引号没有闭合时，从那条记录起到文件结尾合成一条，标为未闭合。
+ * 可识别的分隔符（#590）：逗号、分号（欧洲语言区 Excel 的默认）、制表符
+ * （从其他工具复制出的术语表）。次数相同时按这里的先后取：制表符极少出现
+ * 在术语里；逗号是缺省与导出格式，术语里的分号不改变分隔符。
  */
-function parseCsv(text: string): CsvRecord[] {
+const CSV_DELIMITERS = ['\t', ',', ';'];
+
+/**
+ * 识别分隔符（#590）：数首条非空记录里引号以外的逗号、分号、制表符，取
+ * 出现次数最多的那种；都没有出现时按逗号。只有空白与分隔符的行算空行，
+ * 与导入时跳过的空行一致。引号规则与 parseCsv 相同，只有字段开头的双引号
+ * 起引号。
+ */
+function detectDelimiter(src: string): string {
+  const counts = new Map(CSV_DELIMITERS.map((d) => [d, 0]));
+  let quoted = false;
+  let fieldStart = true;
+  /** 当前行有分隔符与空白以外的内容。 */
+  let content = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i]!;
+    if (quoted) {
+      if (c === '"') {
+        if (src[i + 1] === '"') i++;
+        else quoted = false;
+      }
+      continue;
+    }
+    if (c === '\n' || c === '\r') {
+      // 首条非空记录到此结束；空行不算，重新计数
+      if (content) break;
+      counts.forEach((_, d) => counts.set(d, 0));
+      fieldStart = true;
+      continue;
+    }
+    const n = counts.get(c);
+    if (n !== undefined) counts.set(c, n + 1);
+    else if (c === '"' && fieldStart) quoted = content = true;
+    else if (c.trim() !== '') content = true;
+    fieldStart = n !== undefined;
+  }
+  let best = ',';
+  let max = 0;
+  for (const [d, n] of counts) {
+    if (n > max) [best, max] = [d, n];
+  }
+  return best;
+}
+
+/**
+ * 按 RFC 4180 把 CSV 文本拆成记录（#403）：字段开头的双引号起引号，引号内
+ * 可含分隔符、换行与写两遍的双引号；行尾 CRLF、LF 或单独的 CR 都认；开头的 BOM 去掉，结尾的空行
+ * 不算。引号没有闭合时，从那条记录起到文件结尾合成一条，标为未闭合。
+ * 分隔符缺省为逗号，也可以是分号或制表符（#590）。
+ */
+function parseCsv(text: string, delimiter = ','): CsvRecord[] {
   const records: CsvRecord[] = [];
   let fields: string[] = [];
   let field = '';
@@ -733,7 +783,7 @@ function parseCsv(text: string): CsvRecord[] {
     } else if (c === '"' && field === '') {
       // 只有字段开头的双引号才起引号；字段中间的（如英寸号 5"）按普通字符
       quoted = true;
-    } else if (c === ',') {
+    } else if (c === delimiter) {
       fields.push(field);
       field = '';
     } else if (c === '\n' || c === '\r') {
@@ -752,7 +802,68 @@ function parseCsv(text: string): CsvRecord[] {
 }
 
 /**
- * 导入时跳过的行的原因（#404）：列数不是 3 列、原词为空、没勾“不翻译”
+ * 把导入文件的字节转成文字（#590）：带 UTF-8 BOM 或是有效的 UTF-8 时按
+ * UTF-8，否则按 GB18030（兼容 GBK、GB2312，中文 Windows 上 Excel 另存的
+ * CSV 默认是 GBK、不带 BOM）。传入文字时原样返回。
+ */
+function decodeTermsCsv(input: string | ArrayBuffer | ArrayBufferView): string {
+  if (typeof input === 'string') return input;
+  const head = ArrayBuffer.isView(input)
+    ? new Uint8Array(input.buffer, input.byteOffset, Math.min(3, input.byteLength))
+    : new Uint8Array(input, 0, Math.min(3, input.byteLength));
+  // 带 BOM 就是 UTF-8：个别无效字节按替换字符读，不改按 GB18030
+  if (head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf) return new TextDecoder('utf-8').decode(input);
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(input);
+  } catch {
+    return new TextDecoder('gb18030').decode(input);
+  }
+}
+
+/** 术语 CSV 表头可识别的列名（#590），去掉首尾空白、不区分大小写后比对。 */
+const TERMS_CSV_COLUMNS: Record<string, 'source' | 'target' | 'noTranslate'> = {
+  source: 'source',
+  term: 'source',
+  原词: 'source',
+  原文: 'source',
+  术语: 'source',
+  english: 'source',
+  target: 'target',
+  translation: 'target',
+  译法: 'target',
+  译文: 'target',
+  中文: 'target',
+  chinese: 'target',
+  notranslate: 'noTranslate',
+  不翻译: 'noTranslate',
+};
+
+/** 表头里各列的位置（#590）与表头的列数。 */
+interface TermsCsvHeader {
+  source: number;
+  target: number;
+  noTranslate?: number;
+  width: number;
+}
+
+/**
+ * 识别表头（#590）：每个字段都是已知列名、同一种列不重复，并且有原词列
+ * 与译法列时才算表头，列的顺序随意；否则返回 null，这一行按术语处理。
+ */
+function termsCsvHeader(fields: string[]): TermsCsvHeader | null {
+  const at: Partial<Record<'source' | 'target' | 'noTranslate', number>> = {};
+  for (const [i, f] of fields.entries()) {
+    const col = TERMS_CSV_COLUMNS[f.trim().toLowerCase()];
+    if (!col || at[col] !== undefined) return null;
+    at[col] = i;
+  }
+  if (at.source === undefined || at.target === undefined) return null;
+  return { source: at.source, target: at.target, noTranslate: at.noTranslate, width: fields.length };
+}
+
+/**
+ * 导入时跳过的行的原因（#404）：列数不对（有表头时应与表头列数相同，
+ * 没有表头时应为 2 或 3 列，#590）、原词为空、没勾“不翻译”
  * 也没有译法、不翻译列不是 true / false、引号没有闭合（从这一行到文件
  * 结尾都跳过）。
  */
@@ -765,9 +876,15 @@ export interface TermsCsvSkip {
 }
 
 /**
- * 把 CSV 文件里的术语导入到领域（#403），格式与 exportDomainTermsCsv 相同：
- * 首行是表头 source,target,noTranslate 时跳过；原词与译法去掉导出时加的
- * 公式前缀（#511）；不翻译列为 true / 1 时勾选，
+ * 把 CSV 文件里的术语导入到领域（#403），本扩展导出的格式之外，也接受
+ * 用户自己整理的术语表（#590）：
+ * - 传入文件字节时识别编码：UTF-8，否则按 GB18030；
+ * - 分隔符识别逗号、分号、制表符；
+ * - 首行是表头（如 source,target,noTranslate、原词,译法、English,Chinese）
+ *   时跳过，并按表头的列名对应列，返回表头的列数 headerColumns；
+ * - 没有表头时按位置对应原词、译法、不翻译，第三列可省。
+ *
+ * 原词与译法去掉导出时加的公式前缀（#511）；不翻译列为 true / 1 时勾选，
  * false / 0 / 空时不勾选（不区分大小写）。与现有术语合并：同一原词（不区分
  * 大小写）以导入为准、留在原位，新原词追加在后，文件里没有的术语不动；
  * 文件里同一原词出现多次时后出现的为准。内置领域写入叠加层。
@@ -778,14 +895,18 @@ export interface TermsCsvSkip {
  */
 export async function importDomainTermsCsv(
   id: string,
-  csv: string,
-): Promise<{ imported: number; skipped: TermsCsvSkip[] }> {
-  const records = parseCsv(csv);
-  const header = TERMS_CSV_HEADER.join(',').toLowerCase();
-  const first = records[0];
-  if (first && !first.unclosed && first.fields.map((f) => f.trim().toLowerCase()).join(',') === header) {
-    records.shift();
-  }
+  csv: string | ArrayBuffer | ArrayBufferView,
+): Promise<{ imported: number; skipped: TermsCsvSkip[]; headerColumns?: number }> {
+  const text = decodeTermsCsv(csv).replace(/^\uFEFF/, '');
+  const records = parseCsv(text, detectDelimiter(text));
+  // 表头在第一条非空记录（开头的空行不算），与识别分隔符取同一条
+  const at = records.findIndex((r) => r.unclosed || r.fields.some((f) => f.trim() !== ''));
+  const first = records[at];
+  const header = first && !first.unclosed ? termsCsvHeader(first.fields) : null;
+  if (header) records.splice(at, 1);
+  // 没有表头时按位置：原词、译法、不翻译（可省）
+  const cols = header ?? { source: 0, target: 1, noTranslate: 2 };
+  const extra = header ? { headerColumns: header.width } : {};
   const incoming: Term[] = [];
   const skipped: TermsCsvSkip[] = [];
   for (const { fields, line, unclosed } of records) {
@@ -795,12 +916,13 @@ export async function importDomainTermsCsv(
     }
     // 空行（文件中间或结尾多出的换行）不算
     if (fields.every((f) => f.trim() === '')) continue;
-    if (fields.length !== TERMS_CSV_HEADER.length) {
+    if (header ? fields.length !== header.width : fields.length !== 2 && fields.length !== 3) {
       skipped.push({ line, reason: 'columns' });
       continue;
     }
-    const [source, target] = fields.slice(0, 2).map(stripFormulaGuard) as [string, string];
-    const flag = fields[2]!;
+    const source = stripFormulaGuard(fields[cols.source]!);
+    const target = stripFormulaGuard(fields[cols.target]!);
+    const flag = cols.noTranslate === undefined ? '' : (fields[cols.noTranslate] ?? '');
     const noTranslate = flag.trim().toLowerCase();
     if (!['true', '1', 'false', '0', ''].includes(noTranslate)) {
       skipped.push({ line, reason: 'noTranslate' });
@@ -818,7 +940,7 @@ export async function importDomainTermsCsv(
     const domain = effectiveDomains(stored).find((d) => d.id === id);
     if (!domain) throw new DomainNotFoundError(id);
     // 没有可导入的行：不写入
-    if (incoming.length === 0) return { stored: null, result: { imported: 0, skipped } };
+    if (incoming.length === 0) return { stored: null, result: { imported: 0, skipped, ...extra } };
     const merged = [...domain.terms];
     const at = new Map(merged.map((t, i) => [termKey(t), i]));
     for (const t of incoming) {
@@ -828,7 +950,7 @@ export async function importDomainTermsCsv(
     }
     // 逐行校验过，这里只做整理（去首尾空格），不会再有不合法的行
     const { stored: next } = withTerms(stored, id, cleanTerms(merged));
-    return { stored: next, result: { imported: incoming.length, skipped } };
+    return { stored: next, result: { imported: incoming.length, skipped, ...extra } };
   });
 }
 

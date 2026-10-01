@@ -451,5 +451,14 @@
   "siteRulesDeletedSite": {
     "message": "Deleted \"$site$\". Reload the site to apply.",
     "placeholders": { "site": { "content": "$1" } }
-  }
+  },
+  "domainTermsSkipColumnsTwoOrThree": {
+    "message": "Line $line$: expected 2 or 3 columns",
+    "placeholders": { "line": { "content": "$1" } }
+  },
+  "domainTermsSkipColumnsHeader": {
+    "message": "Line $line$: expected $count$ columns",
+    "placeholders": { "line": { "content": "$1" }, "count": { "content": "$2" } }
+  },
+  "domainTermsImportHint": { "message": "One term per line: source, translation, don't translate (true / false, optional). The first line may be a header. Comma, semicolon or tab separated; UTF-8 or GBK encoded." }
 }
