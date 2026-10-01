@@ -8,6 +8,7 @@
  */
 import fs from 'fs';
 import { test, expect, waitForBall } from './fixtures';
+import type { UserSiteRules } from '~/src/storage/specialization';
 
 // ── 辅助：触发翻译并等待完成 ──
 async function translateAndWait(page: import('@playwright/test').Page) {
@@ -1197,7 +1198,7 @@ test.describe('站点页面规则', () => {
     serviceWorker.evaluate((u) => chrome.storage.local.set({ 'pt-site-rules': { user: u } }), user);
 
   /** 经后台读取站点规则存储里的用户规则列表，用来断言写入结果 */
-  const readUserSiteRules = (serviceWorker: import('@playwright/test').Worker) =>
+  const readUserSiteRules = (serviceWorker: import('@playwright/test').Worker): Promise<UserSiteRules[]> =>
     serviceWorker.evaluate(
       async () => ((await chrome.storage.local.get('pt-site-rules'))['pt-site-rules'] as any).user,
     );
@@ -1234,6 +1235,7 @@ test.describe('站点页面规则', () => {
       (window as any).__ptFailRender = true;
     });
 
+  /** 列表没刷新的提示文案：done 是已完成操作的提示文案，返回与读取失败原因合成后的整句提示 */
   const listStale = (page: import('@playwright/test').Page, done: string) =>
     page.evaluate(
       ({ d, r }) => chrome.i18n.getMessage('siteRulesListStale', [d, r]),
@@ -1533,7 +1535,7 @@ test.describe('站点页面规则', () => {
     await expect(page.locator('#pt-toast')).toHaveText(expected);
     const cards = await readUserSiteRules(serviceWorker);
     expect(cards).toHaveLength(1);
-    expect(cards[0].exclude).toEqual(['.a']);
+    expect(cards[0]!.exclude).toEqual(['.a']);
   });
 
   test('@core TC-E2E-76: 设置页导入站点规则 JSON → 与已有卡片逐字段合并去重，新站点新增卡片（#377）', async ({
@@ -1688,8 +1690,10 @@ test.describe('站点页面规则', () => {
     );
     await expect(toast).toHaveText(stale);
     await expect(page.locator('.pt-site-rules-card')).toHaveCount(0);
-    // 新增没有覆盖准备的规则：存储里同时有 github.com 与 example.com
-    expect((await readUserSiteRules(serviceWorker)).map((u: any) => u.site)).toEqual(['github.com', 'example.com']);
+    // 新增没有覆盖准备的规则：存储里同时有 github.com 与 example.com，不看顺序
+    const sites = (await readUserSiteRules(serviceWorker)).map((u) => u.site);
+    expect(sites).toHaveLength(2);
+    expect(sites).toEqual(expect.arrayContaining(['github.com', 'example.com']));
   });
 
   test('@core TC-E2E-89: 导入写入成功、刷新站点卡片列表失败 → 提示同时说明导入了几个站点与列表没有刷新（#536）', async ({
@@ -1748,7 +1752,7 @@ test.describe('站点页面规则', () => {
     await expect(toast).toHaveText(await listStale(page, added));
     await expect(page.locator('#pt-site-rules-site-input')).toHaveValue('example.com');
     await expect(page.locator('#pt-site-rules-site-input')).not.toHaveClass(/pt-error/);
-    expect((await readUserSiteRules(serviceWorker)).map((u: any) => u.site)).toEqual(['example.com']);
+    expect((await readUserSiteRules(serviceWorker)).map((u) => u.site)).toEqual(['example.com']);
   });
 
   test('@core TC-E2E-91: 删除站点写入成功、刷新站点卡片列表失败 → 被删站点的卡片立即移除，其他卡片与未保存的编辑不变，再新增同名站点从空白开始（#548）', async ({
@@ -1776,7 +1780,7 @@ test.describe('站点页面规则', () => {
     await expect(github).toHaveCount(0);
     await expect(cards).toHaveCount(1);
     await expect(example.locator('textarea[data-field="exclude"]')).toHaveValue('.unsaved');
-    expect((await readUserSiteRules(serviceWorker)).map((u: any) => u.site)).toEqual(['example.com']);
+    expect((await readUserSiteRules(serviceWorker)).map((u) => u.site)).toEqual(['example.com']);
 
     // 恢复读取后新增同名站点：新卡片从空白开始，不复用被删卡片的旧内容
     await page.evaluate(() => {
