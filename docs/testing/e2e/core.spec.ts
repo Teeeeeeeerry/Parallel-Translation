@@ -1192,6 +1192,54 @@ test.describe('站点页面规则', () => {
     await options.close();
   }
 
+  /** 经后台直接写入站点规则的用户规则列表：打开设置页前用来准备数据，打开后相当于另一个设置页标签页保存了改动 */
+  const writeUserSiteRules = (serviceWorker: import('@playwright/test').Worker, user: unknown[]) =>
+    serviceWorker.evaluate((u) => chrome.storage.local.set({ 'pt-site-rules': { user: u } }), user);
+
+  /** 经后台读取站点规则存储里的用户规则列表，用来断言写入结果 */
+  const readUserSiteRules = (serviceWorker: import('@playwright/test').Worker) =>
+    serviceWorker.evaluate(
+      async () => ((await chrome.storage.local.get('pt-site-rules'))['pt-site-rules'] as any).user,
+    );
+
+  /** 站点规则导入文件 */
+  const siteRulesFile = (sites: Record<string, unknown>) => ({
+    name: 'parallel-translation-site-rules.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ format: 'parallel-translation-site-rules', version: 1, sites })),
+  });
+
+  /** 设置页里每次写入存储之后，读取都失败，直到 __ptFailGet 被清掉 */
+  const failGetAfterWrite = (page: import('@playwright/test').Page) =>
+    page.evaluate(() => {
+      const local = chrome.storage.local as any;
+      const w = window as any;
+      const { get, set } = local;
+      w.__ptSet = set;
+      local.get = (...a: unknown[]) =>
+        w.__ptFailGet ? Promise.reject(new Error('boom')) : get.apply(local, a);
+      local.set = async (...a: unknown[]) => {
+        await set.apply(local, a);
+        w.__ptFailGet = true;
+      };
+    });
+  /** 页面里打桩：__ptFailRender 为 true 时，构造卡片的文本框抛错（#558）。打桩后标记即为 true */
+  const failCardRender = (page: import('@playwright/test').Page) =>
+    page.evaluate(() => {
+      const create = document.createElement.bind(document);
+      (document as any).createElement = (tag: string, options?: ElementCreationOptions) => {
+        if ((window as any).__ptFailRender && tag === 'textarea') throw new Error('[PT] 渲染出错');
+        return create(tag, options);
+      };
+      (window as any).__ptFailRender = true;
+    });
+
+  const listStale = (page: import('@playwright/test').Page, done: string) =>
+    page.evaluate(
+      ({ d, r }) => chrome.i18n.getMessage('siteRulesListStale', [d, r]),
+      { d: done, r: '暂时读不到存储里的数据，请稍后重试' },
+    );
+
   test('@core TC-E2E-60: 设置页新增排除 → 刷新 → 元素不翻译（#370）', async ({
     page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
   }) => {
@@ -1320,10 +1368,6 @@ test.describe('站点页面规则', () => {
     await expect(page.locator('#pt-toast')).toBeVisible();
   });
 
-  /** 经后台直接写入站点规则的用户规则列表：打开设置页前用来准备数据，打开后相当于另一个设置页标签页保存了改动 */
-  const writeUserSiteRules = (serviceWorker: import('@playwright/test').Worker, user: unknown[]) =>
-    serviceWorker.evaluate((u) => chrome.storage.local.set({ 'pt-site-rules': { user: u } }), user);
-
   test('@core TC-E2E-68: 存储里带无效行的站点卡片 → 打开设置页即标红并提示行号 → 改正后保存（#443）', async ({
     page, serviceWorker,
   }) => {
@@ -1422,13 +1466,7 @@ test.describe('站点页面规则', () => {
     await toggle.click();
     await expect(page.locator('#pt-toast')).toBeVisible();
     await expect(toggle).toHaveClass(/pt-on/);
-    const cards = () =>
-      serviceWorker.evaluate(async () => {
-        const stored = (await chrome.storage.local.get('pt-site-rules'))['pt-site-rules'] as {
-          user: unknown[];
-        };
-        return stored.user;
-      });
+    const cards = () => readUserSiteRules(serviceWorker);
     expect(await cards()).toContainEqual({ site: 'github.com', disableBuiltin: true });
 
     // 重新打开设置页仍保持；关闭后存为 false，恢复追加合并
@@ -1493,9 +1531,7 @@ test.describe('站点页面规则', () => {
       chrome.i18n.getMessage('siteRulesSaveFailed', [chrome.i18n.getMessage('domainStorageFull')]),
     );
     await expect(page.locator('#pt-toast')).toHaveText(expected);
-    const cards = await serviceWorker.evaluate(
-      async () => ((await chrome.storage.local.get('pt-site-rules'))['pt-site-rules'] as any).user,
-    );
+    const cards = await readUserSiteRules(serviceWorker);
     expect(cards).toHaveLength(1);
     expect(cards[0].exclude).toEqual(['.a']);
   });
@@ -1533,12 +1569,7 @@ test.describe('站点页面规则', () => {
     await expect(github.locator('textarea[data-field="exclude"]')).toHaveValue('.a\n.b');
     const example = page.locator('.pt-site-rules-card', { hasText: 'example.com' });
     await expect(example.locator('textarea[data-field="scope"]')).toHaveValue('main');
-    const cards = await serviceWorker.evaluate(async () => {
-      const stored = (await chrome.storage.local.get('pt-site-rules'))['pt-site-rules'] as {
-        user: unknown[];
-      };
-      return stored.user;
-    });
+    const cards = await readUserSiteRules(serviceWorker);
     expect(cards).toEqual([
       { site: 'github.com', scope: [], exclude: ['.a', '.b'], preserve: [] },
       { site: 'example.com', scope: ['main'] },
@@ -1583,12 +1614,7 @@ test.describe('站点页面规则', () => {
     await expect(toast).toContainText('JSON');
     await expect(report).toBeHidden();
     await expect(page.locator('.pt-site-rules-card')).toHaveCount(1);
-    const cards = await serviceWorker.evaluate(async () => {
-      const stored = (await chrome.storage.local.get('pt-site-rules'))['pt-site-rules'] as {
-        user: unknown[];
-      };
-      return stored.user;
-    });
+    const cards = await readUserSiteRules(serviceWorker);
     expect(cards).toEqual([{ site: 'example.com', exclude: ['.ad'] }]);
   });
 
@@ -1678,29 +1704,8 @@ test.describe('站点页面规则', () => {
     await expect(toast).toHaveText(stale);
     await expect(page.locator('.pt-site-rules-card')).toHaveCount(0);
     // 新增没有覆盖准备的规则：存储里同时有 github.com 与 example.com
-    const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('pt-site-rules'));
-    expect((stored['pt-site-rules'] as any).user.map((u: any) => u.site)).toEqual(['github.com', 'example.com']);
+    expect((await readUserSiteRules(serviceWorker)).map((u: any) => u.site)).toEqual(['github.com', 'example.com']);
   });
-
-  /** 设置页里每次写入存储之后，读取都失败，直到 __ptFailGet 被清掉 */
-  const failGetAfterWrite = (page: import('@playwright/test').Page) =>
-    page.evaluate(() => {
-      const local = chrome.storage.local as any;
-      const w = window as any;
-      const { get, set } = local;
-      w.__ptSet = set;
-      local.get = (...a: unknown[]) =>
-        w.__ptFailGet ? Promise.reject(new Error('boom')) : get.apply(local, a);
-      local.set = async (...a: unknown[]) => {
-        await set.apply(local, a);
-        w.__ptFailGet = true;
-      };
-    });
-  const listStale = (page: import('@playwright/test').Page, done: string) =>
-    page.evaluate(
-      ({ d, r }) => chrome.i18n.getMessage('siteRulesListStale', [d, r]),
-      { d: done, r: '暂时读不到存储里的数据，请稍后重试' },
-    );
 
   test('@core TC-E2E-89: 导入写入成功、刷新站点卡片列表失败 → 提示同时说明导入了几个站点与列表没有刷新（#536）', async ({
     page, serviceWorker,
@@ -1726,8 +1731,7 @@ test.describe('站点页面规则', () => {
     const imported = await page.evaluate(() => chrome.i18n.getMessage('siteRulesImported', ['2']));
     await expect(page.locator('#pt-toast')).toHaveText(await listStale(page, imported));
     await expect(page.locator('.pt-site-rules-card')).toHaveCount(0);
-    const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('pt-site-rules'));
-    expect((stored['pt-site-rules'] as any).user).toHaveLength(2);
+    expect(await readUserSiteRules(serviceWorker)).toHaveLength(2);
   });
 
   test('@core TC-E2E-90: 删除或新增站点写入成功、刷新站点卡片列表失败 → 提示写入已成功，新增时站点输入框不清空（#536）', async ({
@@ -1767,8 +1771,7 @@ test.describe('站点页面规则', () => {
     await expect(toast).toHaveText(await listStale(page, added));
     await expect(page.locator('#pt-site-rules-site-input')).toHaveValue('example.com');
     await expect(page.locator('#pt-site-rules-site-input')).not.toHaveClass(/pt-error/);
-    const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('pt-site-rules'));
-    expect((stored['pt-site-rules'] as any).user.map((u: any) => u.site)).toEqual(['example.com']);
+    expect((await readUserSiteRules(serviceWorker)).map((u: any) => u.site)).toEqual(['example.com']);
   });
 
   test('@core TC-E2E-91: 删除站点写入成功、刷新站点卡片列表失败 → 被删站点的卡片立即移除，其他卡片与未保存的编辑不变，再新增同名站点从空白开始（#548）', async ({
@@ -1796,8 +1799,7 @@ test.describe('站点页面规则', () => {
     await expect(github).toHaveCount(0);
     await expect(cards).toHaveCount(1);
     await expect(example.locator('textarea[data-field="exclude"]')).toHaveValue('.unsaved');
-    const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('pt-site-rules'));
-    expect((stored['pt-site-rules'] as any).user.map((u: any) => u.site)).toEqual(['example.com']);
+    expect((await readUserSiteRules(serviceWorker)).map((u: any) => u.site)).toEqual(['example.com']);
 
     // 恢复读取后新增同名站点：新卡片从空白开始，不复用被删卡片的旧内容
     await page.evaluate(() => {
@@ -1811,23 +1813,6 @@ test.describe('站点页面规则', () => {
     await expect(github).toHaveCount(1);
     await expect(github.locator('textarea[data-field="exclude"]')).toHaveValue('');
   });
-
-  /** 站点规则导入文件 */
-  const siteRulesFile = (sites: Record<string, unknown>) => ({
-    name: 'parallel-translation-site-rules.json',
-    mimeType: 'application/json',
-    buffer: Buffer.from(JSON.stringify({ format: 'parallel-translation-site-rules', version: 1, sites })),
-  });
-  /** 页面里打桩：__ptFailRender 为 true 时，构造卡片的文本框抛错（#558）。打桩后标记即为 true */
-  const failCardRender = (page: import('@playwright/test').Page) =>
-    page.evaluate(() => {
-      const create = document.createElement.bind(document);
-      (document as any).createElement = (tag: string, options?: ElementCreationOptions) => {
-        if ((window as any).__ptFailRender && tag === 'textarea') throw new Error('[PT] 渲染出错');
-        return create(tag, options);
-      };
-      (window as any).__ptFailRender = true;
-    });
 
   test('@core TC-E2E-92: 导入写入成功、刷新站点卡片列表失败，之后在导入没改动的卡片上编辑 → 下次刷新保留这个编辑，导入改动过的字段显示导入后的内容（#550）', async ({
     page, serviceWorker,
