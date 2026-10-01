@@ -208,7 +208,7 @@ export async function translateViaBackground(
       invalidated: contextInvalidated,
       category: 'transient',
       aborted: false,
-      ...(contextInvalidated && { contextInvalidated }),
+      ...(contextInvalidated && { contextInvalidated: true }),
     };
   }
 }

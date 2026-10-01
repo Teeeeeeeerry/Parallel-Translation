@@ -18,7 +18,8 @@
 // 检测到立即失败（0 次重试），由调用方置全局短路，其余批次
 // 不再发起新尝试，toast 立即出现而非等完 [1000, 3000]ms 重试序列。
 // #116：失效判定用 messaging 透出的类型化 invalidated 标志，
-// 不匹配错误文案 —— 文案改写不影响短路行为。
+// 不匹配错误文案 —— 文案改写不影响短路行为。invalidated 同时涵盖
+// 上下文失效与配额耗尽；要区分扩展上下文失效，看 contextInvalidated（#579）。
 //
 // #416：引擎返回部分成功（failedIndices）时，已成功的段落先留下，整批
 // 按同一序列重试，只采用重试结果里原先失败的段落；重试用尽仍失败的
@@ -39,7 +40,7 @@ export type BatchRetryResult =
   | { ok: true; data: TranslateResponse }
   | {
       ok: false;
-      /** 上下文失效（不可恢复）—— 未重试（#111）。 */
+      /** 上下文 / 配额失效（不可恢复）—— 未重试（#111）；区分扩展上下文失效看 contextInvalidated。 */
       invalidated: boolean;
       /** 中止（还原 / 其他批次已判失效）—— 未完成。 */
       aborted: boolean;
@@ -84,14 +85,14 @@ function fillFailed(prev: TranslateResponse, next: TranslateResponse): Translate
  * - 引擎级失败按 BATCH_RETRY_DELAYS_MS 有界重试（#91）；部分失败同样
  *   重试，只补失败的段落，预算耗尽或遇到不可恢复的失败时返回已成功的
  *   部分（#416）
- * - 上下文失效立即返回 invalidated，0 次重试（#111）
+ * - 上下文 / 配额失效立即返回 invalidated，0 次重试（#111）
  */
 export async function attemptBatchWithRetry(
   send: () => Promise<{
     ok: boolean;
     data?: TranslateResponse;
     error?: string;
-    /** #116: messaging 透出的类型化上下文失效标志。 */
+    /** #116: messaging 透出的类型化失效标志（上下文 / 配额）；区分扩展上下文失效看 contextInvalidated。 */
     invalidated?: boolean;
     /** #236/#246: 类型化失败类别 —— 不可重试语义的唯一来源。 */
     category?: FailureCategory;
@@ -136,7 +137,7 @@ export async function attemptBatchWithRetry(
           : undefined;
       return { ok: true, data: { ...partial, ...(failure && { failure }) } };
     }
-    // #111/#116: 上下文失效是类型化标志 —— 立即失败，不进入重试序列
+    // #111/#116: 上下文 / 配额失效是类型化标志 —— 立即失败，不进入重试序列
     if (resp?.invalidated) {
       return {
         ok: false,
