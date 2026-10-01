@@ -360,6 +360,19 @@ describe('仓库与用户的标识符（#598）', () => {
     expect(closestUnit(document.getElementById('repo')!)?.id).toBe('pin');
   });
 
+  test('#600：置顶仓库卡片的悬停提示未打开（宽高为 0）时整体不送翻，仓库名只出现一次', () => {
+    document.body.innerHTML =
+      '<div class="pinned-item-list-item-content"><div class="flex-1" id="pin"><svg class="octicon octicon-repo"></svg> ' +
+      '<span class="position-relative"><a id="r1" href="/Teeeeeeeerry/Rhythm" class="Link text-bold"><span class="repo">Rhythm</span></a>' +
+      ' <tool-tip id="tt" for="r1" popover="manual" class="sr-only position-absolute">Rhythm</tool-tip></span>' +
+      ' <span class="Label Label--secondary">Public</span></div></div>';
+    mockBoundingRect(document.getElementById('tt')!, { width: 0, height: 0 });
+    const units = collect();
+    expect(ids(units)).toEqual(['pin']);
+    const { preserves } = translatableTextEx(units[0]!);
+    expect([...preserves.values()]).toEqual(['Rhythm']);
+  });
+
   test('仓库页标题：所有者与仓库名都原文保留', () => {
     document.body.innerHTML =
       '<div class="d-flex flex-wrap flex-items-center" id="title"><svg class="octicon octicon-repo"></svg> ' +

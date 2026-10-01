@@ -15,7 +15,7 @@
 //   代码层判定
 
 import { shouldOmitText, shouldPreserveText } from './compat';
-import { INLINE_SET, isVisuallyHidden } from './classify';
+import { INLINE_SET, isVisible, isVisuallyHidden } from './classify';
 import { getSiteRules } from '~/src/storage/specialization';
 import type { SiteRules } from '~/src/storage/specialization';
 
@@ -36,7 +36,7 @@ interface PreserveMap {
   nextIndex: number;
   /** 当前站点的排除与保留原文选择器 */
   rules: TextRules;
-  /** #595：提取时跳过了视觉上隐藏的元素 */
+  /** #595 / #600：提取时跳过了看不见的元素（skipHidden） */
   hiddenSkipped: boolean;
 }
 
@@ -115,9 +115,21 @@ export function translatableText(el: Element): string {
   return walkTranslatable(el, null);
 }
 
+/**
+ * 提取时跳过的看不见的元素：读屏专用的隐藏文字（#595），以及段落可见时
+ * 里面不可见的后代（#600，宽高都为 0、display:contents 除外，与翻译单元
+ * 的可见性判定相同）—— 例如未打开的悬停提示。不送翻，原文留在原位，回填
+ * 时也不出现在译文里。段落本身不可见时（#23 的延迟补翻，或采集后又被
+ * 隐藏）不跳过它的不可见后代，行为不变。
+ */
+function skipHidden(el: Element, unitVisible: boolean): boolean {
+  return isVisuallyHidden(el) || (unitVisible && !isVisible(el));
+}
+
 /** 共享遍历实现：pm 为 null 时不启用 preserve（向后兼容） */
 function walkTranslatable(el: Element, pm: PreserveMap | null): string {
   let out = '';
+  const unitVisible = isVisible(el);
   const walk = (node: Node) => {
     for (const child of node.childNodes) {
       if (child.nodeType === Node.TEXT_NODE) {
@@ -125,9 +137,9 @@ function walkTranslatable(el: Element, pm: PreserveMap | null): string {
       } else if (child.nodeType === Node.ELEMENT_NODE) {
         const c = child as Element;
 
-        // #595：读屏专用的隐藏文字不送翻 —— 译文不继承隐藏样式，会把原本
+        // #595 / #600：看不见的文字不送翻 —— 译文不继承隐藏样式，会把原本
         // 看不见的文字显示出来。原文留在原位，读屏软件照常朗读
-        if (isVisuallyHidden(c)) {
+        if (skipHidden(c, unitVisible)) {
           if (pm) pm.hiddenSkipped = true;
           continue;
         }
@@ -187,6 +199,7 @@ export function shallowTranslatableTextEx(el: Element, rules?: TextRules): {
 
 function walkShallow(el: Element, pm: PreserveMap | null): string {
   let out = '';
+  const unitVisible = isVisible(el);
   for (const child of el.childNodes) {
     if (child.nodeType === Node.TEXT_NODE) {
       out += child.textContent ?? '';
@@ -197,8 +210,8 @@ function walkShallow(el: Element, pm: PreserveMap | null): string {
       // 跳过块级子元素 —— 它们的文本由各自翻译单元覆盖
       if (!INLINE_SET.has(tag)) continue;
 
-      // #595：读屏专用的隐藏文字不送翻，同完整提取
-      if (isVisuallyHidden(c)) {
+      // #595 / #600：看不见的文字不送翻，同完整提取
+      if (skipHidden(c, unitVisible)) {
         if (pm) pm.hiddenSkipped = true;
         continue;
       }
@@ -250,10 +263,10 @@ const TRANSLATABLE_CHAR_RE = /[^\s\p{P}\p{S}\p{N}]/u;
  * 空白、标点、符号或数字即没有 —— 送去引擎只会原样回来，对照模式下
  * 同一段文字显示两遍。采集入口与逐段翻译入口共用这一判定。
  *
- * #595：读屏专用的隐藏文字同样去掉 —— 段落自身视觉上隐藏，或去掉隐藏的
- * 后代之后没有可翻译的文字，都不算翻译单元。
+ * #595 / #600：看不见的文字同样去掉 —— 段落自身视觉上隐藏，或去掉读屏
+ * 隐藏文字、不可见的后代之后没有可翻译的文字，都不算翻译单元。
  *
- * 既没有保留原文、也没有隐藏文字的段落不在本判定范围内，一律返回 true：
+ * 既没有保留原文、也没有跳过看不见的文字的段落不在本判定范围内，一律返回 true：
  * 纯数字等短文本由通用判定（shouldSkipNonVisual）处理，.notranslate 与
  * compat omit 的语义不变。
  *
