@@ -49,6 +49,8 @@ export interface TranslateBatchResult {
   retryable?: boolean;
   category?: FailureCategory;
   aborted?: boolean;
+  /** #579: 扩展上下文失效（区别于同样置 invalidated 的配额耗尽）。 */
+  contextInvalidated?: boolean;
 }
 
 /** 全页翻译的批次结果汇总（#261）：content 据此映射页面状态。 */
@@ -385,7 +387,9 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
             aborted = true;
             return;
           }
-          if (result.error) {
+          // #579: 扩展上下文失效是预期情况（提示已让用户刷新页面），
+          // 不按错误记录，免得堆积在扩展管理页的“错误”里
+          if (result.error && !result.contextInvalidated) {
             console.error('[PT] 批次翻译失败:', result.error);
           }
           // 失效（上下文/配额）→ 全局短路，其余批次放弃尝试

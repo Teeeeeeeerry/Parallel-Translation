@@ -40,6 +40,11 @@ export type TranslateResult =
       category: FailureCategory;
       /** #236: 已中止。 */
       aborted: boolean;
+      /**
+       * #579: 扩展上下文失效（区别于同样置 invalidated 的配额耗尽），
+       * 仅在失效时出现。
+       */
+      contextInvalidated?: boolean;
     };
 
 /** SW 就绪等待预算（ping 阶段）。覆盖 CI 中 SW 冷启动的常见耗时。 */
@@ -196,12 +201,14 @@ export async function translateViaBackground(
     };
   } catch (e) {
     // #116: 上下文失效以类型化标志透出，调用方无需匹配文案
+    const contextInvalidated = e instanceof ContextInvalidatedError;
     return {
       ok: false,
       error: e instanceof Error ? e.message : String(e),
-      invalidated: e instanceof ContextInvalidatedError,
+      invalidated: contextInvalidated,
       category: 'transient',
       aborted: false,
+      ...(contextInvalidated && { contextInvalidated }),
     };
   }
 }

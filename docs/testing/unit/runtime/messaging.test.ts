@@ -139,6 +139,8 @@ describe('translateViaBackground — 扩展上下文失效', () => {
         expect(result.invalidated).toBe(true);
         expect(result.error).toContain('已失效');
         expect(result.error).toContain('刷新');
+        // #579: 扩展上下文失效以单独的类型化字段透出，与配额耗尽区分
+        expect(result.contextInvalidated).toBe(true);
       }
     } finally {
       (globalThis as { chrome?: unknown }).chrome = savedChrome;
@@ -169,6 +171,7 @@ describe('translateViaBackground — 扩展上下文失效', () => {
       if (!result.ok) {
         expect(result.invalidated).toBe(true);
         expect(result.error).toContain('已失效');
+        expect(result.contextInvalidated).toBe(true);
       }
     } finally {
       (globalThis as { chrome?: unknown }).chrome = savedChrome;
@@ -221,6 +224,28 @@ describe('translateViaBackground — 失败语义', () => {
       category: 'invalid-key',
       aborted: false,
     });
+  });
+
+  test('SW 响应配额耗尽（带失效标志）→ 不标记为扩展上下文失效（#579）', async () => {
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return { ok: true };
+      return {
+        ok: false,
+        error: '配额已用尽',
+        category: 'quota',
+        invalidated: true,
+        aborted: false,
+      };
+    });
+
+    const result = await translateViaBackground(PAYLOAD);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.invalidated).toBe(true);
+      expect(result.contextInvalidated).toBeFalsy();
+    }
   });
 
   test('SW 始终无响应：ping 预算耗尽 → {ok:false}，不发送 translate', async () => {
