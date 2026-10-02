@@ -12,9 +12,9 @@ Chrome / Edge（Manifest V3）· Firefox（MV2），当前 v2.0。
 
 **六种译文样式** —— 半透明（默认，压低译文存在感）、弱化显示（悬停才显）、实线下划线、加粗、斜体、左边线，另可写自定义 CSS。自定义 CSS 只收声明块并限定在 `.pt-trans` 作用域内，改不动宿主页面，也改不动扩展自身 UI。
 
-**多引擎与故障切换** —— 免 key 的 Google / Bing 引擎开箱即用；可自带 API key 接入 OpenAI、DeepL、Gemini。引擎优先级可拖拽排序，顺序即故障切换顺序；引擎不支持目标语言时自动跳过，key 无效则直接报错而不是把所有引擎试一遍。
+**多引擎与故障切换** —— 免 key 的 Google / Bing 引擎开箱即用；可自带 API key 接入 OpenAI、DeepL、Gemini、DeepSeek、Grok。引擎优先级可拖拽排序，顺序即故障切换顺序；引擎不支持目标语言时自动跳过，key 无效则直接报错而不是把所有引擎试一遍。
 
-**LLM 引擎不会错位** —— OpenAI 与 Gemini 编号批量请求、按编号回填。模型漏行时缺失段落留空，而不是整篇译文整体偏移一行挂到错误的原文上。
+**LLM 引擎不会错位** —— OpenAI、Gemini、DeepSeek、Grok 编号批量请求、按编号回填。模型漏行时缺失段落留空，而不是整篇译文整体偏移一行挂到错误的原文上。
 
 **完备的 DOM 覆盖** —— 递归穿透 shadow DOM（含页面动态创建的 shadow root）、覆盖同源 iframe；无限滚动、SPA 路由切换与 React 式原地文本更新的新内容自动补翻；display:contents 等现代布局骨架可正常采集。数字、非正文区域与不可见元素在采集阶段就被过滤，不消耗翻译额度。
 
@@ -26,7 +26,7 @@ Chrome / Edge（Manifest V3）· Firefox（MV2），当前 v2.0。
 
 **更新说明与反馈入口** —— 扩展更新到上架版本后，下次打开网页会在页内弹出本版变更说明，看过一次即不再出现；内部修复版静默升级、不打扰。popup 底部可直接跳转 GitHub 提交问题。
 
-**最小权限** —— 只申请 `storage`、`unlimitedStorage`（术语与站点页面规则多时不因本地配额保存失败，数据不上传）与 `contextMenus`；`host_permissions` 仅限七个翻译端点域名（Google/Bing 免 key 端点与 OpenAI/DeepL/Gemini BYOK 端点），不申请任意站点权限，页面数据读取仍由 <all_urls> 内容脚本按翻译功能所需注入。
+**最小权限** —— 只申请 `storage`、`unlimitedStorage`（术语与站点页面规则多时不因本地配额保存失败，数据不上传）与 `contextMenus`；`host_permissions` 仅限七个翻译端点域名（Google/Bing 免 key 端点与 OpenAI/DeepL/Gemini BYOK 端点）；DeepSeek（`api.deepseek.com`）与 Grok（`api.x.ai`）的端点是可选权限（`optional_host_permissions`），安装与升级时不申请、不弹权限提示，只在用户保存对应 key（点“测试连接”）时由浏览器询问；不申请任意站点权限，页面数据读取仍由 <all_urls> 内容脚本按翻译功能所需注入。
 
 ## 安装与开发
 

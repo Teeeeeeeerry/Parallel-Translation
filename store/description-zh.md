@@ -37,7 +37,8 @@
 翻译引擎
 
 Google 与 Bing 免配置开箱即用，不需要注册也不需要 API key。
-想要更高的译文质量，可以填入自己的密钥接入 OpenAI、DeepL、Gemini。
+想要更高的译文质量，可以填入自己的密钥接入 OpenAI、DeepL、Gemini、DeepSeek、Grok。
+DeepSeek（api.deepseek.com）与 Grok（api.x.ai）的访问权限是可选权限：安装和升级时不申请，只在你保存它们的密钥时由浏览器询问。
 引擎按你排的优先顺序自动容错切换：某个引擎失败会换下一个，不支持目标语言的会自动跳过，而不是把所有引擎都试一遍。
 
 网页兼容

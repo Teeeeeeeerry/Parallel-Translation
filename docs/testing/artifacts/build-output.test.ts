@@ -85,6 +85,24 @@ describe('构建产物校验', () => {
     }
   });
 
+  test('README 与三份商店描述列出 DeepSeek、Grok，并提到 manifest 的每个可选权限（#622）', () => {
+    const chromeManifest = path.join(OUTPUT_DIR, 'chrome-mv3', 'manifest.json');
+    if (!fs.existsSync(chromeManifest)) return;
+    const m = JSON.parse(fs.readFileSync(chromeManifest, 'utf-8')) as Record<string, string[]>;
+    const host = (pattern: string) => new URL(pattern.replace(/\*$/, '')).host;
+    for (const doc of [
+      'README.md',
+      'store/description-en.md',
+      'store/description-zh.md',
+      'store/description-zh_TW.md',
+    ]) {
+      const text = fs.readFileSync(path.resolve(doc), 'utf-8');
+      expect(text, doc).toContain('DeepSeek');
+      expect(text, doc).toContain('Grok');
+      for (const p of m.optional_host_permissions ?? []) expect(text, doc).toContain(host(p));
+    }
+  });
+
   test('manifest.json content_scripts matches = ["<all_urls>"]', () => {
     if (!outputExists()) return;
     const manifest = readFirstManifest();

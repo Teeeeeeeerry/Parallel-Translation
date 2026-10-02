@@ -37,7 +37,8 @@ Six styles for the translation: translucent (the default, keeping it unobtrusive
 Engines
 
 Google and Bing work out of the box. No sign-up, no API key.
-For higher quality, bring your own key for OpenAI, DeepL or Gemini.
+For higher quality, bring your own key for OpenAI, DeepL, Gemini, DeepSeek or Grok.
+Access to DeepSeek (api.deepseek.com) and Grok (api.x.ai) is an optional permission: it is not requested at install or update time, only when you save a key for them.
 Engines fail over in the order you set: if one fails the next takes over, and any that lack your target language are skipped rather than tried and wasted.
 
 Page coverage
