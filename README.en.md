@@ -10,7 +10,7 @@ Translating a whole foreign-language page is convenient, but once the original t
 
 So I built this extension to let me read comfortably, without having to think too hard. I'm sure I'm not the only one who wants that, so here it is for anyone who needs it.
 
-## Install (30 seconds)
+## Install
 
 ### 1. Get the extension
 
@@ -67,9 +67,9 @@ When I read foreign-language pages, Google Translate keeps giving me problems th
 
 ### #1: Keeps the original for you
 
-> Translation has three difficulties: faithfulness, expressiveness, and elegance.
+> Translation from one language into another … is like looking at Flemish tapestries on the wrong side.
 >
-> Yan Fu, preface to his translation of *Evolution and Ethics*
+> Miguel de Cervantes, *Don Quixote*, Part II, Chapter 62 (translated by John Ormsby)
 
 **The problem**: Replace-style translation, like Google Translate, swaps whole paragraphs of the original for the translation. Nothing wrong with that as such, but without the original in front of you, how do you know it's right? I've been burned by this more than once, and there was nothing I could do about it.
 
@@ -149,7 +149,7 @@ AI engines are sent numbered batches and the results are filled back in by numbe
 - Settings sync to your other devices through your browser account.
 - Keys, terms, site rules, and past translations (deleted automatically after 30 days) stay on this computer only. **Keys never sync, and exported settings never include keys.**
 
-[Full privacy policy](store/privacy-policy.md) (in Chinese)
+[Full privacy policy](store/privacy-policy.en.md)
 
 ### A few last words
 
