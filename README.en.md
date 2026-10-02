@@ -14,8 +14,17 @@ So I built this extension to let me read comfortably, without having to think to
 
 ### 1. Get the extension
 
+**Recommended: download the packaged zip from [Releases](https://github.com/Teeeeeeeerry/Parallel-Translation/releases/latest).** New versions land there first.
+
+- **Chrome / Edge**: download `parallel-translation-<version>-chrome.zip` (Edge: `-edge.zip`) and unzip it. Open `chrome://extensions/` (Edge: `edge://extensions/`), turn on "Developer mode", click "Load unpacked", and pick the unzipped folder.
+- **Firefox**: download `parallel-translation-<version>-firefox.zip`, open `about:debugging#/runtime/this-firefox`, click "Load Temporary Add-on", and pick the zip. Temporarily loaded extensions are removed when the browser restarts.
+
+`-sources.zip` is the source archive for Firefox review; you don't need it.
+
+**Chrome users can also install it from the [Chrome Web Store](https://chromewebstore.google.com/detail/fehoegnkmldneabdjfdlfnjakajiamak?utm_source=item-share-cb).** The store version updates itself, but every new version has to pass store review first, so it arrives later than on Releases.
+
 <details>
-<summary><strong>Chrome / Edge</strong></summary>
+<summary><strong>Build from source: Chrome / Edge</strong></summary>
 
 ```bash
 pnpm install
@@ -30,7 +39,7 @@ Pick the build output folder, not the project root. `.output` is hidden; press `
 </details>
 
 <details>
-<summary><strong>Firefox</strong></summary>
+<summary><strong>Build from source: Firefox</strong></summary>
 
 ```bash
 pnpm install
