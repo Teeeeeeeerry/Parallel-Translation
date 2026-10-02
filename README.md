@@ -14,8 +14,17 @@
 
 ### 1. 装上扩展
 
+**首选：到 [Releases](https://github.com/Teeeeeeeerry/Parallel-Translation/releases/latest) 下载打包好的 zip。** 新版本最先发在这里。
+
+- **Chrome / Edge**：下载 `parallel-translation-<版本号>-chrome.zip`（Edge 用 `-edge.zip`）并解压。打开 `chrome://extensions/`（Edge 是 `edge://extensions/`），开启“开发者模式”，点“加载已解压的扩展程序”，选解压出的目录。
+- **Firefox**：下载 `parallel-translation-<版本号>-firefox.zip`，打开 `about:debugging#/runtime/this-firefox`，点“临时载入附加组件”，选这个 zip。临时载入的扩展在浏览器重启后失效。
+
+`-sources.zip` 是给 Firefox 审核用的源码包，不用下载。
+
+**Chrome 用户也可以从 [Chrome 网上应用店](https://chromewebstore.google.com/detail/fehoegnkmldneabdjfdlfnjakajiamak?utm_source=item-share-cb) 安装。** 商店版会自动更新，但每个新版本都要等商店审核，会比 Releases 晚一些。
+
 <details>
-<summary><strong>Chrome / Edge</strong></summary>
+<summary><strong>从源码构建：Chrome / Edge</strong></summary>
 
 ```bash
 pnpm install
@@ -30,7 +39,7 @@ pnpm build          # Edge 用 pnpm build:edge
 </details>
 
 <details>
-<summary><strong>Firefox</strong></summary>
+<summary><strong>从源码构建：Firefox</strong></summary>
 
 ```bash
 pnpm install
