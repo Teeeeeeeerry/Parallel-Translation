@@ -35,6 +35,7 @@ export const FIXTURES = [
   'media-mix',
   'entity',
   'input',
+  'svg-chart',
 ] as const;
 
 export type FixtureName = (typeof FIXTURES)[number];

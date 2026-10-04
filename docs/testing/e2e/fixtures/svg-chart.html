@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SVG Chart — Labels in foreignObject</title>
+</head>
+<body>
+  <h1>Quarterly report</h1>
+  <p id="body">The chart below shows how revenue changed over the last four quarters.</p>
+  <svg width="480" height="200" xmlns="http://www.w3.org/2000/svg">
+    <rect x="10" y="10" width="200" height="80" fill="#eef" stroke="#336"></rect>
+    <foreignObject x="10" y="10" width="200" height="80">
+      <div xmlns="http://www.w3.org/1999/xhtml" id="label" style="font: 16px sans-serif; padding: 8px;">Revenue grew in every quarter of the year</div>
+    </foreignObject>
+    <rect x="240" y="10" width="200" height="80" fill="#efe" stroke="#363"></rect>
+    <foreignObject x="240" y="10" width="200" height="80">
+      <div xmlns="http://www.w3.org/1999/xhtml" style="font: 16px sans-serif; padding: 8px;"><p id="label2">Costs stayed flat across the same period</p></div>
+    </foreignObject>
+  </svg>
+</body>
+</html>
