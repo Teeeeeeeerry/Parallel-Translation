@@ -2662,6 +2662,37 @@ test.describe('输入翻译：点圆点翻译', () => {
     await expect(box).toHaveValue('【译】这是我自己写的话');
   });
 
+  test('@core TC-E2E-117: 翻译进行中连点圆点只发一次请求，框里文字一个字不动；完成后恢复可点（#647）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    // 译文晚 1.5 秒回来，连点都落在翻译进行中
+    await mockGoogle({ delayMs: 1_500 });
+    const queries = await recordGoogleQueries(serviceWorker);
+
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator(DOT);
+    await box.click();
+    await page.keyboard.type('你好世界');
+
+    // 双击再补一下：三次点击都落在第一次翻译回来之前
+    await dot.dblclick();
+    await dot.click();
+    // 进行中框里不插入任何占位或提示文字
+    await expect(box).toHaveValue('你好世界');
+    expect(await queries()).toEqual(['你好世界']);
+
+    await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 });
+    expect(await queries()).toEqual(['你好世界']);
+
+    // 完成后恢复可点：再点一次照常发请求
+    await dot.click();
+    await expect(box).toHaveValue('【译】【译】你好世界', { timeout: 10_000 });
+    expect(await queries()).toEqual(['你好世界', '【译】你好世界']);
+  });
+
   test('@core TC-E2E-113: 站点被拉黑时点圆点 → 按既有口径提示，零请求（#639）', async ({
     page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
   }) => {

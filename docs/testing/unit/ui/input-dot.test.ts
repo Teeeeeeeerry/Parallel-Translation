@@ -6,6 +6,7 @@
  * 位置（框内侧右下角）。
  *
  * #639：点圆点把当前输入框交给翻译回调；框里的文字一个字不动。
+ * #647：翻译进行中再点不发第二次请求；完成、失败后恢复可点。
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createLifecycleRegistry, type LifecycleRegistry } from '~/src/ui/lifecycle-registry';
@@ -153,5 +154,73 @@ describe('点圆点翻译（#639）', () => {
     textarea('a').focus();
     dot()!.click();
     expect(translate).not.toHaveBeenCalled();
+  });
+});
+
+describe('翻译进行中不重复触发（#647）', () => {
+  /** 一个由测试手动结束的翻译回调。 */
+  function deferredTranslate() {
+    const pending: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
+    translate.mockImplementation(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          pending.push({ resolve, reject });
+        }),
+    );
+    return pending;
+  }
+
+  test('进行中再点不发第二次请求，框里文字一个字不动', () => {
+    const pending = deferredTranslate();
+    registry.ensure('input-dot', true);
+    const ta = textarea('你好世界');
+    ta.focus();
+    dot()!.click();
+    dot()!.click();
+    dot()!.click();
+    expect(translate).toHaveBeenCalledTimes(1);
+    expect(ta.value).toBe('你好世界');
+    expect(pending).toHaveLength(1);
+  });
+
+  test('完成后恢复可点', async () => {
+    const pending = deferredTranslate();
+    registry.ensure('input-dot', true);
+    const ta = textarea('你好世界');
+    ta.focus();
+    dot()!.click();
+    pending[0]!.resolve();
+    await vi.waitFor(() => {
+      dot()!.click();
+      expect(translate).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  test('失败后恢复可点', async () => {
+    const pending = deferredTranslate();
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    registry.ensure('input-dot', true);
+    const ta = textarea('你好世界');
+    ta.focus();
+    dot()!.click();
+    pending[0]!.reject(new Error('boom'));
+    await vi.waitFor(() => {
+      dot()!.click();
+      expect(translate).toHaveBeenCalledTimes(2);
+    });
+    err.mockRestore();
+  });
+
+  test('一个框在翻译中，另一个框照常可点', () => {
+    deferredTranslate();
+    registry.ensure('input-dot', true);
+    const a = textarea('你好世界');
+    const b = textarea('早上好');
+    a.focus();
+    dot()!.click();
+    b.focus();
+    dot()!.click();
+    expect(translate).toHaveBeenCalledTimes(2);
+    expect(translate).toHaveBeenLastCalledWith(b);
   });
 });
