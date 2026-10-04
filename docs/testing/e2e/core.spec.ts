@@ -2677,9 +2677,11 @@ test.describe('输入翻译：点圆点翻译', () => {
     await box.click();
     await page.keyboard.type('你好世界');
 
-    // 双击再补一下：三次点击都落在第一次翻译回来之前
-    await dot.dblclick();
-    await dot.click();
+    // 双击再补一下：三次点击都落在第一次翻译回来之前。#648 起进行中的
+    // 圆点在转圈，Playwright 会等元素静止才点 —— force 跳过这条等待，
+    // 让点击真的落在进行中
+    await dot.dblclick({ force: true });
+    await dot.click({ force: true });
     // 进行中框里不插入任何占位或提示文字
     await expect(box).toHaveValue('你好世界');
     expect(await queries()).toEqual(['你好世界']);
@@ -2714,6 +2716,63 @@ test.describe('输入翻译：点圆点翻译', () => {
     await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(hint);
     await expect(box).toHaveValue('你好世界');
     expect(await queries()).toEqual([]);
+  });
+
+  test('@core TC-E2E-124: 翻译进行中圆点变灰转圈；完成、失败、放弃写回之后都回到常态（#648）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    // 译文晚 1.5 秒回来；“坏掉的话”这一段请求立即失败
+    await mockGoogle({ delayMs: 1_500, failTexts: ['坏掉的话'] });
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator(DOT);
+
+    /** 圆点此刻的样子：状态属性、动画名与底色。 */
+    const look = () =>
+      dot.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return {
+          state: (el as HTMLElement).dataset.state ?? null,
+          animation: cs.animationName,
+          background: cs.backgroundColor,
+        };
+      });
+
+    await box.click();
+    await page.keyboard.type('你好世界');
+    await expect(dot).toBeVisible();
+    const idle = await look();
+    expect(idle).toMatchObject({ state: null, animation: 'none' });
+
+    // 完成：进行中变灰转圈，写回后回到常态
+    await dot.click();
+    const busy = await look();
+    expect(busy).toMatchObject({ state: 'busy', animation: 'pt-spin' });
+    expect(busy.background).not.toBe(idle.background);
+    await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 });
+    await expect.poll(look).toEqual(idle);
+
+    // 放弃写回：进行中继续打字，译文进提示条，圆点回到常态
+    await box.fill('');
+    await page.keyboard.type('早上好');
+    await dot.click();
+    await expect.poll(look).toMatchObject({ state: 'busy' });
+    await page.keyboard.type('呀');
+    await expect(page.locator(`${TOAST}[data-kind="info"]`)).toHaveText('【译】早上好', {
+      timeout: 10_000,
+    });
+    await expect.poll(look).toEqual(idle);
+
+    // 失败：提示条报错，圆点回到常态（mock 的失败响应不走延迟，
+    // 进行中的样子在上面两段已经断言过）
+    await box.fill('');
+    await page.keyboard.type('坏掉的话');
+    await dot.click();
+    await expect(page.locator(`${TOAST}[data-kind="error"]`)).toBeVisible({ timeout: 15_000 });
+    await expect.poll(look).toEqual(idle);
+    await expect(box).toHaveValue('坏掉的话');
   });
 
   test('@core TC-E2E-113: 站点被拉黑时圆点不出现，打字、聚焦都零请求（#639；#649 起圆点不注册）', async ({
