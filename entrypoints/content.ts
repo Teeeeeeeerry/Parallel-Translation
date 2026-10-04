@@ -676,7 +676,11 @@ export default defineContentScript({
       const ns = getSettings();
       // #640：译成哪种语言由判定链给出（ADR-0005）；判不出来不猜，
       // 提示用户去设置里指定源语言，零请求
-      const target = decideInputTarget({ from: ns.from });
+      // #658：源语言是 auto 时读本 frame 页面的语言声明
+      const target = decideInputTarget({
+        from: ns.from,
+        pageLang: document.documentElement.getAttribute('lang'),
+      });
       if (!target.ok) {
         toast(
           tf('toastInputSourceLangNeeded', '判断不出要译成哪种语言，请在设置里把源语言指定为对方的语言'),

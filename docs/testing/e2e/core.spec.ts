@@ -2695,7 +2695,7 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect(await queries()).toEqual(['你好世界', '【译】你好世界']);
   });
 
-  test('@core TC-E2E-118: 源语言是 auto（默认）时点圆点 → 不发请求，提示去设置里指定源语言，框里文字不动（#640）', async ({
+  test('@core TC-E2E-118: 源语言是 auto（默认）且页面没有语言声明时点圆点 → 不发请求，提示去设置里指定源语言，框里文字不动（#640；#658 起有声明时按声明翻译）', async ({
     page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
   }) => {
     await seedSettings({});
@@ -2708,6 +2708,8 @@ test.describe('输入翻译：点圆点翻译', () => {
 
     await gotoFixture('input');
     await waitForBall(page);
+    // 夹具声明了 lang="en"；去掉它，模拟没有语言声明的页面
+    await page.evaluate(() => document.documentElement.removeAttribute('lang'));
     const box = page.locator('#reply');
     await box.click();
     await page.keyboard.type('你好世界');
@@ -2716,6 +2718,44 @@ test.describe('输入翻译：点圆点翻译', () => {
     await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(hint);
     await expect(box).toHaveValue('你好世界');
     expect(await queries()).toEqual([]);
+  });
+
+  test('@core TC-E2E-125: 源语言是 auto（默认）时按页面的语言声明翻译，取语言码主段；声明畸形时仍提示去指定源语言（#658）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle({ echoTargetLang: true });
+    const queries = await recordGoogleQueries(serviceWorker);
+    const hint = await serviceWorker.evaluate(() =>
+      chrome.i18n.getMessage('toastInputSourceLangNeeded'),
+    );
+
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator(DOT);
+
+    // 夹具声明 lang="en"：译成英文
+    await box.click();
+    await page.keyboard.type('你好世界');
+    await dot.click();
+    await expect(box).toHaveValue('【译】你好世界 [tl=en]', { timeout: 10_000 });
+
+    // 声明带地区后缀：取主段
+    await page.evaluate(() => document.documentElement.setAttribute('lang', 'ja-JP'));
+    await box.fill('');
+    await page.keyboard.type('早上好');
+    await dot.click();
+    await expect(box).toHaveValue('【译】早上好 [tl=ja]', { timeout: 10_000 });
+
+    // 声明畸形：不猜，提示去指定源语言，零请求
+    await page.evaluate(() => document.documentElement.setAttribute('lang', 'english'));
+    await box.fill('');
+    await page.keyboard.type('晚安');
+    await dot.click();
+    await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(hint);
+    await expect(box).toHaveValue('晚安');
+    expect(await queries()).toEqual(['你好世界', '早上好']);
   });
 
   test('@core TC-E2E-124: 翻译进行中圆点变灰转圈；完成、失败、放弃写回之后都回到常态（#648）', async ({
