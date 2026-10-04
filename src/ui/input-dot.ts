@@ -14,9 +14,12 @@
 // 贴文字末尾是后面的票。
 // #639：点圆点把当前输入框交给翻译回调；写不写回由回调决定。
 // #647：翻译进行中再点不发第二次请求 —— 一次点击只花一份配额。
+// #650：能不能参与交给「这个输入框能不能参与」的判定，放行普通文本框与
+// 搜索框；圆点位置仍是回落位置。
 
 import { mountIsolated, unmountIsolated } from './mount';
 import { tf } from '../i18n';
+import { decideInputEligibility, type TextInput } from './input-eligibility';
 
 const HOST_ID = 'input-dot';
 
@@ -35,11 +38,11 @@ export function deepActiveElement(): Element | null {
   return el;
 }
 
-function eligible(el: Element | null): el is HTMLTextAreaElement {
-  return el instanceof HTMLTextAreaElement;
+function eligible(el: Element | null): el is TextInput {
+  return decideInputEligibility(el).eligible;
 }
 
-function hasEnoughText(el: HTMLTextAreaElement): boolean {
+function hasEnoughText(el: TextInput): boolean {
   return el.value.trim().length >= MIN_CHARS;
 }
 
@@ -62,7 +65,7 @@ function placeFallback(dot: HTMLElement, el: HTMLElement): void {
 
 /** 圆点的回调：点击时拿到当前输入框。 */
 interface InputDotHandlers {
-  translate: (el: HTMLTextAreaElement) => Promise<void>;
+  translate: (el: TextInput) => Promise<void>;
 }
 
 export function createInputDot(handlers: InputDotHandlers): () => void {
@@ -73,14 +76,14 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
   dot.setAttribute('aria-label', tf('inputDotLabel', '翻译输入框里的文字'));
   shadow.appendChild(dot);
 
-  let target: HTMLTextAreaElement | null = null;
+  let target: TextInput | null = null;
   /**
    * 翻译还没回来的输入框（#647）。进行中再点直接忽略：不发请求，也不往
    * 框里写任何占位或提示文字 —— 占位文字一旦被用户发送出去，扩展的状态
    * 就成了对外内容。回调结束（完成、失败、放弃写回）后移出，恢复可点。
    * 按输入框记，一个框在翻译中不妨碍另一个框。
    */
-  const inFlight = new WeakSet<HTMLTextAreaElement>();
+  const inFlight = new WeakSet<TextInput>();
 
   const hide = (): void => {
     dot.style.display = 'none';

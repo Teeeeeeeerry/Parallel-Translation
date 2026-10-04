@@ -224,3 +224,43 @@ describe('翻译进行中不重复触发（#647）', () => {
     expect(translate).toHaveBeenLastCalledWith(b);
   });
 });
+
+describe('单行文本框与搜索框（#650）', () => {
+  function input(type: string, value: string): HTMLInputElement {
+    const el = document.createElement('input');
+    el.type = type;
+    el.value = value;
+    document.body.appendChild(el);
+    return el;
+  }
+
+  test('普通文本框与搜索框里有 2 个字符 → 圆点出现，点击交给翻译回调', () => {
+    registry.ensure('input-dot', true);
+    for (const type of ['text', 'search']) {
+      const el = input(type, '你好');
+      el.focus();
+      expect(shown()).toBe(true);
+      dot()!.click();
+      expect(translate).toHaveBeenLastCalledWith(el);
+    }
+  });
+
+  test('密码框与其余类型的单行输入框不出现圆点', () => {
+    registry.ensure('input-dot', true);
+    for (const type of ['password', 'email', 'number', 'url', 'tel']) {
+      input(type, type === 'number' ? '12' : 'hello@example.com').focus();
+      expect(shown()).toBe(false);
+    }
+  });
+
+  test('在密码框里打字也不出现', () => {
+    registry.ensure('input-dot', true);
+    const pw = input('password', '');
+    pw.focus();
+    pw.value = 'secret';
+    pw.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(shown()).toBe(false);
+    dot()!.click();
+    expect(translate).not.toHaveBeenCalled();
+  });
+});
