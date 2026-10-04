@@ -30,8 +30,9 @@ import { unsplitPre } from '~/src/dom/pre-split';
 import { applyCustomCss } from '~/src/styles/custom';
 import { createBall, setBallState } from '~/src/ui/floating-ball';
 import { createParaBtn } from '~/src/ui/paragraph-btn';
-import { createInputDot } from '~/src/ui/input-dot';
+import { createInputDot, deepActiveElement } from '~/src/ui/input-dot';
 import { replaceInputText } from '~/src/ui/input-replace';
+import { decideWriteBack } from '~/src/ui/input-writeback';
 import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
@@ -659,12 +660,16 @@ export default defineContentScript({
      *
      * #644：译文整段替换框里的全部文字，走浏览器原生的文本插入路径；
      * 浏览器拒绝插入时框里内容不动，译文弹在提示条里。
+     *
+     * #646：送翻时记下原文快照。译文回来时框里已经不是那一段，或焦点已经
+     * 换到别处，就放弃写回、译文弹在提示条里 —— 吞掉用户刚打的字不可逆。
      */
     async function translateInput(el: HTMLTextAreaElement): Promise<void> {
       const ns = getSettings();
       // 源语言是 auto 时的判定链与提示由 #640/#658 接上，此前不发请求
       if (ns.from === 'auto') return;
-      const result = await orchestrator.translateText(el.value, 'auto', ns.from);
+      const snapshot = el.value;
+      const result = await orchestrator.translateText(snapshot, 'auto', ns.from);
 
       // 准入拦截：与逐段 / 划词翻译一致的提示，零请求
       if (result.admission === 'blocked') {
@@ -683,7 +688,14 @@ export default defineContentScript({
         return;
       }
 
-      if (!replaceInputText(el, result.translation!)) toast(result.translation!);
+      const writeBack = decideWriteBack({
+        snapshot,
+        current: el.value,
+        focused: deepActiveElement() === el,
+      });
+      if (!writeBack.write || !replaceInputText(el, result.translation!)) {
+        toast(result.translation!);
+      }
     }
 
     async function translateSelection(text: string): Promise<void> {

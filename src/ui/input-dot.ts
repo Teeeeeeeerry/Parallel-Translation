@@ -28,7 +28,7 @@ const SIZE = 14;
 const INSET = 6;
 
 /** 沿 shadow root 往下找真正持有焦点的元素。 */
-function deepActiveElement(): Element | null {
+export function deepActiveElement(): Element | null {
   let el: Element | null = document.activeElement;
   while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
   return el;
