@@ -18,6 +18,8 @@
 // #650：能不能参与交给「这个输入框能不能参与」的判定，放行普通文本框与
 // 搜索框；圆点位置仍是回落位置。
 // #655：contenteditable 的编辑宿主同样浮出，位置同样是回落位置。
+// #656：受控编辑器拦下 beforeinput 自己改 DOM，没有 input 事件 —— 焦点所在的
+// 编辑宿主改由 DOM 变动驱动同步。
 
 import { mountIsolated, unmountIsolated } from './mount';
 import { tf } from '../i18n';
@@ -120,11 +122,36 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
     placeFallback(dot, el);
   };
 
+  /**
+   * 焦点所在的编辑宿主里的 DOM 变动（#656）。Slate、Lexical 一类受控编辑器
+   * 拦下 beforeinput、改自己的模型再重新渲染，浏览器不再派发 input 事件；
+   * 只听 input，打字时圆点就不会跟着出现。
+   */
+  const observer = new MutationObserver(() => {
+    const el = deepActiveElement();
+    if (el === observed) sync(el);
+  });
+  let observed: Element | null = null;
+  const observe = (el: Element | null): void => {
+    observer.disconnect();
+    observed = null;
+    const d = decideInputEligibility(el);
+    if (el && d.eligible && d.kind === 'contenteditable') {
+      observer.observe(el, { childList: true, characterData: true, subtree: true });
+      observed = el;
+    }
+  };
+
   // focusin 的 target 在跨 shadow 边界时被重定向到宿主，取路径首项才是输入框
   const onFocusIn = (e: FocusEvent): void => {
-    sync((e.composedPath()[0] as Element | undefined) ?? null);
+    const el = (e.composedPath()[0] as Element | undefined) ?? null;
+    observe(el);
+    sync(el);
   };
-  const onFocusOut = (): void => hide();
+  const onFocusOut = (): void => {
+    observe(null);
+    hide();
+  };
   const onInput = (e: Event): void => {
     const el = (e.composedPath()[0] as Element | undefined) ?? null;
     if (el === deepActiveElement()) sync(el);
@@ -158,6 +185,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
   window.addEventListener('resize', onReflow, { passive: true });
 
   // 打开开关时焦点可能已经在框里 —— 即刻生效，不必重新聚焦
+  observe(deepActiveElement());
   sync(deepActiveElement());
 
   return () => {
@@ -166,6 +194,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
     document.removeEventListener('input', onInput, true);
     window.removeEventListener('scroll', onReflow, true);
     window.removeEventListener('resize', onReflow);
+    observer.disconnect();
     unmountIsolated(HOST_ID);
   };
 }

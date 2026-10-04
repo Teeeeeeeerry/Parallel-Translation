@@ -2863,6 +2863,99 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect(await queries()).toEqual(['这个问题我们明天再讨论']);
   });
 
+  test('@core TC-E2E-129: contenteditable 里点圆点整段替换 —— 受控编辑器收到 insertText 输入事件，内部模型与界面一致、光标在末尾；普通 contenteditable 走原生插入（#656）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await mockGoogle({});
+    await gotoFixture('rich-input');
+    await waitForBall(page);
+    const dot = page.locator(DOT);
+    /** 受控编辑器夹具的状态：模型、收到的输入事件、绕过编辑器的 DOM 变动、界面文字。 */
+    const editorState = () =>
+      page.evaluate(() => {
+        const s = (window as unknown as { __editor: {
+          model: string;
+          sel: { start: number; end: number };
+          inputs: Array<{ inputType: string; data: string | null }>;
+          foreignMutations: number;
+        } }).__editor;
+        return {
+          model: s.model,
+          sel: s.sel,
+          last: s.inputs.at(-1),
+          foreign: s.foreignMutations,
+          text: document.getElementById('editor')!.innerText,
+        };
+      });
+
+    // 受控编辑器：自己拦下 beforeinput、改模型、重新渲染，不发 input 事件
+    const editor = page.locator('#editor');
+    await editor.click();
+    await page.keyboard.type('你好世界');
+    await expect(dot).toBeVisible();
+    // 有选区也整段替换
+    await page.keyboard.press('Shift+ArrowLeft');
+    await dot.click();
+    await expect(editor).toHaveText('【译】你好世界', { timeout: 10_000 });
+    const after = await editorState();
+    expect(after.model).toBe('【译】你好世界');
+    expect(after.text).toBe(after.model);
+    expect(after.last).toEqual({ inputType: 'insertText', data: '【译】你好世界' });
+    expect(after.foreign).toBe(0);
+    expect(after.sel).toEqual({ start: after.model.length, end: after.model.length });
+    await expect(editor).toBeFocused();
+    // 接着打字落在末尾，模型照常跟着走
+    await page.keyboard.type('!');
+    expect((await editorState()).model).toBe('【译】你好世界!');
+
+    // 普通 contenteditable：没人拦 beforeinput，走浏览器原生插入，页面收到真实的 input
+    const rich = page.locator('#rich');
+    await rich.click();
+    await page.keyboard.type('早上好');
+    await rich.evaluate((el) => {
+      const log: Array<{ inputType: string; data: string | null }> = [];
+      el.addEventListener('input', (e) => log.push({ inputType: (e as InputEvent).inputType, data: (e as InputEvent).data }));
+      (window as unknown as { __richInputs: typeof log }).__richInputs = log;
+    });
+    await dot.click();
+    await expect(rich).toHaveText('【译】早上好', { timeout: 10_000 });
+    expect(await page.evaluate(() => (window as unknown as { __richInputs: unknown }).__richInputs)).toEqual([
+      { inputType: 'insertText', data: '【译】早上好' },
+    ]);
+    await expect(rich).toBeFocused();
+  });
+
+  test('@core TC-E2E-130: 受控编辑器里同样有原文快照、在飞标记与转圈 —— 进行中再点不发第二次请求，送翻后又打了字就不覆盖、译文进提示条（#656）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await mockGoogle({ delayMs: 1_500 });
+    const queries = await recordGoogleQueries(serviceWorker);
+    await gotoFixture('rich-input');
+    await waitForBall(page);
+    const dot = page.locator(DOT);
+    const editor = page.locator('#editor');
+    const model = () => page.evaluate(() => (window as unknown as { __editor: { model: string } }).__editor.model);
+
+    await editor.click();
+    await page.keyboard.type('你好世界');
+    await dot.click();
+    // #648：进行中变灰转圈
+    await expect(dot).toHaveAttribute('data-state', 'busy');
+    // #647：进行中再点不发第二次请求，编辑器里一个字不动（转圈中的元素不等它静止）
+    await dot.click({ force: true });
+    expect(await model()).toBe('你好世界');
+
+    // #646：送翻后又打了字 → 不覆盖，译文出现在提示条里
+    await page.keyboard.type('!');
+    await expect(page.locator(TOAST)).toHaveText('【译】你好世界', { timeout: 10_000 });
+    expect(await model()).toBe('你好世界!');
+    await expect(editor).toHaveText('你好世界!');
+    await expect(dot).not.toHaveAttribute('data-state', 'busy');
+    expect(await queries()).toEqual(['你好世界']);
+  });
+
   test('@core TC-E2E-124: 翻译进行中圆点变灰转圈；完成、失败、放弃写回之后都回到常态（#648）', async ({
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {
