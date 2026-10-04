@@ -2903,6 +2903,50 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
   });
 });
 
+test.describe('输入翻译：对方语言的判定链', () => {
+  const DOT = '#pt-host-input-dot .pt-input-dot';
+
+  test('@core TC-E2E-126: 源语言是 auto 时，本页翻译过、引擎报告了检测语言 → 优先于页面的语言声明（#660）', async ({
+    page, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    // 只用 DeepL：它在响应里报告检测语言（默认引擎 google-web 不报告）
+    await seedSettings({ enginePriority: ['deepl'] });
+    await serviceWorker.evaluate(() => chrome.storage.local.set({ 'pt-keys': { deepl: 'e2e:fx' } }));
+    // DeepL 端点：译文带上目标语言，检测语言恒报日文（页面声明的是 en）
+    await serviceWorker.evaluate(() => {
+      const realFetch = self.fetch.bind(self);
+      (self as any).fetch = async (input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
+        if (url === 'https://api-free.deepl.com/v2/translate') {
+          const body = new URLSearchParams(String(init?.body ?? ''));
+          const target = body.get('target_lang');
+          return new Response(
+            JSON.stringify({
+              translations: body.getAll('text').map((t) => ({
+                text: `[DL:${target}] ${t}`,
+                detected_source_language: 'JA',
+              })),
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        return realFetch(input, init);
+      };
+    });
+
+    await gotoFixture('input');
+    // 整页翻译一次，引擎报告检测语言 JA
+    await translateAndWait(page);
+
+    // 夹具声明 lang="en"，但检测语言优先：译成日文
+    const box = page.locator('#reply');
+    await box.click();
+    await page.keyboard.type('你好世界');
+    await page.locator(DOT).click();
+    await expect(box).toHaveValue('[DL:JA] 你好世界', { timeout: 10_000 });
+  });
+});
+
 test.describe('输入翻译：站点名单与总开关', () => {
   const DOT = '#pt-host-input-dot .pt-input-dot';
 

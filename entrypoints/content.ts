@@ -679,10 +679,12 @@ export default defineContentScript({
       const ns = getSettings();
       // #640：译成哪种语言由判定链给出（ADR-0005）；判不出来不猜，
       // 提示用户去设置里指定源语言，零请求
-      // #658：源语言是 auto 时读本 frame 页面的语言声明
+      // #658：源语言是 auto 时读本 frame 页面的语言声明；
+      // #660：本 frame 翻译时引擎报告过检测语言就优先用它
       const target = decideInputTarget({
         from: ns.from,
         pageLang: document.documentElement.getAttribute('lang'),
+        detectedLang: orchestrator.detectedLang(),
       });
       if (!target.ok) {
         toast(
