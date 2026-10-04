@@ -2758,6 +2758,53 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect(await queries()).toEqual(['你好世界', '早上好']);
   });
 
+  test('@core TC-E2E-127: 写的已经是对方的语言 → 不替换、不发请求并提示；zh-CN 与 zh-TW 不算同语言（#661）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle({ echoTargetLang: true });
+    const queries = await recordGoogleQueries(serviceWorker);
+    const hint = await serviceWorker.evaluate(() =>
+      chrome.i18n.getMessage('toastInputSameLanguage'),
+    );
+
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator(DOT);
+    const toast = page.locator(TOAST);
+    /** 清空输入框、在本页声明下写一段字、点圆点。 */
+    const write = async (lang: string, text: string) => {
+      await page.evaluate((l) => document.documentElement.setAttribute('lang', l), lang);
+      await box.fill('');
+      await page.keyboard.type(text);
+      await dot.click();
+    };
+    await box.click();
+
+    // 简体页面上写简体：不替换、零请求，提示（不是报错）
+    await write('zh-CN', '这个问题我们明天再讨论');
+    await expect(toast).toHaveText(hint);
+    await expect(toast).toHaveAttribute('data-kind', 'info');
+    await expect(box).toHaveValue('这个问题我们明天再讨论');
+
+    // 繁体页面上写繁体：同上
+    await write('zh-TW', '這個問題我們明天再討論');
+    await expect(toast).toHaveText(hint);
+    await expect(box).toHaveValue('這個問題我們明天再討論');
+
+    // 英文页面上写一句英文：浏览器检测器给出可靠结果，同样不替换
+    await write('en', 'I think we should discuss this issue tomorrow morning.');
+    await expect(toast).toHaveText(hint);
+    await expect(box).toHaveValue('I think we should discuss this issue tomorrow morning.');
+    expect(await queries()).toEqual([]);
+
+    // 繁体页面上写简体：不算同语言，照常译成繁体
+    await write('zh-Hant', '这个问题我们明天再讨论');
+    await expect(box).toHaveValue('【译】这个问题我们明天再讨论 [tl=zh-TW]', { timeout: 10_000 });
+    expect(await queries()).toEqual(['这个问题我们明天再讨论']);
+  });
+
   test('@core TC-E2E-124: 翻译进行中圆点变灰转圈；完成、失败、放弃写回之后都回到常态（#648）', async ({
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {
