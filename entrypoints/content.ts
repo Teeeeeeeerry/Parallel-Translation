@@ -163,7 +163,7 @@ export default defineContentScript({
     // iframe 里的评论框、客服窗口是输入翻译的主场之一，所以不像悬浮球、
     // 段落按钮那样只挂在主文档；inputTranslate 决定是否启动
     registry.register('input-dot', {
-      create: () => createInputDot(),
+      create: () => createInputDot({ translate: (el) => translateInput(el) }),
       stop: (stopInputDot) => stopInputDot(),
     });
 
@@ -638,6 +638,41 @@ export default defineContentScript({
     }
 
     // ── 翻译选区 ──
+    /**
+     * 输入翻译（#639）—— 把输入框里的文字译成对方的语言。
+     *
+     * 走编排模块的单文本入口，与逐段翻译、划词翻译同一条路：准入判定、
+     * 失败提示语义、当前领域与术语全部现成，不新开消息通道。目标语言取
+     * 设置里的源语言（ADR-0005），当前领域因此按对方语言那个方向解析。
+     *
+     * 本票译文只弹在提示条里，输入框内容一个字不动；写回从 #644 开始。
+     */
+    async function translateInput(el: HTMLTextAreaElement): Promise<void> {
+      const ns = getSettings();
+      // 源语言是 auto 时的判定链与提示由 #640/#658 接上，此前不发请求
+      if (ns.from === 'auto') return;
+      const result = await orchestrator.translateText(el.value, 'auto', ns.from);
+
+      // 准入拦截：与逐段 / 划词翻译一致的提示，零请求
+      if (result.admission === 'blocked') {
+        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
+        return;
+      }
+      if (result.admission !== 'allowed') return;
+
+      if (!result.ok) {
+        // #313: key 无效 / 配额展示真实原因，瞬时故障展示泛化文案
+        if (result.display?.showRealReason && result.error) {
+          toast(result.error, 'error');
+        } else {
+          toast(tf('toastTranslateFail', '翻译失败'), 'error');
+        }
+        return;
+      }
+
+      toast(result.translation!);
+    }
+
     async function translateSelection(text: string): Promise<void> {
       // 跨行划词时选区文本天然带 \n，入口归一化
       text = normalizeText(text);

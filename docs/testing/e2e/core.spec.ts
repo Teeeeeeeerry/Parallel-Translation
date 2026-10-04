@@ -2539,3 +2539,85 @@ test.describe('输入翻译：圆点', () => {
     await expect(page.locator('#pt-host-input-dot')).toHaveCount(1);
   });
 });
+
+test.describe('输入翻译：点圆点翻译', () => {
+  const DOT = '#pt-host-input-dot .pt-input-dot';
+  const TOAST = '#pt-host-toast .pt-toast';
+
+  /** 记录发给 Google 的原文（叠在 mock 层之上，同 TC-E2E-67）。 */
+  async function recordGoogleQueries(sw: import('@playwright/test').Worker) {
+    await sw.evaluate(() => {
+      const inner = (self as any).fetch.bind(self);
+      (self as any).__ptQueries = [] as string[];
+      const recorder = async (input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
+        if (url.startsWith('https://translate.googleapis.com/')) {
+          (self as any).__ptQueries.push(new URL(url).searchParams.get('q') ?? '');
+        }
+        return inner(input, init);
+      };
+      (recorder as any).__ptMockStubbed = true;
+      (self as any).fetch = recorder;
+    });
+    return () => sw.evaluate(() => [...(self as any).__ptQueries] as string[]);
+  }
+
+  test('@core TC-E2E-112: 点圆点 → 译成源语言，译文弹在提示条里，输入框一个字不动，术语照常生效（#639）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    // ADR-0005：目标语言取源语言。当前领域按目标语言解析，所以领域是 en 方向的
+    await seedSettings({ from: 'en', to: 'zh-CN' });
+    await mockGoogle({ echoTargetLang: true });
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [{
+            id: 'user:e2e-input',
+            name: 'E2E input',
+            targetLang: 'en',
+            sites: ['localhost'],
+            origin: 'user',
+            terms: [{ source: 'GitHub', noTranslate: true }],
+          }],
+          builtin: {},
+        },
+      }),
+    );
+    const queries = await recordGoogleQueries(serviceWorker);
+
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    await box.click();
+    await page.keyboard.type('我在 GitHub 上写回复');
+    await page.locator(DOT).click();
+
+    const toast = page.locator(TOAST);
+    await expect(toast).toContainText('【译】我在 GitHub 上写回复 [tl=en]', { timeout: 10_000 });
+    // “不翻译”术语以占位符发出，回来换回原词
+    expect(await queries()).toEqual(['我在 ⟦TM0⟧ 上写回复']);
+    // 输入框内容一个字不动，焦点还在
+    await expect(box).toHaveValue('我在 GitHub 上写回复');
+    await expect(box).toBeFocused();
+  });
+
+  test('@core TC-E2E-113: 站点被拉黑时点圆点 → 按既有口径提示，零请求（#639）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en', siteList: { mode: 'blacklist', list: ['localhost'] } });
+    await mockGoogle();
+    const queries = await recordGoogleQueries(serviceWorker);
+    const blocked = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastSiteBlocked'));
+
+    await gotoFixture('input');
+    const box = page.locator('#reply');
+    await box.click();
+    await page.keyboard.type('你好世界');
+    await page.locator(DOT).click();
+
+    await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(blocked);
+    expect(await queries()).toEqual([]);
+    await expect(box).toHaveValue('你好世界');
+  });
+});
+
