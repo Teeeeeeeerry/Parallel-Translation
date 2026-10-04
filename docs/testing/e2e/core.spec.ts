@@ -2682,6 +2682,53 @@ test.describe('输入翻译：点圆点翻译', () => {
   });
 });
 
+test.describe('输入翻译：送翻后内容变动不写回', () => {
+  const DOT = '#pt-host-input-dot .pt-input-dot';
+  const TOAST = '#pt-host-toast .pt-toast';
+
+  test('@core TC-E2E-116: 译文回来前又打了字、或焦点换到另一个框 → 不覆盖框里内容，译文出现在提示条里（#646）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    // 译文晚 1.5 秒回来，留出继续打字的时间
+    await mockGoogle({ delayMs: 1_500 });
+    await gotoFixture('input');
+    await waitForBall(page);
+
+    const box = page.locator('#reply');
+    const note = page.locator('#note');
+
+    // 点圆点后接着打字：刚打的字不被吞掉，译文进提示条
+    await box.click();
+    await page.keyboard.type('你好世界');
+    await page.locator(DOT).click();
+    await page.keyboard.type('，再见');
+    await expect(page.locator(`${TOAST}[data-kind="info"]`)).toHaveText('【译】你好世界', {
+      timeout: 10_000,
+    });
+    await expect(box).toHaveValue('你好世界，再见');
+    await expect(box).toBeFocused();
+
+    // 点圆点后焦点换到另一个框：两个框都不动，译文进提示条
+    await box.fill('');
+    await page.keyboard.type('早上好');
+    await page.locator(DOT).click();
+    await note.click();
+    await page.keyboard.type('另一段');
+    await expect(page.locator(`${TOAST}[data-kind="info"]`)).toHaveText('【译】早上好', {
+      timeout: 10_000,
+    });
+    await expect(box).toHaveValue('早上好');
+    await expect(note).toHaveValue('另一段');
+    await expect(note).toBeFocused();
+
+    // 内容与焦点都没动：照常写回
+    await box.click();
+    await page.locator(DOT).click();
+    await expect(box).toHaveValue('【译】早上好', { timeout: 10_000 });
+  });
+});
+
 // ================================================================
 // SVG 里嵌的 HTML（#629）
 // ================================================================
