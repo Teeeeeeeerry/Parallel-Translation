@@ -82,4 +82,19 @@ export const BUILTIN_SITE_RULES: Record<string, Partial<SiteRules>> = {
       '.user-profile-mini-vcard strong',  // 个人主页迷你资料卡的用户名
     ],
   },
+
+  // #631：draw.io 编辑器的外壳整块排除 —— 全是界面文字，而且 draw.io 自己
+  // 已经是用户的界面语言。按编辑器容器排除，不按面板里每条标题的 class：
+  // 容器名是编辑器的结构名，比具体某条标题的 class 稳定。格式面板的分区
+  // 标题（div.geCollapsibleTitle）不在 SVG 里，foreignObject 通用判定
+  // （#630）管不到它。同域名下的普通页面没有这些容器，排除不命中
+  'diagrams.net': {
+    exclude: [
+      '.geSidebarContainer', // 左侧图形面板
+      '.geFormatContainer',  // 右侧格式面板
+      '.geMenubarContainer', // 顶部菜单栏
+      '.geToolbarContainer', // 工具栏
+      '.geDialog',           // 编辑器对话框
+    ],
+  },
 };
