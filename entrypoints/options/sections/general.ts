@@ -37,6 +37,7 @@ export function initGeneral(): void {
   const selectParaMode = document.getElementById('pt-select-para-mode') as HTMLSelectElement;
   const toggleFloatingBall = document.getElementById('pt-toggle-floating-ball')!;
   const toggleParagraphBtn = document.getElementById('pt-toggle-paragraph-btn')!;
+  const toggleInputTranslate = document.getElementById('pt-toggle-input-translate')!;
 
   function syncUI(): void {
     const s = getSettings();
@@ -47,6 +48,7 @@ export function initGeneral(): void {
     selectParaMode.value = s.paraDisplayMode ?? 'follow';
     toggleFloatingBall.classList.toggle('pt-on', s.showFloatingBall);
     toggleParagraphBtn.classList.toggle('pt-on', s.showParagraphBtn);
+    toggleInputTranslate.classList.toggle('pt-on', s.inputTranslate);
   }
 
   toggleEnabled.addEventListener('click', () => {
@@ -77,6 +79,10 @@ export function initGeneral(): void {
 
   toggleParagraphBtn.addEventListener('click', () => {
     savePatch({ showParagraphBtn: !getSettings().showParagraphBtn });
+  });
+
+  toggleInputTranslate.addEventListener('click', () => {
+    savePatch({ inputTranslate: !getSettings().inputTranslate });
   });
 
   const resetBallPosBtn = document.getElementById('pt-reset-ball-pos-btn')!;

@@ -126,6 +126,7 @@ describe('route', () => {
       maxConcurrency: 6,
       models: {},
       mtApplyTermTargets: false,
+      inputTranslate: true,
     });
 
     vi.mocked(cacheGet).mockResolvedValue(null);
@@ -421,6 +422,7 @@ describe('route', () => {
       maxConcurrency: 6,
       models: {},
       mtApplyTermTargets: false,
+      inputTranslate: true,
     });
     // 修复前：非缓存路径不跳过已填充槽位 —— 下一引擎重翻全部并
     // 覆盖成功译文（TC-E2E-33 暴露）；修复后只补失败槽位
