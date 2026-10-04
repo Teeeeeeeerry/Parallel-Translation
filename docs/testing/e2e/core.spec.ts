@@ -2956,6 +2956,44 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect(await queries()).toEqual(['你好世界']);
   });
 
+  test('@core TC-E2E-131: contenteditable 替换后按撤销键回到原文、重做回到译文 —— 普通 contenteditable 走原生撤销栈，受控编辑器走它自己的撤销栈，都用真实按键（#657）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await mockGoogle();
+    await gotoFixture('rich-input');
+    await waitForBall(page);
+    const dot = page.locator(DOT);
+
+    // 普通 contenteditable：替换进了浏览器的原生撤销栈
+    const rich = page.locator('#rich');
+    await rich.click();
+    await page.keyboard.type('这是我自己写的话');
+    await dot.click();
+    await expect(rich).toHaveText('【译】这是我自己写的话', { timeout: 10_000 });
+    // 撤销：Ctrl+Z（macOS 上是 Cmd+Z），一步回到原文
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(rich).toHaveText('这是我自己写的话');
+    // 重做：Ctrl+Shift+Z（macOS 上是 Cmd+Shift+Z），回到译文
+    await page.keyboard.press('ControlOrMeta+Shift+z');
+    await expect(rich).toHaveText('【译】这是我自己写的话');
+
+    // 受控编辑器：撤销栈由编辑器自己管，替换是它模型里的一步
+    const editor = page.locator('#editor');
+    const model = () => page.evaluate(() => (window as unknown as { __editor: { model: string } }).__editor.model);
+    await editor.click();
+    await page.keyboard.type('早上好');
+    await dot.click();
+    await expect(editor).toHaveText('【译】早上好', { timeout: 10_000 });
+    expect(await model()).toBe('【译】早上好');
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(editor).toHaveText('早上好');
+    expect(await model()).toBe('早上好');
+    await page.keyboard.press('ControlOrMeta+Shift+z');
+    await expect(editor).toHaveText('【译】早上好');
+    expect(await model()).toBe('【译】早上好');
+  });
+
   test('@core TC-E2E-124: 翻译进行中圆点变灰转圈；完成、失败、放弃写回之后都回到常态（#648）', async ({
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {
