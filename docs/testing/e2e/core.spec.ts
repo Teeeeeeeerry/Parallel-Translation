@@ -3014,4 +3014,34 @@ test.describe('逐段翻译：站点名单', () => {
     await paraBtn.click();
     await expect(firstP).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
   });
+
+  test('@core TC-E2E-123: 扩展总开关关闭时悬停正文不注册按钮；不刷新页面打开总开关后照常浮出并能翻译（#686）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ showParagraphBtn: true, enabled: false });
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+
+    // 总开关关着：停够悬停意图延迟，按钮的宿主根本不存在 —— 不是浮出来点了没反应
+    await page.locator('p').first().hover();
+    await page.waitForTimeout(600);
+    await expect(page.locator('#pt-host-para-btn')).toHaveCount(0);
+
+    // 在设置里打开总开关（读-改-写 pt-settings），页面不刷新
+    await serviceWorker.evaluate(async () => {
+      const r = await chrome.storage.sync.get('pt-settings');
+      const cur = r['pt-settings'] as Record<string, unknown>;
+      await chrome.storage.sync.set({ 'pt-settings': { ...cur, enabled: true } });
+    });
+
+    // 指针先移开再回到段落，触发新的悬停
+    await page.mouse.move(0, 0);
+    const firstP = page.locator('p').first();
+    await firstP.hover();
+    const paraBtn = page.locator('.pt-para-btn');
+    await expect(paraBtn).toBeVisible({ timeout: 5_000 });
+    await paraBtn.click();
+    await expect(firstP).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
+  });
 });
