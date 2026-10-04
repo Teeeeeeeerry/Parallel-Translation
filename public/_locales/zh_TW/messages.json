@@ -479,5 +479,7 @@
     "placeholders": { "host": { "content": "$1" } }
   },
   "descGrok": { "message": "xAI Grok API，key 可從 xAI 主控台取得，需要為 key 授權 chat 端點與所選模型。點「測試連線」時瀏覽器會詢問是否允許存取 api.x.ai，測試成功後儲存 key。" },
-  "grokKeyInvalid": { "message": "API key 無效，或 key 沒有 chat 端點、所選模型的權限，請在 xAI 主控台授權" }
+  "grokKeyInvalid": { "message": "API key 無效，或 key 沒有 chat 端點、所選模型的權限，請在 xAI 主控台授權" },
+  "rowInputTranslate": { "message": "輸入翻譯" },
+  "rowInputTranslateDesc": { "message": "在輸入框裡寫好文字後，點文字末尾的圓點，把它整段換成對方的語言（取「來源語言」設定）。密碼框不參與。" }
 }

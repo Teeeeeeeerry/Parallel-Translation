@@ -181,6 +181,12 @@ export interface Settings {
    * 术语；打开后指定了译法的术语也经占位符替换，回填为指定译法。
    */
   mtApplyTermTargets: boolean;
+
+  /**
+   * 输入翻译（#633）：输入框文字末尾浮出圆点，点它把框里的文字译成对方的语言。
+   * 目标语言取 from，不另设（ADR-0005）。
+   */
+  inputTranslate: boolean;
 }
 
 export const ENGINE_LABELS: Record<EngineId, string> = {
@@ -258,4 +264,5 @@ export const DEFAULT_SETTINGS: Settings = {
   useCache: true,
   models: {},
   mtApplyTermTargets: false,
+  inputTranslate: true,
 };

@@ -479,5 +479,7 @@
     "placeholders": { "host": { "content": "$1" } }
   },
   "descGrok": { "message": "xAI Grok API. Get a key from the xAI console and grant it the chat endpoint and the model you use. Clicking “Test connection” asks your browser to allow access to api.x.ai; the key is saved once the test succeeds." },
-  "grokKeyInvalid": { "message": "Invalid API key, or the key lacks access to the chat endpoint or the selected model. Grant it in the xAI console" }
+  "grokKeyInvalid": { "message": "Invalid API key, or the key lacks access to the chat endpoint or the selected model. Grant it in the xAI console" },
+  "rowInputTranslate": { "message": "Translate input" },
+  "rowInputTranslateDesc": { "message": "After typing in a text box, click the dot at the end of your text to replace it with the other person's language (taken from the “Source language” setting). Password fields are never included." }
 }
