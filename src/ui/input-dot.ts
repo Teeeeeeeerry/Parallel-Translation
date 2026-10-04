@@ -17,10 +17,11 @@
 // #648：进行中的状态长在圆点上 —— 变灰转圈，结束回到常态。
 // #650：能不能参与交给「这个输入框能不能参与」的判定，放行普通文本框与
 // 搜索框；圆点位置仍是回落位置。
+// #655：contenteditable 的编辑宿主同样浮出，位置同样是回落位置。
 
 import { mountIsolated, unmountIsolated } from './mount';
 import { tf } from '../i18n';
-import { decideInputEligibility, type TextInput } from './input-eligibility';
+import { decideInputEligibility, inputText, type TextInput } from './input-eligibility';
 
 const HOST_ID = 'input-dot';
 
@@ -44,7 +45,7 @@ function eligible(el: Element | null): el is TextInput {
 }
 
 function hasEnoughText(el: TextInput): boolean {
-  return el.value.trim().length >= MIN_CHARS;
+  return inputText(el).trim().length >= MIN_CHARS;
 }
 
 /**

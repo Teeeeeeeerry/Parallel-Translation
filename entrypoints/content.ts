@@ -34,7 +34,7 @@ import { createInputDot, deepActiveElement } from '~/src/ui/input-dot';
 import { replaceInputText } from '~/src/ui/input-replace';
 import { decideWriteBack } from '~/src/ui/input-writeback';
 import { decideInputTarget } from '~/src/ui/input-target-lang';
-import type { TextInput } from '~/src/ui/input-eligibility';
+import { inputText, type TextInput } from '~/src/ui/input-eligibility';
 import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
@@ -677,7 +677,7 @@ export default defineContentScript({
      */
     async function translateInput(el: TextInput): Promise<void> {
       const ns = getSettings();
-      const snapshot = el.value;
+      const snapshot = inputText(el);
       // #640：译成哪种语言由判定链给出（ADR-0005）；判不出来不猜，
       // 提示用户去设置里指定源语言，零请求
       // #658：源语言是 auto 时读本 frame 页面的语言声明；
@@ -722,7 +722,7 @@ export default defineContentScript({
 
       const writeBack = decideWriteBack({
         snapshot,
-        current: el.value,
+        current: inputText(el),
         focused: deepActiveElement() === el,
       });
       if (!writeBack.write || !replaceInputText(el, result.translation!)) {
