@@ -11,9 +11,14 @@
  *
  * #660：本页引擎检测语言排在页面语言声明之前 —— 大量中文站点把声明写成
  * en，而引擎是照着真实文字判的。
+ *
+ * #691：中文不能只取主段 —— 各引擎把 zh 当简体，繁体站点上写的内容会被
+ * 译成简体。中文按文字与地区分成 zh-TW / zh-CN，与设置里源语言的取值
+ * 同一套码；其余语言仍取主段。
  */
 import { describe, test, expect } from 'vitest';
 import { decideInputTarget } from '~/src/ui/input-target-lang';
+import { LANG_LIST } from '~/src/storage/schema';
 
 describe('decideInputTarget（#640）', () => {
   test('源语言是具体语言码 → 译成它，来源是源语言设置', () => {
@@ -42,7 +47,7 @@ describe('页面语言声明（#658）', () => {
       lang: 'ja',
       via: 'page-lang',
     });
-    for (const pageLang of ['en-US', 'EN', 'en_GB', '  en-us  ', 'zh-Hant-TW']) {
+    for (const pageLang of ['en-US', 'EN', 'en_GB', '  en-us  ', 'ja-JP']) {
       const d = decideInputTarget({ from: 'auto', pageLang, detectedLang: null });
       expect(d).toEqual({ ok: true, lang: pageLang.trim().slice(0, 2).toLowerCase(), via: 'page-lang' });
     }
@@ -87,7 +92,7 @@ describe('判定链的优先级（#660）', () => {
   test('检测语言与页面声明都有 → 用检测语言', () => {
     expect(decideInputTarget({ from: 'auto', pageLang: 'en', detectedLang: 'zh' })).toEqual({
       ok: true,
-      lang: 'zh',
+      lang: 'zh-CN',
       via: 'detected-lang',
     });
   });
@@ -133,5 +138,74 @@ describe('判定链的优先级（#660）', () => {
       lang: 'ko',
       via: 'source-setting',
     });
+  });
+});
+
+describe('中文按文字与地区区分简繁（#691）', () => {
+  const TRADITIONAL = ['zh-TW', 'zh-Hant', 'zh-Hant-TW', 'zh-HK', 'zh-MO', 'zh_TW', 'ZH-HANT', 'zh-Hant-HK'];
+  const SIMPLIFIED = ['zh', 'zh-CN', 'zh-Hans', 'zh-Hans-CN', 'zh-SG', 'ZH', 'zh_CN', 'zh-Hans-TW'];
+
+  test('页面声明 zh-TW、zh-Hant、zh-Hant-TW、zh-HK、zh-MO → 译成繁体中文', () => {
+    for (const pageLang of TRADITIONAL) {
+      expect(decideInputTarget({ from: 'auto', pageLang, detectedLang: null }), pageLang).toEqual({
+        ok: true,
+        lang: 'zh-TW',
+        via: 'page-lang',
+      });
+    }
+  });
+
+  test('页面声明 zh、zh-CN、zh-Hans 及其余 zh- 开头 → 译成简体中文', () => {
+    for (const pageLang of SIMPLIFIED) {
+      expect(decideInputTarget({ from: 'auto', pageLang, detectedLang: null }), pageLang).toEqual({
+        ok: true,
+        lang: 'zh-CN',
+        via: 'page-lang',
+      });
+    }
+  });
+
+  test('文字子段优先于地区子段：zh-Hant-CN 是繁体，zh-Hans-TW 是简体', () => {
+    expect(decideInputTarget({ from: 'auto', pageLang: 'zh-Hant-CN', detectedLang: null })).toMatchObject({ lang: 'zh-TW' });
+    expect(decideInputTarget({ from: 'auto', pageLang: 'zh-Hans-TW', detectedLang: null })).toMatchObject({ lang: 'zh-CN' });
+  });
+
+  test('引擎检测语言同一套口径：zh-Hant 是繁体，zh-Hans 与 ZH 是简体', () => {
+    expect(decideInputTarget({ from: 'auto', pageLang: 'en', detectedLang: 'zh-Hant' })).toEqual({
+      ok: true,
+      lang: 'zh-TW',
+      via: 'detected-lang',
+    });
+    for (const detectedLang of ['zh-Hans', 'ZH']) {
+      expect(decideInputTarget({ from: 'auto', pageLang: 'en', detectedLang })).toEqual({
+        ok: true,
+        lang: 'zh-CN',
+        via: 'detected-lang',
+      });
+    }
+  });
+
+  test('判定出的码是设置里源语言的取值', () => {
+    const codes = new Set(LANG_LIST.map((l) => l.code));
+    for (const pageLang of [...TRADITIONAL, ...SIMPLIFIED]) {
+      const d = decideInputTarget({ from: 'auto', pageLang, detectedLang: null });
+      expect(d.ok && codes.has(d.lang), pageLang).toBe(true);
+    }
+  });
+
+  test('其余语言仍取主段，地区不拆：pt-BR 与 pt-PT 都是 pt，en-GB 是 en', () => {
+    for (const [pageLang, lang] of [
+      ['pt-BR', 'pt'],
+      ['pt-PT', 'pt'],
+      ['en-GB', 'en'],
+      ['sr-Latn-RS', 'sr'],
+      ['yue-HK', 'yue'],
+    ] as const) {
+      expect(decideInputTarget({ from: 'auto', pageLang, detectedLang: null }), pageLang).toEqual({
+        ok: true,
+        lang,
+        via: 'page-lang',
+      });
+    }
   });
 });
