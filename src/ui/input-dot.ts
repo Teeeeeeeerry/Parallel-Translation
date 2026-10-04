@@ -11,7 +11,8 @@
 // iframe 里的评论框、客服窗口是这个功能的主场之一。
 //
 // #636：只认多行文本框；位置只用 ADR-0006 定的回落位置（框内侧右下角），
-// 贴文字末尾是后面的票；点下去还不做任何事。
+// 贴文字末尾是后面的票。
+// #639：点圆点把当前输入框交给翻译回调；写不写回由回调决定。
 
 import { mountIsolated, unmountIsolated } from './mount';
 import { tf } from '../i18n';
@@ -58,7 +59,12 @@ function placeFallback(dot: HTMLElement, el: HTMLElement): void {
   dot.style.top = `${innerBottom - INSET - SIZE}px`;
 }
 
-export function createInputDot(): () => void {
+/** 圆点的回调：点击时拿到当前输入框。 */
+interface InputDotHandlers {
+  translate: (el: HTMLTextAreaElement) => Promise<void>;
+}
+
+export function createInputDot(handlers: InputDotHandlers): () => void {
   const shadow = mountIsolated(HOST_ID);
   const dot = document.createElement('button');
   dot.className = 'pt-input-dot';
@@ -99,6 +105,11 @@ export function createInputDot(): () => void {
 
   // 按下时阻止默认行为：不夺走输入框的焦点，光标与选区都还在
   dot.addEventListener('mousedown', (e) => e.preventDefault());
+
+  dot.addEventListener('click', () => {
+    if (!target) return;
+    handlers.translate(target).catch((e) => console.error('[PT] 输入翻译失败:', e));
+  });
 
   document.addEventListener('focusin', onFocusIn, true);
   document.addEventListener('focusout', onFocusOut, true);

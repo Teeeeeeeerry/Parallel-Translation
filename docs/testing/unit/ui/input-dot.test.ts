@@ -3,14 +3,17 @@
  *
  * 经生命周期注册表启停（与悬浮球、逐段按钮同一条路）：开关关掉即刻
  * 解绑监听，打开即刻生效，启停幂等。本票圆点只用 ADR-0006 定的回落
- * 位置（框内侧右下角），点下去还不做任何事。
+ * 位置（框内侧右下角）。
+ *
+ * #639：点圆点把当前输入框交给翻译回调；框里的文字一个字不动。
  */
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createLifecycleRegistry, type LifecycleRegistry } from '~/src/ui/lifecycle-registry';
 import { createInputDot } from '~/src/ui/input-dot';
 import { mockBoundingRect } from '~/docs/testing/setup';
 
 let registry: LifecycleRegistry;
+let translate: ReturnType<typeof vi.fn>;
 
 function dot(): HTMLElement | null {
   const host = document.getElementById('pt-host-input-dot');
@@ -34,8 +37,9 @@ function type(ta: HTMLTextAreaElement, value: string): void {
 beforeEach(() => {
   document.body.innerHTML = '';
   registry = createLifecycleRegistry();
+  translate = vi.fn(async () => {});
   registry.register('input-dot', {
-    create: () => createInputDot(),
+    create: () => createInputDot({ translate }),
     stop: (stop) => stop(),
   });
 });
@@ -130,5 +134,24 @@ describe('开关启停（#636）', () => {
     registry.ensure('input-dot', true);
     registry.ensure('input-dot', true);
     expect(document.querySelectorAll('#pt-host-input-dot')).toHaveLength(1);
+  });
+});
+
+describe('点圆点翻译（#639）', () => {
+  test('点击把当前输入框交给翻译回调，框里的文字不动', () => {
+    registry.ensure('input-dot', true);
+    const ta = textarea('你好世界');
+    ta.focus();
+    dot()!.click();
+    expect(translate).toHaveBeenCalledTimes(1);
+    expect(translate).toHaveBeenCalledWith(ta);
+    expect(ta.value).toBe('你好世界');
+  });
+
+  test('圆点没浮出时（框里不足 2 个字符）点击不触发翻译', () => {
+    registry.ensure('input-dot', true);
+    textarea('a').focus();
+    dot()!.click();
+    expect(translate).not.toHaveBeenCalled();
   });
 });
