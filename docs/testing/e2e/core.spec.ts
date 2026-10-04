@@ -2682,3 +2682,30 @@ test.describe('输入翻译：点圆点翻译', () => {
   });
 });
 
+// ================================================================
+// SVG 里嵌的 HTML（#629）
+// ================================================================
+
+test.describe('逐段翻译：SVG 图表标签', () => {
+  test('@core TC-E2E-110: 鼠标停在 foreignObject 里的图表标签上不浮出按钮，同页普通段落照常浮出（#630）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ showParagraphBtn: true });
+    await mockGoogle();
+    await gotoFixture('svg-chart');
+    await waitForBall(page);
+
+    const paraBtn = page.locator('.pt-para-btn');
+
+    // 图表标签（div 与块级 p 两种形态）：停够悬停意图延迟也不浮出
+    for (const id of ['#label', '#label2']) {
+      await page.locator(id).hover();
+      await page.waitForTimeout(600);
+      await expect(paraBtn).toBeHidden();
+    }
+
+    // 同页的普通段落照常浮出
+    await page.locator('#body').hover();
+    await expect(paraBtn).toBeVisible({ timeout: 5_000 });
+  });
+});

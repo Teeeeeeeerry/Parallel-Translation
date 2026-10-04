@@ -65,11 +65,14 @@ export const CONTAINER_SET = new Set([
 /**
  * 整棵子树跳过，不再深入。
  * code 同时属于 INLINE_SET —— 见 INLINE_SET 注释（#41）。
+ * foreignobject（#630）：SVG 里嵌的 HTML，见 inForeignObject。标签名按
+ * 小写比对，SVG 元素的 tagName 保留驼峰（foreignObject）。
  */
 export const SKIP_SET = new Set([
   'html', 'body', 'script', 'style', 'noscript',
   'input', 'textarea', 'select', 'button',
   'code',
+  'foreignobject',
 ]);
 
 /**
@@ -112,6 +115,18 @@ export function isCodeBlockPre(el: Element): boolean {
   return el.closest('.highlight, .notranslate') !== null;
 }
 
+/**
+ * #630：el 自身或祖先是不是 foreignObject —— SVG 里嵌的 HTML 只用来给
+ * 图形、图表放标签（draw.io、mermaid、graphviz、ECharts），由绘图库按
+ * 模型重绘，译文留不住。按文档结构判定，不认任何站点的 class 名。
+ */
+function inForeignObject(el: Element): boolean {
+  for (let cur: Element | null = el; cur; cur = cur.parentElement) {
+    if (cur.tagName.toLowerCase() === 'foreignobject') return true;
+  }
+  return false;
+}
+
 /** 非可见性相关的所有跳过判定。元素即便变为可见，这些条件也不会改变。 */
 export function shouldSkipNonVisual(el: Element): boolean {
   const tag = el.tagName.toLowerCase();
@@ -123,6 +138,7 @@ export function shouldSkipNonVisual(el: Element): boolean {
 
   if (el.classList.contains('notranslate')) return true;
   if ((el as HTMLElement).isContentEditable) return true;
+  if (inForeignObject(el)) return true;
   // #179: 已翻译单元自身与其原文内容（.pt-origin 内）不重复翻译；
   // 但页面在已翻译容器内**新增**的段落（.pt-origin 之外）仍需采集补翻
   // —— 旧的 closest('[data-pt="done"]') 会把新内容一并拦掉，永久漏翻
