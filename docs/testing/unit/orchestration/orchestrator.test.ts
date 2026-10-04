@@ -1393,7 +1393,10 @@ describe('记下引擎报告的检测语言（#659）', () => {
     for (const [raw, want] of [
       ['EN', 'en'],
       ['en-US', 'en'],
-      ['zh-Hans', 'zh'],
+      // 中文保留简繁（#691）
+      ['zh-Hans', 'zh-CN'],
+      ['zh-Hant', 'zh-TW'],
+      ['ZH', 'zh-CN'],
       ['JA', 'ja'],
     ] as const) {
       const orch = createOrchestrator({ send: sendDetecting([raw]) });
