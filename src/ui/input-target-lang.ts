@@ -12,11 +12,13 @@
 //
 // 判定链（按优先级）：
 // 1. 源语言设置是具体语言码 —— 用它（#640）
-// 2. 页面的语言声明 `<html lang>` 可识别 —— 取语言码主段（#658）
-// 3. 都没有 —— 判不出来，提示用户去设置里指定源语言
+// 2. 本页翻译时引擎报告的检测语言 —— 用它（#659、#660）
+// 3. 页面的语言声明 `<html lang>` 可识别 —— 取语言码主段（#658）
+// 4. 都没有 —— 判不出来，提示用户去设置里指定源语言
 //
-// 本页引擎检测语言（#659、#660）以后作为新的一级加进输入与 via，不改
-// 调用方的形状。
+// 检测语言排在声明之前（#660）：大量中文站点把声明写成 en，而引擎是照着
+// 真实文字判的。默认引擎 google-web 不返回检测语言，所以这一级对多数用户
+// 不生效，等于回落到声明 —— 它是“能用上就更准”，不是前置条件。
 //
 // 返回原因而非裸 boolean，与 changelog/decide.ts 同一风格：调用方拿到
 // 原因直接渲染提示。
@@ -28,6 +30,8 @@ export interface InputTargetInput {
   from: string;
   /** 页面的语言声明（`<html lang>` 的原值）；没有声明时为 null */
   pageLang: string | null;
+  /** 本页翻译时引擎报告的检测语言；还没有时为 null */
+  detectedLang: string | null;
 }
 
 export type InputTargetDecision =
@@ -36,7 +40,7 @@ export type InputTargetDecision =
       /** 译成的语言码 */
       lang: string;
       /** 取自判定链的哪一级 */
-      via: 'source-setting' | 'page-lang';
+      via: 'source-setting' | 'detected-lang' | 'page-lang';
     }
   | {
       ok: false;
@@ -48,6 +52,8 @@ export function decideInputTarget(input: InputTargetInput): InputTargetDecision 
   if (input.from && input.from !== 'auto') {
     return { ok: true, lang: input.from, via: 'source-setting' };
   }
+  const detected = normalizeLangCode(input.detectedLang);
+  if (detected) return { ok: true, lang: detected, via: 'detected-lang' };
   const pageLang = normalizeLangCode(input.pageLang);
   if (pageLang) return { ok: true, lang: pageLang, via: 'page-lang' };
   return { ok: false, reason: 'undetermined' };
