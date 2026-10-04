@@ -482,5 +482,6 @@
   "grokKeyInvalid": { "message": "API key 无效，或 key 没有 chat 端点、所选模型的权限，请在 xAI 控制台授权" },
   "rowInputTranslate": { "message": "输入翻译" },
   "rowInputTranslateDesc": { "message": "在输入框里写好文字后，点文字末尾的圆点，把它整段换成对方的语言（取“源语言”设置）。密码框不参与。" },
-  "inputDotLabel": { "message": "翻译输入框里的文字" }
+  "inputDotLabel": { "message": "翻译输入框里的文字" },
+  "toastInputSourceLangNeeded": { "message": "判断不出要译成哪种语言，请在设置里把源语言指定为对方的语言" }
 }

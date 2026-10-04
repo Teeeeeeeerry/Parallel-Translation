@@ -33,6 +33,7 @@ import { createParaBtn } from '~/src/ui/paragraph-btn';
 import { createInputDot, deepActiveElement } from '~/src/ui/input-dot';
 import { replaceInputText } from '~/src/ui/input-replace';
 import { decideWriteBack } from '~/src/ui/input-writeback';
+import { decideInputTarget } from '~/src/ui/input-target-lang';
 import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
@@ -666,10 +667,18 @@ export default defineContentScript({
      */
     async function translateInput(el: HTMLTextAreaElement): Promise<void> {
       const ns = getSettings();
-      // 源语言是 auto 时的判定链与提示由 #640/#658 接上，此前不发请求
-      if (ns.from === 'auto') return;
+      // #640：译成哪种语言由判定链给出（ADR-0005）；判不出来不猜，
+      // 提示用户去设置里指定源语言，零请求
+      const target = decideInputTarget({ from: ns.from });
+      if (!target.ok) {
+        toast(
+          tf('toastInputSourceLangNeeded', '判断不出要译成哪种语言，请在设置里把源语言指定为对方的语言'),
+          'error',
+        );
+        return;
+      }
       const snapshot = el.value;
-      const result = await orchestrator.translateText(snapshot, 'auto', ns.from);
+      const result = await orchestrator.translateText(snapshot, 'auto', target.lang);
 
       // 准入拦截：与逐段 / 划词翻译一致的提示，零请求
       if (result.admission === 'blocked') {
