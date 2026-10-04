@@ -2709,3 +2709,65 @@ test.describe('逐段翻译：SVG 图表标签', () => {
     await expect(paraBtn).toBeVisible({ timeout: 5_000 });
   });
 });
+
+// ================================================================
+// 站点名单门控逐段翻译按钮（#629）
+// ================================================================
+
+test.describe('逐段翻译：站点名单', () => {
+  /** 停够悬停意图延迟后断言按钮没浮出。 */
+  async function expectNoParaBtn(page: import('@playwright/test').Page) {
+    await page.locator('p').first().hover();
+    await page.waitForTimeout(600);
+    await expect(page.locator('.pt-para-btn')).toBeHidden();
+  }
+
+  test('@core TC-E2E-108: 站点在黑名单里、或白名单模式下不在名单里时，悬停正文不浮出按钮；白名单命中照常浮出（#632）', async ({
+    page, seedSettings, gotoFixture,
+  }) => {
+    // 名单的种子写法同 security.spec.ts 的 SEC-04 / SEC-05 / SEC-06
+    await seedSettings({ showParagraphBtn: true, siteList: { mode: 'blacklist', list: ['localhost'] } });
+    await gotoFixture('basic');
+    await waitForBall(page);
+    await expectNoParaBtn(page);
+
+    await seedSettings({ showParagraphBtn: true, siteList: { mode: 'whitelist', list: ['example.com'] } });
+    await gotoFixture('basic');
+    await waitForBall(page);
+    await expectNoParaBtn(page);
+
+    await seedSettings({ showParagraphBtn: true, siteList: { mode: 'whitelist', list: ['localhost'] } });
+    await gotoFixture('basic');
+    await waitForBall(page);
+    await page.locator('p').first().hover();
+    await expect(page.locator('.pt-para-btn')).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('@core TC-E2E-109: 把站点从黑名单移除后，不刷新页面即可浮出按钮并翻译（#632）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ showParagraphBtn: true, siteList: { mode: 'blacklist', list: ['localhost'] } });
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+    await expectNoParaBtn(page);
+
+    // 在设置里把站点移出黑名单（读-改-写 pt-settings），页面不刷新
+    await serviceWorker.evaluate(async () => {
+      const r = await chrome.storage.sync.get('pt-settings');
+      const cur = r['pt-settings'] as Record<string, unknown>;
+      await chrome.storage.sync.set({
+        'pt-settings': { ...cur, siteList: { mode: 'blacklist', list: [] } },
+      });
+    });
+
+    // 指针先移开再回到段落，触发新的悬停
+    await page.mouse.move(0, 0);
+    const firstP = page.locator('p').first();
+    await firstP.hover();
+    const paraBtn = page.locator('.pt-para-btn');
+    await expect(paraBtn).toBeVisible({ timeout: 5_000 });
+    await paraBtn.click();
+    await expect(firstP).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
+  });
+});

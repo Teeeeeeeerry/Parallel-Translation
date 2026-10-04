@@ -254,6 +254,16 @@ export default defineContentScript({
       },
     });
 
+    /**
+     * #632：当前站点是否获得准入 —— 复用站点名单判定，与编排模块的准入
+     * （整页、逐段、划词翻译）同一个口径、同一个主机名。鼠标路过就浮出的
+     * UI 按它决定要不要注册：站点没获准入时根本不挂监听，而不是浮出来、
+     * 点下去才提示被禁用。输入翻译圆点（#649）同样按它门控。
+     */
+    function siteAdmitted(ns: Settings): boolean {
+      return !isSiteBlocked(location.hostname, ns.siteList);
+    }
+
     // ── 设置变更统一入口（#265）──
     // 初始化与设置变更共用：样式应用 + UI 启停（经注册表 ensure）。
     // 订阅由编排模块持有（start 订阅 / stop 退订），此处只有一份
@@ -266,7 +276,8 @@ export default defineContentScript({
       if (isMainFrame) {
         // #242/#243: 悬浮球 / 段落按钮开关经注册表 ensure —— 启停幂等、即时生效
         registry.ensure('ball', ns.showFloatingBall);
-        registry.ensure('para-btn', ns.showParagraphBtn);
+        // #632: 段落按钮还要站点获得准入；改名单经此入口即时启停
+        registry.ensure('para-btn', ns.showParagraphBtn && siteAdmitted(ns));
       }
       // #636: 输入翻译圆点在每个 frame 经注册表 ensure —— 启停幂等、即时生效
       registry.ensure('input-dot', ns.inputTranslate);
