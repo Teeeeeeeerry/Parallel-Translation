@@ -622,7 +622,10 @@ export default defineContentScript({
       // #314: 逐段翻译走编排模块的单文本入口 —— 准入判定（总开关 /
       // 站点名单）与失败提示语义都由模块给出，不再直连消息通道
       const ns = getSettings();
-      const result = await orchestrator.translateText(text, ns.from, ns.to);
+      // #659: 逐段翻译送的是页面上的文字，成功后记下引擎报告的检测语言
+      const result = await orchestrator.translateText(text, ns.from, ns.to, {
+        recordDetectedLang: true,
+      });
 
       // 准入拦截：与整页翻译一致的提示（站点被屏蔽 toast；总开关
       // 关闭静默）

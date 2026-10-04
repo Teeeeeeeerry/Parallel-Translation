@@ -1366,3 +1366,92 @@ describe('扩展上下文失效不按错误记录（#579）', () => {
     }
   });
 });
+
+describe('记下引擎报告的检测语言（#659）', () => {
+  /** 假消息层：每次请求返回给定的检测语言（undefined 表示引擎不提供）。 */
+  function sendDetecting(detected: Array<string | undefined>) {
+    let i = 0;
+    return vi.fn(async (req: TranslateRequest) => {
+      const detectedFrom = detected[Math.min(i++, detected.length - 1)];
+      return {
+        ok: true,
+        data: {
+          translations: req.texts.map((t) => `T:${t}`),
+          ...(detectedFrom !== undefined && { detectedFrom }),
+        },
+      };
+    });
+  }
+
+  test('启动后还没翻译过 → 没有检测语言', () => {
+    const orch = createOrchestrator({ send: sendDetecting(['en']) });
+    orch.start();
+    expect(orch.detectedLang()).toBeNull();
+  });
+
+  test('整页翻译成功后记下，语言码归一化：大小写、地区与文字后缀', async () => {
+    for (const [raw, want] of [
+      ['EN', 'en'],
+      ['en-US', 'en'],
+      ['zh-Hans', 'zh'],
+      ['JA', 'ja'],
+    ] as const) {
+      const orch = createOrchestrator({ send: sendDetecting([raw]) });
+      orch.start();
+      await orch.translatePage(items(3), 'auto', 'zh-CN');
+      expect(orch.detectedLang()).toBe(want);
+    }
+  });
+
+  test('逐段翻译声明要记录时成功后记下', async () => {
+    const orch = createOrchestrator({ send: sendDetecting(['DE']) });
+    orch.start();
+    await orch.translateText('Hallo Welt', 'auto', 'zh-CN', { recordDetectedLang: true });
+    expect(orch.detectedLang()).toBe('de');
+  });
+
+  test('单文本入口默认不记录 —— 输入翻译送出去的是用户自己的语言', async () => {
+    const orch = createOrchestrator({ send: sendDetecting(['zh-Hans']) });
+    orch.start();
+    await orch.translateText('你好世界', 'auto', 'en');
+    expect(orch.detectedLang()).toBeNull();
+  });
+
+  test('引擎不提供或给出认不出的值 → 不记录也不报错，保留上一次的结果', async () => {
+    const orch = createOrchestrator({ send: sendDetecting([undefined, 'EN', undefined, 'xx-#bad']) });
+    orch.start();
+    await orch.translatePage(items(1), 'auto', 'zh-CN');
+    expect(orch.detectedLang()).toBeNull();
+    await orch.translatePage(items(1), 'auto', 'zh-CN');
+    expect(orch.detectedLang()).toBe('en');
+    await orch.translatePage(items(1), 'auto', 'zh-CN');
+    expect(orch.detectedLang()).toBe('en');
+    await orch.translateText('x', 'auto', 'zh-CN', { recordDetectedLang: true });
+    expect(orch.detectedLang()).toBe('en');
+  });
+
+  test('失败的翻译不记录', async () => {
+    const send = vi.fn(async () => ({ ok: false, error: 'boom', category: 'network' }));
+    const orch = createOrchestrator({ send, sleep: async () => {} });
+    orch.start();
+    await orch.translatePage(items(1), 'auto', 'zh-CN');
+    await orch.translateText('x', 'auto', 'zh-CN', { recordDetectedLang: true });
+    expect(orch.detectedLang()).toBeNull();
+  });
+
+  test('只记在内存里，不写入任何存储', async () => {
+    const spies = [
+      vi.spyOn(chrome.storage.local, 'set'),
+      vi.spyOn(chrome.storage.sync, 'set'),
+    ];
+    const orch = createOrchestrator({ send: sendDetecting(['EN']) });
+    orch.start();
+    await orch.translatePage(items(3), 'auto', 'zh-CN');
+    await orch.translateText('Hello', 'auto', 'zh-CN', { recordDetectedLang: true });
+    expect(orch.detectedLang()).toBe('en');
+    for (const spy of spies) {
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    }
+  });
+});
