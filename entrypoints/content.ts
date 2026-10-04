@@ -725,7 +725,7 @@ export default defineContentScript({
         current: inputText(el),
         focused: deepActiveElement() === el,
       });
-      if (!writeBack.write || !replaceInputText(el, result.translation!)) {
+      if (!writeBack.write || !(await replaceInputText(el, result.translation!))) {
         toast(result.translation!);
       }
     }

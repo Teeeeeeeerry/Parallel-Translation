@@ -10,6 +10,8 @@
  * #648：进行中圆点挂上进行中状态（变灰转圈），结束后回到常态。
  * #655：contenteditable 的编辑宿主获得焦点且有文字时同样浮出，位置用同一个
  * 回落位置；非编辑态的元素与可编辑区里的 contenteditable=false 子块不出现。
+ * #656：受控编辑器拦下 beforeinput 自己改 DOM，不会有 input 事件 —— 编辑宿主
+ * 里的文字变化同样让圆点跟着出现与消失。
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createLifecycleRegistry, type LifecycleRegistry } from '~/src/ui/lifecycle-registry';
@@ -384,6 +386,29 @@ describe('contenteditable 富文本框（#655）', () => {
     host.focus();
     expect(shown()).toBe(true);
     (host.querySelector('span') as HTMLElement).focus();
+    expect(shown()).toBe(false);
+  });
+
+  test('受控编辑器自己改 DOM、没有 input 事件：文字够了照样浮出，删空了消失（#656）', async () => {
+    registry.ensure('input-dot', true);
+    const host = rich('');
+    host.focus();
+    expect(shown()).toBe(false);
+    host.textContent = '你好';
+    await Promise.resolve();
+    expect(shown()).toBe(true);
+    host.textContent = '';
+    await Promise.resolve();
+    expect(shown()).toBe(false);
+  });
+
+  test('焦点离开后编辑宿主里的变化不再让圆点出现（#656）', async () => {
+    registry.ensure('input-dot', true);
+    const host = rich('');
+    host.focus();
+    host.blur();
+    host.textContent = '你好';
+    await Promise.resolve();
     expect(shown()).toBe(false);
   });
 

@@ -15,5 +15,86 @@
   <div id="rich" class="box" contenteditable="true"></div>
   <!-- 非编辑态、可聚焦的普通元素 -->
   <div id="static" class="box" tabindex="0">Static text block that is not editable.</div>
+  <!-- 受控编辑器（#656）：Slate / Lexical 一类 —— 文档模型是唯一的真相，
+       beforeinput 一律拦下，改模型后自己重新渲染；选区也是模型的一部分，
+       与 Slate 一样在 selectionchange 时才从 DOM 同步过来。只认单行文字，
+       换行不在夹具范围内。 -->
+  <div id="editor" class="box" contenteditable="true"></div>
+  <script>
+    (() => {
+      const editor = document.getElementById('editor');
+      const state = {
+        /** 文档模型：纯文本 */
+        model: '',
+        /** 模型里的选区（偏移） */
+        sel: { start: 0, end: 0 },
+        /** 收到的 beforeinput：inputType 与 data */
+        inputs: [],
+        /** 不是编辑器自己渲染造成的 DOM 变动次数（有人绕过编辑器直接改 DOM） */
+        foreignMutations: 0,
+      };
+      window.__editor = state;
+      let rendering = false;
+
+      /** 编辑器内 (node, offset) 对应的模型偏移。 */
+      function offsetOf(node, offset) {
+        const r = document.createRange();
+        r.setStart(editor, 0);
+        r.setEnd(node, offset);
+        return r.toString().length;
+      }
+
+      function render(caret) {
+        rendering = true;
+        state.sel = { start: caret, end: caret };
+        editor.textContent = state.model;
+        const text = editor.firstChild;
+        const sel = getSelection();
+        const r = document.createRange();
+        if (text) r.setStart(text, caret);
+        else r.setStart(editor, 0);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+        observer.takeRecords();
+        rendering = false;
+      }
+
+      editor.addEventListener('beforeinput', (e) => {
+        e.preventDefault();
+        state.inputs.push({ inputType: e.inputType, data: e.data });
+        // 有目标范围就用它（真实按键），没有就用模型里的选区（脚本派发的事件）
+        const target = e.getTargetRanges()[0];
+        const { start, end } = target
+          ? { start: offsetOf(target.startContainer, target.startOffset), end: offsetOf(target.endContainer, target.endOffset) }
+          : state.sel;
+        const m = state.model;
+        switch (e.inputType) {
+          case 'insertText':
+            state.model = m.slice(0, start) + e.data + m.slice(end);
+            render(start + e.data.length);
+            break;
+          case 'deleteContentBackward': {
+            const from = start === end ? Math.max(0, start - 1) : start;
+            state.model = m.slice(0, from) + m.slice(end);
+            render(from);
+            break;
+          }
+        }
+      });
+
+      document.addEventListener('selectionchange', () => {
+        const sel = getSelection();
+        if (!sel.rangeCount || !editor.contains(sel.anchorNode)) return;
+        const r = sel.getRangeAt(0);
+        state.sel = { start: offsetOf(r.startContainer, r.startOffset), end: offsetOf(r.endContainer, r.endOffset) };
+      });
+
+      const observer = new MutationObserver((records) => {
+        if (!rendering) state.foreignMutations += records.length;
+      });
+      observer.observe(editor, { childList: true, characterData: true, subtree: true });
+    })();
+  </script>
 </body>
 </html>
