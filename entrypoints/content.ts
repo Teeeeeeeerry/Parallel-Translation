@@ -282,7 +282,9 @@ export default defineContentScript({
         registry.ensure('para-btn', ns.showParagraphBtn && siteAdmitted(ns));
       }
       // #636: 输入翻译圆点在每个 frame 经注册表 ensure —— 启停幂等、即时生效
-      registry.ensure('input-dot', ns.inputTranslate);
+      // #649: 还要扩展总开关打开、站点获得准入（与逐段按钮同一份判定）；
+      // 改名单、开关总开关都经此入口即时启停
+      registry.ensure('input-dot', ns.enabled && ns.inputTranslate && siteAdmitted(ns));
     }
     applySettings(s);
 

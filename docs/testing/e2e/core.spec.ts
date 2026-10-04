@@ -2716,23 +2716,98 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect(await queries()).toEqual([]);
   });
 
-  test('@core TC-E2E-113: 站点被拉黑时点圆点 → 按既有口径提示，零请求（#639）', async ({
+  test('@core TC-E2E-113: 站点被拉黑时圆点不出现，打字、聚焦都零请求（#639；#649 起圆点不注册）', async ({
     page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ from: 'en', siteList: { mode: 'blacklist', list: ['localhost'] } });
     await mockGoogle();
     const queries = await recordGoogleQueries(serviceWorker);
-    const blocked = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastSiteBlocked'));
 
     await gotoFixture('input');
+    await waitForBall(page);
     const box = page.locator('#reply');
     await box.click();
     await page.keyboard.type('你好世界');
-    await page.locator(DOT).click();
 
-    await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(blocked);
+    // #649：未获准入的站点上圆点根本不注册，而不是浮出来、点下去才提示
+    await expect(page.locator('#pt-host-input-dot')).toHaveCount(0);
     expect(await queries()).toEqual([]);
     await expect(box).toHaveValue('你好世界');
+  });
+});
+
+test.describe('输入翻译：站点名单与总开关', () => {
+  const DOT = '#pt-host-input-dot .pt-input-dot';
+
+  /** 在 SW 里改设置（读-改-写 pt-settings），页面不刷新。 */
+  async function patchStored(
+    sw: import('@playwright/test').Worker,
+    patch: Record<string, unknown>,
+  ): Promise<void> {
+    await sw.evaluate(async (p) => {
+      const r = await chrome.storage.sync.get('pt-settings');
+      await chrome.storage.sync.set({ 'pt-settings': { ...(r['pt-settings'] as object), ...p } });
+    }, patch);
+  }
+
+  /** 在输入框里打字，断言圆点没注册。 */
+  async function expectNoDot(page: import('@playwright/test').Page) {
+    await page.locator('#reply').click();
+    await page.keyboard.type('你好世界');
+    // 留出内容脚本响应 focusin / input 的时间
+    await page.waitForTimeout(300);
+    await expect(page.locator('#pt-host-input-dot')).toHaveCount(0);
+  }
+
+  test('@core TC-E2E-119: 站点在黑名单里、或白名单模式下不在名单里时，输入框里不出现圆点；白名单命中照常出现（#649）', async ({
+    page, seedSettings, gotoFixture,
+  }) => {
+    // 名单的种子写法同 TC-E2E-108
+    await seedSettings({ from: 'en', siteList: { mode: 'blacklist', list: ['localhost'] } });
+    await gotoFixture('input');
+    await waitForBall(page);
+    await expectNoDot(page);
+
+    await seedSettings({ from: 'en', siteList: { mode: 'whitelist', list: ['example.com'] } });
+    await gotoFixture('input');
+    await waitForBall(page);
+    await expectNoDot(page);
+
+    await seedSettings({ from: 'en', siteList: { mode: 'whitelist', list: ['localhost'] } });
+    await gotoFixture('input');
+    await waitForBall(page);
+    await page.locator('#reply').click();
+    await page.keyboard.type('你好世界');
+    await expect(page.locator(DOT)).toBeVisible();
+  });
+
+  test('@core TC-E2E-120: 改名单、开关总开关都不必刷新页面 —— 拉黑即消失，移出即出现并能翻译；总开关关掉同样消失（#649）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en', siteList: { mode: 'blacklist', list: ['localhost'] } });
+    await mockGoogle();
+    await gotoFixture('input');
+    await waitForBall(page);
+    await expectNoDot(page);
+
+    // 把站点移出黑名单：焦点还在框里，圆点即刻出现，点下去照常翻译
+    const box = page.locator('#reply');
+    await patchStored(serviceWorker, { siteList: { mode: 'blacklist', list: [] } });
+    await expect(page.locator(DOT)).toBeVisible();
+    await page.locator(DOT).click();
+    await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 });
+
+    // 再拉黑：即刻消失
+    await patchStored(serviceWorker, { siteList: { mode: 'blacklist', list: ['localhost'] } });
+    await expect(page.locator('#pt-host-input-dot')).toHaveCount(0);
+    await patchStored(serviceWorker, { siteList: { mode: 'blacklist', list: [] } });
+    await expect(page.locator(DOT)).toBeVisible();
+
+    // 总开关关掉：即刻消失；打开：焦点还在框里就即刻出现
+    await patchStored(serviceWorker, { enabled: false });
+    await expect(page.locator('#pt-host-input-dot')).toHaveCount(0);
+    await patchStored(serviceWorker, { enabled: true });
+    await expect(page.locator(DOT)).toBeVisible();
   });
 });
 
