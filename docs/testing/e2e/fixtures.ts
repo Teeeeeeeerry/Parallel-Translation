@@ -34,6 +34,7 @@ export const FIXTURES = [
   'rtl',
   'media-mix',
   'entity',
+  'input',
 ] as const;
 
 export type FixtureName = (typeof FIXTURES)[number];

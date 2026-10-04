@@ -2476,3 +2476,66 @@ test.describe('自带 key 引擎：Grok', () => {
     await expect(page.locator('.pt-trans').first()).toContainText('[GK] ');
   });
 });
+
+// ================================================================
+// 输入翻译（#633）
+// ================================================================
+
+test.describe('输入翻译：圆点', () => {
+  const DOT = '#pt-host-input-dot .pt-input-dot';
+
+  /** 在 SW 里改一项设置（读-改-写 pt-settings），内容脚本经存储变更即时响应。 */
+  async function patchStored(
+    sw: import('@playwright/test').Worker,
+    patch: Record<string, unknown>,
+  ): Promise<void> {
+    await sw.evaluate(async (p) => {
+      const r = await chrome.storage.sync.get('pt-settings');
+      await chrome.storage.sync.set({ 'pt-settings': { ...(r['pt-settings'] as object), ...p } });
+    }, patch);
+  }
+
+  test('@core TC-E2E-111: 多行文本框里打到 2 个字符浮出圆点，失焦消失，开关即时启停（#636）', async ({
+    page, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('input');
+    await waitForBall(page);
+
+    const box = page.locator('#reply');
+    const dot = page.locator(DOT);
+
+    // 空框、1 个字符：不出现
+    await box.click();
+    await expect(dot).toBeHidden();
+    await page.keyboard.type('a');
+    await expect(dot).toBeHidden();
+
+    // 第 2 个字符：出现在框内侧右下角（ADR-0006 回落位置）
+    await page.keyboard.type('b');
+    await expect(dot).toBeVisible();
+    const b = (await box.boundingBox())!;
+    const d = (await dot.boundingBox())!;
+    expect(d.x).toBeGreaterThan(b.x + b.width / 2);
+    expect(d.x + d.width).toBeLessThanOrEqual(b.x + b.width);
+    expect(d.y).toBeGreaterThan(b.y + b.height / 2);
+    expect(d.y + d.height).toBeLessThanOrEqual(b.y + b.height);
+
+    // 点圆点不夺走输入框的焦点
+    await dot.click();
+    await expect(box).toBeFocused();
+
+    // 失焦即消失，回到框里又出现
+    await page.locator('#intro').click();
+    await expect(dot).toBeHidden();
+    await box.click();
+    await expect(dot).toBeVisible();
+
+    // 开关关掉：即刻消失；打开：焦点还在框里就即刻出现
+    await patchStored(serviceWorker, { inputTranslate: false });
+    await expect(page.locator('#pt-host-input-dot')).toHaveCount(0);
+    await patchStored(serviceWorker, { inputTranslate: true });
+    await expect(dot).toBeVisible();
+    await expect(page.locator('#pt-host-input-dot')).toHaveCount(1);
+  });
+});

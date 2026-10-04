@@ -30,6 +30,7 @@ import { unsplitPre } from '~/src/dom/pre-split';
 import { applyCustomCss } from '~/src/styles/custom';
 import { createBall, setBallState } from '~/src/ui/floating-ball';
 import { createParaBtn } from '~/src/ui/paragraph-btn';
+import { createInputDot } from '~/src/ui/input-dot';
 import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
@@ -158,6 +159,14 @@ export default defineContentScript({
       });
     }
 
+    // ── 输入翻译圆点（每个 frame 都注入，#636）──
+    // iframe 里的评论框、客服窗口是输入翻译的主场之一，所以不像悬浮球、
+    // 段落按钮那样只挂在主文档；inputTranslate 决定是否启动
+    registry.register('input-dot', {
+      create: () => createInputDot(),
+      stop: (stopInputDot) => stopInputDot(),
+    });
+
     // ── 快捷键（仅主文档，避免与 iframe 内输入冲突）──
     // #255: 快捷键经注册表启停（无设置开关，恒启用）
     if (isMainFrame) {
@@ -258,6 +267,8 @@ export default defineContentScript({
         registry.ensure('ball', ns.showFloatingBall);
         registry.ensure('para-btn', ns.showParagraphBtn);
       }
+      // #636: 输入翻译圆点在每个 frame 经注册表 ensure —— 启停幂等、即时生效
+      registry.ensure('input-dot', ns.inputTranslate);
     }
     applySettings(s);
 
