@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Input — Rich Text Boxes</title>
+  <style>
+    .box { width: 360px; min-height: 100px; margin: 16px 0; padding: 6px; border: 1px solid #888; font: 16px/1.4 sans-serif; }
+    .chip { background: #ddeeff; border-radius: 4px; padding: 0 4px; }
+  </style>
+</head>
+<body>
+  <h1>Write a message</h1>
+  <p id="intro">Type your message in the rich text box below.</p>
+  <!-- 普通 contenteditable：编辑宿主，里面夹着一个不可编辑、可聚焦的提及块 -->
+  <div id="rich" class="box" contenteditable="true"></div>
+  <!-- 非编辑态、可聚焦的普通元素 -->
+  <div id="static" class="box" tabindex="0">Static text block that is not editable.</div>
+</body>
+</html>

@@ -36,6 +36,7 @@ export const FIXTURES = [
   'entity',
   'input',
   'svg-chart',
+  'rich-input',
 ] as const;
 
 export type FixtureName = (typeof FIXTURES)[number];

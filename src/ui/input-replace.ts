@@ -23,6 +23,8 @@ import type { TextInput } from './input-eligibility';
  * 调用方改为把译文弹在提示条里。
  */
 export function replaceInputText(el: TextInput, text: string): boolean {
+  // contenteditable 的写回还没有（#656）：返回 false，译文弹在提示条里
+  if (!(el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement)) return false;
   // 插入作用在当前焦点上 —— 点圆点不夺焦点，这里只是兜底
   if (document.activeElement !== el) el.focus();
   el.select();

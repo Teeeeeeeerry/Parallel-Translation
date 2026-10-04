@@ -8,6 +8,8 @@
  * #639：点圆点把当前输入框交给翻译回调；框里的文字一个字不动。
  * #647：翻译进行中再点不发第二次请求；完成、失败后恢复可点。
  * #648：进行中圆点挂上进行中状态（变灰转圈），结束后回到常态。
+ * #655：contenteditable 的编辑宿主获得焦点且有文字时同样浮出，位置用同一个
+ * 回落位置；非编辑态的元素与可编辑区里的 contenteditable=false 子块不出现。
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createLifecycleRegistry, type LifecycleRegistry } from '~/src/ui/lifecycle-registry';
@@ -332,5 +334,69 @@ describe('进行中状态长在圆点上（#648）', () => {
     expect(busy()).toBe(false);
     a.focus();
     expect(busy()).toBe(true);
+  });
+});
+
+describe('contenteditable 富文本框（#655）', () => {
+  function rich(html: string): HTMLElement {
+    const host = document.createElement('div');
+    host.setAttribute('contenteditable', 'true');
+    host.innerHTML = html;
+    document.body.appendChild(host);
+    return host;
+  }
+
+  test('编辑宿主获得焦点且有 2 个字符 → 圆点出现，点击交给翻译回调', () => {
+    registry.ensure('input-dot', true);
+    const host = rich('你好');
+    host.focus();
+    expect(shown()).toBe(true);
+    dot()!.click();
+    expect(translate).toHaveBeenLastCalledWith(host);
+  });
+
+  test('空的、只有 1 个字符时不出现；打到第 2 个字符才出现', () => {
+    registry.ensure('input-dot', true);
+    const host = rich('');
+    host.focus();
+    expect(shown()).toBe(false);
+    host.textContent = 'a';
+    host.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(shown()).toBe(false);
+    host.innerHTML = '<p>a</p><p>b</p>';
+    host.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(shown()).toBe(true);
+  });
+
+  test('非编辑态的普通元素获得焦点不出现', () => {
+    registry.ensure('input-dot', true);
+    const div = document.createElement('div');
+    div.tabIndex = 0;
+    div.textContent = 'Static text block';
+    document.body.appendChild(div);
+    div.focus();
+    expect(shown()).toBe(false);
+  });
+
+  test('可编辑区里的 contenteditable=false 子块获得焦点不出现', () => {
+    registry.ensure('input-dot', true);
+    const host = rich('hello <span contenteditable="false" tabindex="0">@alice</span>');
+    host.focus();
+    expect(shown()).toBe(true);
+    (host.querySelector('span') as HTMLElement).focus();
+    expect(shown()).toBe(false);
+  });
+
+  test('位置回落到框内侧右下角（ADR-0006）', () => {
+    registry.ensure('input-dot', true);
+    const host = rich('hello');
+    mockBoundingRect(host, { left: 100, top: 50, right: 400, bottom: 150, width: 300, height: 100 });
+    host.focus();
+    const left = parseFloat(dot()!.style.left);
+    const top = parseFloat(dot()!.style.top);
+    expect(left).toBeGreaterThan(400 - 40);
+    expect(left).toBeLessThan(400);
+    expect(top).toBeGreaterThan(150 - 40);
+    expect(top).toBeLessThan(150);
   });
 });

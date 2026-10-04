@@ -2538,6 +2538,64 @@ test.describe('输入翻译：圆点', () => {
     await expect(dot).toBeVisible();
     await expect(page.locator('#pt-host-input-dot')).toHaveCount(1);
   });
+
+  test('@core TC-E2E-128: contenteditable 富文本框获得焦点且有文字时浮出圆点，在框内右下角；非编辑态元素与可编辑区里的 contenteditable=false 子块不出现（#655）', async ({
+    page, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('rich-input');
+    await waitForBall(page);
+
+    const box = page.locator('#rich');
+    const dot = page.locator(DOT);
+
+    // 获得焦点、还没有字：不出现；打到第 2 个字符才出现
+    await box.click();
+    await expect(dot).toBeHidden();
+    await page.keyboard.type('a');
+    await expect(dot).toBeHidden();
+    await page.keyboard.type('b');
+    await expect(dot).toBeVisible();
+
+    // 换行后的文字同样算数，位置在框内侧右下角（ADR-0006 回落位置）
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('你好世界');
+    await expect(dot).toBeVisible();
+    const b = (await box.boundingBox())!;
+    const d = (await dot.boundingBox())!;
+    expect(d.x).toBeGreaterThan(b.x + b.width / 2);
+    expect(d.x + d.width).toBeLessThanOrEqual(b.x + b.width);
+    expect(d.y).toBeGreaterThan(b.y + b.height / 2);
+    expect(d.y + d.height).toBeLessThanOrEqual(b.y + b.height);
+
+    // 点圆点不夺走焦点
+    await dot.click();
+    await expect(box).toBeFocused();
+
+    // 非编辑态的普通元素获得焦点：不出现
+    await page.locator('#static').focus();
+    await expect(dot).toBeHidden();
+
+    // 可编辑区里插入一个不可编辑、可聚焦的提及块；焦点落在它上面时不出现
+    await box.evaluate((el) => {
+      const chip = document.createElement('span');
+      chip.id = 'chip';
+      chip.className = 'chip';
+      chip.contentEditable = 'false';
+      chip.tabIndex = 0;
+      chip.textContent = '@alice';
+      el.append(' ', chip);
+    });
+    await box.focus();
+    await expect(dot).toBeVisible();
+    await page.locator('#chip').focus();
+    await expect(page.locator('#chip')).toBeFocused();
+    await expect(dot).toBeHidden();
+
+    // 回到编辑宿主又出现
+    await box.focus();
+    await expect(dot).toBeVisible();
+  });
 });
 
 test.describe('输入翻译：点圆点翻译', () => {
