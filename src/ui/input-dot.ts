@@ -13,6 +13,7 @@
 // #636：只认多行文本框；位置只用 ADR-0006 定的回落位置（框内侧右下角），
 // 贴文字末尾是后面的票。
 // #639：点圆点把当前输入框交给翻译回调；写不写回由回调决定。
+// #647：翻译进行中再点不发第二次请求 —— 一次点击只花一份配额。
 
 import { mountIsolated, unmountIsolated } from './mount';
 import { tf } from '../i18n';
@@ -73,6 +74,13 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
   shadow.appendChild(dot);
 
   let target: HTMLTextAreaElement | null = null;
+  /**
+   * 翻译还没回来的输入框（#647）。进行中再点直接忽略：不发请求，也不往
+   * 框里写任何占位或提示文字 —— 占位文字一旦被用户发送出去，扩展的状态
+   * 就成了对外内容。回调结束（完成、失败、放弃写回）后移出，恢复可点。
+   * 按输入框记，一个框在翻译中不妨碍另一个框。
+   */
+  const inFlight = new WeakSet<HTMLTextAreaElement>();
 
   const hide = (): void => {
     dot.style.display = 'none';
@@ -107,8 +115,13 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
   dot.addEventListener('mousedown', (e) => e.preventDefault());
 
   dot.addEventListener('click', () => {
-    if (!target) return;
-    handlers.translate(target).catch((e) => console.error('[PT] 输入翻译失败:', e));
+    const el = target;
+    if (!el || inFlight.has(el)) return;
+    inFlight.add(el);
+    handlers
+      .translate(el)
+      .catch((e) => console.error('[PT] 输入翻译失败:', e))
+      .finally(() => inFlight.delete(el));
   });
 
   document.addEventListener('focusin', onFocusIn, true);
