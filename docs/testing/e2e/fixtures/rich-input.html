@@ -17,7 +17,9 @@
   <div id="static" class="box" tabindex="0">Static text block that is not editable.</div>
   <!-- 受控编辑器（#656）：Slate / Lexical 一类 —— 文档模型是唯一的真相，
        beforeinput 一律拦下，改模型后自己重新渲染；选区也是模型的一部分，
-       与 Slate 一样在 selectionchange 时才从 DOM 同步过来。只认单行文字，
+       与 Slate 一样在 selectionchange 时才从 DOM 同步过来。撤销栈也由编辑器
+       自己管（#657）：每次改模型记一步，Mod+Z / Mod+Shift+Z 在 keydown 里拦下
+       自己撤销与重做，浏览器的原生撤销栈里没有这些改动。只认单行文字，
        换行不在夹具范围内。 -->
   <div id="editor" class="box" contenteditable="true"></div>
   <script>
@@ -32,6 +34,9 @@
         inputs: [],
         /** 不是编辑器自己渲染造成的 DOM 变动次数（有人绕过编辑器直接改 DOM） */
         foreignMutations: 0,
+        /** 编辑器自己的撤销栈与重做栈：每一步记改动前的模型与光标 */
+        undo: [],
+        redo: [],
       };
       window.__editor = state;
       let rendering = false;
@@ -69,6 +74,8 @@
           ? { start: offsetOf(target.startContainer, target.startOffset), end: offsetOf(target.endContainer, target.endOffset) }
           : state.sel;
         const m = state.model;
+        state.undo.push({ model: m, caret: start });
+        state.redo.length = 0;
         switch (e.inputType) {
           case 'insertText':
             state.model = m.slice(0, start) + e.data + m.slice(end);
@@ -81,6 +88,17 @@
             break;
           }
         }
+      });
+
+      editor.addEventListener('keydown', (e) => {
+        if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+        e.preventDefault();
+        const [from, to] = e.shiftKey ? [state.redo, state.undo] : [state.undo, state.redo];
+        const step = from.pop();
+        if (!step) return;
+        to.push({ model: state.model, caret: state.sel.end });
+        state.model = step.model;
+        render(step.caret);
       });
 
       document.addEventListener('selectionchange', () => {
