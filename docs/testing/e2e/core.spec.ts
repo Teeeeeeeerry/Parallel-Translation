@@ -2693,6 +2693,29 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect(await queries()).toEqual(['你好世界', '【译】你好世界']);
   });
 
+  test('@core TC-E2E-118: 源语言是 auto（默认）时点圆点 → 不发请求，提示去设置里指定源语言，框里文字不动（#640）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    const queries = await recordGoogleQueries(serviceWorker);
+    const hint = await serviceWorker.evaluate(() =>
+      chrome.i18n.getMessage('toastInputSourceLangNeeded'),
+    );
+    expect(hint).not.toBe('');
+
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    await box.click();
+    await page.keyboard.type('你好世界');
+    await page.locator(DOT).click();
+
+    await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(hint);
+    await expect(box).toHaveValue('你好世界');
+    expect(await queries()).toEqual([]);
+  });
+
   test('@core TC-E2E-113: 站点被拉黑时点圆点 → 按既有口径提示，零请求（#639）', async ({
     page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
   }) => {
