@@ -2760,7 +2760,7 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
     }
 
     // 白名单以外的类型：打字也不出现
-    for (const [id, text] of [['#secret', 'hunter22'], ['#mail', 'me@example.com']]) {
+    for (const [id, text] of [['#secret', 'hunter22'], ['#mail', 'me@example.com']] as const) {
       await page.locator(id).click();
       await page.keyboard.type(text);
       await page.waitForTimeout(300);
