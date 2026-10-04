@@ -31,6 +31,7 @@ import { applyCustomCss } from '~/src/styles/custom';
 import { createBall, setBallState } from '~/src/ui/floating-ball';
 import { createParaBtn } from '~/src/ui/paragraph-btn';
 import { createInputDot } from '~/src/ui/input-dot';
+import { replaceInputText } from '~/src/ui/input-replace';
 import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
@@ -645,7 +646,8 @@ export default defineContentScript({
      * 失败提示语义、当前领域与术语全部现成，不新开消息通道。目标语言取
      * 设置里的源语言（ADR-0005），当前领域因此按对方语言那个方向解析。
      *
-     * 本票译文只弹在提示条里，输入框内容一个字不动；写回从 #644 开始。
+     * #644：译文整段替换框里的全部文字，走浏览器原生的文本插入路径；
+     * 浏览器拒绝插入时框里内容不动，译文弹在提示条里。
      */
     async function translateInput(el: HTMLTextAreaElement): Promise<void> {
       const ns = getSettings();
@@ -670,7 +672,7 @@ export default defineContentScript({
         return;
       }
 
-      toast(result.translation!);
+      if (!replaceInputText(el, result.translation!)) toast(result.translation!);
     }
 
     async function translateSelection(text: string): Promise<void> {
