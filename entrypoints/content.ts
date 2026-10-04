@@ -677,23 +677,30 @@ export default defineContentScript({
      */
     async function translateInput(el: TextInput): Promise<void> {
       const ns = getSettings();
+      const snapshot = el.value;
       // #640：译成哪种语言由判定链给出（ADR-0005）；判不出来不猜，
       // 提示用户去设置里指定源语言，零请求
       // #658：源语言是 auto 时读本 frame 页面的语言声明；
       // #660：本 frame 翻译时引擎报告过检测语言就优先用它
+      // #661：用户写的已经是对方的语言就不替换，零请求
       const target = decideInputTarget({
         from: ns.from,
         pageLang: document.documentElement.getAttribute('lang'),
         detectedLang: orchestrator.detectedLang(),
+        text: snapshot,
+        textLang: await reliableTextLang(snapshot),
       });
       if (!target.ok) {
-        toast(
-          tf('toastInputSourceLangNeeded', '判断不出要译成哪种语言，请在设置里把源语言指定为对方的语言'),
-          'error',
-        );
+        if (target.reason === 'same-language') {
+          toast(tf('toastInputSameLanguage', '写的已经是对方的语言，没有替换'));
+        } else {
+          toast(
+            tf('toastInputSourceLangNeeded', '判断不出要译成哪种语言，请在设置里把源语言指定为对方的语言'),
+            'error',
+          );
+        }
         return;
       }
-      const snapshot = el.value;
       const result = await orchestrator.translateText(snapshot, 'auto', target.lang);
 
       // 准入拦截：与逐段 / 划词翻译一致的提示，零请求
@@ -721,6 +728,23 @@ export default defineContentScript({
       if (!writeBack.write || !replaceInputText(el, result.translation!)) {
         toast(result.translation!);
       }
+    }
+
+    /**
+     * 浏览器语言检测器对这段文字的可靠结果（#661）；不可靠、拿不到或出错时
+     * 为 null。检测在本地进行，不发网络请求。
+     */
+    function reliableTextLang(text: string): Promise<string | null> {
+      return new Promise((resolve) => {
+        try {
+          chrome.i18n.detectLanguage(text, (r) => {
+            const reliable = !chrome.runtime.lastError && r?.isReliable;
+            resolve(reliable ? (r.languages[0]?.language ?? null) : null);
+          });
+        } catch {
+          resolve(null);
+        }
+      });
     }
 
     async function translateSelection(text: string): Promise<void> {

@@ -483,5 +483,6 @@
   "rowInputTranslate": { "message": "輸入翻譯" },
   "rowInputTranslateDesc": { "message": "在輸入框裡寫好文字後，點文字末尾的圓點，把它整段換成對方的語言（取「來源語言」設定）。密碼框不參與。" },
   "inputDotLabel": { "message": "翻譯輸入框裡的文字" },
-  "toastInputSourceLangNeeded": { "message": "判斷不出要譯成哪種語言，請在設定裡把來源語言指定為對方的語言" }
+  "toastInputSourceLangNeeded": { "message": "判斷不出要譯成哪種語言，請在設定裡把來源語言指定為對方的語言" },
+  "toastInputSameLanguage": { "message": "寫的已經是對方的語言，沒有替換" }
 }

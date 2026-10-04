@@ -483,5 +483,6 @@
   "rowInputTranslate": { "message": "Translate input" },
   "rowInputTranslateDesc": { "message": "After typing in a text box, click the dot at the end of your text to replace it with the other person's language (taken from the “Source language” setting). Password fields are never included." },
   "inputDotLabel": { "message": "Translate the text in this box" },
-  "toastInputSourceLangNeeded": { "message": "Can't tell which language to translate into. In Settings, set “Source language” to the other person's language" }
+  "toastInputSourceLangNeeded": { "message": "Can't tell which language to translate into. In Settings, set “Source language” to the other person's language" },
+  "toastInputSameLanguage": { "message": "You're already writing in the other person's language, so nothing was replaced" }
 }
