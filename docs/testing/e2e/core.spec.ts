@@ -2639,6 +2639,29 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect((await inputTypes()).at(-1)).toBe('insertText');
   });
 
+  test('@core TC-E2E-115: 替换后按撤销键回到原文，再按重做回到译文 —— 真实按键（#645）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await mockGoogle();
+    await gotoFixture('input');
+    await waitForBall(page);
+
+    const box = page.locator('#reply');
+    await box.click();
+    await page.keyboard.type('这是我自己写的话');
+    await page.locator(DOT).click();
+    await expect(box).toHaveValue('【译】这是我自己写的话', { timeout: 10_000 });
+
+    // 撤销：Ctrl+Z（macOS 上是 Cmd+Z），框里回到原文
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(box).toHaveValue('这是我自己写的话');
+
+    // 重做：Ctrl+Shift+Z（macOS 上是 Cmd+Shift+Z），回到译文
+    await page.keyboard.press('ControlOrMeta+Shift+z');
+    await expect(box).toHaveValue('【译】这是我自己写的话');
+  });
+
   test('@core TC-E2E-113: 站点被拉黑时点圆点 → 按既有口径提示，零请求（#639）', async ({
     page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
   }) => {
