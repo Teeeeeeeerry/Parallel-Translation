@@ -14,6 +14,7 @@
 // 贴文字末尾是后面的票。
 // #639：点圆点把当前输入框交给翻译回调；写不写回由回调决定。
 // #647：翻译进行中再点不发第二次请求 —— 一次点击只花一份配额。
+// #648：进行中的状态长在圆点上 —— 变灰转圈，结束回到常态。
 // #650：能不能参与交给「这个输入框能不能参与」的判定，放行普通文本框与
 // 搜索框；圆点位置仍是回落位置。
 
@@ -85,9 +86,26 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
    */
   const inFlight = new WeakSet<TextInput>();
 
+  /**
+   * 圆点的进行中状态（#648）直接读在飞标记，不另存一份。
+   *
+   * 只同步改属性，转圈交给 CSS 动画：标签页在后台时不依赖动画帧回调 ——
+   * 回调不执行时状态会卡住（与逐段按钮刻意不用 rAF 同一个理由）。
+   */
+  const syncState = (): void => {
+    if (target && inFlight.has(target)) {
+      dot.dataset.state = 'busy';
+      dot.setAttribute('aria-busy', 'true');
+    } else {
+      delete dot.dataset.state;
+      dot.removeAttribute('aria-busy');
+    }
+  };
+
   const hide = (): void => {
     dot.style.display = 'none';
     target = null;
+    syncState();
   };
 
   const sync = (el: Element | null): void => {
@@ -96,6 +114,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
       return;
     }
     target = el;
+    syncState();
     dot.style.display = 'block';
     placeFallback(dot, el);
   };
@@ -121,10 +140,14 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
     const el = target;
     if (!el || inFlight.has(el)) return;
     inFlight.add(el);
+    syncState();
     handlers
       .translate(el)
       .catch((e) => console.error('[PT] 输入翻译失败:', e))
-      .finally(() => inFlight.delete(el));
+      .finally(() => {
+        inFlight.delete(el);
+        syncState();
+      });
   });
 
   document.addEventListener('focusin', onFocusIn, true);

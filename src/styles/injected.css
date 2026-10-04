@@ -92,6 +92,15 @@
   cursor: pointer;
 }
 
+/* 输入翻译进行中（#648）：变灰并转圈，描边缺一角才看得出在转；
+   纯 CSS 动画，不依赖动画帧回调。不新增色板条目 */
+.pt-input-dot[data-state='busy'] {
+  background: var(--pt-forest-40);
+  border-top-color: transparent;
+  cursor: progress;
+  animation: pt-spin 0.8s linear infinite;
+}
+
 .pt-toast {
   position: fixed;
   bottom: 80px;

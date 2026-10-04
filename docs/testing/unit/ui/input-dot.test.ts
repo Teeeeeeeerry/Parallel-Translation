@@ -7,6 +7,7 @@
  *
  * #639：点圆点把当前输入框交给翻译回调；框里的文字一个字不动。
  * #647：翻译进行中再点不发第二次请求；完成、失败后恢复可点。
+ * #648：进行中圆点挂上进行中状态（变灰转圈），结束后回到常态。
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createLifecycleRegistry, type LifecycleRegistry } from '~/src/ui/lifecycle-registry';
@@ -262,5 +263,74 @@ describe('单行文本框与搜索框（#650）', () => {
     expect(shown()).toBe(false);
     dot()!.click();
     expect(translate).not.toHaveBeenCalled();
+  });
+});
+
+describe('进行中状态长在圆点上（#648）', () => {
+  function deferredTranslate() {
+    const pending: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
+    translate.mockImplementation(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          pending.push({ resolve, reject });
+        }),
+    );
+    return pending;
+  }
+
+  const busy = (): boolean => dot()!.dataset.state === 'busy';
+
+  test('点下去即刻进入进行中，结束后回到常态', async () => {
+    const pending = deferredTranslate();
+    registry.ensure('input-dot', true);
+    const ta = textarea('你好世界');
+    ta.focus();
+    expect(busy()).toBe(false);
+    dot()!.click();
+    expect(busy()).toBe(true);
+    expect(dot()!.getAttribute('aria-busy')).toBe('true');
+    pending[0]!.resolve();
+    await vi.waitFor(() => expect(busy()).toBe(false));
+    expect(dot()!.getAttribute('aria-busy')).toBeNull();
+  });
+
+  test('失败后同样回到常态', async () => {
+    const pending = deferredTranslate();
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    registry.ensure('input-dot', true);
+    const ta = textarea('你好世界');
+    ta.focus();
+    dot()!.click();
+    pending[0]!.reject(new Error('boom'));
+    await vi.waitFor(() => expect(busy()).toBe(false));
+    err.mockRestore();
+  });
+
+  test('翻译回调里写回触发的 input 不会让圆点卡在进行中', async () => {
+    translate.mockImplementation(async (el: HTMLTextAreaElement) => {
+      await Promise.resolve();
+      type(el, '【译】你好世界');
+    });
+    registry.ensure('input-dot', true);
+    const ta = textarea('你好世界');
+    ta.focus();
+    dot()!.click();
+    await vi.waitFor(() => expect(ta.value).toBe('【译】你好世界'));
+    await vi.waitFor(() => expect(busy()).toBe(false));
+    expect(shown()).toBe(true);
+  });
+
+  test('状态跟着输入框走：焦点换到另一个框显示常态，回来仍是进行中', () => {
+    deferredTranslate();
+    registry.ensure('input-dot', true);
+    const a = textarea('你好世界');
+    const b = textarea('早上好');
+    a.focus();
+    dot()!.click();
+    expect(busy()).toBe(true);
+    b.focus();
+    expect(busy()).toBe(false);
+    a.focus();
+    expect(busy()).toBe(true);
   });
 });
