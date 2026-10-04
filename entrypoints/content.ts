@@ -262,9 +262,12 @@ export default defineContentScript({
      * （整页、逐段、划词翻译）同一个口径、同一个主机名。鼠标路过就浮出的
      * UI 按它决定要不要注册：站点没获准入时根本不挂监听，而不是浮出来、
      * 点下去才提示被禁用。输入翻译圆点（#649）同样按它门控。
+     *
+     * #686：扩展总开关也算在内 —— 总开关关掉时编排模块的准入同样拦下
+     * （静默不响应），所以这类 UI 也不该注册。
      */
-    function siteAdmitted(ns: Settings): boolean {
-      return !isSiteBlocked(location.hostname, ns.siteList);
+    function uiAdmitted(ns: Settings): boolean {
+      return ns.enabled && !isSiteBlocked(location.hostname, ns.siteList);
     }
 
     // ── 设置变更统一入口（#265）──
@@ -280,12 +283,13 @@ export default defineContentScript({
         // #242/#243: 悬浮球 / 段落按钮开关经注册表 ensure —— 启停幂等、即时生效
         registry.ensure('ball', ns.showFloatingBall);
         // #632: 段落按钮还要站点获得准入；改名单经此入口即时启停
-        registry.ensure('para-btn', ns.showParagraphBtn && siteAdmitted(ns));
+        // #686: 与输入翻译圆点同一份判定，总开关关掉同样不注册
+        registry.ensure('para-btn', ns.showParagraphBtn && uiAdmitted(ns));
       }
       // #636: 输入翻译圆点在每个 frame 经注册表 ensure —— 启停幂等、即时生效
       // #649: 还要扩展总开关打开、站点获得准入（与逐段按钮同一份判定）；
       // 改名单、开关总开关都经此入口即时启停
-      registry.ensure('input-dot', ns.enabled && ns.inputTranslate && siteAdmitted(ns));
+      registry.ensure('input-dot', ns.inputTranslate && uiAdmitted(ns));
     }
     applySettings(s);
 
