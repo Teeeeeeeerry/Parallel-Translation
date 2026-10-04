@@ -25,6 +25,7 @@ import type { Settings } from '~/src/storage/schema';
 import { currentDomain } from '~/src/storage/domains';
 import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { isSiteBlocked } from '~/src/dom/site-filter';
+import { normalizeLangCode } from './lang-code';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
 
@@ -151,7 +152,18 @@ export interface TranslationOrchestrator {
     text: string,
     from: string,
     to: string,
+    textOpts?: SingleTextOptions,
   ): Promise<SingleTextResult>;
+  /**
+   * 本 frame 最近一次翻译时引擎报告的检测语言（#659），已归一化为小写
+   * 语言码主段；还没有时为 null。
+   *
+   * 整页翻译的成功批次与声明了 recordDetectedLang 的单文本翻译（逐段翻译）
+   * 会更新它；引擎不提供或给出认不出的值时保留上一次的结果。只记在本模块
+   * 的内存里，不进任何存储 —— 每个 frame 各有一个编排模块实例。默认引擎
+   * google-web 不返回检测语言，只有 bing-edge 与 deepl 返回。
+   */
+  detectedLang(): string | null;
   /**
    * 整页开关入口（#325）—— 一次调用完成「查询当前翻译态 → 决定
    * 翻译还是还原 → 执行」。翻译态查询与还原动作以注入方式提供
@@ -163,6 +175,16 @@ export interface TranslationOrchestrator {
     from: string,
     to: string,
   ): Promise<PageToggleResult>;
+}
+
+/** 单文本入口的选项（#659）。 */
+export interface SingleTextOptions {
+  /**
+   * 成功后记下引擎报告的检测语言。逐段翻译送的是页面上的文字，声明为
+   * true；输入翻译送的是用户自己写的文字，检测出来的是用户自己的语言，
+   * 不能记 —— 所以默认不记录。
+   */
+  recordDetectedLang?: boolean;
 }
 
 /** 整页开关入口的结果（#325）。 */
@@ -307,6 +329,11 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   let toggleInFlight = false;
   // #265: 设置变更订阅（start 订阅 / stop 退订）
   let unsubscribeSettings: (() => void) | null = null;
+  // #659: 引擎报告的检测语言，只在内存里
+  let detectedLang: string | null = null;
+  const recordDetectedLang = (raw: string | undefined): void => {
+    detectedLang = normalizeLangCode(raw) ?? detectedLang;
+  };
 
   // #325: 全页翻译流水线本体（translatePage 与 togglePage 共用）
   const translatePageImpl = async (
@@ -374,6 +401,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
             return;
           }
           allFailed = false;
+          // #659: 记下引擎报告的检测语言（引擎不提供时不动）
+          recordDetectedLang(result.data.detectedFrom);
           // #440: 部分段落因 key 无效、配额耗尽失败 —— 同样展示真实原因。
           // 有意不置 invalidated：其他批次照常翻译，已成功的段落照常渲染
           const failure = result.data.failure;
@@ -518,7 +547,11 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       }
     },
 
-    async translateText(text, from, to): Promise<SingleTextResult> {
+    detectedLang(): string | null {
+      return detectedLang;
+    },
+
+    async translateText(text, from, to, textOpts): Promise<SingleTextResult> {
       if (!started) throw new Error('[PT] 编排未启动');
 
       // #311: 与整页入口同一份准入判定 —— 拦截时零请求
@@ -542,6 +575,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       }
 
       if (result.ok) {
+        if (textOpts?.recordDetectedLang) recordDetectedLang(result.data?.detectedFrom);
         // 译文逐字透传引擎结果，模块不改写（#312）
         return {
           admission,
