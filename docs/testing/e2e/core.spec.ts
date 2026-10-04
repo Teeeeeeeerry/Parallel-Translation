@@ -2562,7 +2562,7 @@ test.describe('输入翻译：点圆点翻译', () => {
     return () => sw.evaluate(() => [...(self as any).__ptQueries] as string[]);
   }
 
-  test('@core TC-E2E-112: 点圆点 → 译成源语言，译文弹在提示条里，输入框一个字不动，术语照常生效（#639）', async ({
+  test('@core TC-E2E-112: 点圆点 → 译成源语言，术语照常生效（#639；#644 起译文写回输入框）', async ({
     page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
   }) => {
     // ADR-0005：目标语言取源语言。当前领域按目标语言解析，所以领域是 en 方向的
@@ -2592,13 +2592,51 @@ test.describe('输入翻译：点圆点翻译', () => {
     await page.keyboard.type('我在 GitHub 上写回复');
     await page.locator(DOT).click();
 
-    const toast = page.locator(TOAST);
-    await expect(toast).toContainText('【译】我在 GitHub 上写回复 [tl=en]', { timeout: 10_000 });
+    // #644：译文写回输入框，不再弹提示条
+    await expect(box).toHaveValue('【译】我在 GitHub 上写回复 [tl=en]', { timeout: 10_000 });
     // “不翻译”术语以占位符发出，回来换回原词
     expect(await queries()).toEqual(['我在 ⟦TM0⟧ 上写回复']);
-    // 输入框内容一个字不动，焦点还在
-    await expect(box).toHaveValue('我在 GitHub 上写回复');
+    await expect(page.locator(TOAST)).toHaveCount(0);
     await expect(box).toBeFocused();
+  });
+
+  test('@core TC-E2E-114: 译文整段替换框里全部文字 —— 有没有选区都一样，走原生插入，焦点还在（#644）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await mockGoogle();
+    await gotoFixture('input');
+    await waitForBall(page);
+
+    // 页面自己的监听：写回必须是一次真实的原生文本插入，而不是脚本赋值
+    await page.evaluate(() => {
+      (window as any).__ptInputTypes = [] as string[];
+      document.getElementById('reply')!.addEventListener('input', (e) => {
+        (window as any).__ptInputTypes.push((e as InputEvent).inputType);
+      });
+    });
+    const inputTypes = () => page.evaluate(() => [...(window as any).__ptInputTypes] as string[]);
+    const box = page.locator('#reply');
+
+    // 没有选区：光标停在末尾
+    await box.click();
+    await page.keyboard.type('第一段');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('第二段');
+    await page.locator(DOT).click();
+    await expect(box).toHaveValue('【译】第一段\n第二段', { timeout: 10_000 });
+    await expect(box).toBeFocused();
+    expect((await inputTypes()).at(-1)).toBe('insertText');
+
+    // 有选区：只选中末尾 2 个字，替换的仍是全部文字
+    await box.fill('');
+    await page.keyboard.type('你好世界');
+    await page.keyboard.press('Shift+ArrowLeft');
+    await page.keyboard.press('Shift+ArrowLeft');
+    await page.locator(DOT).click();
+    await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 });
+    await expect(box).toBeFocused();
+    expect((await inputTypes()).at(-1)).toBe('insertText');
   });
 
   test('@core TC-E2E-113: 站点被拉黑时点圆点 → 按既有口径提示，零请求（#639）', async ({
