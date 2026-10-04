@@ -34,6 +34,7 @@ import { createInputDot, deepActiveElement } from '~/src/ui/input-dot';
 import { replaceInputText } from '~/src/ui/input-replace';
 import { decideWriteBack } from '~/src/ui/input-writeback';
 import { decideInputTarget } from '~/src/ui/input-target-lang';
+import type { TextInput } from '~/src/ui/input-eligibility';
 import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
@@ -667,7 +668,7 @@ export default defineContentScript({
      * #646：送翻时记下原文快照。译文回来时框里已经不是那一段，或焦点已经
      * 换到别处，就放弃写回、译文弹在提示条里 —— 吞掉用户刚打的字不可逆。
      */
-    async function translateInput(el: HTMLTextAreaElement): Promise<void> {
+    async function translateInput(el: TextInput): Promise<void> {
       const ns = getSettings();
       // #640：译成哪种语言由判定链给出（ADR-0005）；判不出来不猜，
       // 提示用户去设置里指定源语言，零请求

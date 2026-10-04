@@ -2736,6 +2736,74 @@ test.describe('输入翻译：点圆点翻译', () => {
   });
 });
 
+test.describe('输入翻译：单行文本框与搜索框', () => {
+  const DOT = '#pt-host-input-dot .pt-input-dot';
+
+  test('@core TC-E2E-121: 普通文本框与搜索框里浮出圆点并能完成翻译；密码框、邮箱框不出现（#650）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await mockGoogle();
+    await gotoFixture('input');
+    await waitForBall(page);
+    const dot = page.locator(DOT);
+
+    // 放行的两种：圆点出现，点下去整段替换，焦点还在框里
+    for (const id of ['#title', '#query']) {
+      const box = page.locator(id);
+      await box.click();
+      await page.keyboard.type('你好世界');
+      await expect(dot).toBeVisible();
+      await dot.click();
+      await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 });
+      await expect(box).toBeFocused();
+    }
+
+    // 白名单以外的类型：打字也不出现
+    for (const [id, text] of [['#secret', 'hunter22'], ['#mail', 'me@example.com']]) {
+      await page.locator(id).click();
+      await page.keyboard.type(text);
+      await page.waitForTimeout(300);
+      await expect(dot).toBeHidden();
+    }
+
+    // 多行文本框的行为不变
+    await page.locator('#reply').click();
+    await page.keyboard.type('你好');
+    await expect(dot).toBeVisible();
+  });
+
+  test('@core TC-E2E-122: 单行文本框与搜索框里圆点的位置 —— 回落到框内侧右侧，不出框（#650，实地再看）', async ({
+    page, seedSettings, gotoFixture,
+  }, testInfo) => {
+    await seedSettings({ from: 'en' });
+    await gotoFixture('input');
+    await waitForBall(page);
+    const dot = page.locator(DOT);
+
+    for (const id of ['#title', '#query']) {
+      const box = page.locator(id);
+      await box.click();
+      await page.keyboard.type('hello world');
+      await expect(dot).toBeVisible();
+      const b = (await box.boundingBox())!;
+      const d = (await dot.boundingBox())!;
+      // ADR-0006 的回落位置：框内侧右侧，整颗圆点在框里
+      expect(d.x).toBeGreaterThan(b.x + b.width / 2);
+      expect(d.x + d.width).toBeLessThanOrEqual(b.x + b.width);
+      expect(d.y).toBeGreaterThanOrEqual(b.y);
+      expect(d.y + d.height).toBeLessThanOrEqual(b.y + b.height);
+      // 搜索框那一角常被站点自己的按钮占着，留截图供实地比对
+      await testInfo.attach(`dot-in-${id.slice(1)}`, {
+        body: await page.screenshot({
+          clip: { x: b.x - 8, y: b.y - 8, width: b.width + 16, height: b.height + 16 },
+        }),
+        contentType: 'image/png',
+      });
+    }
+  });
+});
+
 test.describe('输入翻译：站点名单与总开关', () => {
   const DOT = '#pt-host-input-dot .pt-input-dot';
 

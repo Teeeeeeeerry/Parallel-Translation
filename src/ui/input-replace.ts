@@ -13,14 +13,16 @@
 //   insertText），受控组件的内部状态不与界面脱节
 //
 // `execCommand` 已被标为过时，但它是目前唯一能进撤销栈的文本插入方式，
-// Chrome 与 Firefox 都支持在 textarea 里执行。
+// Chrome 与 Firefox 都支持在 textarea 与单行文本框（#650）里执行。
+
+import type { TextInput } from './input-eligibility';
 
 /**
  * 整段替换：不论有没有选区，先全选再插入。
  * 返回是否写回成功；浏览器拒绝执行时返回 false，框里内容不动，
  * 调用方改为把译文弹在提示条里。
  */
-export function replaceInputText(el: HTMLTextAreaElement, text: string): boolean {
+export function replaceInputText(el: TextInput, text: string): boolean {
   // 插入作用在当前焦点上 —— 点圆点不夺焦点，这里只是兜底
   if (document.activeElement !== el) el.focus();
   el.select();
