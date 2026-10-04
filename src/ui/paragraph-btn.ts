@@ -9,6 +9,7 @@
 // 单个按钮实例复用，随鼠标在段落间移动，不为每段各建一个。
 
 import { mountIsolated, unmountIsolated } from './mount';
+import { textRects } from './text-rects';
 import { closestUnit } from '../dom/classify';
 import { tf } from '../i18n';
 
@@ -224,16 +225,6 @@ function findUnderOverlay(x: number, y: number): Element | null {
     if (unit) return unit;
   }
   return null;
-}
-
-/**
- * 取元素内文字的实际行盒矩形列表（`Range.getClientRects()`）。
- * 空列表意味着元素内容全是浮动/绝对定位子元素等没有行盒的情况。
- */
-function textRects(el: Element): DOMRect[] {
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  return [...range.getClientRects()];
 }
 
 /**
