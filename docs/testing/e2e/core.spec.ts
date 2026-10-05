@@ -2994,6 +2994,38 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect(await model()).toBe('【译】早上好');
   });
 
+  test('@core TC-E2E-132: 译文比框的长度上限长时不写回 —— 框里还是原文，译文出现在提示条里；刚好装得下照常替换（#654）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await mockGoogle();
+    await gotoFixture('input');
+    await waitForBall(page);
+    const dot = page.locator(DOT);
+    const toast = page.locator(TOAST);
+    // 原文 4 个字符，译文“【译】你好世界”7 个字符
+    const original = '你好世界';
+    const translated = '【译】你好世界';
+
+    for (const sel of ['#reply', '#title']) {
+      const box = page.locator(sel);
+
+      // 上限比译文短一个字符：不写回，不截断
+      await box.evaluate((el, n) => el.setAttribute('maxlength', String(n)), translated.length - 1);
+      await box.fill('');
+      await box.click();
+      await page.keyboard.type(original);
+      await dot.click();
+      await expect(toast).toHaveText(translated, { timeout: 10_000 });
+      await expect(box).toHaveValue(original);
+
+      // 上限刚好等于译文长度：照常替换
+      await box.evaluate((el, n) => el.setAttribute('maxlength', String(n)), translated.length);
+      await dot.click();
+      await expect(box).toHaveValue(translated, { timeout: 10_000 });
+    }
+  });
+
   test('@core TC-E2E-124: 翻译进行中圆点变灰转圈；完成、失败、放弃写回之后都回到常态（#648）', async ({
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {

@@ -34,7 +34,7 @@ import { createInputDot, deepActiveElement } from '~/src/ui/input-dot';
 import { replaceInputText } from '~/src/ui/input-replace';
 import { decideWriteBack } from '~/src/ui/input-writeback';
 import { decideInputTarget } from '~/src/ui/input-target-lang';
-import { inputText, type TextInput } from '~/src/ui/input-eligibility';
+import { inputMaxLength, inputText, type TextInput } from '~/src/ui/input-eligibility';
 import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
@@ -724,6 +724,9 @@ export default defineContentScript({
         snapshot,
         current: inputText(el),
         focused: deepActiveElement() === el,
+        // #654：长度上限装不下译文时不写回 —— 原生插入会静默截断
+        translation: result.translation!,
+        maxLength: inputMaxLength(el),
       });
       if (!writeBack.write || !(await replaceInputText(el, result.translation!))) {
         toast(result.translation!);
