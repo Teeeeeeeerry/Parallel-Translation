@@ -22,9 +22,13 @@
 // 编辑宿主改由 DOM 变动驱动同步。
 // #665：多行文本框里圆点贴文字末尾（ADR-0006），位置由镜像测量给出；量不
 // 出来时回落框内侧右下角。单行文本框与 contenteditable 仍是回落位置。
+// #670：镜像测量会强制同步布局，不能挂在每次按键上。连续打字期间不重算
+// 位置，停手 SHOW_DELAY（与逐段按钮悬停意图同一个口径）后对齐一次 —— 打字
+// 时圆点在哪儿没人看，打字卡顿却是立刻能感觉到的（ADR-0006）。
 
 import { mountIsolated, unmountIsolated } from './mount';
 import { measureTextareaEnd } from './input-measure';
+import { SHOW_DELAY } from './paragraph-btn';
 import { tf } from '../i18n';
 import { decideInputEligibility, inputText, type TextInput } from './input-eligibility';
 
@@ -123,21 +127,48 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
     }
   };
 
+  /** 停手后对齐的计时器（#670）；有值表示还在等停手。 */
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  const cancelAlign = (): void => {
+    clearTimeout(settleTimer);
+    settleTimer = undefined;
+  };
+  const alignAfterTyping = (): void => {
+    cancelAlign();
+    settleTimer = setTimeout(() => {
+      settleTimer = undefined;
+      if (target) place(dot, target, shadow);
+    }, SHOW_DELAY);
+  };
+
   const hide = (): void => {
+    cancelAlign();
     dot.style.display = 'none';
     target = null;
     syncState();
   };
 
-  const sync = (el: Element | null): void => {
+  /**
+   * 按焦点所在的输入框显示或隐藏圆点。
+   * typing 为 true 时是打字引起的（#670）：不做测量，停手后再对齐；圆点在
+   * 这次刚浮出时先放在回落位置，不至于没有位置。
+   */
+  const sync = (el: Element | null, typing = false): void => {
     if (!eligible(el) || !hasEnoughText(el)) {
       hide();
       return;
     }
+    const wasShown = target === el && dot.style.display === 'block';
     target = el;
     syncState();
     dot.style.display = 'block';
-    place(dot, el, shadow);
+    if (!typing) {
+      cancelAlign();
+      place(dot, el, shadow);
+      return;
+    }
+    if (!wasShown) placeFallback(dot, el);
+    alignAfterTyping();
   };
 
   /**
@@ -147,7 +178,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
    */
   const observer = new MutationObserver(() => {
     const el = deepActiveElement();
-    if (el === observed) sync(el);
+    if (el === observed) sync(el, true);
   });
   let observed: Element | null = null;
   const observe = (el: Element | null): void => {
@@ -172,11 +203,12 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
   };
   const onInput = (e: Event): void => {
     const el = (e.composedPath()[0] as Element | undefined) ?? null;
-    if (el === deepActiveElement()) sync(el);
+    if (el === deepActiveElement()) sync(el, true);
   };
   // 圆点是 fixed 定位，页面或框内滚动时重新贴合
+  // 还在等停手时不量：打字引起的框内滚动交给停手后的那次对齐
   const onReflow = (): void => {
-    if (target) place(dot, target, shadow);
+    if (target && settleTimer === undefined) place(dot, target, shadow);
   };
 
   // 按下时阻止默认行为：不夺走输入框的焦点，光标与选区都还在
@@ -207,6 +239,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
   sync(deepActiveElement());
 
   return () => {
+    cancelAlign();
     document.removeEventListener('focusin', onFocusIn, true);
     document.removeEventListener('focusout', onFocusOut, true);
     document.removeEventListener('input', onInput, true);

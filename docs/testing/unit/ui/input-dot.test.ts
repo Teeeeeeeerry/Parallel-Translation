@@ -14,11 +14,14 @@
  * 里的文字变化同样让圆点跟着出现与消失。
  * #665：多行文本框贴文字末尾靠镜像测量，位置的真值只能在真实浏览器里断言
  * （TC-E2E-134）；jsdom 没有布局，测量算不出来，这里只覆盖回落分支。
+ * #670：连续打字期间不重算位置，停手后（与逐段按钮悬停意图同一个 140ms
+ * 口径）对齐一次。这里用回落分支观察：打字期间框挪了位置，圆点也不跟。
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createLifecycleRegistry, type LifecycleRegistry } from '~/src/ui/lifecycle-registry';
 import { createInputDot } from '~/src/ui/input-dot';
 import { mockBoundingRect } from '~/docs/testing/setup';
+import { SHOW_DELAY } from '~/src/ui/paragraph-btn';
 
 let registry: LifecycleRegistry;
 let translate: ReturnType<typeof vi.fn>;
@@ -441,5 +444,73 @@ describe('contenteditable 富文本框（#655）', () => {
     expect(left).toBeLessThan(400);
     expect(top).toBeGreaterThan(150 - 40);
     expect(top).toBeLessThan(150);
+  });
+});
+
+describe('打字期间不重算位置，停手后对齐一次（#670）', () => {
+  const RECT_A = { left: 100, top: 50, right: 400, bottom: 150, width: 300, height: 100 };
+  const RECT_B = { left: 100, top: 250, right: 400, bottom: 350, width: 300, height: 100 };
+  const top = (): number => parseFloat(dot()!.style.top);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test('延迟与逐段翻译按钮的悬停意图同一个常量：140ms', () => {
+    expect(SHOW_DELAY).toBe(140);
+  });
+
+  test('连续打字期间位置不动；停手满 140ms 才对齐到新位置', () => {
+    registry.ensure('input-dot', true);
+    const ta = textarea('你好');
+    mockBoundingRect(ta, RECT_A);
+    ta.focus();
+    const before = top();
+    expect(before).toBeLessThan(150);
+
+    // 打字期间框挪到了别处：圆点不跟（不做测量）
+    mockBoundingRect(ta, RECT_B);
+    for (const v of ['你好世', '你好世界', '你好世界！']) {
+      type(ta, v);
+      vi.advanceTimersByTime(SHOW_DELAY - 1);
+      expect(top()).toBe(before);
+    }
+    // 停手：差 1ms 不动，满 140ms 对齐一次
+    vi.advanceTimersByTime(1);
+    expect(top()).toBeGreaterThan(250);
+    expect(top()).toBeLessThan(350);
+  });
+
+  test('打字时第一次浮出就有位置（回落位置），不必等停手', () => {
+    registry.ensure('input-dot', true);
+    const ta = textarea('');
+    mockBoundingRect(ta, RECT_B);
+    ta.focus();
+    type(ta, '你好');
+    expect(shown()).toBe(true);
+    expect(top()).toBeGreaterThan(250);
+    expect(top()).toBeLessThan(350);
+  });
+
+  test('停手前失焦：不再对齐，也不报错', () => {
+    registry.ensure('input-dot', true);
+    const ta = textarea('你好');
+    mockBoundingRect(ta, RECT_A);
+    ta.focus();
+    type(ta, '你好世界');
+    ta.blur();
+    vi.advanceTimersByTime(SHOW_DELAY);
+    expect(shown()).toBe(false);
+  });
+
+  test('聚焦时即刻对齐，不等延迟', () => {
+    registry.ensure('input-dot', true);
+    const ta = textarea('你好');
+    mockBoundingRect(ta, RECT_B);
+    ta.focus();
+    expect(top()).toBeGreaterThan(250);
   });
 });
