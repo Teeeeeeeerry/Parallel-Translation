@@ -31,6 +31,14 @@ export function inputText(el: TextInput): string {
   return el.innerText ?? el.textContent ?? '';
 }
 
+/** 框的长度上限（#654）：文本框没写 maxlength 时为 -1，记为 null；contenteditable 没有上限。 */
+export function inputMaxLength(el: TextInput): number | null {
+  if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+    return el.maxLength >= 0 ? el.maxLength : null;
+  }
+  return null;
+}
+
 /** 放行的单行输入框类型。 */
 const SINGLE_LINE_TYPES = ['text', 'search'] as const;
 
