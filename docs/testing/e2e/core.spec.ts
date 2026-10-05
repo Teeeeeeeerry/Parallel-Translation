@@ -3026,6 +3026,37 @@ test.describe('输入翻译：点圆点翻译', () => {
     }
   });
 
+  test('@core TC-E2E-133: 输入超过阅读侧单元上限（3072 字符）→ 不发请求、不分段，提示删减；刚好等于上限照常翻译（#643）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await mockGoogle();
+    const queries = await recordGoogleQueries(serviceWorker);
+    const hint = await serviceWorker.evaluate(() =>
+      chrome.i18n.getMessage('toastInputTooLong', ['3072']),
+    );
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator(DOT);
+
+    // 上限加一：不发请求，框里不动，提示删减
+    const tooLong = '字'.repeat(3073);
+    await box.click();
+    await box.fill(tooLong);
+    await dot.click();
+    await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(hint);
+    await expect(box).toHaveValue(tooLong);
+    expect(await queries()).toEqual([]);
+
+    // 刚好等于上限：照常翻译，整段一次送出
+    const atLimit = '字'.repeat(3072);
+    await box.fill(atLimit);
+    await dot.click();
+    await expect(box).toHaveValue(`【译】${atLimit}`, { timeout: 10_000 });
+    expect(await queries()).toEqual([atLimit]);
+  });
+
   test('@core TC-E2E-124: 翻译进行中圆点变灰转圈；完成、失败、放弃写回之后都回到常态（#648）', async ({
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {

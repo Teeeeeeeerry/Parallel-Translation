@@ -484,5 +484,9 @@
   "rowInputTranslateDesc": { "message": "在输入框里写好文字后，点文字末尾的圆点，把它整段换成对方的语言（取“源语言”设置）。密码框不参与。" },
   "inputDotLabel": { "message": "翻译输入框里的文字" },
   "toastInputSourceLangNeeded": { "message": "判断不出要译成哪种语言，请在设置里把源语言指定为对方的语言" },
-  "toastInputSameLanguage": { "message": "写的已经是对方的语言，没有替换" }
+  "toastInputSameLanguage": { "message": "写的已经是对方的语言，没有替换" },
+  "toastInputTooLong": {
+    "message": "这段文字超过 $limit$ 个字符。输入翻译不分段翻译，请删减后再试",
+    "placeholders": { "limit": { "content": "$1" } }
+  }
 }
