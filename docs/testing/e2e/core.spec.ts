@@ -2495,7 +2495,7 @@ test.describe('输入翻译：圆点', () => {
     }, patch);
   }
 
-  test('@core TC-E2E-111: 多行文本框里打到 2 个字符浮出圆点，失焦消失，开关即时启停（#636）', async ({
+  test('@core TC-E2E-111: 多行文本框里打到 2 个字符浮出圆点，失焦消失，开关即时启停（#636；#665 起位置贴文字末尾）', async ({
     page, serviceWorker, seedSettings, gotoFixture,
   }) => {
     await seedSettings({});
@@ -2511,14 +2511,14 @@ test.describe('输入翻译：圆点', () => {
     await page.keyboard.type('a');
     await expect(dot).toBeHidden();
 
-    // 第 2 个字符：出现在框内侧右下角（ADR-0006 回落位置）
+    // 第 2 个字符：出现在框内（#665 起贴文字末尾，位置的真值见 TC-E2E-134）
     await page.keyboard.type('b');
     await expect(dot).toBeVisible();
     const b = (await box.boundingBox())!;
     const d = (await dot.boundingBox())!;
-    expect(d.x).toBeGreaterThan(b.x + b.width / 2);
+    expect(d.x).toBeGreaterThanOrEqual(b.x);
     expect(d.x + d.width).toBeLessThanOrEqual(b.x + b.width);
-    expect(d.y).toBeGreaterThan(b.y + b.height / 2);
+    expect(d.y).toBeGreaterThanOrEqual(b.y);
     expect(d.y + d.height).toBeLessThanOrEqual(b.y + b.height);
 
     // 点圆点不夺走输入框的焦点
@@ -2537,6 +2537,62 @@ test.describe('输入翻译：圆点', () => {
     await patchStored(serviceWorker, { inputTranslate: true });
     await expect(dot).toBeVisible();
     await expect(page.locator('#pt-host-input-dot')).toHaveCount(1);
+  });
+
+  test('@core TC-E2E-134: 多行文本框里圆点贴在最后一个字符之后 —— 换行、空行、末尾空格都对（#665）', async ({
+    page, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator(DOT);
+
+    // 位置的真值：框的内容区起点、行高，加上用画布按同一字体量出的文字宽度
+    const geom = await box.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      return {
+        left: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft),
+        top: r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop),
+        lineHeight: parseFloat(cs.lineHeight),
+        font: `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`,
+      };
+    });
+    const textWidth = (text: string) =>
+      page.evaluate(([t, font]) => {
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        ctx.font = font;
+        return ctx.measureText(t).width;
+      }, [text, geom.font] as const);
+    /** 圆点应在第 line 行（从 0 数）、这一行文字 lineText 的末尾：左边缘贴末尾，竖直居中于这一行。 */
+    const expectAtEnd = async (line: number, lineText: string) => {
+      const x = geom.left + (await textWidth(lineText));
+      const cy = geom.top + geom.lineHeight * (line + 0.5);
+      await expect(async () => {
+        const d = (await dot.boundingBox())!;
+        expect(Math.abs(d.x - x), `横向：第 ${line} 行“${lineText}”的末尾`).toBeLessThanOrEqual(2);
+        expect(Math.abs(d.y + d.height / 2 - cy), `竖向：第 ${line} 行`).toBeLessThanOrEqual(2);
+      }).toPass({ timeout: 5_000 });
+    };
+
+    await box.click();
+    await page.keyboard.type('hello');
+    await expectAtEnd(0, 'hello');
+
+    // 换行：贴到第二行的末尾
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('wor');
+    await expectAtEnd(1, 'wor');
+
+    // 空行：末尾是空的第四行，贴在行首
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Enter');
+    await expectAtEnd(3, '');
+
+    // 末尾空格：算进宽度
+    await page.keyboard.type('ab   ');
+    await expectAtEnd(3, 'ab   ');
   });
 
   test('@core TC-E2E-128: contenteditable 富文本框获得焦点且有文字时浮出圆点，在框内右下角；非编辑态元素与可编辑区里的 contenteditable=false 子块不出现（#655）', async ({

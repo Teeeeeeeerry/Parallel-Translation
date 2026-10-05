@@ -12,6 +12,8 @@
  * 回落位置；非编辑态的元素与可编辑区里的 contenteditable=false 子块不出现。
  * #656：受控编辑器拦下 beforeinput 自己改 DOM，不会有 input 事件 —— 编辑宿主
  * 里的文字变化同样让圆点跟着出现与消失。
+ * #665：多行文本框贴文字末尾靠镜像测量，位置的真值只能在真实浏览器里断言
+ * （TC-E2E-134）；jsdom 没有布局，测量算不出来，这里只覆盖回落分支。
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createLifecycleRegistry, type LifecycleRegistry } from '~/src/ui/lifecycle-registry';
@@ -110,6 +112,22 @@ describe('出现与消失（#636）', () => {
     expect(left).toBeLessThan(400);
     expect(top).toBeGreaterThan(150 - 40);
     expect(top).toBeLessThan(150);
+  });
+
+  test('多行文本框量不出文字末尾（jsdom 没有布局）→ 回落框内侧右下角，照常显示，不留镜像（#665）', () => {
+    registry.ensure('input-dot', true);
+    const ta = textarea('第一行\n第二行  ');
+    mockBoundingRect(ta, { left: 100, top: 50, right: 400, bottom: 150, width: 300, height: 100 });
+    ta.focus();
+    expect(shown()).toBe(true);
+    expect(parseFloat(dot()!.style.left)).toBeGreaterThan(400 - 40);
+    expect(parseFloat(dot()!.style.top)).toBeGreaterThan(150 - 40);
+    // 打字后重算同样回落
+    type(ta, '第一行\n第二行\n\n');
+    expect(parseFloat(dot()!.style.left)).toBeGreaterThan(400 - 40);
+    // 量完立刻移除镜像：shadow root 里只有样式与圆点
+    const shadow = document.getElementById('pt-host-input-dot')!.shadowRoot!;
+    expect([...shadow.children].map((c) => c.tagName)).toEqual(['STYLE', 'BUTTON']);
   });
 
   test('圆点挂在扩展自己的隔离宿主里，带跳过标记', () => {

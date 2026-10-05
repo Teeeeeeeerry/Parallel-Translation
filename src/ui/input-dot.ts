@@ -20,8 +20,11 @@
 // #655：contenteditable 的编辑宿主同样浮出，位置同样是回落位置。
 // #656：受控编辑器拦下 beforeinput 自己改 DOM，没有 input 事件 —— 焦点所在的
 // 编辑宿主改由 DOM 变动驱动同步。
+// #665：多行文本框里圆点贴文字末尾（ADR-0006），位置由镜像测量给出；量不
+// 出来时回落框内侧右下角。单行文本框与 contenteditable 仍是回落位置。
 
 import { mountIsolated, unmountIsolated } from './mount';
+import { measureTextareaEnd } from './input-measure';
 import { tf } from '../i18n';
 import { decideInputEligibility, inputText, type TextInput } from './input-eligibility';
 
@@ -65,6 +68,21 @@ function placeFallback(dot: HTMLElement, el: HTMLElement): void {
     el.clientHeight > 0 ? r.top + el.clientTop + el.clientHeight : r.bottom - borderB;
   dot.style.left = `${innerRight - INSET - SIZE}px`;
   dot.style.top = `${innerBottom - INSET - SIZE}px`;
+}
+
+/**
+ * 圆点位置（ADR-0006）：多行文本框贴文字末尾（#665），圆点左边缘贴末尾，
+ * 竖直居中于末尾那一行；量不出来、或是其余输入框时回落框内侧右下角 ——
+ * 圆点是唯一入口，量不出来只换位置，绝不不显示。
+ */
+function place(dot: HTMLElement, el: HTMLElement, shadow: ShadowRoot): void {
+  const end = el instanceof HTMLTextAreaElement ? measureTextareaEnd(el, shadow) : null;
+  if (!end) {
+    placeFallback(dot, el);
+    return;
+  }
+  dot.style.left = `${end.x}px`;
+  dot.style.top = `${end.y + end.height / 2 - SIZE / 2}px`;
 }
 
 /** 圆点的回调：点击时拿到当前输入框。 */
@@ -119,7 +137,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
     target = el;
     syncState();
     dot.style.display = 'block';
-    placeFallback(dot, el);
+    place(dot, el, shadow);
   };
 
   /**
@@ -158,7 +176,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
   };
   // 圆点是 fixed 定位，页面或框内滚动时重新贴合
   const onReflow = (): void => {
-    if (target) placeFallback(dot, target);
+    if (target) place(dot, target, shadow);
   };
 
   // 按下时阻止默认行为：不夺走输入框的焦点，光标与选区都还在
