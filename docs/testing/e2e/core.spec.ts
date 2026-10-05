@@ -2595,6 +2595,65 @@ test.describe('输入翻译：圆点', () => {
     await expectAtEnd(3, 'ab   ');
   });
 
+  test('@core TC-E2E-135: 连续打字期间不做镜像测量，停手约 140ms 后对齐一次到新的末尾（#670）', async ({
+    page, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('input');
+    await waitForBall(page);
+    await expect(page.locator('#pt-host-input-dot')).toHaveCount(1);
+    const box = page.locator('#reply');
+    const dot = page.locator(DOT);
+
+    // 在页面里记下：每次镜像测量（镜像元素进出圆点的 shadow root）与每次 input 的时刻
+    await page.evaluate(() => {
+      const w = window as unknown as { __mirrors: number[]; __lastInput: number };
+      w.__mirrors = [];
+      w.__lastInput = 0;
+      const root = document.getElementById('pt-host-input-dot')!.shadowRoot!;
+      new MutationObserver((records) => {
+        for (const r of records) {
+          for (const n of r.addedNodes) if ((n as Element).tagName === 'DIV') w.__mirrors.push(performance.now());
+        }
+      }).observe(root, { childList: true });
+      document.getElementById('reply')!.addEventListener('input', () => {
+        w.__lastInput = performance.now();
+      });
+    });
+    const log = () =>
+      page.evaluate(() => {
+        const w = window as unknown as { __mirrors: number[]; __lastInput: number };
+        return { mirrors: [...w.__mirrors], lastInput: w.__lastInput };
+      });
+
+    await box.click();
+    const typed = 'the quick brown fox';
+    await page.keyboard.type(typed);
+    await expect(dot).toBeVisible();
+
+    // 停手后对齐恰好一次，发生在最后一次输入之后约 140ms
+    await expect.poll(async () => (await log()).mirrors.length).toBe(1);
+    const { mirrors, lastInput } = await log();
+    // 打字期间（最后一次输入之前）没有任何测量
+    expect(mirrors.filter((t) => t <= lastInput)).toEqual([]);
+    expect(mirrors[0]! - lastInput).toBeGreaterThanOrEqual(130);
+
+    // 对齐到了新的末尾
+    const end = await box.evaluate((el, text) => {
+      const cs = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      const ctx = document.createElement('canvas').getContext('2d')!;
+      ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      return {
+        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + ctx.measureText(text).width,
+        cy: r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop) + parseFloat(cs.lineHeight) / 2,
+      };
+    }, typed);
+    const d = (await dot.boundingBox())!;
+    expect(Math.abs(d.x - end.x)).toBeLessThanOrEqual(2);
+    expect(Math.abs(d.y + d.height / 2 - end.cy)).toBeLessThanOrEqual(2);
+  });
+
   test('@core TC-E2E-128: contenteditable 富文本框获得焦点且有文字时浮出圆点，在框内右下角；非编辑态元素与可编辑区里的 contenteditable=false 子块不出现（#655）', async ({
     page, seedSettings, gotoFixture,
   }) => {
