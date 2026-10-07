@@ -16,6 +16,8 @@
  * （TC-E2E-134）；jsdom 没有布局，测量算不出来，这里只覆盖回落分支。
  * #666 的单行文本框同理（真值见 TC-E2E-138）。
  * #668：字体加载完成、站点改了框的样式之后重新对齐；同样用回落分支观察。
+ * #671：contenteditable 用行盒测量贴文字末尾（真值见 TC-E2E-141），停手对齐与
+ * 回落沿用同一套，这里同样只覆盖回落分支。
  * #670：连续打字期间不重算位置，停手后（与逐段按钮悬停意图同一个 140ms
  * 口径）对齐一次。这里用回落分支观察：打字期间框挪了位置，圆点也不跟。
  */
@@ -483,7 +485,7 @@ describe('contenteditable 富文本框（#655）', () => {
     expect(shown()).toBe(false);
   });
 
-  test('位置回落到框内侧右下角（ADR-0006）', () => {
+  test('量不出文字末尾（jsdom 没有行盒）→ 位置回落到框内侧右下角（ADR-0006；#671 起贴末尾，真值见 TC-E2E-141）', () => {
     registry.ensure('input-dot', true);
     const host = rich('hello');
     mockBoundingRect(host, { left: 100, top: 50, right: 400, bottom: 150, width: 300, height: 100 });
@@ -543,6 +545,26 @@ describe('打字期间不重算位置，停手后对齐一次（#670）', () => 
     expect(shown()).toBe(true);
     expect(top()).toBeGreaterThan(250);
     expect(top()).toBeLessThan(350);
+  });
+
+  test('contenteditable 同一套：编辑器改 DOM 期间不动，停手满 140ms 才对齐（#671）', async () => {
+    registry.ensure('input-dot', true);
+    const host = document.createElement('div');
+    host.setAttribute('contenteditable', 'true');
+    host.textContent = '你好';
+    document.body.appendChild(host);
+    mockBoundingRect(host, RECT_A);
+    host.focus();
+    const before = top();
+
+    // 受控编辑器自己重新渲染（没有 input 事件），框挪到了别处：圆点不跟
+    mockBoundingRect(host, RECT_B);
+    host.textContent = '你好世界';
+    await Promise.resolve();
+    vi.advanceTimersByTime(SHOW_DELAY - 1);
+    expect(top()).toBe(before);
+    vi.advanceTimersByTime(1);
+    expect(top()).toBeGreaterThan(250);
   });
 
   test('停手前失焦：不再对齐，也不报错', () => {
