@@ -100,7 +100,7 @@ const MODULE_FILE_MAP: Record<string, string> = {
   shouldSkipNonVisual: 'unit/dom/classify.test.ts',
   isMainlyNumeric: 'unit/dom/classify.test.ts',
   splitPre: 'unit/dom/pre-split.test.ts',
-  unsplitPre: 'unit/dom/pre-split.test.ts',
+  unsplitChunks: 'unit/dom/pre-split.test.ts',
   normalizeText: 'unit/dom/normalize.test.ts',
   mainDomain: 'unit/dom/compat.test.ts',
   isGenericInlineBadge: 'unit/dom/compat.test.ts',
