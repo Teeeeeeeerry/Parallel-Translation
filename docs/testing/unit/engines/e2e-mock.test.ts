@@ -3,7 +3,7 @@
  *
  * 验证：描述符安装 / 幂等包裹、各类故障模式（failOnce / fail /
  * failTexts）、echoTargetLang、delayMs、非 Google URL 透传、
- * storage 自愈路径（ensureE2EMock）。
+ * storage 自愈路径（ensureE2EMock）、DeepL 端点替身（#723）。
  */
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -141,6 +141,39 @@ describe('e2e-mock', () => {
     const resp = await fetch(G_URL);
     const body = await resp.json();
     expect(body[0][0][0]).toBe('【存】Hello');
+    expect(realFetch).not.toHaveBeenCalled();
+  });
+
+  test('deepl：DeepL 端点命中替身，译文带目标语言、报告检测语言（#723）', async () => {
+    const { applyE2EMock } = await import('~/src/engines/e2e-mock');
+    await applyE2EMock({ deepl: { detectedSourceLanguage: 'JA' } });
+
+    const resp = await fetch('https://api-free.deepl.com/v2/translate', {
+      method: 'POST',
+      body: new URLSearchParams([['text', '你好'], ['text', '世界'], ['target_lang', 'EN-US']]).toString(),
+    });
+    expect(await resp.json()).toEqual({
+      translations: [
+        { text: '[DL:EN-US] 你好', detected_source_language: 'JA' },
+        { text: '[DL:EN-US] 世界', detected_source_language: 'JA' },
+      ],
+    });
+    expect(realFetch).not.toHaveBeenCalled();
+  });
+
+  test('deepl：SW 实例被替换后，下一次 ensureE2EMock 从 storage 恢复 DeepL 替身（#723）', async () => {
+    const { ensureE2EMock, applyE2EMock } = await import('~/src/engines/e2e-mock');
+    await applyE2EMock({ deepl: { detectedSourceLanguage: 'JA' } });
+    // 模拟 SW 实例被替换：fetch 还原为真实 fetch
+    delete (self as unknown as { fetch?: unknown }).fetch;
+    (self as unknown as { fetch: unknown }).fetch = realFetch;
+
+    await ensureE2EMock();
+    const resp = await fetch('https://api.deepl.com/v2/translate', {
+      method: 'POST',
+      body: new URLSearchParams([['text', 'Hi'], ['target_lang', 'ZH']]).toString(),
+    });
+    expect((await resp.json()).translations[0].text).toBe('[DL:ZH] Hi');
     expect(realFetch).not.toHaveBeenCalled();
   });
 });

@@ -51,6 +51,13 @@ export default defineBackground(() => {
   (self as any).applyE2EMock = applyE2EMock;
   // mock 统计探针 —— TC-E2E-47/48 断言一次性故障确实被触发（#91）
   (self as any).getE2EMockStats = getE2EMockStats;
+  // 首装处理落定的信号（#723）：E2E 夹具等它之后才写种子设置。首装按界面
+  // 语言写目标语言（下面的 onInstalled）是先读后写，与种子设置交错时会把
+  // 种子整份覆盖回默认值（#469）
+  let settleInstall!: () => void;
+  (self as any).ptInstallSettled = new Promise<void>((resolve) => {
+    settleInstall = resolve;
+  });
 
   // 右键菜单 + 首次安装引导
   chrome.runtime.onInstalled.addListener((details) => {
@@ -76,10 +83,13 @@ export default defineBackground(() => {
             await patchSettings({ to: derived });
           }
         })
-        .catch((e) => console.error('[PT] 设置默认语言失败:', e));
+        .catch((e) => console.error('[PT] 设置默认语言失败:', e))
+        .finally(settleInstall);
 
       // 打开欢迎页
       chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
+    } else {
+      settleInstall();
     }
   });
 

@@ -18,6 +18,9 @@
 // chrome.storage 是唯一跨实例持久的地方。mock 以“描述符 + 按需安装”
 // 的形式随 SW 生命周期自愈；线上环境从不写入该键，读取为空直接返回，
 // 无行为变化。
+//
+// #723：自带 key 的 DeepL 也走这套描述符。用例在 SW 里直接改写 self.fetch
+// 的替身随实例消失，请求打到真实端点，假 key 失败或拿回真实译文。
 
 export interface E2EMockConfig {
   prefix?: string;
@@ -36,7 +39,18 @@ export interface E2EMockConfig {
   echoTargetLang?: boolean;
   /** 人工响应延迟（毫秒），制造在飞翻译窗口（#120 TC-E2E-42）。 */
   delayMs?: number;
+  /**
+   * DeepL 端点替身（#723）：译文为 `[DL:<target_lang>] <原文>`，
+   * 检测语言恒报 detectedSourceLanguage。不设则 DeepL 请求照常直连。
+   */
+  deepl?: { detectedSourceLanguage: string };
 }
+
+/** DeepL 的两个翻译端点（免费 key 与付费 key） */
+const DEEPL_ENDPOINTS = [
+  'https://api-free.deepl.com/v2/translate',
+  'https://api.deepl.com/v2/translate',
+];
 
 const STORAGE_KEY = 'pt-e2e-mock';
 
@@ -84,6 +98,19 @@ function installStub(): void {
     if (!cfg) return realFetch(input, init);
     const url =
       typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
+    if (cfg.deepl && DEEPL_ENDPOINTS.includes(url)) {
+      const body = new URLSearchParams(String(init?.body ?? ''));
+      const target = body.get('target_lang');
+      return new Response(
+        JSON.stringify({
+          translations: body.getAll('text').map((t) => ({
+            text: `[DL:${target}] ${t}`,
+            detected_source_language: cfg.deepl!.detectedSourceLanguage,
+          })),
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
     if (!url.startsWith('https://translate.googleapis.com/')) {
       return realFetch(input, init);
     }
