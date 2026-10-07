@@ -14,6 +14,7 @@
  * 里的文字变化同样让圆点跟着出现与消失。
  * #665：多行文本框贴文字末尾靠镜像测量，位置的真值只能在真实浏览器里断言
  * （TC-E2E-134）；jsdom 没有布局，测量算不出来，这里只覆盖回落分支。
+ * #666 的单行文本框同理（真值见 TC-E2E-138）。
  * #670：连续打字期间不重算位置，停手后（与逐段按钮悬停意图同一个 140ms
  * 口径）对齐一次。这里用回落分支观察：打字期间框挪了位置，圆点也不跟。
  */
@@ -129,6 +130,21 @@ describe('出现与消失（#636）', () => {
     type(ta, '第一行\n第二行\n\n');
     expect(parseFloat(dot()!.style.left)).toBeGreaterThan(400 - 40);
     // 量完立刻移除镜像：shadow root 里只有样式与圆点
+    const shadow = document.getElementById('pt-host-input-dot')!.shadowRoot!;
+    expect([...shadow.children].map((c) => c.tagName)).toEqual(['STYLE', 'BUTTON']);
+  });
+
+  test('单行文本框量不出文字末尾 → 同样回落框内侧右下角，照常显示，不留镜像（#666）', () => {
+    registry.ensure('input-dot', true);
+    const input = document.createElement('input');
+    input.value = 'hello world';
+    document.body.lang = 'en';
+    document.body.appendChild(input);
+    mockBoundingRect(input, { left: 100, top: 50, right: 400, bottom: 80, width: 300, height: 30 });
+    input.focus();
+    expect(shown()).toBe(true);
+    expect(parseFloat(dot()!.style.left)).toBeGreaterThan(400 - 40);
+    expect(parseFloat(dot()!.style.left)).toBeLessThan(400);
     const shadow = document.getElementById('pt-host-input-dot')!.shadowRoot!;
     expect([...shadow.children].map((c) => c.tagName)).toEqual(['STYLE', 'BUTTON']);
   });

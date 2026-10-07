@@ -2548,7 +2548,9 @@ test.describe('输入翻译：圆点', () => {
     const box = page.locator('#reply');
     const dot = page.locator(DOT);
 
-    // 位置的真值：框的内容区起点、行高，加上用画布按同一字体量出的文字宽度
+    // 位置的真值：框的内容区起点、行高，加上按同一字体量出的文字宽度。字宽用
+    // 框旁边的 span 量，不用画布：画布不带页面的语言区域，通用字体族会解析成
+    // 另一款字体，长一点的文字就差出几像素（#666 发现）
     const geom = await box.evaluate((el) => {
       const cs = getComputedStyle(el);
       const r = el.getBoundingClientRect();
@@ -2556,15 +2558,20 @@ test.describe('输入翻译：圆点', () => {
         left: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft),
         top: r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop),
         lineHeight: parseFloat(cs.lineHeight),
-        font: `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`,
       };
     });
     const textWidth = (text: string) =>
-      page.evaluate(([t, font]) => {
-        const ctx = document.createElement('canvas').getContext('2d')!;
-        ctx.font = font;
-        return ctx.measureText(t).width;
-      }, [text, geom.font] as const);
+      box.evaluate((el, t) => {
+        const cs = getComputedStyle(el);
+        const sp = document.createElement('span');
+        sp.style.font = cs.font;
+        sp.style.whiteSpace = 'pre';
+        sp.textContent = t;
+        el.parentElement!.append(sp);
+        const w = sp.getBoundingClientRect().width;
+        sp.remove();
+        return w;
+      }, text);
     /** 圆点应在第 line 行（从 0 数）、这一行文字 lineText 的末尾：左边缘在末尾右侧 4px（#667），竖直居中于这一行。 */
     const expectAtEnd = async (line: number, lineText: string) => {
       const x = geom.left + (await textWidth(lineText)) + 4;
@@ -2642,10 +2649,18 @@ test.describe('输入翻译：圆点', () => {
     const end = await box.evaluate((el, text) => {
       const cs = getComputedStyle(el);
       const r = el.getBoundingClientRect();
-      const ctx = document.createElement('canvas').getContext('2d')!;
-      ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const width = (t: string) => {
+        const sp = document.createElement('span');
+        sp.style.font = cs.font;
+        sp.style.whiteSpace = 'pre';
+        sp.textContent = t;
+        el.parentElement!.append(sp);
+        const w = sp.getBoundingClientRect().width;
+        sp.remove();
+        return w;
+      };
       return {
-        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + ctx.measureText(text).width + 4,
+        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + width(text) + 4,
         cy: r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop) + parseFloat(cs.lineHeight) / 2,
       };
     }, typed);
@@ -2710,16 +2725,24 @@ test.describe('输入翻译：圆点', () => {
     await box.evaluate((el) => (el.scrollTop = (el.scrollHeight - el.clientHeight) / 2));
     await expectInside();
 
-    // 滚回底：重新贴末尾（第 12 行“line 12”之后 4px；真值按当前滚动位置与画布量的字宽算）
+    // 滚回底：重新贴末尾（第 12 行“line 12”之后 4px；真值按当前滚动位置与同一字体量的字宽算）
     await box.evaluate((el) => (el.scrollTop = el.scrollHeight));
     const end = await box.evaluate((el) => {
       const cs = getComputedStyle(el);
       const r = el.getBoundingClientRect();
-      const ctx = document.createElement('canvas').getContext('2d')!;
-      ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const width = (t: string) => {
+        const sp = document.createElement('span');
+        sp.style.font = cs.font;
+        sp.style.whiteSpace = 'pre';
+        sp.textContent = t;
+        el.parentElement!.append(sp);
+        const w = sp.getBoundingClientRect().width;
+        sp.remove();
+        return w;
+      };
       const lh = parseFloat(cs.lineHeight);
       return {
-        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + ctx.measureText('line 12').width + 4,
+        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + width('line 12') + 4,
         cy: r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop) - el.scrollTop + lh * 11.5,
       };
     });
@@ -2739,16 +2762,24 @@ test.describe('输入翻译：圆点', () => {
     const box = page.locator('#reply');
     const dot = page.locator(DOT);
 
-    /** 第一行文字 text 的末尾（光标所在）与这一行的上下沿；真值用画布按同一字体量。 */
+    /** 第一行文字 text 的末尾（光标所在）与这一行的上下沿；字宽按同一字体量。 */
     const lineEnd = (text: string) =>
       box.evaluate((el, t) => {
         const cs = getComputedStyle(el);
         const r = el.getBoundingClientRect();
-        const ctx = document.createElement('canvas').getContext('2d')!;
-        ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const width = (t: string) => {
+          const sp = document.createElement('span');
+          sp.style.font = cs.font;
+          sp.style.whiteSpace = 'pre';
+          sp.textContent = t;
+          el.parentElement!.append(sp);
+          const w = sp.getBoundingClientRect().width;
+          sp.remove();
+          return w;
+        };
         const top = r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop);
         return {
-          x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + ctx.measureText(t).width,
+          x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + width(t),
           top,
           bottom: top + parseFloat(cs.lineHeight),
           boxRight: r.left + el.clientLeft + el.clientWidth,
@@ -2771,11 +2802,19 @@ test.describe('输入翻译：圆点', () => {
     const text = 'mmmmmmmm';
     await box.evaluate((el, t) => {
       const cs = getComputedStyle(el);
-      const ctx = document.createElement('canvas').getContext('2d')!;
-      ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const width = (t: string) => {
+        const sp = document.createElement('span');
+        sp.style.font = cs.font;
+        sp.style.whiteSpace = 'pre';
+        sp.textContent = t;
+        el.parentElement!.append(sp);
+        const w = sp.getBoundingClientRect().width;
+        sp.remove();
+        return w;
+      };
       (el as HTMLTextAreaElement).value = '';
       el.style.boxSizing = 'content-box';
-      el.style.width = `${Math.ceil(ctx.measureText(t).width) + 1}px`;
+      el.style.width = `${Math.ceil(width(t)) + 1}px`;
     }, text);
     await page.keyboard.type(text);
     const n = await lineEnd(text);
@@ -2794,6 +2833,91 @@ test.describe('输入翻译：圆点', () => {
       expect(d.y + d.height).toBeLessThanOrEqual(n.boxBottom + 0.5);
     }).toPass({ timeout: 5_000 });
     await expect(dot).toBeVisible();
+  });
+
+  test('@core TC-E2E-138: 单行文本框里圆点贴文字末尾 —— 短文本在末尾右侧；长文本横向滚动后位置随之更新、钳在框内；RTL 贴在左侧（#666）', async ({
+    page, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#title');
+    const dot = page.locator(DOT);
+    // 右内边距放大到 10px：贴末尾、钳在边缘、回落右下角三种位置横向彼此相差至少 6px，能区分
+    await box.evaluate((el) => (el.style.paddingRight = '10px'));
+
+    /**
+     * 框的几何与文字 text 的宽度，以及框内的横向滚动。字宽用框旁边同一字体的
+     * span 量：画布不带页面的语言区域，通用字体族会解析成另一款字体，长文本差出
+     * 几十像素。
+     */
+    const geom = (text: string) =>
+      box.evaluate((el, t) => {
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        const span = document.createElement('span');
+        span.style.font = cs.font;
+        span.style.whiteSpace = 'pre';
+        span.textContent = t;
+        el.parentElement!.append(span);
+        const width = span.getBoundingClientRect().width;
+        span.remove();
+        const top = r.top + el.clientTop;
+        const bottom = top + el.clientHeight;
+        return {
+          contentLeft: r.left + el.clientLeft + parseFloat(cs.paddingLeft),
+          contentRight: r.left + el.clientLeft + el.clientWidth - parseFloat(cs.paddingRight),
+          left: r.left + el.clientLeft,
+          right: r.left + el.clientLeft + el.clientWidth,
+          top,
+          bottom,
+          cy: (top + parseFloat(cs.paddingTop) + bottom - parseFloat(cs.paddingBottom)) / 2,
+          width,
+          scrollLeft: el.scrollLeft,
+        };
+      }, text);
+    const expectDot = async (x: number, cy: number, what: string) => {
+      await expect(async () => {
+        const d = (await dot.boundingBox())!;
+        expect(Math.abs(d.x - x), `${what}：横向`).toBeLessThanOrEqual(2);
+        expect(Math.abs(d.y + d.height / 2 - cy), `${what}：竖向`).toBeLessThanOrEqual(2);
+      }).toPass({ timeout: 5_000 });
+    };
+
+    // 短文本：末尾右侧 4px（#667），竖直居中于框的内容区
+    await box.click();
+    await page.keyboard.type('hello');
+    let g = await geom('hello');
+    await expectDot(g.contentLeft + g.width + 4, g.cy, '短文本贴末尾');
+
+    // 长文本：框横向滚到末尾，右侧放不下圆点 → 圆点在光标左侧 4px，不压住光标
+    const long = ' the quick brown fox jumps over the lazy dog again and again';
+    await page.keyboard.type(long);
+    g = await geom(`hello${long}`);
+    expect(g.scrollLeft, '框确实横向滚动了').toBeGreaterThan(50);
+    const caret = g.contentLeft + g.width - g.scrollLeft;
+    await expectDot(caret - 4 - 14, g.cy, '长文本光标左侧');
+
+    // 光标回到行首：框滚回开头，末尾在框外右侧 → 圆点钳在右边缘（#669），不消失
+    await page.keyboard.press('Home');
+    expect((await geom('')).scrollLeft).toBe(0);
+    await expectDot(g.right - 14, g.cy, '末尾滚出框外');
+    await expect(dot).toBeVisible();
+
+    // 回到行尾：重新贴到光标旁
+    await page.keyboard.press('End');
+    await expectDot(caret - 4 - 14, g.cy, '回到行尾');
+
+    // RTL：末尾在左侧，圆点贴在文字左边、留 4px
+    await box.evaluate((el) => {
+      (el as HTMLInputElement).value = '';
+      el.style.paddingRight = '';
+      (el as HTMLInputElement).dir = 'rtl';
+    });
+    const hebrew = 'שלום עולם';
+    await page.keyboard.type(hebrew);
+    g = await geom(hebrew);
+    await expectDot(g.contentRight - g.width - 4 - 14, g.cy, 'RTL 贴左侧');
   });
 
   test('@core TC-E2E-128: contenteditable 富文本框获得焦点且有文字时浮出圆点，在框内右下角；非编辑态元素与可编辑区里的 contenteditable=false 子块不出现（#655）', async ({
@@ -3428,7 +3552,7 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
     await expect(dot).toBeVisible();
   });
 
-  test('@core TC-E2E-122: 单行文本框与搜索框里圆点的位置 —— 回落到框内侧右侧，不出框（#650，实地再看）', async ({
+  test('@core TC-E2E-122: 单行文本框与搜索框里圆点的位置 —— 整颗在框里，不出框（#650，实地再看；#666 起贴文字末尾）', async ({
     page, seedSettings, gotoFixture,
   }, testInfo) => {
     await seedSettings({ from: 'en' });
@@ -3443,8 +3567,8 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
       await expect(dot).toBeVisible();
       const b = (await box.boundingBox())!;
       const d = (await dot.boundingBox())!;
-      // ADR-0006 的回落位置：框内侧右侧，整颗圆点在框里
-      expect(d.x).toBeGreaterThan(b.x + b.width / 2);
+      // 整颗圆点在框里（#666 起贴文字末尾，位置的真值见 TC-E2E-138）
+      expect(d.x).toBeGreaterThanOrEqual(b.x);
       expect(d.x + d.width).toBeLessThanOrEqual(b.x + b.width);
       expect(d.y).toBeGreaterThanOrEqual(b.y);
       expect(d.y + d.height).toBeLessThanOrEqual(b.y + b.height);
