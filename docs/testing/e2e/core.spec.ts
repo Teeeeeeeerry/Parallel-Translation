@@ -3809,43 +3809,30 @@ test.describe('输入翻译：对方语言的判定链', () => {
   const DOT = '#pt-host-input-dot .pt-input-dot';
 
   test('@core TC-E2E-126: 源语言是 auto 时，本页翻译过、引擎报告了检测语言 → 优先于页面的语言声明（#660）', async ({
-    page, serviceWorker, seedSettings, gotoFixture,
+    page, mockDeepl, seedSettings, gotoFixture,
   }) => {
     // 只用 DeepL：它在响应里报告检测语言（默认引擎 google-web 不报告）
     await seedSettings({ enginePriority: ['deepl'] });
-    await serviceWorker.evaluate(() => chrome.storage.local.set({ 'pt-keys': { deepl: 'e2e:fx' } }));
-    // DeepL 端点：译文带上目标语言，检测语言恒报日文（页面声明的是 en）
-    await serviceWorker.evaluate(() => {
-      const realFetch = self.fetch.bind(self);
-      (self as any).fetch = async (input: any, init?: any) => {
-        const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
-        if (url === 'https://api-free.deepl.com/v2/translate') {
-          const body = new URLSearchParams(String(init?.body ?? ''));
-          const target = body.get('target_lang');
-          return new Response(
-            JSON.stringify({
-              translations: body.getAll('text').map((t) => ({
-                text: `[DL:${target}] ${t}`,
-                detected_source_language: 'JA',
-              })),
-            }),
-            { status: 200, headers: { 'content-type': 'application/json' } },
-          );
-        }
-        return realFetch(input, init);
-      };
-    });
+    // DeepL 替身：译文带上目标语言，检测语言恒报日文（页面声明的是 en）。
+    // #723：走夹具的描述符，扛得住 SW 重启
+    await mockDeepl({ detectedSourceLanguage: 'JA' });
+    // #723：先认替身的译文前缀，没经过替身时报错直接指向替身或种子设置，
+    // 而不是“译文不符”
+    const viaStub = /^\[DL:/;
+    const stubLost = '没有经过 DeepL 替身：替身失效，或种子设置被改写';
 
     await gotoFixture('input');
     // 整页翻译一次，引擎报告检测语言 JA
     await translateAndWait(page);
+    await expect(page.locator('.pt-trans').first(), `整页翻译${stubLost}`).toHaveText(viaStub);
 
     // 夹具声明 lang="en"，但检测语言优先：译成日文
     const box = page.locator('#reply');
     await box.click();
     await page.keyboard.type('你好世界');
     await page.locator(DOT).click();
-    await expect(box).toHaveValue('[DL:JA] 你好世界', { timeout: 10_000 });
+    await expect(box, `输入翻译${stubLost}`).toHaveValue(viaStub, { timeout: 10_000 });
+    await expect(box).toHaveValue('[DL:JA] 你好世界');
   });
 });
 

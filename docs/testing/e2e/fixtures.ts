@@ -4,7 +4,8 @@
  * 关键设计:
  * 1. persistent context + --load-extension 加载扩展
  * 2. mockGoogle 在 SW 内 stub fetch（#89：CDP route 对 SW 请求拦截不可靠）
- * 3. seedSettings 写入 chrome.storage.sync 并等待生效
+ * 3. seedSettings 写入 chrome.storage.sync 并等待生效；交出 service worker
+ *    之前先等首装按界面语言写入的目标语言落盘（#723）
  * 4. fixture 页面通过 HTTP 提供（绕开 file:// 的 content script 限制）
  */
 import { test as base, chromium, expect, type Page, type Worker } from '@playwright/test';
@@ -87,6 +88,8 @@ export const test = base.extend<
       /** 人工响应延迟毫秒，制造在飞窗口（#120） */
       delayMs?: number;
     }) => Promise<void>;
+    /** DeepL 替身：写入假 key，并装上能扛住 SW 重启的端点替身（#723） */
+    mockDeepl: (opts?: { detectedSourceLanguage?: string }) => Promise<void>;
     seedSettings: (patch: Record<string, unknown>) => Promise<void>;
     gotoFixture: (name: FixtureName) => Promise<Page>;
   },
@@ -138,10 +141,25 @@ export const test = base.extend<
   ] as any,
 
   // ── Service Worker ──
+  //
+  // #723：首装时 background 按界面语言推导目标语言，结果不是 zh-CN 就
+  // patchSettings 写一次（#469）。上面的 locale 并不能保证首装看到的是
+  // zh-CN：它是挂上 worker 之后才覆盖的界面语言，CI 的 Linux 上真实界面
+  // 是 en-US，本地也会随机赶在覆盖之前。这次写入先读后写，在 worker 起来
+  // 后一两百毫秒落盘，与 seedSettings 交错时合并基底是空存储，种子整份被
+  // 覆盖回默认值（enginePriority 回到 google-web，目标语言变成 en）。
+  // 所以等 background 报告首装处理落定，再把 worker 交给用例。
   serviceWorker: async ({ context }, use) => {
     const worker =
       context.serviceWorkers()[0] ??
       (await context.waitForEvent('serviceworker', { timeout: 30_000 }));
+    await expect
+      .poll(() => worker.evaluate(() => typeof (self as any).ptInstallSettled), {
+        message: 'background 没有暴露首装落定的信号 ptInstallSettled',
+        timeout: 10_000,
+      })
+      .toBe('object');
+    await worker.evaluate(() => (self as any).ptInstallSettled);
     await use(worker);
   },
 
@@ -181,6 +199,24 @@ export const test = base.extend<
         }) => (self as any).applyE2EMock(cfg),
         { fail, prefix, failOnce, failTexts, echoTargetLang, delayMs },
       );
+    });
+  },
+
+  // ── Mock DeepL ──
+  // #723：与 mockGoogle 同一套描述符（applyE2EMock 写入 storage，翻译路由
+  // 前 ensureE2EMock 自愈重装）。用例自己在 SW 里改写 self.fetch 的替身
+  // 随实例消失，请求就打到真实端点。描述符与已有的合并，可与 mockGoogle
+  // 叠用；只装 DeepL 时 Google 端点同样被替身接住，不会直连真实引擎。
+  mockDeepl: async ({ serviceWorker }, use) => {
+    await use(async ({ detectedSourceLanguage = 'EN' } = {}) => {
+      await serviceWorker.evaluate(async (detected: string) => {
+        await chrome.storage.local.set({ 'pt-keys': { deepl: 'e2e:fx' } });
+        const cur = (await chrome.storage.local.get('pt-e2e-mock'))['pt-e2e-mock'] ?? {};
+        await (self as any).applyE2EMock({
+          ...cur,
+          deepl: { detectedSourceLanguage: detected },
+        });
+      }, detectedSourceLanguage);
     });
   },
 
