@@ -15,6 +15,7 @@
  * #665：多行文本框贴文字末尾靠镜像测量，位置的真值只能在真实浏览器里断言
  * （TC-E2E-134）；jsdom 没有布局，测量算不出来，这里只覆盖回落分支。
  * #666 的单行文本框同理（真值见 TC-E2E-138）。
+ * #668：字体加载完成、站点改了框的样式之后重新对齐；同样用回落分支观察。
  * #670：连续打字期间不重算位置，停手后（与逐段按钮悬停意图同一个 140ms
  * 口径）对齐一次。这里用回落分支观察：打字期间框挪了位置，圆点也不跟。
  */
@@ -147,6 +148,39 @@ describe('出现与消失（#636）', () => {
     expect(parseFloat(dot()!.style.left)).toBeLessThan(400);
     const shadow = document.getElementById('pt-host-input-dot')!.shadowRoot!;
     expect([...shadow.children].map((c) => c.tagName)).toEqual(['STYLE', 'BUTTON']);
+  });
+
+  test('停手之后网页字体才加载完 → 重新对齐一次（#668）', () => {
+    const fonts = new EventTarget();
+    Object.defineProperty(document, 'fonts', { value: fonts, configurable: true });
+    try {
+      registry.ensure('input-dot', true);
+      const ta = textarea('hello');
+      mockBoundingRect(ta, { left: 100, top: 50, right: 400, bottom: 150, width: 300, height: 100 });
+      ta.focus();
+      expect(parseFloat(dot()!.style.left)).toBeLessThan(400);
+      // 字体换掉之后排版变了（这里用框挪位置代表）：没有输入、没有滚动
+      mockBoundingRect(ta, { left: 500, top: 50, right: 800, bottom: 150, width: 300, height: 100 });
+      fonts.dispatchEvent(new Event('loadingdone'));
+      expect(parseFloat(dot()!.style.left)).toBeGreaterThan(800 - 40);
+    } finally {
+      delete (document as { fonts?: unknown }).fonts;
+    }
+  });
+
+  test('停手之后站点改了框的样式或 class → 重新对齐（#668）', async () => {
+    registry.ensure('input-dot', true);
+    const ta = textarea('hello');
+    mockBoundingRect(ta, { left: 100, top: 50, right: 400, bottom: 150, width: 300, height: 100 });
+    ta.focus();
+    mockBoundingRect(ta, { left: 500, top: 50, right: 800, bottom: 150, width: 300, height: 100 });
+    ta.style.fontSize = '24px';
+    await Promise.resolve();
+    expect(parseFloat(dot()!.style.left)).toBeGreaterThan(800 - 40);
+    mockBoundingRect(ta, { left: 900, top: 50, right: 1200, bottom: 150, width: 300, height: 100 });
+    ta.className = 'expanded';
+    await Promise.resolve();
+    expect(parseFloat(dot()!.style.left)).toBeGreaterThan(1200 - 40);
   });
 
   test('圆点挂在扩展自己的隔离宿主里，带跳过标记', () => {

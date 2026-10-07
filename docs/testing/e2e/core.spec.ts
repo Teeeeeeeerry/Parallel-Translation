@@ -2920,6 +2920,140 @@ test.describe('输入翻译：圆点', () => {
     await expectDot(g.contentRight - g.width - 4 - 14, g.cy, 'RTL 贴左侧');
   });
 
+  test('@core TC-E2E-139: 祖先带 transform 缩放时测不准 → 圆点回落到框内侧右下角，照常显示、点下去照常翻译（#668）', async ({
+    page, seedSettings, gotoFixture, mockGoogle,
+  }) => {
+    await seedSettings({});
+    await mockGoogle({ echoTargetLang: true });
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator(DOT);
+
+    // 站点把整块评论区缩小到一半显示
+    await box.evaluate((el) => {
+      const wrap = document.createElement('div');
+      wrap.style.transform = 'scale(0.5)';
+      wrap.style.transformOrigin = '0 0';
+      el.before(wrap);
+      wrap.append(el);
+    });
+    await box.click();
+    await page.keyboard.type('你好世界');
+    await expect(dot).toBeVisible();
+
+    // 回落位置：屏幕上框的内侧右下角，离内边缘 6px（框按 0.5 缩放，圆点本身不缩放）
+    const inner = await box.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const s = r.width / (el as HTMLElement).offsetWidth;
+      return {
+        right: r.left + (el.clientLeft + el.clientWidth) * s,
+        bottom: r.top + (el.clientTop + el.clientHeight) * s,
+      };
+    });
+    await expect(async () => {
+      const d = (await dot.boundingBox())!;
+      expect(Math.abs(d.x + d.width - (inner.right - 6)), '横向').toBeLessThanOrEqual(1);
+      expect(Math.abs(d.y + d.height - (inner.bottom - 6)), '竖向').toBeLessThanOrEqual(1);
+    }).toPass({ timeout: 5_000 });
+
+    // 可用：圆点在最上层，点下去照常翻译写回
+    const d = (await dot.boundingBox())!;
+    expect(
+      await page.evaluate(
+        ([x, y]) => document.elementFromPoint(x, y)?.id,
+        [d.x + d.width / 2, d.y + d.height / 2] as const,
+      ),
+    ).toBe('pt-host-input-dot');
+    await dot.click();
+    await expect(box).toHaveValue('【译】你好世界 [tl=en]', { timeout: 10_000 });
+  });
+
+  test('@core TC-E2E-140: 停手之后字体才加载完、或站点改了框的样式与尺寸 → 圆点重新对齐到新的末尾（#668）', async ({
+    page, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    // 网页字体：每个字形 1em 宽的测试字体，由用例决定它什么时候下载完
+    let release!: () => void;
+    const released = new Promise<void>((r) => (release = r));
+    await page.route('**/pt-wide.ttf', async (route) => {
+      await released;
+      await route.fulfill({
+        contentType: 'font/ttf',
+        body: fs.readFileSync('docs/testing/e2e/fixtures/fonts/pt-wide.ttf'),
+      });
+    });
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator(DOT);
+    await page.evaluate(() => {
+      const s = document.createElement('style');
+      s.textContent =
+        '@font-face { font-family: PTWide; src: url(/fonts/pt-wide.ttf); font-display: swap; }' +
+        '#reply { font-family: PTWide, sans-serif; }';
+      document.head.append(s);
+    });
+
+    /** 第一行文字 text 的末尾右侧 4px 与这一行的竖直中线；字宽用框旁边同一字体的 span 量。 */
+    const endOf = (text: string) =>
+      box.evaluate((el, t) => {
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        const sp = document.createElement('span');
+        sp.style.font = cs.font;
+        sp.style.whiteSpace = 'pre';
+        sp.textContent = t;
+        el.parentElement!.append(sp);
+        const w = sp.getBoundingClientRect().width;
+        sp.remove();
+        return {
+          x: r.left + el.clientLeft + parseFloat(cs.paddingLeft) + w + 4,
+          cy: r.top + el.clientTop + parseFloat(cs.paddingTop) + parseFloat(cs.lineHeight) / 2,
+        };
+      }, text);
+    const expectAt = async (text: string, what: string) => {
+      await expect(async () => {
+        const e = await endOf(text);
+        const d = (await dot.boundingBox())!;
+        expect(Math.abs(d.x - e.x), `${what}：横向`).toBeLessThanOrEqual(2);
+        expect(Math.abs(d.y + d.height / 2 - e.cy), `${what}：竖向`).toBeLessThanOrEqual(2);
+      }).toPass({ timeout: 5_000 });
+    };
+
+    // 字体还在下载：先按后备字体排版，圆点贴在后备字体的末尾
+    await box.click();
+    await page.keyboard.type('hello');
+    await expectAt('hello', '后备字体');
+    const before = (await dot.boundingBox())!;
+
+    // 停手之后字体才下载完：没有输入、没有滚动、框也没变大，圆点照样重新对齐
+    release();
+    await page.evaluate(() => document.fonts.ready);
+    expect(await page.evaluate(() => document.fonts.check('16px PTWide'))).toBe(true);
+    await expectAt('hello', '字体加载完成');
+    expect((await dot.boundingBox())!.x - before.x, '换成 1em 宽的字形后末尾右移').toBeGreaterThan(20);
+
+    // 站点改了框的样式（行内样式）：重新对齐
+    await box.evaluate((el) => (el.style.fontSize = '24px'));
+    await expectAt('hello', '站点改了字号');
+
+    // 站点经样式表把框改窄（不碰框的属性）：换行变了，重新对齐到第二行
+    await page.evaluate(() => {
+      const s = document.createElement('style');
+      s.textContent = '#reply { width: 100px; }';
+      document.head.append(s);
+    });
+    await expect(async () => {
+      const e = await endOf('');
+      const lh = await box.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight));
+      const d = (await dot.boundingBox())!;
+      // 100px 宽装不下 5 个 24px 的方块：末尾落到下面某一行，竖直方向离开第一行
+      expect(d.y + d.height / 2 - e.cy).toBeGreaterThan(lh / 2);
+    }).toPass({ timeout: 5_000 });
+    await expect(dot).toBeVisible();
+  });
+
   test('@core TC-E2E-128: contenteditable 富文本框获得焦点且有文字时浮出圆点，在框内右下角；非编辑态元素与可编辑区里的 contenteditable=false 子块不出现（#655）', async ({
     page, seedSettings, gotoFixture,
   }) => {
