@@ -4241,4 +4241,32 @@ test.describe('标记密集的段落（#724）', () => {
     await expect(page.locator('#long')).not.toHaveAttribute('data-pt', /./);
     await expect(page.locator('#long .pt-trans')).toHaveCount(0);
   });
+
+  test('@core TC-E2E-145: 鼠标停在标记密集的段落上逐段翻译按钮浮出，点击只翻这一段；文字真正超长的段落上不浮出（#732）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ showParagraphBtn: true });
+    await mockGoogle();
+    await gotoFixture('markup-dense');
+    await waitForBall(page);
+    const paraBtn = page.locator('.pt-para-btn');
+
+    // 文字真正超长的段落：停够悬停意图延迟也不浮出
+    await page.locator('#long').hover();
+    await page.waitForTimeout(600);
+    await expect(paraBtn).toBeHidden();
+
+    // 标记密集的段落：停在一个条目链接上，按钮浮出
+    const dense = page.locator('#dense');
+    await dense.locator('a[rel="mw:WikiLink"]').nth(3).hover();
+    await expect(paraBtn).toBeVisible({ timeout: 5_000 });
+    await paraBtn.click();
+    await expect(dense).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
+    await expect(dense.locator('.pt-trans')).toHaveText(/^【译】In this period she worked with/);
+
+    // 只翻这一段
+    for (const id of ['#title', '#intro', '#long', '#after']) {
+      await expect(page.locator(id)).not.toHaveAttribute('data-pt', /./);
+    }
+  });
 });

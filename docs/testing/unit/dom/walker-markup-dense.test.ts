@@ -7,11 +7,13 @@
  * 由文字长度上限把着；HTML 长度量的是属性负载，与送翻量、渲染代价无关。
  * 文档站、法规库、学术期刊页是同一类形状，按文档结构判定，不认站点。
  *
- * 只经采集入口 collect() 断言：收到了哪些单元。
+ * 只经采集入口 collect() 断言：收到了哪些单元；逐段翻译入口 closestUnit()
+ * 与采集共用同一层判定，在某个起点上找到哪个单元（#732）。
  */
 import { describe, test, expect } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
+import { closestUnit } from '~/src/dom/classify';
 
 /** 仿 Parsoid 的条目链接：绝对 href、title、id，约 120 字符。 */
 const link = (i: number, text: string) =>
@@ -87,5 +89,35 @@ describe('标记密集的段落不再按序列化 HTML 长度被拒（#731）', 
       <p id="num">2013</p>`;
 
     expect(collectUnits().ids).toEqual(['h1', 'p1', 'p2', 'li1', 'li2', 'q']);
+  });
+});
+
+describe('逐段翻译入口在标记密集的段落上找得到单元（#732）', () => {
+  /** 从某个起点找翻译单元，返回单元的 id（找不到为 null）。 */
+  function unitFrom(start: Element): string | null {
+    const restore = mockAllBoundingRects();
+    try {
+      return closestUnit(start)?.id ?? null;
+    } finally {
+      restore();
+    }
+  }
+
+  test('起点落在条目链接、引用角标、段落文字上 → 都找到这个段落', () => {
+    document.body.innerHTML = wikiParagraph('dense');
+    const p = document.getElementById('dense')!;
+    expect(p.outerHTML.length).toBeGreaterThan(4096);
+
+    expect(unitFrom(p.querySelector('a[rel="mw:WikiLink"]')!)).toBe('dense');
+    expect(unitFrom(p.querySelector('sup.reference .cite-bracket')!)).toBe('dense');
+    expect(unitFrom(p)).toBe('dense');
+  });
+
+  test('文字真正超长的段落上找不到单元', () => {
+    const sentence = 'She later starred in a string of critically acclaimed films. ';
+    document.body.innerHTML = `<div id="wrap"><p id="long">${sentence.repeat(60)}<b id="b">bold</b></p></div>`;
+
+    expect(unitFrom(document.getElementById('b')!)).toBeNull();
+    expect(unitFrom(document.getElementById('long')!)).toBeNull();
   });
 });

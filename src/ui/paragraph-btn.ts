@@ -55,7 +55,7 @@ const MARGIN = 4;
  * 段落按钮的候选选择器：可翻译块级正文 + div 型正文容器。
  * 只做便宜的初筛 —— closest() 命中后，真正的判定（isTranslationUnit +
  * shouldSkip，与采集器同一套）在 SHOW_DELAY 计时器回调里做：
- * shouldSkip 拼 outerHTML、调 getBoundingClientRect 会强制同步布局，
+ * shouldSkip 调 getBoundingClientRect 会强制同步布局，
  * 不能挂在每次 mouseover 上。
  */
 const CANDIDATE =
@@ -129,7 +129,7 @@ export function createParaBtn(handlers: ParaBtnHandlers): () => void {
     clearTimeout(showTimer);
     showTimer = self.setTimeout(() => {
       // 悬停意图确认后才做精判。命中测试与 elementsFromPoint 都会强制
-      // 同步布局（shouldSkip 拼 outerHTML、调 getBoundingClientRect），
+      // 同步布局（shouldSkip 调 getBoundingClientRect），
       // 鼠标划过时计时器每次都被重置、只有真正停住才执行 ——
       // 划过的路上零布局成本。
       //
