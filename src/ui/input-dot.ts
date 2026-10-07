@@ -26,10 +26,12 @@
 // 位置，停手 SHOW_DELAY（与逐段按钮悬停意图同一个口径）后对齐一次 —— 打字
 // 时圆点在哪儿没人看，打字卡顿却是立刻能感觉到的（ADR-0006）。
 // #669：文字末尾滚出框的可见区域时，圆点钳到可见边缘，不隐藏、不换样式。
+// #667：文字末尾也是光标所在。圆点与光标并排，中间留与逐段按钮同一个口径
+// 的间隙；右侧放不下时换到末尾那一行的上下，不压住光标（ADR-0006）。
 
 import { mountIsolated, unmountIsolated } from './mount';
-import { measureTextareaEnd } from './input-measure';
-import { SHOW_DELAY } from './paragraph-btn';
+import { measureTextareaEnd, type TextEnd } from './input-measure';
+import { GAP, SHOW_DELAY } from './paragraph-btn';
 import { tf } from '../i18n';
 import { decideInputEligibility, inputText, type TextInput } from './input-eligibility';
 
@@ -103,9 +105,29 @@ function clampToBox(left: number, top: number, box: InnerBox): { left: number; t
 }
 
 /**
- * 圆点位置（ADR-0006）：多行文本框贴文字末尾（#665），圆点左边缘贴末尾，
- * 竖直居中于末尾那一行，并钳在框的可见区域里（#669）；量不出来、或是其余
- * 输入框时回落框内侧右下角 —— 圆点是唯一入口，量不出来只换位置，绝不不显示。
+ * 圆点放在文字末尾旁边（#667）。末尾也是光标所在，两者并排而不重叠，否则
+ * 圆点会被当成光标的一部分：
+ * - 默认在末尾右侧，留 GAP 的间隙，竖直居中于末尾那一行；
+ * - 右侧放不下（窄框、末尾顶到右内边缘）时换到末尾那一行的下方，再不行
+ *   上方，横向贴右内边缘 —— 不在这一行上，就碰不到光标；
+ * - 上下也没地方（只有一行高的框）时放到光标左侧，同样留 GAP。
+ */
+function besideEnd(end: TextEnd, box: InnerBox): { left: number; top: number } {
+  const centered = end.y + end.height / 2 - SIZE / 2;
+  const right = end.x + GAP;
+  if (right + SIZE <= box.right) return { left: right, top: centered };
+  const left = box.right - SIZE;
+  const below = end.y + end.height;
+  if (below + SIZE <= box.bottom) return { left, top: below };
+  const above = end.y - SIZE;
+  if (above >= box.top) return { left, top: above };
+  return { left: end.x - GAP - SIZE, top: centered };
+}
+
+/**
+ * 圆点位置（ADR-0006）：多行文本框贴文字末尾（#665），与光标并排（#667），
+ * 并钳在框的可见区域里（#669）；量不出来、或是其余输入框时回落框内侧右下角
+ * —— 圆点是唯一入口，量不出来只换位置，绝不不显示。
  */
 function place(dot: HTMLElement, el: HTMLElement, shadow: ShadowRoot): void {
   const end = el instanceof HTMLTextAreaElement ? measureTextareaEnd(el, shadow) : null;
@@ -113,7 +135,9 @@ function place(dot: HTMLElement, el: HTMLElement, shadow: ShadowRoot): void {
     placeFallback(dot, el);
     return;
   }
-  const { left, top } = clampToBox(end.x, end.y + end.height / 2 - SIZE / 2, innerBox(el));
+  const box = innerBox(el);
+  const beside = besideEnd(end, box);
+  const { left, top } = clampToBox(beside.left, beside.top, box);
   dot.style.left = `${left}px`;
   dot.style.top = `${top}px`;
 }

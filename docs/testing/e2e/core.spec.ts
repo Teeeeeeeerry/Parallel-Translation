@@ -2565,9 +2565,9 @@ test.describe('输入翻译：圆点', () => {
         ctx.font = font;
         return ctx.measureText(t).width;
       }, [text, geom.font] as const);
-    /** 圆点应在第 line 行（从 0 数）、这一行文字 lineText 的末尾：左边缘贴末尾，竖直居中于这一行。 */
+    /** 圆点应在第 line 行（从 0 数）、这一行文字 lineText 的末尾：左边缘在末尾右侧 4px（#667），竖直居中于这一行。 */
     const expectAtEnd = async (line: number, lineText: string) => {
-      const x = geom.left + (await textWidth(lineText));
+      const x = geom.left + (await textWidth(lineText)) + 4;
       const cy = geom.top + geom.lineHeight * (line + 0.5);
       await expect(async () => {
         const d = (await dot.boundingBox())!;
@@ -2638,14 +2638,14 @@ test.describe('输入翻译：圆点', () => {
     expect(mirrors.filter((t) => t <= lastInput)).toEqual([]);
     expect(mirrors[0]! - lastInput).toBeGreaterThanOrEqual(130);
 
-    // 对齐到了新的末尾
+    // 对齐到了新的末尾（末尾右侧 4px，#667）
     const end = await box.evaluate((el, text) => {
       const cs = getComputedStyle(el);
       const r = el.getBoundingClientRect();
       const ctx = document.createElement('canvas').getContext('2d')!;
       ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
       return {
-        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + ctx.measureText(text).width,
+        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + ctx.measureText(text).width + 4,
         cy: r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop) + parseFloat(cs.lineHeight) / 2,
       };
     }, typed);
@@ -2710,7 +2710,7 @@ test.describe('输入翻译：圆点', () => {
     await box.evaluate((el) => (el.scrollTop = (el.scrollHeight - el.clientHeight) / 2));
     await expectInside();
 
-    // 滚回底：重新贴末尾（第 12 行“line 12”之后；真值按当前滚动位置与画布量的字宽算）
+    // 滚回底：重新贴末尾（第 12 行“line 12”之后 4px；真值按当前滚动位置与画布量的字宽算）
     await box.evaluate((el) => (el.scrollTop = el.scrollHeight));
     const end = await box.evaluate((el) => {
       const cs = getComputedStyle(el);
@@ -2719,7 +2719,7 @@ test.describe('输入翻译：圆点', () => {
       ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
       const lh = parseFloat(cs.lineHeight);
       return {
-        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + ctx.measureText('line 12').width,
+        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + ctx.measureText('line 12').width + 4,
         cy: r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop) - el.scrollTop + lh * 11.5,
       };
     });
@@ -2728,6 +2728,72 @@ test.describe('输入翻译：圆点', () => {
       expect(Math.abs(d.x - end.x)).toBeLessThanOrEqual(2);
       expect(Math.abs(d.y + d.height / 2 - end.cy)).toBeLessThanOrEqual(2);
     }).toPass({ timeout: 5_000 });
+  });
+
+  test('@core TC-E2E-137: 圆点与光标并排不重叠 —— 与末尾字符之间留 4px 间隙；窄框里末尾顶到右内边缘时圆点也不压住光标（#667）', async ({
+    page, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator(DOT);
+
+    /** 第一行文字 text 的末尾（光标所在）与这一行的上下沿；真值用画布按同一字体量。 */
+    const lineEnd = (text: string) =>
+      box.evaluate((el, t) => {
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const top = r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop);
+        return {
+          x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + ctx.measureText(t).width,
+          top,
+          bottom: top + parseFloat(cs.lineHeight),
+          boxRight: r.left + el.clientLeft + el.clientWidth,
+          boxBottom: r.top + el.clientTop + el.clientHeight,
+        };
+      }, text);
+
+    // 宽框：圆点在末尾字符右侧，中间留出 4px 间隙，竖直居中于这一行
+    await box.click();
+    await page.keyboard.type('hello');
+    const e = await lineEnd('hello');
+    await expect(async () => {
+      const d = (await dot.boundingBox())!;
+      expect(d.x - e.x, '圆点左边缘与末尾字符之间的间隙').toBeGreaterThanOrEqual(3);
+      expect(d.x - e.x).toBeLessThanOrEqual(5);
+      expect(Math.abs(d.y + d.height / 2 - (e.top + e.bottom) / 2)).toBeLessThanOrEqual(2);
+    }).toPass({ timeout: 5_000 });
+
+    // 窄框：把框收窄到第一行刚好装下这串字，末尾顶到右内边缘，右侧放不下圆点
+    const text = 'mmmmmmmm';
+    await box.evaluate((el, t) => {
+      const cs = getComputedStyle(el);
+      const ctx = document.createElement('canvas').getContext('2d')!;
+      ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      (el as HTMLTextAreaElement).value = '';
+      el.style.boxSizing = 'content-box';
+      el.style.width = `${Math.ceil(ctx.measureText(t).width) + 1}px`;
+    }, text);
+    await page.keyboard.type(text);
+    const n = await lineEnd(text);
+    expect(n.x + 4 + 14, '右侧确实放不下圆点').toBeGreaterThan(n.boxRight);
+    await expect(async () => {
+      const d = (await dot.boundingBox())!;
+      // 光标是末尾处、这一行高的一条竖线：圆点要么整个在这一行之外，要么横向离开光标至少 3px
+      const clearOfCaret =
+        d.y >= n.bottom - 0.5 ||
+        d.y + d.height <= n.top + 0.5 ||
+        d.x >= n.x + 3 ||
+        d.x + d.width <= n.x - 3;
+      expect(clearOfCaret, `圆点 ${JSON.stringify(d)} 压住了光标 x=${n.x} 行 ${n.top}–${n.bottom}`).toBe(true);
+      // 仍在框的可见区域里（#669）
+      expect(d.x + d.width).toBeLessThanOrEqual(n.boxRight + 0.5);
+      expect(d.y + d.height).toBeLessThanOrEqual(n.boxBottom + 0.5);
+    }).toPass({ timeout: 5_000 });
+    await expect(dot).toBeVisible();
   });
 
   test('@core TC-E2E-128: contenteditable 富文本框获得焦点且有文字时浮出圆点，在框内右下角；非编辑态元素与可编辑区里的 contenteditable=false 子块不出现（#655）', async ({
