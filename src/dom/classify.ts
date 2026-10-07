@@ -152,6 +152,10 @@ export function shouldSkipNonVisual(el: Element): boolean {
   // —— 旧的 closest('[data-pt="done"]') 会把新内容一并拦掉，永久漏翻
   if (el.getAttribute('data-pt') === 'done') return true;
   if (el.closest('.pt-origin')) return true;
+  // #731：切成切块的容器本身不是单元，它的切块才是。以前文字不长、HTML
+  // 超限而被按行切开的段落（#706）由 HTML 上限顺带挡住，上限去掉之后
+  // 要明说，否则容器整段与逐行切块各翻一遍
+  if (el.getAttribute('data-pt-split') === '1') return true;
 
   // 扩展自身注入的 UI —— 绝不能翻译自己的按钮文字
   if (el.closest('[data-pt-ui="1"]')) return true;
@@ -159,17 +163,13 @@ export function shouldSkipNonVisual(el: Element): boolean {
   // 非正文区域：导航、页脚、侧栏、参考文献等
   if (el.closest(NON_CONTENT)) return true;
 
+  // #731：只按文字长度设上限，不按序列化后的 outerHTML 长度拒绝。送给引擎
+  // 的是提取出来的文字，由文字上限把着；outerHTML 量的是属性负载 —— 维基
+  // Parsoid 的单个引用角标就有四百多字符、单个条目链接一百多字符，几百个
+  // 字的正常段落就超过 MAX_HTML，被整段静默丢掉（#724）。#174 当年只给
+  // pre 切块放宽了这一条，现在普通元素一并对齐
   const text = el.textContent?.trim() ?? '';
   if (text.length < MIN_TEXT || text.length > MAX_TEXT) return true;
-  // #174: pre 切块（.pt-chunk）的文本长度已由 splitPre 保证 ≤ MAX_TEXT，
-  // 但行内标记开销（GitHub autolink <a> 每个 48+ 字符）会让 outerHTML
-  // 远超 MAX_HTML —— 对切块放宽 HTML 上限，否则含大量链接的块被
-  // 静默漏翻。普通元素仍按 outerHTML 上限拒绝。
-  if (
-    (el as HTMLElement).dataset?.ptChunk !== '1' &&
-    (el as HTMLElement).outerHTML.length > MAX_HTML
-  )
-    return true;
   if (isMainlyNumeric(text)) return true;
 
   return false;

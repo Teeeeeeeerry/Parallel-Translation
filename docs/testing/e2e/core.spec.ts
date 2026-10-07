@@ -4213,3 +4213,32 @@ test.describe('超长段落按 br 切行', () => {
     await restoreRound('第二次还原');
   });
 });
+
+test.describe('标记密集的段落（#724）', () => {
+  test('@core TC-E2E-144: 仿维基的正文段落（大量条目链接与引用角标）整页翻译后有译文；文字真正超长的段落仍然不翻（#731）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('markup-dense');
+    const dense = page.locator('#dense');
+    // 前提：文字远低于上限，序列化后的 HTML 远超旧的 HTML 上限（4096）
+    const size = await dense.evaluate((el) => ({
+      text: (el.textContent ?? '').trim().length,
+      html: el.outerHTML.length,
+    }));
+    expect(size.text).toBeLessThan(3072);
+    expect(size.html).toBeGreaterThan(4096);
+
+    await translateAndWait(page);
+    await expect(page.locator('#after')).toHaveAttribute('data-pt', 'done');
+    await expect(dense).toHaveAttribute('data-pt', 'done');
+    await expect(dense.locator('.pt-trans')).toHaveText(/^【译】In this period she worked with/);
+    // 链接与引用角标都还在原文里
+    await expect(dense.locator('.pt-origin a[rel="mw:WikiLink"]')).toHaveCount(26);
+    await expect(dense.locator('.pt-origin sup.reference')).toHaveCount(8);
+
+    await expect(page.locator('#long')).not.toHaveAttribute('data-pt', /./);
+    await expect(page.locator('#long .pt-trans')).toHaveCount(0);
+  });
+});

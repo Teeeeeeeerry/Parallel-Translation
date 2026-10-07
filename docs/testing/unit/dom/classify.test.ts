@@ -317,12 +317,13 @@ describe('shouldSkipNonVisual', () => {
     expect(shouldSkipNonVisual(p)).toBe(true);
   });
 
-  test('outerHTML > 4096 → true', () => {
-    // 创建一个带长属性的元素
+  test('outerHTML > 4096、文字正常 → false：不按序列化长度拒绝（#731）', () => {
+    // 属性负载撑大 outerHTML，送给引擎的文字并不长
     const p = document.createElement('p');
     p.textContent = 'Normal text';
     p.setAttribute('data-x', 'y'.repeat(5000));
-    expect(shouldSkipNonVisual(p)).toBe(true);
+    expect(p.outerHTML.length).toBeGreaterThan(MAX_HTML);
+    expect(shouldSkipNonVisual(p)).toBe(false);
   });
 
   test('纯数字/日期/价格 → true', () => {
