@@ -379,7 +379,7 @@ function directTextLength(el: Element): number {
  * #50：同时检查非文本内容（媒体 / 交互控件），与 render() 准入标准一致。
  * 若命中则向下降级到子树中真正持有文本的叶子单元，而非整块放弃。
  *
- * shouldSkip 有强制同步布局的昂贵步骤（outerHTML、getBoundingClientRect），
+ * shouldSkip 有强制同步布局的昂贵步骤（getBoundingClientRect），
  * 只应在低频率路径调用：悬停意图计时器、点击/快捷键入口，不能挂在
  * 每次 mouseover 上。
  *
