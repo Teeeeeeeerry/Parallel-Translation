@@ -3054,7 +3054,95 @@ test.describe('输入翻译：圆点', () => {
     await expect(dot).toBeVisible();
   });
 
-  test('@core TC-E2E-128: contenteditable 富文本框获得焦点且有文字时浮出圆点，在框内右下角；非编辑态元素与可编辑区里的 contenteditable=false 子块不出现（#655）', async ({
+  test('@core TC-E2E-141: contenteditable 里圆点贴文字末尾 —— 多行、行内混排（链接、加粗）都对；末尾滚出可见区钳在框内、滚回来重新贴末尾（#671）', async ({
+    page, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('rich-input');
+    await waitForBall(page);
+    const box = page.locator('#rich');
+    const dot = page.locator(DOT);
+
+    /** 文字末尾的真值：光标放到最后一个文本节点末尾时的位置（折叠选区的矩形）。 */
+    const caretAtEnd = () =>
+      box.evaluate((el) => {
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let last: Text | null = null;
+        while (walker.nextNode()) if ((walker.currentNode as Text).length > 0) last = walker.currentNode as Text;
+        const r = document.createRange();
+        r.setStart(last!, last!.length);
+        r.collapse(true);
+        getSelection()!.removeAllRanges();
+        getSelection()!.addRange(r);
+        const c = r.getClientRects()[0]!;
+        return { x: c.left, cy: c.top + c.height / 2 };
+      });
+    /** 圆点在末尾右侧 4px（#667），竖直居中于末尾那一行。 */
+    const expectAtEnd = async (what: string) => {
+      await expect(async () => {
+        const e = await caretAtEnd();
+        const d = (await dot.boundingBox())!;
+        expect(Math.abs(d.x - (e.x + 4)), `${what}：横向`).toBeLessThanOrEqual(2);
+        expect(Math.abs(d.y + d.height / 2 - e.cy), `${what}：竖向`).toBeLessThanOrEqual(2);
+      }).toPass({ timeout: 5_000 });
+    };
+    /** 站点（或编辑器）直接改写编辑区的内容；改完等停手对齐。 */
+    const setHtml = (html: string) => box.evaluate((el, h) => (el.innerHTML = h), html);
+
+    // 单行
+    await box.click();
+    await page.keyboard.type('hello');
+    await expectAtEnd('单行');
+
+    // 多行：换行后末尾在第二行
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('world');
+    await expectAtEnd('多行');
+
+    // 行内混排：末尾是加粗
+    await setHtml('see <a href="#x">the docs</a> and <b>bold text</b>');
+    await expectAtEnd('末尾是加粗');
+    // 末尾是链接
+    await setHtml('read <b>this</b> first, then <a href="#y">the link</a>');
+    await expectAtEnd('末尾是链接');
+    // 多行加行内混排
+    await setHtml('<div>first <i>line</i></div><div>second <b>bold</b> and <a href="#z">a link</a></div>');
+    await expectAtEnd('多行混排');
+
+    // 钳边（#669）：框限高可滚动，滚到顶时末尾在框下方，圆点钳在可见区里，不消失
+    await box.evaluate((el) => {
+      el.style.height = '60px';
+      el.style.minHeight = '0';
+      el.style.overflowY = 'auto';
+    });
+    await setHtml(Array.from({ length: 10 }, (_, i) => `<div>line ${i + 1}</div>`).join(''));
+    await box.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expectAtEnd('滚到底');
+    await box.evaluate((el) => (el.scrollTop = 0));
+    const v = await box.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        left: r.left + el.clientLeft,
+        top: r.top + el.clientTop,
+        right: r.left + el.clientLeft + el.clientWidth,
+        bottom: r.top + el.clientTop + el.clientHeight,
+      };
+    });
+    await expect(async () => {
+      const d = (await dot.boundingBox())!;
+      expect(d.x).toBeGreaterThanOrEqual(v.left - 0.5);
+      expect(d.x + d.width).toBeLessThanOrEqual(v.right + 0.5);
+      expect(d.y).toBeGreaterThanOrEqual(v.top - 0.5);
+      expect(d.y + d.height).toBeLessThanOrEqual(v.bottom + 0.5);
+    }).toPass({ timeout: 5_000 });
+    await expect(dot).toBeVisible();
+
+    // 滚回底：重新贴末尾
+    await box.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expectAtEnd('滚回底');
+  });
+
+  test('@core TC-E2E-128: contenteditable 富文本框获得焦点且有文字时浮出圆点，在框内（#671 起贴文字末尾）；非编辑态元素与可编辑区里的 contenteditable=false 子块不出现（#655）', async ({
     page, seedSettings, gotoFixture,
   }) => {
     await seedSettings({});
@@ -3072,15 +3160,15 @@ test.describe('输入翻译：圆点', () => {
     await page.keyboard.type('b');
     await expect(dot).toBeVisible();
 
-    // 换行后的文字同样算数，位置在框内侧右下角（ADR-0006 回落位置）
+    // 换行后的文字同样算数，整颗圆点在框里（#671 起贴文字末尾，位置的真值见 TC-E2E-141）
     await page.keyboard.press('Enter');
     await page.keyboard.type('你好世界');
     await expect(dot).toBeVisible();
     const b = (await box.boundingBox())!;
     const d = (await dot.boundingBox())!;
-    expect(d.x).toBeGreaterThan(b.x + b.width / 2);
+    expect(d.x).toBeGreaterThanOrEqual(b.x);
     expect(d.x + d.width).toBeLessThanOrEqual(b.x + b.width);
-    expect(d.y).toBeGreaterThan(b.y + b.height / 2);
+    expect(d.y).toBeGreaterThanOrEqual(b.y);
     expect(d.y + d.height).toBeLessThanOrEqual(b.y + b.height);
 
     // 点圆点不夺走焦点

@@ -34,9 +34,11 @@
 // #668：量不准的情形都换位置、不隐藏（ADR-0006）。祖先带 transform 缩放时
 // 测量交给回落，回落与钳制用的可见区域按缩放换算；停手之后网页字体才加载
 // 完、站点改了框的样式或尺寸，都重新对齐一次。
+// #671：contenteditable 同样贴文字末尾，用与逐段按钮共用的行盒测量（#634），
+// 不另养镜像；钳边、停手对齐、测不出回落三条规则与文本框同一套。
 
 import { mountIsolated, unmountIsolated } from './mount';
-import { measureFieldEnd, type TextEnd } from './input-measure';
+import { measureEditableEnd, measureFieldEnd, type TextEnd } from './input-measure';
 import { GAP, SHOW_DELAY } from './paragraph-btn';
 import { tf } from '../i18n';
 import { decideInputEligibility, inputText, type TextInput } from './input-eligibility';
@@ -139,15 +141,15 @@ function besideEnd(end: TextEnd, box: InnerBox, rtl: boolean): { left: number; t
 }
 
 /**
- * 圆点位置（ADR-0006）：多行（#665）与单行（#666）文本框贴文字末尾，与光标
- * 并排（#667），并钳在框的可见区域里（#669）；量不出来、或是 contenteditable
- * 时回落框内侧右下角 —— 圆点是唯一入口，量不出来只换位置，绝不不显示。
+ * 圆点位置（ADR-0006）：多行（#665）、单行（#666）文本框与 contenteditable
+ * （#671）贴文字末尾，与光标并排（#667），并钳在框的可见区域里（#669）；量不
+ * 出来时回落框内侧右下角 —— 圆点是唯一入口，量不出来只换位置，绝不不显示。
  */
 function place(dot: HTMLElement, el: HTMLElement, shadow: ShadowRoot): void {
   const end =
     el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement
       ? measureFieldEnd(el, shadow)
-      : null;
+      : measureEditableEnd(el);
   if (!end) {
     placeFallback(dot, el);
     return;
