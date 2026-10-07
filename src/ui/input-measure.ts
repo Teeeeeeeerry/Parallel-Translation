@@ -13,7 +13,7 @@
 // 最后减去框内的滚动位置。
 //
 // 契约：返回文字末尾的坐标，或者返回 null 表示算不出来（没有布局、框没有
-// 渲染出来）。算不出来时调用方回落到框内侧右下角，绝不因此不显示圆点。
+// 渲染出来、祖先带 transform 缩放而量不准，#668）。算不出来时调用方回落到框内侧右下角，绝不因此不显示圆点。
 //
 // 镜像放在调用方给的容器里（圆点自己的 shadow root）：页面样式碰不到它，
 // 页面的 MutationObserver 也看不到它的增删。量完立刻移除。
@@ -69,6 +69,12 @@ export function measureFieldEnd(
   const single = el instanceof HTMLInputElement;
   const box = el.getBoundingClientRect();
   if (box.width === 0 || box.height === 0) return null;
+  // 祖先带 transform（缩放、旋转）时，镜像量出的是没缩放的排版距离，与框在
+  // 屏幕上的位置对不上（#668）。屏幕上的尺寸与排版尺寸差出 1px 以上就认定
+  // 量不准，交给回落 —— 宁可换位置，也不把圆点画到错的地方
+  if (Math.abs(box.width - el.offsetWidth) > 1 || Math.abs(box.height - el.offsetHeight) > 1) {
+    return null;
+  }
   const cs = getComputedStyle(el);
 
   const mirror = document.createElement('div');

@@ -31,6 +31,9 @@
 // #666：单行文本框同样贴文字末尾。文字一长就横向滚动，末尾随滚动变：滚动
 // 重算沿用已有的时机（打字中等停手），钳制沿用 #669 那一套；RTL 下末尾在
 // 左侧，圆点放到文字左边。
+// #668：量不准的情形都换位置、不隐藏（ADR-0006）。祖先带 transform 缩放时
+// 测量交给回落，回落与钳制用的可见区域按缩放换算；停手之后网页字体才加载
+// 完、站点改了框的样式或尺寸，都重新对齐一次。
 
 import { mountIsolated, unmountIsolated } from './mount';
 import { measureFieldEnd, type TextEnd } from './input-measure';
@@ -74,17 +77,23 @@ interface InnerBox {
 /**
  * 框的可见区域。内侧边缘优先用 clientWidth / clientHeight（不含滚动条），
  * 量不到时退回边框盒减边框。
+ *
+ * client* 是没缩放的排版尺寸，getBoundingClientRect 是屏幕上的尺寸：祖先带
+ * transform 缩放时（#668）按两者之比换算，否则回落位置会落到框外。
  */
 function innerBox(el: HTMLElement): InnerBox {
   const r = el.getBoundingClientRect();
   const cs = getComputedStyle(el);
-  const borderR = parseFloat(cs.borderRightWidth) || 0;
-  const borderB = parseFloat(cs.borderBottomWidth) || 0;
+  const sx = el.offsetWidth > 0 ? r.width / el.offsetWidth : 1;
+  const sy = el.offsetHeight > 0 ? r.height / el.offsetHeight : 1;
+  const borderR = (parseFloat(cs.borderRightWidth) || 0) * sx;
+  const borderB = (parseFloat(cs.borderBottomWidth) || 0) * sy;
   return {
-    left: r.left + el.clientLeft,
-    top: r.top + el.clientTop,
-    right: el.clientWidth > 0 ? r.left + el.clientLeft + el.clientWidth : r.right - borderR,
-    bottom: el.clientHeight > 0 ? r.top + el.clientTop + el.clientHeight : r.bottom - borderB,
+    left: r.left + el.clientLeft * sx,
+    top: r.top + el.clientTop * sy,
+    right: el.clientWidth > 0 ? r.left + (el.clientLeft + el.clientWidth) * sx : r.right - borderR,
+    bottom:
+      el.clientHeight > 0 ? r.top + (el.clientTop + el.clientHeight) * sy : r.bottom - borderB,
   };
 }
 
@@ -202,8 +211,35 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
     }, SHOW_DELAY);
   };
 
+  /**
+   * 盯住当前输入框的样式与尺寸（#668）：站点改了它的行内样式、class，或者
+   * 经样式表、父容器让它变了尺寸，量过的末尾就过时了，重新对齐一次。
+   */
+  const restyled = new MutationObserver(() => onReflow());
+  // observe 之后总会先报一次当前尺寸，那一次不是变化，不量
+  let initialSize = false;
+  const resized =
+    typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => {
+          if (initialSize) initialSize = false;
+          else onReflow();
+        });
+  let watched: Element | null = null;
+  const watch = (el: Element | null): void => {
+    if (el === watched) return;
+    restyled.disconnect();
+    resized?.disconnect();
+    watched = el;
+    if (!el) return;
+    initialSize = true;
+    restyled.observe(el, { attributes: true, attributeFilter: ['style', 'class'] });
+    resized?.observe(el);
+  };
+
   const hide = (): void => {
     cancelAlign();
+    watch(null);
     dot.style.display = 'none';
     target = null;
     syncState();
@@ -221,6 +257,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
     }
     const wasShown = target === el && dot.style.display === 'block';
     target = el;
+    watch(el);
     syncState();
     dot.style.display = 'block';
     if (!typing) {
@@ -266,11 +303,12 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
     const el = (e.composedPath()[0] as Element | undefined) ?? null;
     if (el === deepActiveElement()) sync(el, true);
   };
-  // 圆点是 fixed 定位，页面或框内滚动时重新贴合
-  // 还在等停手时不量：打字引起的框内滚动交给停手后的那次对齐
-  const onReflow = (): void => {
+  // 圆点是 fixed 定位，页面或框内滚动时重新贴合；网页字体加载完、框的样式
+  // 或尺寸变了（#668）同样重新对齐
+  // 还在等停手时不量：打字引起的框内滚动、自动增高交给停手后的那次对齐
+  function onReflow(): void {
     if (target && settleTimer === undefined) place(dot, target, shadow);
-  };
+  }
 
   // 按下时阻止默认行为：不夺走输入框的焦点，光标与选区都还在
   dot.addEventListener('mousedown', (e) => e.preventDefault());
@@ -294,6 +332,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
   document.addEventListener('input', onInput, true);
   window.addEventListener('scroll', onReflow, { passive: true, capture: true });
   window.addEventListener('resize', onReflow, { passive: true });
+  document.fonts?.addEventListener('loadingdone', onReflow);
 
   // 打开开关时焦点可能已经在框里 —— 即刻生效，不必重新聚焦
   observe(deepActiveElement());
@@ -306,7 +345,9 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
     document.removeEventListener('input', onInput, true);
     window.removeEventListener('scroll', onReflow, true);
     window.removeEventListener('resize', onReflow);
+    document.fonts?.removeEventListener('loadingdone', onReflow);
     observer.disconnect();
+    watch(null);
     unmountIsolated(HOST_ID);
   };
 }
