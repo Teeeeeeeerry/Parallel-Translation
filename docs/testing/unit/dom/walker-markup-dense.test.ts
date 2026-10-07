@@ -121,3 +121,28 @@ describe('逐段翻译入口在标记密集的段落上找得到单元（#732）
     expect(unitFrom(document.getElementById('long')!)).toBeNull();
   });
 });
+
+describe('子树元素数的兜底守卫（#733）', () => {
+  /** 一段文字不长、但子树里有 n 个行内元素的段落。 */
+  const spans = (id: string, n: number) =>
+    `<p id="${id}">${Array.from({ length: n }, (_, i) => `<span>w${i % 10}</span>`).join(' ')}</p>`;
+
+  test('元素个数达到病态量级的段落被跳过，采集与逐段翻译入口都找不到它', () => {
+    document.body.innerHTML = spans('huge', 1000) + '<p id="ok">A normal paragraph next to it.</p>';
+    const huge = document.getElementById('huge')!;
+    expect(huge.textContent!.trim().length).toBeLessThan(3072);
+
+    expect(collectUnits().ids).toEqual(['ok']);
+    const restore = mockAllBoundingRects();
+    try {
+      expect(closestUnit(huge.querySelector('span')!)).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  test('标记密集的正常段落不受影响：仿维基的段落、元素数高过实测上界的段落照常采集', () => {
+    document.body.innerHTML = wikiParagraph('dense') + spans('busy', 120);
+    expect(collectUnits().ids).toEqual(['dense', 'busy']);
+  });
+});

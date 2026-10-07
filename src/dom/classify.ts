@@ -111,6 +111,19 @@ export const MAX_HTML = 4096;
 const MIN_TEXT = 3;
 
 /**
+ * 单元子树里元素个数的上限 —— 复杂度的兜底守卫（#733），只拦真正病态的
+ * 结构（被整棵塞进一个段落的表格、列表，动辄上千个元素）。送翻量由文字
+ * 上限约束，这一条不是主判据。
+ *
+ * 依据 #730 的实测（2026-10-07，正文块：p、li、td、dd，文字长于 50 字且
+ * 不含块级子元素）：正常正文块的元素数上界是 87 —— MDN 17、W3C CSS
+ * Flexbox 规范 21、GitHub 仓库首页 11、维基 COVID-19 条目 87（中位 12、
+ * p99 59，每个引用角标自带一层 span 结构所以偏高）。300 相对 87 留了约
+ * 3.5 倍余量，比维基更密的标记（每个角标再多包两层）也放得进来。
+ */
+const MAX_ELEMENTS = 300;
+
+/**
  * 是否处于代码块上下文（自身或祖先是 .highlight / .notranslate）—— #64/#65。
  * pre 切块与超长段落按行切块（#706）共用。
  */
@@ -170,6 +183,8 @@ export function shouldSkipNonVisual(el: Element): boolean {
   // pre 切块放宽了这一条，现在普通元素一并对齐
   const text = el.textContent?.trim() ?? '';
   if (text.length < MIN_TEXT || text.length > MAX_TEXT) return true;
+  // #733：数元素个数，不序列化 DOM
+  if (el.getElementsByTagName('*').length > MAX_ELEMENTS) return true;
   if (isMainlyNumeric(text)) return true;
 
   return false;
