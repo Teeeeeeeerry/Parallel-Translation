@@ -25,6 +25,7 @@
 // #670：镜像测量会强制同步布局，不能挂在每次按键上。连续打字期间不重算
 // 位置，停手 SHOW_DELAY（与逐段按钮悬停意图同一个口径）后对齐一次 —— 打字
 // 时圆点在哪儿没人看，打字卡顿却是立刻能感觉到的（ADR-0006）。
+// #669：文字末尾滚出框的可见区域时，圆点钳到可见边缘，不隐藏、不换样式。
 
 import { mountIsolated, unmountIsolated } from './mount';
 import { measureTextareaEnd } from './input-measure';
@@ -57,27 +58,54 @@ function hasEnoughText(el: TextInput): boolean {
   return inputText(el).trim().length >= MIN_CHARS;
 }
 
+/** 框的可见区域（视口坐标）：边框以内、滚动条以外。 */
+interface InnerBox {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 /**
- * 回落位置：框内侧右下角（ADR-0006）。
- * 内侧右边缘优先用 clientWidth（不含滚动条），量不到时退回边框盒减边框。
+ * 框的可见区域。内侧边缘优先用 clientWidth / clientHeight（不含滚动条），
+ * 量不到时退回边框盒减边框。
  */
-function placeFallback(dot: HTMLElement, el: HTMLElement): void {
+function innerBox(el: HTMLElement): InnerBox {
   const r = el.getBoundingClientRect();
   const cs = getComputedStyle(el);
   const borderR = parseFloat(cs.borderRightWidth) || 0;
   const borderB = parseFloat(cs.borderBottomWidth) || 0;
-  const innerRight =
-    el.clientWidth > 0 ? r.left + el.clientLeft + el.clientWidth : r.right - borderR;
-  const innerBottom =
-    el.clientHeight > 0 ? r.top + el.clientTop + el.clientHeight : r.bottom - borderB;
-  dot.style.left = `${innerRight - INSET - SIZE}px`;
-  dot.style.top = `${innerBottom - INSET - SIZE}px`;
+  return {
+    left: r.left + el.clientLeft,
+    top: r.top + el.clientTop,
+    right: el.clientWidth > 0 ? r.left + el.clientLeft + el.clientWidth : r.right - borderR,
+    bottom: el.clientHeight > 0 ? r.top + el.clientTop + el.clientHeight : r.bottom - borderB,
+  };
+}
+
+/** 回落位置：框内侧右下角（ADR-0006）。 */
+function placeFallback(dot: HTMLElement, el: HTMLElement): void {
+  const box = innerBox(el);
+  dot.style.left = `${box.right - INSET - SIZE}px`;
+  dot.style.top = `${box.bottom - INSET - SIZE}px`;
+}
+
+/**
+ * 把圆点钳在框的可见区域里（#669，ADR-0006）：文字末尾滚出可见区域时，
+ * 圆点停在离它最近的可见边缘，不隐藏、也不换样式 —— 长文本恰恰是最想
+ * 翻译的那种，圆点消失会被当成功能坏了。框比圆点还小时贴左上。
+ */
+function clampToBox(left: number, top: number, box: InnerBox): { left: number; top: number } {
+  return {
+    left: Math.max(box.left, Math.min(left, box.right - SIZE)),
+    top: Math.max(box.top, Math.min(top, box.bottom - SIZE)),
+  };
 }
 
 /**
  * 圆点位置（ADR-0006）：多行文本框贴文字末尾（#665），圆点左边缘贴末尾，
- * 竖直居中于末尾那一行；量不出来、或是其余输入框时回落框内侧右下角 ——
- * 圆点是唯一入口，量不出来只换位置，绝不不显示。
+ * 竖直居中于末尾那一行，并钳在框的可见区域里（#669）；量不出来、或是其余
+ * 输入框时回落框内侧右下角 —— 圆点是唯一入口，量不出来只换位置，绝不不显示。
  */
 function place(dot: HTMLElement, el: HTMLElement, shadow: ShadowRoot): void {
   const end = el instanceof HTMLTextAreaElement ? measureTextareaEnd(el, shadow) : null;
@@ -85,8 +113,9 @@ function place(dot: HTMLElement, el: HTMLElement, shadow: ShadowRoot): void {
     placeFallback(dot, el);
     return;
   }
-  dot.style.left = `${end.x}px`;
-  dot.style.top = `${end.y + end.height / 2 - SIZE / 2}px`;
+  const { left, top } = clampToBox(end.x, end.y + end.height / 2 - SIZE / 2, innerBox(el));
+  dot.style.left = `${left}px`;
+  dot.style.top = `${top}px`;
 }
 
 /** 圆点的回调：点击时拿到当前输入框。 */
