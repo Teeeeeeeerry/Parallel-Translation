@@ -65,6 +65,14 @@ export function render(
   // 1. pre 自身是翻译单元（短文本，未被 splitPre 切分）
   // 2. .pt-chunk 包装 span 是翻译单元（#65 切分后的块）
   if (el.closest('pre')) trans.classList.add('pt-pre');
+  // #707：以 br 分行的超长段落切出的行（pre 之外的切块）—— 行级对照，一行
+  // 原文紧跟一行译文。切块是行内元素、后面跟着原段落的 br：译文若是块级，
+  // 它后面的 br 会再换一行，每行译文下多出一个空行。改为行内显示，换行由
+  // 原文行尾补（仅译文模式下原文连同这个换行一起隐藏）
+  else if (el.classList.contains('pt-chunk')) {
+    origin.classList.add('pt-line');
+    trans.classList.add('pt-line');
+  }
 
   el.appendChild(origin);
   el.appendChild(trans);
