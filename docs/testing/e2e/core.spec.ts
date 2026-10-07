@@ -2654,6 +2654,82 @@ test.describe('输入翻译：圆点', () => {
     expect(Math.abs(d.y + d.height / 2 - end.cy)).toBeLessThanOrEqual(2);
   });
 
+  test('@core TC-E2E-136: 多行文本框滚到看不见末尾时圆点钳在框的可见边缘内，不消失、不换样式；滚回来重新贴末尾（#669）', async ({
+    page, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator(DOT);
+
+    // 打到超出框高：框自己滚到底，末尾在可见区里
+    await box.click();
+    await page.keyboard.type(Array.from({ length: 12 }, (_, i) => `line ${i + 1}`).join('\n'));
+    expect(await box.evaluate((el) => el.scrollHeight > el.clientHeight + 100)).toBe(true);
+    await expect(dot).toBeVisible();
+    // 等停手对齐（#670）落定：之前圆点还在回落位置，滚动不会触发重算
+    await page.waitForTimeout(400);
+    const style = () =>
+      dot.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { opacity: cs.opacity, background: cs.backgroundColor, size: `${cs.width}x${cs.height}` };
+      });
+    const normal = await style();
+
+    /** 框的可见区域：边框以内、滚动条以外。 */
+    const visible = () =>
+      box.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          left: r.left + el.clientLeft,
+          top: r.top + el.clientTop,
+          right: r.left + el.clientLeft + el.clientWidth,
+          bottom: r.top + el.clientTop + el.clientHeight,
+        };
+      });
+    const expectInside = async () => {
+      const v = await visible();
+      await expect(async () => {
+        const d = (await dot.boundingBox())!;
+        expect(d.x, '左').toBeGreaterThanOrEqual(v.left - 0.5);
+        expect(d.x + d.width, '右').toBeLessThanOrEqual(v.right + 0.5);
+        expect(d.y, '上').toBeGreaterThanOrEqual(v.top - 0.5);
+        expect(d.y + d.height, '下').toBeLessThanOrEqual(v.bottom + 0.5);
+      }).toPass({ timeout: 5_000 });
+    };
+
+    // 滚到顶：末尾落在框下方，圆点钳在可见区里，仍然显示、样式不变
+    await box.evaluate((el) => (el.scrollTop = 0));
+    await expectInside();
+    await expect(dot).toBeVisible();
+    expect(await style()).toEqual(normal);
+    await expect(box).toBeFocused();
+
+    // 滚到中间：末尾仍在下方，同样钳住
+    await box.evaluate((el) => (el.scrollTop = (el.scrollHeight - el.clientHeight) / 2));
+    await expectInside();
+
+    // 滚回底：重新贴末尾（第 12 行“line 12”之后；真值按当前滚动位置与画布量的字宽算）
+    await box.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    const end = await box.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      const ctx = document.createElement('canvas').getContext('2d')!;
+      ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const lh = parseFloat(cs.lineHeight);
+      return {
+        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + ctx.measureText('line 12').width,
+        cy: r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop) - el.scrollTop + lh * 11.5,
+      };
+    });
+    await expect(async () => {
+      const d = (await dot.boundingBox())!;
+      expect(Math.abs(d.x - end.x)).toBeLessThanOrEqual(2);
+      expect(Math.abs(d.y + d.height / 2 - end.cy)).toBeLessThanOrEqual(2);
+    }).toPass({ timeout: 5_000 });
+  });
+
   test('@core TC-E2E-128: contenteditable 富文本框获得焦点且有文字时浮出圆点，在框内右下角；非编辑态元素与可编辑区里的 contenteditable=false 子块不出现（#655）', async ({
     page, seedSettings, gotoFixture,
   }) => {
