@@ -4168,4 +4168,61 @@ test.describe('超长段落按 br 切行', () => {
     await expect(page.locator('#meta[data-pt="done"]')).toHaveCount(1);
     await expect(page.locator('#after[data-pt="done"]')).toHaveCount(1);
   });
+
+  test('@core TC-E2E-143: 还原后超长正文的 HTML 与翻译前逐字节一致、行内节点还是原来那些；再翻一次结果与第一次相同（#708）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('br-post');
+    const post = page.locator('#post');
+    const ball = await waitForBall(page);
+
+    // 翻译前：正文的 HTML，并给每个行内元素打上记号（还原后要还是同一批节点）
+    const before = await post.evaluate((el) => {
+      [...el.querySelectorAll('*')].forEach((n, i) => ((n as unknown as { __ptMark: number }).__ptMark = i));
+      return el.outerHTML;
+    });
+    const inlineCount = await post.evaluate((el) => el.querySelectorAll('a, em').length);
+    expect(inlineCount).toBeGreaterThan(0);
+
+    /** 整页翻译一轮，读出每个切块的原文与译文。 */
+    const translateRound = async () => {
+      await ball.click();
+      await expect(post.locator(':scope > .pt-chunk[data-pt="done"]')).toHaveCount(48, { timeout: 30_000 });
+      await expect(ball).toHaveAttribute('data-state', 'done');
+      return post.evaluate((el) =>
+        [...el.querySelectorAll(':scope > .pt-chunk')].map((c) => [
+          (c.querySelector(':scope > .pt-origin')?.textContent ?? '').trim(),
+          (c.querySelector(':scope > .pt-trans')?.textContent ?? '').trim(),
+        ]),
+      );
+    };
+    /** 还原一轮，断言正文回到翻译前的样子。 */
+    const restoreRound = async (what: string) => {
+      await ball.click();
+      await expect(page.locator('[data-pt="done"]')).toHaveCount(0, { timeout: 10_000 });
+      await expect(ball).toHaveAttribute('data-state', 'idle');
+      const after = await post.evaluate((el) => ({
+        html: el.outerHTML,
+        chunks: el.querySelectorAll('.pt-chunk, .pt-origin, .pt-trans').length,
+        split: el.hasAttribute('data-pt-split'),
+        // 记号按原顺序都还在：行内节点没有被换成新建的副本
+        marks: [...el.querySelectorAll('*')].map((n) => (n as unknown as { __ptMark?: number }).__ptMark),
+      }));
+      expect(after.chunks, `${what}：切块与译文包装都移除`).toBe(0);
+      expect(after.split, `${what}：切分标记移除`).toBe(false);
+      expect(after.html, `${what}：HTML 与翻译前逐字节一致`).toBe(before);
+      expect(after.marks, `${what}：行内节点与 br 还是原来那些`).toEqual(after.marks.map((_, i) => i));
+    };
+
+    const first = await translateRound();
+    expect(first).toHaveLength(48);
+    await restoreRound('第一次还原');
+
+    // 再翻一次：切分与译文与第一次完全相同
+    const second = await translateRound();
+    expect(second).toEqual(first);
+    await restoreRound('第二次还原');
+  });
 });
