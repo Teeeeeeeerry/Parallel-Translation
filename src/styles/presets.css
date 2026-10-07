@@ -81,3 +81,16 @@
   content: '\A';
   white-space: pre;
 }
+
+/* ── 以 br 分行的超长段落：逐行对照（#707）─────────────────────
+   行切块是行内元素，后面紧跟原段落的 br。译文块级显示时，那个 br 会在
+   译文后再换一行，每行译文下多出一个空行 —— 改为行内显示，换行由原文
+   行尾的 ::after 补：原文一行、译文一行、br 换到下一行原文。仅译文模式下
+   原文（连同这个换行）隐藏，译文之间同样不多空行。 */
+.pt-trans.pt-line {
+  display: inline;
+}
+.pt-origin.pt-line::after {
+  content: '\A';
+  white-space: pre;
+}

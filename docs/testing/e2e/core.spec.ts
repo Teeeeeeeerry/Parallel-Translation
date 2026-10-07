@@ -4090,3 +4090,82 @@ test.describe('逐段翻译：站点名单', () => {
     await expect(firstP).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
   });
 });
+
+// ================================================================
+// 超长段落按 br 切行（#694）
+// ================================================================
+
+test.describe('超长段落按 br 切行', () => {
+  /** 翻译前读正文的原文行：按 br 切开、去掉空行。 */
+  async function readLines(post: import('@playwright/test').Locator): Promise<string[]> {
+    return post.evaluate((el) =>
+      el.innerHTML
+        .split(/<br\s*\/?>/i)
+        .map((h) => {
+          const d = document.createElement('div');
+          d.innerHTML = h;
+          return (d.textContent ?? '').trim();
+        })
+        .filter(Boolean),
+    );
+  }
+
+  test('@core TC-E2E-142: 以 br 分行的超长正文整页翻译后逐行出译文 —— 每行原文下面紧跟它自己的译文，不串行、不漏行（#707）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('br-post');
+    const post = page.locator('#post');
+    const lines = await readLines(post);
+    expect(lines).toHaveLength(48);
+    expect(lines.join('\n').length, '正文超过长度上限，修复前整段不翻').toBeGreaterThan(3072);
+
+    await translateAndWait(page);
+
+    // 每一行都出了译文，一行一个切块
+    await expect(post.locator(':scope > .pt-chunk[data-pt="done"]')).toHaveCount(48, { timeout: 30_000 });
+
+    // 行与行对应：第 i 个切块的原文是第 i 行，译文是这一行自己的译文
+    const pairs = await post.evaluate((el) =>
+      [...el.querySelectorAll(':scope > .pt-chunk')].map((c) => ({
+        origin: (c.querySelector(':scope > .pt-origin')?.textContent ?? '').trim(),
+        trans: (c.querySelector(':scope > .pt-trans')?.textContent ?? '').trim(),
+      })),
+    );
+    expect(pairs.map((p) => p.origin)).toEqual(lines);
+    expect(pairs.map((p) => p.trans)).toEqual(lines.map((l) => `【译】${l}`));
+
+    // 排版：译文另起一行、紧跟在它那行原文下面；下一行原文紧跟在上一行译文下面，
+    // 中间不多出空行
+    const boxes = await post.evaluate((el) => {
+      const lh = parseFloat(getComputedStyle(el).lineHeight);
+      const left = el.getBoundingClientRect().left;
+      const rows = [...el.querySelectorAll(':scope > .pt-chunk')].map((c) => {
+        const o = [...c.querySelector(':scope > .pt-origin')!.getClientRects()];
+        const t = [...c.querySelector(':scope > .pt-trans')!.getClientRects()].filter((r) => r.width > 0);
+        return {
+          originTop: Math.min(...o.map((r) => r.top)),
+          originBottom: Math.max(...o.map((r) => r.bottom)),
+          transTop: Math.min(...t.map((r) => r.top)),
+          transBottom: Math.max(...t.map((r) => r.bottom)),
+          transLeft: Math.min(...t.map((r) => r.left)),
+        };
+      });
+      return { lh, left, rows };
+    });
+    boxes.rows.forEach((r, i) => {
+      expect(r.transTop, `第 ${i} 行：译文在原文下面`).toBeGreaterThanOrEqual(r.originBottom - 1);
+      expect(r.transTop - r.originBottom, `第 ${i} 行：译文紧跟原文，中间没有空行`).toBeLessThan(boxes.lh / 2);
+      expect(Math.abs(r.transLeft - boxes.left), `第 ${i} 行：译文另起一行，从行首开始`).toBeLessThanOrEqual(1);
+      const next = boxes.rows[i + 1];
+      if (next) {
+        expect(next.originTop - r.transBottom, `第 ${i + 1} 行原文紧跟上一行译文，中间没有空行`).toBeLessThan(boxes.lh / 2);
+      }
+    });
+
+    // 正文前后的普通段落照常整段翻译
+    await expect(page.locator('#meta[data-pt="done"]')).toHaveCount(1);
+    await expect(page.locator('#after[data-pt="done"]')).toHaveCount(1);
+  });
+});
