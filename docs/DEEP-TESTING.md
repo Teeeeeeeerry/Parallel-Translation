@@ -230,7 +230,7 @@ describe('splitPre', () => {
   test('返回的 span 数组长度 = 可翻译块数')
 })
 
-describe('unsplitPre', () => {
+describe('unsplitChunks', () => {
   test('把 .pt-chunk 文本放回 pre 并移除 span')
   test('移除 data-pt-split 属性')
   test('无 chunk 的 pre → 无操作')

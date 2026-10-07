@@ -26,7 +26,7 @@ import {
 import { startObserver, type ObserverHandle } from '~/src/dom/observer';
 import { walkShadowTree } from '~/src/dom/shadow-walk';
 import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
-import { unsplitPre } from '~/src/dom/pre-split';
+import { unsplitChunks } from '~/src/dom/chunk-split';
 import { applyCustomCss } from '~/src/styles/custom';
 import { createBall, setBallState } from '~/src/ui/floating-ball';
 import { createParaBtn } from '~/src/ui/paragraph-btn';
@@ -566,13 +566,13 @@ export default defineContentScript({
       // #328: observer 停止与还原纪元（epoch++）由编排模块的开关入口
       // 统一执行，此处只做 DOM 还原
       const els: Element[] = [];
-      const splitPres: Element[] = [];
+      const splitContainers: Element[] = [];
       walkShadowTree(
         document,
         (el) => {
           if (el.getAttribute('data-pt') === 'done') els.push(el);
-          // #65：收集被切分的 pre，在 unrender 后还原 DOM
-          if (el.getAttribute('data-pt-split') === '1') splitPres.push(el);
+          // #65：收集被切分的容器（#705 起不只 pre），在 unrender 后还原 DOM
+          if (el.getAttribute('data-pt-split') === '1') splitContainers.push(el);
         },
         { skipTranslated: false },
       );
@@ -580,9 +580,9 @@ export default defineContentScript({
       for (const el of els) {
         unrender(el);
       }
-      // #65：unrender chunk 后再还原 pre 的切分包装，将 DOM 恢复为逐字节原貌
-      for (const pre of splitPres) {
-        unsplitPre(pre);
+      // #65：unrender chunk 后再还原切分包装，将 DOM 恢复为逐字节原貌
+      for (const container of splitContainers) {
+        unsplitChunks(container);
       }
     }
 

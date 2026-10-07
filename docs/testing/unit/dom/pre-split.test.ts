@@ -4,7 +4,8 @@
  * #65：超长纯文本 pre 按空行切块，#66：代码块 pre 跳过
  */
 import { describe, test, expect } from 'vitest';
-import { splitPre, unsplitPre } from '~/src/dom/pre-split';
+import { splitPre } from '~/src/dom/pre-split';
+import { unsplitChunks } from '~/src/dom/chunk-split';
 
 function createPre(text: string, className = ''): HTMLPreElement {
   const pre = document.createElement('pre');
@@ -267,7 +268,7 @@ describe('splitPre', () => {
   });
 });
 
-describe('unsplitPre', () => {
+describe('unsplitChunks', () => {
   test('把 .pt-chunk 文本放回 pre 并移除 span', () => {
     const original = 'Line 1\nLine 2\n\nLine 3';
     const pre = createPre(original);
@@ -290,7 +291,7 @@ describe('unsplitPre', () => {
 
     pre.setAttribute('data-pt-split', '1');
 
-    unsplitPre(pre);
+    unsplitChunks(pre);
 
     expect(pre.textContent).toBe(original);
     expect(pre.querySelectorAll('.pt-chunk').length).toBe(0);
@@ -300,14 +301,14 @@ describe('unsplitPre', () => {
   test('移除 data-pt-split 属性', () => {
     const pre = createPre('text');
     pre.setAttribute('data-pt-split', '1');
-    unsplitPre(pre);
+    unsplitChunks(pre);
     expect(pre.hasAttribute('data-pt-split')).toBe(false);
   });
 
   test('无 chunk 的 pre → 无操作', () => {
     const pre = createPre('plain text');
     const htmlBefore = pre.innerHTML;
-    unsplitPre(pre);
+    unsplitChunks(pre);
     expect(pre.innerHTML).toBe(htmlBefore);
   });
 });
