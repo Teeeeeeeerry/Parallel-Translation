@@ -46,8 +46,8 @@ const HIDE_DELAY = 1500;
  */
 export const SHOW_DELAY = 140;
 
-/** 按钮与段落边缘的间隙 */
-const GAP = 4;
+/** 按钮与段落边缘的间隙；输入翻译圆点与光标之间沿用同一个口径（#667）。 */
+export const GAP = 4;
 /** 钳制到视口内时留的边距 */
 const MARGIN = 4;
 
