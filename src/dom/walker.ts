@@ -12,6 +12,7 @@
 //   - 站点页面规则的限定范围与排除（数据，src/storage/specialization.ts，ADR-0003）
 //   - 域名补丁装配（src/dom/compat.ts，选择器表达不了的代码层）
 //   - 超大纯文本 pre 切块（src/dom/pre-split.ts）
+//   - 以 br 分行的超长段落按行切块（src/dom/br-split.ts，#706）
 //   - 翻译单元判定（src/dom/classify.ts）
 //
 // 决策表（#319）到遍历决策的映射：
@@ -25,7 +26,7 @@
 //     —— 范围可能在更深处。ADR-0003 的判定顺序是限定范围在排除之前；
 //     两者都只做否决，先判排除只为整棵剪枝，结果与先判限定范围相同
 //   - D1/D2 域名补丁 skip/take —— 仍在通用判定之前生效
-//   - D3 pre 切块 —— 切块自身被采集为独立单元
+//   - D3 pre 切块、超长段落按 br 切行（#706）—— 切块自身被采集为独立单元
 //   - D4-D7 非单元 / 非文本容器 / 非视觉 / 不可见 —— 跳过自身继续子树
 //   - D8 去掉保留原文后没有可翻译的文字（#454）—— 跳过自身继续子树
 
@@ -41,6 +42,7 @@ import {
 import { applyCompat } from './compat';
 import { getSiteRules } from '~/src/storage/specialization';
 import { splitPre } from './pre-split';
+import { splitBrParagraph } from './br-split';
 import { hasTranslatableText } from './text';
 import { walkShadowTree } from './shadow-walk';
 
@@ -104,7 +106,10 @@ export function collect(
         // D3 #65：超大纯文本 pre（如 GitHub README 的 .plain > pre）按空行
         // 切块，块是独立翻译单元（切块本身由 D4 的 pt-chunk 判定采集）。
         // 代码块判定（isCodeBlockPre）是唯一站点相关部分（#64）。
+        // #706：以 br 分行、超过长度上限的段落按行切块，否则整段被长度上限
+        // 静默丢掉；拒切条件（块级子元素、代码块上下文等）在 splitBrParagraph 里
         if (el.tagName === 'PRE') splitPre(el as HTMLPreElement);
+        else splitBrParagraph(el);
 
         // D4 翻译单元查表（首步只是一次标签查表）：非单元跳过自身继续子树
         if (!isTranslationUnit(el)) return 'continue';

@@ -12,6 +12,8 @@
 // - 行怎么聚成块：group 把行聚合成若干部分，每部分要么包成切块，要么原样
 //   留作裸内容。
 //
+// 还有一处可选：换行节点放在切块里还是切块外（breakOutside）。
+//
 // 内核负责其余的一切：行聚合、超长块不包装、按原顺序重建（逐字节不变）、
 // 打切分标记与幂等，以及还原时的逆操作。切块是
 // <span class="pt-chunk" data-pt-chunk="1">，由采集的切块单元判定收为
@@ -47,6 +49,11 @@ export interface Part {
 export interface ChunkShape {
   tokenize(child: ChildNode): Tok[];
   group(lines: Line[]): Part[];
+  /**
+   * 切块最后一行的换行节点放到切块之外（紧跟在切块后面）。默认放在切块里
+   * （pre 的 '\n' 属于块文本）；换行是 br 元素时它不是这一行的文字，留在外面。
+   */
+  breakOutside?: boolean;
 }
 
 /** 切分标记：带它的容器已经切过（幂等），还原时据此找回来。 */
@@ -120,8 +127,13 @@ export function splitIntoChunks(container: Element, shape: ChunkShape): HTMLSpan
       const span = document.createElement('span');
       span.className = 'pt-chunk';
       span.setAttribute('data-pt-chunk', '1');
-      for (const line of part.lines) appendLine(span, line);
+      const last = part.lines[part.lines.length - 1]!;
+      const trailing = shape.breakOutside ? last.end : null;
+      for (const line of part.lines) {
+        appendLine(span, line === last && trailing ? { toks: line.toks, end: null } : line);
+      }
       container.appendChild(span);
+      if (trailing) container.appendChild(trailing);
       spans.push(span);
     } else {
       for (const line of part.lines) appendLine(container, line);

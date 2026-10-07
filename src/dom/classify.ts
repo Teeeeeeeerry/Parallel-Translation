@@ -110,9 +110,17 @@ export const MAX_TEXT = 3072;
 export const MAX_HTML = 4096;
 const MIN_TEXT = 3;
 
+/**
+ * 是否处于代码块上下文（自身或祖先是 .highlight / .notranslate）—— #64/#65。
+ * pre 切块与超长段落按行切块（#706）共用。
+ */
+export function inCodeBlockContext(el: Element): boolean {
+  return el.closest('.highlight, .notranslate') !== null;
+}
+
 /** pre 是否处于代码块上下文（.highlight / .notranslate 祖先）—— #64/#65 站点相关判定 */
 export function isCodeBlockPre(el: Element): boolean {
-  return el.closest('.highlight, .notranslate') !== null;
+  return inCodeBlockContext(el);
 }
 
 /**
