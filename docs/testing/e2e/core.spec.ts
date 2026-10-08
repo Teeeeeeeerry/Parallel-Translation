@@ -4299,10 +4299,11 @@ test.describe('划词翻译的提示（#726）', () => {
     }, text);
   }
 
-  /** 提示的实际尺寸、行高与视口宽度。 */
+  /** 提示的实际尺寸、行高与视口宽度。等弹出动画（pt-pop 从 0.8 倍缩放起）放完再量。 */
   async function measureToast(page: import('@playwright/test').Page) {
-    return page.evaluate(() => {
+    return page.evaluate(async () => {
       const el = document.getElementById('pt-host-toast')!.shadowRoot!.querySelector('.pt-toast')!;
+      await Promise.all(el.getAnimations().map((a) => a.finished));
       const r = el.getBoundingClientRect();
       const cs = getComputedStyle(el);
       const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
