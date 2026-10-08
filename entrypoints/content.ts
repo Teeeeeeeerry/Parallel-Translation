@@ -198,7 +198,7 @@ export default defineContentScript({
             'toggle-extension': () => {
               const cur = getSettings().enabled;
               patchSettings({ enabled: !cur }).catch(() => {});
-              toast(cur ? tf('toastExtOff', '扩展已关闭') : tf('toastExtOn', '扩展已开启'));
+              toast(cur ? tf('toastExtOff', '扩展已关闭') : tf('toastExtOn', '扩展已开启'), { purpose: 'status' });
             },
           }),
         stop: (stopHotkeys) => stopHotkeys(),
@@ -471,10 +471,10 @@ export default defineContentScript({
 
       // ── 提示渲染（DOM 职责；视觉状态已由模块推送）──
       if (result.status === 'blocked' && isMainFrame) {
-        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
+        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), { purpose: 'status', kind: 'error' });
       }
       if (result.status === 'no-elements' && isMainFrame) {
-        toast(tf('hintNoElements', '本页没有可翻译的内容'));
+        toast(tf('hintNoElements', '本页没有可翻译的内容'), { purpose: 'status' });
       }
       if (result.status === 'error' && isMainFrame) {
         if (result.summary?.allFailed) {
@@ -484,13 +484,13 @@ export default defineContentScript({
             display.showRealReason && display.reason
               ? display.reason
               : tf('toastAllEnginesFail', '所有引擎均失败'),
-            'error',
+            { purpose: 'status', kind: 'error' },
           );
         } else {
           // #49: 引擎返回了结果但全被 render() 拒绝（纵深防御命中）
           toast(
             tf('toastAllRejected', '所有段落均含图片/按钮，无法翻译'),
-            'error',
+            { purpose: 'status', kind: 'error' },
           );
         }
       }
@@ -506,7 +506,7 @@ export default defineContentScript({
             `${renderStats.rejected} 段因含图片/按钮未翻译`,
             String(renderStats.rejected),
           ),
-          'info',
+          { purpose: 'status' },
         );
       }
       // 放在被拒提示之后：同一时刻只显示一条 toast，失败更需要看到
@@ -524,7 +524,7 @@ export default defineContentScript({
         display?.showRealReason && display.reason
           ? display.reason
           : tf('domainPartialFail', `${renderStats.failed} 段翻译失败`, String(renderStats.failed)),
-        'error',
+        { purpose: 'status', kind: 'error' },
       );
     }
 
@@ -551,7 +551,7 @@ export default defineContentScript({
           display.showRealReason && display.reason
             ? display.reason
             : tf('toastAllEnginesFail', '所有引擎均失败'),
-          'error',
+          { purpose: 'status', kind: 'error' },
         );
       } else {
         toastPartialFail(summary.display);
@@ -612,7 +612,7 @@ export default defineContentScript({
       const unit = closestUnit(el);
       if (!unit) {
         console.debug('[PT] translateOne 跳过：closestUnit 返回 null', el);
-        toast(tf('toastNotTranslatable', '该区域无法单独翻译'), 'error');
+        toast(tf('toastNotTranslatable', '该区域无法单独翻译'), { purpose: 'status', kind: 'error' });
         return;
       }
 
@@ -632,7 +632,7 @@ export default defineContentScript({
       // 关闭静默）
       if (result.admission === 'blocked') {
         if (isMainFrame)
-          toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
+          toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), { purpose: 'status', kind: 'error' });
         return;
       }
       if (result.admission !== 'allowed') return;
@@ -641,9 +641,9 @@ export default defineContentScript({
         // #313: 展示决策由编排模块给出 —— key 无效 / 配额展示真实
         // 原因，瞬时故障展示泛化文案
         if (result.display?.showRealReason && result.error) {
-          toast(result.error, 'error');
+          toast(result.error, { purpose: 'status', kind: 'error' });
         } else {
-          toast(tf('toastTranslateFail', '翻译失败'), 'error');
+          toast(tf('toastTranslateFail', '翻译失败'), { purpose: 'status', kind: 'error' });
         }
         return;
       }
@@ -658,7 +658,7 @@ export default defineContentScript({
       // render() 在含媒体 / 交互控件时会拒绝渲染（#22），此时告知用户
       // 而非静默吞掉元素
       if (!render(unit, restored, 'para')) {
-        toast(tf('toastNotTranslatable', '该区域无法单独翻译'), 'error');
+        toast(tf('toastNotTranslatable', '该区域无法单独翻译'), { purpose: 'status', kind: 'error' });
       }
     }
 
@@ -684,7 +684,7 @@ export default defineContentScript({
       if (!length.ok) {
         toast(
           tf('toastInputTooLong', `这段文字超过 ${length.limit} 个字符。输入翻译不分段翻译，请删减后再试`, String(length.limit)),
-          'error',
+          { purpose: 'status', kind: 'error' },
         );
         return;
       }
@@ -702,11 +702,11 @@ export default defineContentScript({
       });
       if (!target.ok) {
         if (target.reason === 'same-language') {
-          toast(tf('toastInputSameLanguage', '写的已经是对方的语言，没有替换'));
+          toast(tf('toastInputSameLanguage', '写的已经是对方的语言，没有替换'), { purpose: 'status' });
         } else {
           toast(
             tf('toastInputSourceLangNeeded', '判断不出要译成哪种语言，请在设置里把源语言指定为对方的语言'),
-            'error',
+            { purpose: 'status', kind: 'error' },
           );
         }
         return;
@@ -715,7 +715,7 @@ export default defineContentScript({
 
       // 准入拦截：与逐段 / 划词翻译一致的提示，零请求
       if (result.admission === 'blocked') {
-        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
+        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), { purpose: 'status', kind: 'error' });
         return;
       }
       if (result.admission !== 'allowed') return;
@@ -723,9 +723,9 @@ export default defineContentScript({
       if (!result.ok) {
         // #313: key 无效 / 配额展示真实原因，瞬时故障展示泛化文案
         if (result.display?.showRealReason && result.error) {
-          toast(result.error, 'error');
+          toast(result.error, { purpose: 'status', kind: 'error' });
         } else {
-          toast(tf('toastTranslateFail', '翻译失败'), 'error');
+          toast(tf('toastTranslateFail', '翻译失败'), { purpose: 'status', kind: 'error' });
         }
         return;
       }
@@ -739,7 +739,8 @@ export default defineContentScript({
         maxLength: inputMaxLength(el),
       });
       if (!writeBack.write || !(await replaceInputText(el, result.translation!))) {
-        toast(result.translation!);
+        // 交出的译文本属内容类，切过去是 #751 的事；在那之前沿用状态类的行为
+        toast(result.translation!, { purpose: 'status' });
       }
     }
 
@@ -772,7 +773,7 @@ export default defineContentScript({
       // 准入拦截：与逐段 / 整页翻译一致的提示
       if (result.admission === 'blocked') {
         if (isMainFrame)
-          toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), 'error');
+          toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), { purpose: 'status', kind: 'error' });
         return;
       }
       if (result.admission !== 'allowed') return;
@@ -780,14 +781,15 @@ export default defineContentScript({
       if (!result.ok) {
         // #313: key 无效 / 配额展示真实原因，瞬时故障展示泛化文案
         if (result.display?.showRealReason && result.error) {
-          toast(result.error, 'error');
+          toast(result.error, { purpose: 'status', kind: 'error' });
         } else {
-          toast(tf('toastTranslateFail', '翻译失败'), 'error');
+          toast(tf('toastTranslateFail', '翻译失败'), { purpose: 'status', kind: 'error' });
         }
         return;
       }
 
-      toast(result.translation!);
+      // #738：划词译文是用户要读完的内容，不是状态
+      toast(result.translation!, { purpose: 'content' });
     }
 
     /**
