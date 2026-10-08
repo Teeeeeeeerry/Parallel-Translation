@@ -4476,5 +4476,39 @@ test.describe('划词翻译的提示（#726）', () => {
     await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(failText, { timeout: 20_000 });
     await expect(toast.getByRole('button')).toHaveCount(0);
   });
+
+  test('@core TC-E2E-151: 鼠标停在译文上它就不走，移开后重新停满一整轮再走（#740/#741）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    test.setTimeout(60_000);
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+    const toast = page.locator(TOAST);
+
+    // 一句话的译文，按内容类的下限停留（短于 6 秒）
+    await translateSelectionText(serviceWorker, 'Hello world');
+    await expect(toast).toContainText('【译】Hello world', { timeout: 20_000 });
+    await toast.hover();
+    // 悬停期间过了它本应消失的时刻仍在
+    await page.waitForTimeout(6_500);
+    await expect(toast).toBeVisible();
+
+    // 移开：重新开始完整计时，不是接着剩余时间立刻消失
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(3_000);
+    await expect(toast).toBeVisible();
+    // 一整轮过完自己走
+    await expect(toast).toHaveCount(0, { timeout: 10_000 });
+
+    // 状态类不受影响：悬停在失败提示上，它照样按时消失
+    await mockGoogle({ fail: true });
+    await translateSelectionText(serviceWorker, 'Hello world');
+    const fail = page.locator(`${TOAST}[data-kind="error"]`);
+    await expect(fail).toBeVisible({ timeout: 20_000 });
+    await fail.hover();
+    await expect(fail).toHaveCount(0, { timeout: 5_000 });
+  });
 });
 

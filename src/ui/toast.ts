@@ -100,18 +100,32 @@ export function toast(msg: string, { purpose, kind = 'info' }: ToastOptions): vo
   el.dataset.kind = kind;
   el.dataset.purpose = purpose;
   el.textContent = msg;
+  const duration = purpose === 'content' ? contentDuration(msg) : TOAST_DURATION;
+  const startTimer = () => {
+    toastTimer = self.setTimeout(() => {
+      el.remove();
+    }, duration);
+  };
+
   if (purpose === 'content') {
     el.append(closeButton(el));
     // #740：鼠标悬停在内容类提示上时不计时 —— 想读完、想把译文选中复制走，
     // 把鼠标放上去就行。状态类不挂这条
     el.addEventListener('mouseenter', () => clearTimeout(toastTimer));
-    // 鼠标本来就停在等待态上、译文就地到达：不会再有 mouseenter，直接不开始计时
+    // #741：移开后重新开始完整计时，不接着剩余时间 —— 否则快到点时才悬停，
+    // 一移开就立刻消失，等于没停过。再移回去照样停住
+    el.addEventListener('mouseleave', () => {
+      // 已被关掉或替换的那一条不再起计时，免得占住下一条的计时
+      if (!el.isConnected) return;
+      clearTimeout(toastTimer);
+      startTimer();
+    });
+    // 鼠标本来就停在等待态上、译文就地到达：不会再有 mouseenter，直接不开始
+    // 计时，等移开再算
     if (isHovered(el)) return;
   }
 
-  toastTimer = self.setTimeout(() => {
-    el.remove();
-  }, purpose === 'content' ? contentDuration(msg) : TOAST_DURATION);
+  startTimer();
 }
 
 function isHovered(el: Element): boolean {

@@ -19,6 +19,8 @@
  *
  * #740：鼠标悬停在内容类提示上时不计时；状态类不受影响。
  *
+ * #741：鼠标移开后重新开始完整计时，不是接着剩余时间；移回去再次停住。
+ *
  * 只看外部可观察的行为：提示里显示了什么文字、过了多久还在不在、同一时刻
  * 页面上有几条提示。假定时器推进时间。
  */
@@ -368,6 +370,73 @@ describe('悬停在内容类提示上时不计时（#740）', () => {
     hover();
     expect(toasts()[0]?.querySelector('button')).toBeNull();
     vi.advanceTimersByTime(2999);
+    expect(shown()).toEqual(['翻译失败']);
+    vi.advanceTimersByTime(1);
+    expect(shown()).toEqual([]);
+  });
+});
+
+describe('鼠标移开后重新开始计时（#741）', () => {
+  const hover = () => toasts()[0]!.dispatchEvent(new MouseEvent('mouseenter'));
+  const leave = () => toasts()[0]!.dispatchEvent(new MouseEvent('mouseleave'));
+  /** 从现在起到提示消失经过的时间（逐步推进假定时器观察，十分钟封顶）。 */
+  function remaining(msg: string): number {
+    let elapsed = 0;
+    while (shown().includes(msg) && elapsed < 600_000) {
+      vi.advanceTimersByTime(100);
+      elapsed += 100;
+    }
+    return elapsed;
+  }
+  const msg = '这是一句四五十个字的译文，'.repeat(3);
+
+  test('移开后重新开始完整计时：快到点时才悬停，移开后仍停满一整轮', () => {
+    const natural = lifetime(msg, 'content');
+    toast(msg, { purpose: 'content' });
+    vi.advanceTimersByTime(natural - 100);
+    hover();
+    vi.advanceTimersByTime(10_000);
+    leave();
+    expect(remaining(msg)).toBe(natural);
+  });
+
+  test('移开之后会自己走，不赖着', () => {
+    toast(msg, { purpose: 'content' });
+    hover();
+    vi.advanceTimersByTime(600_000);
+    leave();
+    expect(remaining(msg)).toBeLessThan(600_000);
+    expect(shown()).toEqual([]);
+  });
+
+  test('移开再移回，计时再次停住', () => {
+    const natural = lifetime(msg, 'content');
+    toast(msg, { purpose: 'content' });
+    hover();
+    leave();
+    vi.advanceTimersByTime(natural - 100);
+    hover();
+    vi.advanceTimersByTime(600_000);
+    expect(shown()).toEqual([msg]);
+    leave();
+    expect(remaining(msg)).toBe(natural);
+  });
+
+  test('等待态就地变成译文后，悬停再移开同样重新完整计时', () => {
+    const natural = lifetime('你好世界', 'content');
+    toastPending('翻译中');
+    toast('你好世界', { purpose: 'content' });
+    hover();
+    leave();
+    expect(remaining('你好世界')).toBe(natural);
+  });
+
+  test('状态类不受影响：悬停、移开都不改它的 3 秒', () => {
+    toast('翻译失败', { purpose: 'status', kind: 'error' });
+    vi.advanceTimersByTime(2000);
+    hover();
+    leave();
+    vi.advanceTimersByTime(999);
     expect(shown()).toEqual(['翻译失败']);
     vi.advanceTimersByTime(1);
     expect(shown()).toEqual([]);
