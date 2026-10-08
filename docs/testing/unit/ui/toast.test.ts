@@ -21,6 +21,9 @@
  *
  * #741：鼠标移开后重新开始完整计时，不是接着剩余时间；移回去再次停住。
  *
+ * #745：译文特别长时在提示内部纵向滚动；滚动期间提示不消失 —— 鼠标在提示上
+ * 时走悬停不计时，鼠标不在提示上的惯性滚动、键盘滚动每滚一下重新完整计时。
+ *
  * 只看外部可观察的行为：提示里显示了什么文字、过了多久还在不在、同一时刻
  * 页面上有几条提示。假定时器推进时间。
  */
@@ -437,6 +440,63 @@ describe('鼠标移开后重新开始计时（#741）', () => {
     hover();
     leave();
     vi.advanceTimersByTime(999);
+    expect(shown()).toEqual(['翻译失败']);
+    vi.advanceTimersByTime(1);
+    expect(shown()).toEqual([]);
+  });
+});
+
+describe('长译文在提示内部滚动，滚动期间不消失（#745）', () => {
+  const body = () => toasts()[0]!.querySelector<HTMLElement>('.pt-toast-body');
+  const scroll = () => body()!.dispatchEvent(new Event('scroll'));
+  const hover = () => toasts()[0]!.dispatchEvent(new MouseEvent('mouseenter'));
+  const msg = '这是一句四五十个字的译文，'.repeat(3);
+  function remaining(text: string): number {
+    let elapsed = 0;
+    while (shown().includes(text) && elapsed < 600_000) {
+      vi.advanceTimersByTime(100);
+      elapsed += 100;
+    }
+    return elapsed;
+  }
+
+  test('内容类的译文放在可滚动的内层里，提示文字仍只有译文', () => {
+    toast(msg, { purpose: 'content' });
+    expect(body()?.textContent).toBe(msg);
+    expect(shown()).toEqual([msg]);
+  });
+
+  test('鼠标不在提示上时滚动（惯性、键盘）：每滚一下重新完整计时，滚动期间不消失', () => {
+    const natural = lifetime(msg, 'content');
+    toast(msg, { purpose: 'content' });
+    for (let i = 0; i < 5; i++) {
+      vi.advanceTimersByTime(natural - 100);
+      scroll();
+    }
+    expect(shown()).toEqual([msg]);
+    expect(remaining(msg)).toBe(natural);
+  });
+
+  test('鼠标在提示上滚动：走悬停不计时，滚动不会把计时重新开起来', () => {
+    toast(msg, { purpose: 'content' });
+    hover();
+    scroll();
+    vi.advanceTimersByTime(600_000);
+    expect(shown()).toEqual([msg]);
+  });
+
+  test('等待态就地变成译文后同样在内层里滚动', () => {
+    toastPending('翻译中');
+    toast(msg, { purpose: 'content' });
+    expect(body()?.textContent).toBe(msg);
+    expect(toasts()[0]?.querySelector('.pt-toast-spinner')).toBeNull();
+  });
+
+  test('状态类不受影响：没有可滚动的内层，仍满 3 秒消失', () => {
+    toast('翻译失败', { purpose: 'status', kind: 'error' });
+    expect(body()).toBeNull();
+    toasts()[0]!.dispatchEvent(new Event('scroll'));
+    vi.advanceTimersByTime(2999);
     expect(shown()).toEqual(['翻译失败']);
     vi.advanceTimersByTime(1);
     expect(shown()).toEqual([]);

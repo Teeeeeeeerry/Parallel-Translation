@@ -99,7 +99,6 @@ export function toast(msg: string, { purpose, kind = 'info' }: ToastOptions): vo
 
   el.dataset.kind = kind;
   el.dataset.purpose = purpose;
-  el.textContent = msg;
   const duration = purpose === 'content' ? contentDuration(msg) : TOAST_DURATION;
   const startTimer = () => {
     toastTimer = self.setTimeout(() => {
@@ -107,25 +106,45 @@ export function toast(msg: string, { purpose, kind = 'info' }: ToastOptions): vo
     }, duration);
   };
 
-  if (purpose === 'content') {
-    el.append(closeButton(el));
-    // #740：鼠标悬停在内容类提示上时不计时 —— 想读完、想把译文选中复制走，
-    // 把鼠标放上去就行。状态类不挂这条
-    el.addEventListener('mouseenter', () => clearTimeout(toastTimer));
-    // #741：移开后重新开始完整计时，不接着剩余时间 —— 否则快到点时才悬停，
-    // 一移开就立刻消失，等于没停过。再移回去照样停住
-    el.addEventListener('mouseleave', () => {
-      // 已被关掉或替换的那一条不再起计时，免得占住下一条的计时
-      if (!el.isConnected) return;
-      clearTimeout(toastTimer);
-      startTimer();
-    });
-    // 鼠标本来就停在等待态上、译文就地到达：不会再有 mouseenter，直接不开始
-    // 计时，等移开再算
-    if (isHovered(el)) return;
+  if (purpose !== 'content') {
+    el.textContent = msg;
+    startTimer();
+    return;
   }
 
-  startTimer();
+  // #745：译文放在内层里，超过高度上限时在内层纵向滚动；关闭按钮留在外层，
+  // 不随译文滚走
+  const body = document.createElement('div');
+  body.className = 'pt-toast-body';
+  body.textContent = msg;
+  el.replaceChildren(body, closeButton(el));
+
+  // 鼠标本来就停在等待态上、译文就地到达：不会再有 mouseenter，直接不开始
+  // 计时，等移开再算
+  let hovered = isHovered(el);
+  // #740：鼠标悬停在内容类提示上时不计时 —— 想读完、想把译文选中复制走，
+  // 把鼠标放上去就行。状态类不挂这条
+  el.addEventListener('mouseenter', () => {
+    hovered = true;
+    clearTimeout(toastTimer);
+  });
+  // #741：移开后重新开始完整计时，不接着剩余时间 —— 否则快到点时才悬停，
+  // 一移开就立刻消失，等于没停过。再移回去照样停住
+  el.addEventListener('mouseleave', () => {
+    hovered = false;
+    // 已被关掉或替换的那一条不再起计时，免得占住下一条的计时
+    if (!el.isConnected) return;
+    clearTimeout(toastTimer);
+    startTimer();
+  });
+  // #745：滚动期间不消失。鼠标在提示上时已经不计时；触控板惯性滚动、键盘
+  // 滚动时鼠标可能不在提示上，每滚一下重新完整计时
+  body.addEventListener('scroll', () => {
+    if (hovered || !el.isConnected) return;
+    clearTimeout(toastTimer);
+    startTimer();
+  });
+  if (!hovered) startTimer();
 }
 
 function isHovered(el: Element): boolean {

@@ -4510,5 +4510,62 @@ test.describe('划词翻译的提示（#726）', () => {
     await fail.hover();
     await expect(fail).toHaveCount(0, { timeout: 5_000 });
   });
+
+  test('@core TC-E2E-152: 特别长的译文有高度上限，在提示内部纵向滚动，关闭按钮不随之滚走；没超过上限时没有滚动条；状态提示不变（#745）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+    const toast = page.locator(TOAST);
+    const body = toast.locator('.pt-toast-body');
+    const box = () => body.evaluate((el) => ({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      scrollTop: el.scrollTop,
+    }));
+
+    // 特别长的译文：提示不从屏幕下方长到上方
+    const long = 'The quick brown fox jumps over the lazy dog while the translation keeps going. '.repeat(40);
+    await translateSelectionText(serviceWorker, long);
+    await expect(toast).toContainText('【译】The quick brown fox', { timeout: 20_000 });
+    // 等弹出动画（pt-pop 从 0.8 倍缩放起）放完再量，否则量到的是缩放中的尺寸
+    await toast.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+    const size = await toast.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { top: r.top, height: r.height, viewport: document.documentElement.clientHeight };
+    });
+    expect(size.top).toBeGreaterThanOrEqual(0);
+    expect(size.height).toBeLessThan(size.viewport * 0.6);
+    const before = await box();
+    expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
+
+    // 鼠标在提示上滚轮：内部滚动，关闭按钮仍在原处、看得见
+    const closeLabel = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastClose'));
+    const close = toast.getByRole('button', { name: closeLabel });
+    const closeBefore = (await close.boundingBox())!;
+    await body.hover();
+    await page.mouse.wheel(0, 300);
+    await expect.poll(async () => (await box()).scrollTop).toBeGreaterThan(0);
+    await expect(close).toBeVisible();
+    expect((await close.boundingBox())!.y).toBeCloseTo(closeBefore.y, 0);
+    await expect(toast).toBeVisible();
+
+    // 没超过上限：没有滚动条
+    await page.mouse.move(5, 5);
+    await translateSelectionText(serviceWorker, 'Hello world');
+    await expect(toast).toContainText('【译】Hello world', { timeout: 20_000 });
+    const short = await box();
+    expect(short.scrollHeight).toBeLessThanOrEqual(short.clientHeight);
+
+    // 状态类不受影响：没有内层、没有高度上限
+    await mockGoogle({ fail: true });
+    await translateSelectionText(serviceWorker, 'Hello world');
+    const fail = page.locator(`${TOAST}[data-kind="error"]`);
+    await expect(fail).toBeVisible({ timeout: 20_000 });
+    await expect(fail.locator('.pt-toast-body')).toHaveCount(0);
+    expect(await fail.evaluate((el) => getComputedStyle(el).maxHeight)).toBe('none');
+  });
 });
 
