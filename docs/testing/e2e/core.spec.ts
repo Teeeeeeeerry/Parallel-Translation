@@ -4450,5 +4450,31 @@ test.describe('划词翻译的提示（#726）', () => {
       await toast.evaluate((el) => getComputedStyle(el).maxWidth),
     ).toBe('none');
   });
+
+  test('@core TC-E2E-150: 内容类提示点关闭立即消失，不必等它自己走；状态提示没有关闭按钮（#742）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+    const toast = page.locator(TOAST);
+    const closeLabel = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastClose'));
+
+    await dragSelect(page, 'p:nth-of-type(2)');
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    const close = toast.getByRole('button', { name: closeLabel });
+    await expect(close).toBeVisible();
+    // 内容类最短也要停 5 秒；点了之后 1 秒内就没了
+    await close.click();
+    await expect(toast).toHaveCount(0, { timeout: 1_000 });
+
+    // 状态类不受影响：失败提示没有关闭按钮
+    await mockGoogle({ fail: true });
+    await dragSelect(page, 'p:nth-of-type(1)');
+    const failText = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastTranslateFail'));
+    await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(failText, { timeout: 20_000 });
+    await expect(toast.getByRole('button')).toHaveCount(0);
+  });
 });
 

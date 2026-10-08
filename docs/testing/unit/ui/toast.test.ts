@@ -15,6 +15,8 @@
  * 弹一条新的；替换之后按内容类的时长计时。失败到达时的就地替换是 #748 的事，
  * 这里只钉住失败时等待态不会留在屏幕上。
  *
+ * #742：内容类带关闭按钮，点了立即消失、计时一并清掉；状态类与等待态没有。
+ *
  * 只看外部可观察的行为：提示里显示了什么文字、过了多久还在不在、同一时刻
  * 页面上有几条提示。假定时器推进时间。
  */
@@ -273,6 +275,51 @@ describe('译文到达时就地替换等待态（#747）', () => {
     pending.dismiss();
     expect(shown()).toEqual(['翻译失败']);
     vi.advanceTimersByTime(3000);
+    expect(shown()).toEqual([]);
+  });
+});
+
+describe('内容类的关闭按钮（#742）', () => {
+  const closeBtn = () => toasts()[0]?.querySelector<HTMLButtonElement>('.pt-toast-close') ?? null;
+
+  test('内容类有关闭按钮：真正的按钮元素，带无障碍标签，不往译文里加字', () => {
+    toast('你好世界', { purpose: 'content' });
+    const btn = closeBtn();
+    expect(btn).not.toBeNull();
+    expect(btn!.tagName).toBe('BUTTON');
+    expect(btn!.type).toBe('button');
+    expect(btn!.getAttribute('aria-label')).toBeTruthy();
+    expect(shown()).toEqual(['你好世界']);
+  });
+
+  test('点了立即消失，计时一并清掉，不留残余', () => {
+    toast('你好世界', { purpose: 'content' });
+    closeBtn()!.click();
+    expect(shown()).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('关掉之后再来一条，按它自己的时长计时，不受前一条影响', () => {
+    toast('第一段译文', { purpose: 'content' });
+    closeBtn()!.click();
+    const fresh = lifetime('第二段译文', 'content');
+    expect(fresh).toBe(lifetime('第三段译文', 'content'));
+  });
+
+  test('等待态就地变成译文后同样有关闭按钮；等待态本身没有', () => {
+    toastPending('翻译中');
+    expect(closeBtn()).toBeNull();
+    toast('你好世界', { purpose: 'content' });
+    expect(closeBtn()).not.toBeNull();
+  });
+
+  test('状态类不受影响：没有关闭按钮，仍是 3 秒消失', () => {
+    toast('翻译失败', { purpose: 'status', kind: 'error' });
+    expect(closeBtn()).toBeNull();
+    expect(toasts()[0]?.querySelector('button')).toBeNull();
+    vi.advanceTimersByTime(2999);
+    expect(shown()).toEqual(['翻译失败']);
+    vi.advanceTimersByTime(1);
     expect(shown()).toEqual([]);
   });
 });

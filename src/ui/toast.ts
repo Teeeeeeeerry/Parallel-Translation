@@ -13,6 +13,7 @@
 // - 内容类：用户要读完的文字（划词译文），停留时长按长度算（#739）
 
 import { mountIsolated } from './mount';
+import { tf } from '../i18n';
 
 /** 状态类的停留时长：固定，不看文字长短。 */
 const TOAST_DURATION = 3000;
@@ -99,10 +100,29 @@ export function toast(msg: string, { purpose, kind = 'info' }: ToastOptions): vo
   el.dataset.kind = kind;
   el.dataset.purpose = purpose;
   el.textContent = msg;
+  if (purpose === 'content') el.append(closeButton(el));
 
   toastTimer = self.setTimeout(() => {
     el.remove();
   }, purpose === 'content' ? contentDuration(msg) : TOAST_DURATION);
+}
+
+/**
+ * 内容类的关闭按钮（#742）：读完了立刻关掉，不必等它自己走。点了摘掉这条
+ * 提示并清掉计时。用真正的 button 元素，键盘可用留给 #743；叉号由样式画，
+ * 不往提示里加字，选中复制译文时不会带上它。
+ */
+function closeButton(el: HTMLElement): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'pt-toast-close';
+  btn.setAttribute('aria-label', tf('toastClose', '关闭'));
+  btn.addEventListener('click', () => {
+    // 同一时刻只有一条提示，现有的计时就是这一条的
+    clearTimeout(toastTimer);
+    el.remove();
+  });
+  return btn;
 }
 
 /** 等待态的句柄：发起方收尾时调用 dismiss。 */

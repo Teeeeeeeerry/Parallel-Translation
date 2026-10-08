@@ -125,8 +125,8 @@
 
 /* 内容类（#744）：译文最长能停 60 秒，不能横着铺满屏幕底部。宽度上限按一行
    读着舒服的字数定：13px 字号下一个汉字约 1em，英文字母平均约半个 em。
-   38em 减去左右 14px 内边距，内容区约 36em —— 一行约 36 个汉字、70 个
-   左右的英文字符，落在中文排版常用的每行 30 到 40 字、英文排版常说的每行
+   38em 减去左内边距 14px 与给关闭按钮让出的右内边距 32px（#742），内容区
+   约 34.5em —— 一行约 34 个汉字、70 个左右的英文字符，落在中文排版常用的每行 30 到 40 字、英文排版常说的每行
    45 到 75 个字符之内。窄窗口下再以视口宽度减去两侧各 20px 封顶（右边距
    与提示的 right 一致），不溢出视口。行高放到 1.5，多行好读。状态类不受
    影响，仍是跟着文字走的单行短提示 */
@@ -136,6 +136,47 @@
   line-height: 1.5;
   white-space: normal;
   overflow-wrap: anywhere;
+  padding-right: 32px;
+}
+
+/* 内容类的关闭按钮（#742）：右上角，叉号用两道细线画，不往提示里加字 */
+.pt-toast-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--pt-r-sm);
+  background: transparent;
+  color: inherit;
+  opacity: 0.75;
+  cursor: pointer;
+}
+
+.pt-toast-close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.pt-toast-close::before,
+.pt-toast-close::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 1.5px;
+  background: currentColor;
+}
+
+.pt-toast-close::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.pt-toast-close::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 /* 等待态（#746）：转圈与输入翻译进行中的圆点同一个画法（描边缺一角、

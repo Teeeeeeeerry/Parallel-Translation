@@ -489,5 +489,6 @@
     "message": "這段文字超過 $limit$ 個字元。輸入翻譯不分段翻譯，請刪減後再試",
     "placeholders": { "limit": { "content": "$1" } }
   },
-  "toastTranslating": { "message": "翻譯中" }
+  "toastTranslating": { "message": "翻譯中" },
+  "toastClose": { "message": "關閉" }
 }
