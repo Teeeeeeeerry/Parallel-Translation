@@ -139,6 +139,17 @@
   padding-right: 32px;
 }
 
+/* 内容类的高度上限（#745）：换行之后长译文会从屏幕下方一直长到上方。译文放在
+   内层里，超出部分在内层纵向滚动，关闭按钮留在外层不随之滚走。上限取 18em
+   （13px 字号、1.5 倍行高下约 12 行，按一行约 34 个汉字算，四百字上下的整段
+   不用滚），矮窗口下以半个视口封顶，提示不盖过屏幕上半部。没超过上限时
+   overflow 为 auto 不出现滚动条 */
+.pt-toast-body {
+  max-height: min(18em, 50vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 /* 内容类的关闭按钮（#742）：右上角，叉号用两道细线画，不往提示里加字 */
 .pt-toast-close {
   position: absolute;
