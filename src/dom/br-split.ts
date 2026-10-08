@@ -50,7 +50,10 @@ function isParagraphTag(tag: string): boolean {
   return tag !== 'pre' && (DIRECT_SET.has(tag) || CONTAINER_SET.has(tag));
 }
 
-/** 超过采集的长度上限 —— 与跳过判定同一口径：文本或 HTML 任一超限。 */
+/**
+ * 超过长度上限：文本或 HTML 任一超限。注意跳过判定自 #731 起只看文字，这里
+ * 仍看 HTML，两边口径不一，见 #768。
+ */
 function isOverLimit(el: Element): boolean {
   return (el.textContent ?? '').trim().length > MAX_TEXT || el.outerHTML.length > MAX_HTML;
 }

@@ -107,6 +107,12 @@ const NON_CONTENT =
   '.vector-menu-content-list,#catlinks,#mw-hidden-catlinks,#mw-normal-catlinks';
 
 export const MAX_TEXT = 3072;
+/**
+ * 序列化后的 outerHTML 长度上限。#731 之后它不再是跳过判定的条件 —— 切块与
+ * 普通元素一样只受文字上限约束（#174 当年给切块开的豁免随之并入同一条路径，
+ * #734）。现在只剩按 br 切行的触发条件还在用它，那里与跳过判定口径不一，
+ * 见 #768。
+ */
 export const MAX_HTML = 4096;
 const MIN_TEXT = 3;
 
