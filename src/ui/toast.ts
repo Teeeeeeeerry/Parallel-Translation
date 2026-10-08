@@ -72,16 +72,33 @@ function resetToast(): ShadowRoot {
   return toastShadow;
 }
 
-/** 显示一条提示；新的一条直接替换旧的。 */
+/**
+ * 显示一条提示；新的一条直接替换旧的。
+ *
+ * #747：译文（内容类）到达时页面上若是等待态，就地把它变成译文 —— 同一条
+ * 提示换掉内容、摘掉转圈，不先摘掉再弹一条新的。失败到达时的就地替换另由
+ * #748 做，这里仍是摘掉再弹，等待态同样不会留下。
+ */
 export function toast(msg: string, { purpose, kind = 'info' }: ToastOptions): void {
-  const root = resetToast();
+  const pending =
+    purpose === 'content'
+      ? toastShadow?.querySelector<HTMLElement>('.pt-toast[data-state="pending"]')
+      : null;
+  let el: HTMLElement;
+  if (pending) {
+    clearTimeout(toastTimer);
+    el = pending;
+    delete el.dataset.state;
+  } else {
+    const root = resetToast();
+    el = document.createElement('div');
+    el.className = 'pt-toast';
+    root.appendChild(el);
+  }
 
-  const el = document.createElement('div');
-  el.className = 'pt-toast';
   el.dataset.kind = kind;
   el.dataset.purpose = purpose;
   el.textContent = msg;
-  root.appendChild(el);
 
   toastTimer = self.setTimeout(() => {
     el.remove();
@@ -115,7 +132,8 @@ export function toastPending(msg: string): PendingToast {
 
   return {
     dismiss() {
-      if (el.isConnected) el.remove();
+      // 已就地变成译文的不算等待态（#747）
+      if (el.isConnected && el.dataset.state === 'pending') el.remove();
     },
   };
 }

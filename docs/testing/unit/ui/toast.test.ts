@@ -11,6 +11,10 @@
  * #746：等待态 —— 发起划词翻译时显示“翻译中”并带转圈，它自己不会超时
  * 消失；下一条提示到来时被替换，发起方收尾时把仍在等待的那一条收掉。
  *
+ * #747：译文到达时等待态就地变成译文 —— 同一条提示换了内容，不是先摘掉再
+ * 弹一条新的；替换之后按内容类的时长计时。失败到达时的就地替换是 #748 的事，
+ * 这里只钉住失败时等待态不会留在屏幕上。
+ *
  * 只看外部可观察的行为：提示里显示了什么文字、过了多久还在不在、同一时刻
  * 页面上有几条提示。假定时器推进时间。
  */
@@ -208,5 +212,67 @@ describe('等待态（#746）', () => {
     toastPending('翻译中');
     first.dismiss();
     expect(shown()).toEqual(['翻译中']);
+  });
+});
+
+describe('译文到达时就地替换等待态（#747）', () => {
+  const sentence = '这是一句四五十个字的译文，'.repeat(3);
+
+  test('等待态原地变成译文：还是那一条提示，转圈没了', () => {
+    toastPending('翻译中');
+    const before = toasts()[0];
+    toast(sentence, { purpose: 'content' });
+    expect(toasts()).toHaveLength(1);
+    expect(toasts()[0]).toBe(before);
+    expect(shown()).toEqual([sentence]);
+    expect(toasts()[0]?.querySelector('.pt-toast-spinner')).toBeNull();
+  });
+
+  test('替换过程中页面上始终只有一条提示，旧的从没被摘下', () => {
+    toastPending('翻译中');
+    const root = document.getElementById('pt-host-toast')!.shadowRoot!;
+    let removed = 0;
+    const mo = new MutationObserver((records) => {
+      for (const r of records) {
+        removed += Array.from(r.removedNodes).filter(
+          (n) => n instanceof HTMLElement && n.classList.contains('pt-toast'),
+        ).length;
+      }
+    });
+    mo.observe(root, { childList: true });
+    toast(sentence, { purpose: 'content' });
+    mo.takeRecords().forEach((r) => {
+      removed += Array.from(r.removedNodes).filter(
+        (n) => n instanceof HTMLElement && n.classList.contains('pt-toast'),
+      ).length;
+    });
+    mo.disconnect();
+    expect(removed).toBe(0);
+    expect(toasts()).toHaveLength(1);
+  });
+
+  test('替换之后按内容类的时长计时：与直接显示同一段译文停留一样久', () => {
+    const direct = lifetime(sentence, 'content');
+    toastPending('翻译中');
+    vi.advanceTimersByTime(2_000); // 等了一会儿译文才到
+    const viaPending = lifetime(sentence, 'content');
+    expect(viaPending).toBe(direct);
+    expect(viaPending).toBeGreaterThan(lifetime('翻译失败', 'status'));
+  });
+
+  test('发起方收尾不会收掉已经就地变成译文的那一条', () => {
+    const pending = toastPending('翻译中');
+    toast(sentence, { purpose: 'content' });
+    pending.dismiss();
+    expect(shown()).toEqual([sentence]);
+  });
+
+  test('失败到达时等待态不会留在屏幕上：失败提示接替，按状态类计时后消失', () => {
+    const pending = toastPending('翻译中');
+    toast('翻译失败', { purpose: 'status', kind: 'error' });
+    pending.dismiss();
+    expect(shown()).toEqual(['翻译失败']);
+    vi.advanceTimersByTime(3000);
+    expect(shown()).toEqual([]);
   });
 });

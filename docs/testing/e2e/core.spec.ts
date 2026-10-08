@@ -4333,4 +4333,53 @@ test.describe('划词翻译的提示（#726）', () => {
     await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
     await expect(toast.locator('.pt-toast-spinner')).toHaveCount(0);
   });
+
+  test('@core TC-E2E-148: 划词翻译先出现“翻译中”，随后它就地变成译文 —— 整个过程页面上只有一条提示，始终是同一条（#747）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle({ delayMs: 1_500 });
+    const translating = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastTranslating'));
+    await gotoFixture('basic');
+    await waitForBall(page);
+
+    // 每 10ms 采样一次提示：条数、是不是最先出现的那一条、有没有转圈、文字；
+    // 只记变化，得到一条按时间排列的序列
+    await page.evaluate(() => {
+      const w = window as unknown as { __ptSeq: string[] };
+      w.__ptSeq = [];
+      let first: Element | null = null;
+      setInterval(() => {
+        const root = document.getElementById('pt-host-toast')?.shadowRoot;
+        const els = root ? Array.from(root.querySelectorAll('.pt-toast')) : [];
+        const el = els[0];
+        if (el && !first) first = el;
+        const entry = [
+          els.length,
+          el ? (el === first ? 'same' : 'other') : '-',
+          el?.querySelector('.pt-toast-spinner') ? 'spin' : '',
+          el?.textContent ?? '',
+        ].join('|');
+        if (w.__ptSeq[w.__ptSeq.length - 1] !== entry) w.__ptSeq.push(entry);
+      }, 10);
+    });
+
+    await dragSelect(page, 'p:nth-of-type(2)');
+    const toast = page.locator(TOAST);
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+
+    const seq = (await page.evaluate(() => (window as unknown as { __ptSeq: string[] }).__ptSeq))
+      .map((e) => e.split('|'))
+      .filter(([count]) => count !== '0');
+    // 同一时刻至多一条，而且自始至终是同一条提示
+    expect(seq.every(([count, which]) => count === '1' && which === 'same')).toBe(true);
+    // 先是“翻译中”带转圈，随后变成译文、转圈没了
+    expect(seq[0]).toEqual(['1', 'same', 'spin', translating]);
+    const last = seq[seq.length - 1]!;
+    expect(last[2]).toBe('');
+    expect(last[3]).toContain('【译】Another paragraph');
+    // 中间没有别的状态：只有等待态与译文两种
+    expect(seq.every(([, , spin, text]) => (spin === 'spin' && text === translating) || text === last[3])).toBe(true);
+  });
 });
+
