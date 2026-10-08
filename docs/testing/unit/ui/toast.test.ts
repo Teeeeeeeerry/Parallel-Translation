@@ -17,6 +17,8 @@
  *
  * #742：内容类带关闭按钮，点了立即消失、计时一并清掉；状态类与等待态没有。
  *
+ * #740：鼠标悬停在内容类提示上时不计时；状态类不受影响。
+ *
  * 只看外部可观察的行为：提示里显示了什么文字、过了多久还在不在、同一时刻
  * 页面上有几条提示。假定时器推进时间。
  */
@@ -316,6 +318,54 @@ describe('内容类的关闭按钮（#742）', () => {
   test('状态类不受影响：没有关闭按钮，仍是 3 秒消失', () => {
     toast('翻译失败', { purpose: 'status', kind: 'error' });
     expect(closeBtn()).toBeNull();
+    expect(toasts()[0]?.querySelector('button')).toBeNull();
+    vi.advanceTimersByTime(2999);
+    expect(shown()).toEqual(['翻译失败']);
+    vi.advanceTimersByTime(1);
+    expect(shown()).toEqual([]);
+  });
+});
+
+describe('悬停在内容类提示上时不计时（#740）', () => {
+  const hover = () => toasts()[0]!.dispatchEvent(new MouseEvent('mouseenter'));
+
+  test('一出现就悬停：超过它本应消失的时刻仍在', () => {
+    const msg = '这是一句四五十个字的译文，'.repeat(3);
+    const natural = lifetime(msg, 'content');
+    toast(msg, { purpose: 'content' });
+    hover();
+    vi.advanceTimersByTime(natural * 3);
+    expect(shown()).toEqual([msg]);
+  });
+
+  test('读到一半才把鼠标放上去：从那一刻起停住，过了本应消失的时刻仍在', () => {
+    const msg = '你好世界';
+    const natural = lifetime(msg, 'content');
+    toast(msg, { purpose: 'content' });
+    vi.advanceTimersByTime(natural - 100);
+    hover();
+    vi.advanceTimersByTime(600_000);
+    expect(shown()).toEqual([msg]);
+  });
+
+  test('等待态就地变成译文后悬停同样停住', () => {
+    toastPending('翻译中');
+    toast('你好世界', { purpose: 'content' });
+    hover();
+    vi.advanceTimersByTime(600_000);
+    expect(shown()).toEqual(['你好世界']);
+  });
+
+  test('悬停时点关闭照样立即消失', () => {
+    toast('你好世界', { purpose: 'content' });
+    hover();
+    toasts()[0]!.querySelector<HTMLButtonElement>('.pt-toast-close')!.click();
+    expect(shown()).toEqual([]);
+  });
+
+  test('状态类不受影响：悬停也满 3 秒消失，没有关闭按钮', () => {
+    toast('翻译失败', { purpose: 'status', kind: 'error' });
+    hover();
     expect(toasts()[0]?.querySelector('button')).toBeNull();
     vi.advanceTimersByTime(2999);
     expect(shown()).toEqual(['翻译失败']);

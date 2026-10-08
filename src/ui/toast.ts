@@ -100,11 +100,26 @@ export function toast(msg: string, { purpose, kind = 'info' }: ToastOptions): vo
   el.dataset.kind = kind;
   el.dataset.purpose = purpose;
   el.textContent = msg;
-  if (purpose === 'content') el.append(closeButton(el));
+  if (purpose === 'content') {
+    el.append(closeButton(el));
+    // #740：鼠标悬停在内容类提示上时不计时 —— 想读完、想把译文选中复制走，
+    // 把鼠标放上去就行。状态类不挂这条
+    el.addEventListener('mouseenter', () => clearTimeout(toastTimer));
+    // 鼠标本来就停在等待态上、译文就地到达：不会再有 mouseenter，直接不开始计时
+    if (isHovered(el)) return;
+  }
 
   toastTimer = self.setTimeout(() => {
     el.remove();
   }, purpose === 'content' ? contentDuration(msg) : TOAST_DURATION);
+}
+
+function isHovered(el: Element): boolean {
+  try {
+    return el.matches(':hover');
+  } catch {
+    return false;
+  }
 }
 
 /**
