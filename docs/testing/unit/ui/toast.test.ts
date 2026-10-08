@@ -5,6 +5,9 @@
  * 禁用等）的停留时长、样式与替换行为与改动前完全一致；内容类（划词译文）
  * 先沿用同样的行为，后面的票再逐条改它。
  *
+ * #739：内容类按字数换算停留时长，有下限有上限；状态类的时长不随长度变化。
+ * 断言的是“长比短久”“都落在上下限之间”这类关系，不写死毫秒数。
+ *
  * 只看外部可观察的行为：提示里显示了什么文字、过了多久还在不在、同一时刻
  * 页面上有几条提示。假定时器推进时间。
  */
@@ -16,6 +19,18 @@ import { unmountIsolated } from '~/src/ui/mount';
 function toasts(): HTMLElement[] {
   const root = document.getElementById('pt-host-toast')?.shadowRoot;
   return root ? Array.from(root.querySelectorAll<HTMLElement>('.pt-toast')) : [];
+}
+
+/** 一条提示从出现到消失经过的时间（逐步推进假定时器观察，十分钟封顶）。 */
+function lifetime(msg: string, purpose: 'status' | 'content'): number {
+  toast(msg, { purpose });
+  const step = 100;
+  let elapsed = 0;
+  while (shown().includes(msg) && elapsed < 600_000) {
+    vi.advanceTimersByTime(step);
+    elapsed += step;
+  }
+  return elapsed;
 }
 
 function shown(): string[] {
@@ -66,16 +81,7 @@ describe('状态类：行为与改动前一致（#738）', () => {
   });
 });
 
-describe('内容类：显式标明用途，行为先与改动前相同（#738）', () => {
-  test('显示译文，满 3 秒消失', () => {
-    toast('你好世界', { purpose: 'content' });
-    expect(shown()).toEqual(['你好世界']);
-    vi.advanceTimersByTime(2999);
-    expect(shown()).toEqual(['你好世界']);
-    vi.advanceTimersByTime(1);
-    expect(shown()).toEqual([]);
-  });
-
+describe('内容类：显式标明用途（#738）', () => {
   test('用常规样式', () => {
     toast('你好世界', { purpose: 'content' });
     expect(toasts()[0]?.dataset.kind).toBe('info');
@@ -94,5 +100,53 @@ describe('内容类：显式标明用途，行为先与改动前相同（#738）
     toast(longError, { purpose: 'status', kind: 'error' });
     vi.advanceTimersByTime(3000);
     expect(shown()).toEqual([]);
+  });
+});
+
+describe('内容类按长度决定停留多久（#739）', () => {
+  const sentence = '这是一句四五十个字的译文，'.repeat(3); // 约 40 字
+  const paragraph = '选一整段去翻译，译文有三四百个字，三秒连三分之一都读不完。'.repeat(12);
+
+  test('长译文比短译文停留得久', () => {
+    expect(lifetime(paragraph, 'content')).toBeGreaterThan(lifetime(sentence, 'content'));
+  });
+
+  test('一句话的译文停留得比状态提示久，不再三秒就消失', () => {
+    expect(lifetime(sentence, 'content')).toBeGreaterThan(lifetime(sentence, 'status'));
+  });
+
+  test('下限：再短的译文也不一闪而过，一个字与三个字停留一样久，且比状态提示久', () => {
+    const one = lifetime('好', 'content');
+    expect(lifetime('你好吗', 'content')).toBe(one);
+    expect(one).toBeGreaterThan(lifetime('好', 'status'));
+  });
+
+  test('上限：特别长的译文也会自己走，再长也不更久', () => {
+    const huge = lifetime('很长很长的译文。'.repeat(1000), 'content');
+    expect(huge).toBeLessThan(600_000);
+    expect(lifetime('很长很长的译文。'.repeat(2000), 'content')).toBe(huge);
+  });
+
+  test('一句话、一整段都落在上下限之间', () => {
+    const floor = lifetime('好', 'content');
+    const ceiling = lifetime('很长很长的译文。'.repeat(1000), 'content');
+    for (const text of [sentence, paragraph]) {
+      const t = lifetime(text, 'content');
+      expect(t).toBeGreaterThanOrEqual(floor);
+      expect(t).toBeLessThanOrEqual(ceiling);
+    }
+    expect(lifetime(sentence, 'content')).toBeGreaterThan(floor);
+  });
+
+  test('英文译文同样按长度：长段落比一句话停留得久', () => {
+    const en = 'This is a short translated sentence. ';
+    expect(lifetime(en.repeat(10), 'content')).toBeGreaterThan(lifetime(en, 'content'));
+  });
+});
+
+describe('状态类的时长不随长度变化（#739）', () => {
+  test('短状态与长错误消息停留一样久', () => {
+    const short = lifetime('翻译失败', 'status');
+    expect(lifetime('DeepL 返回 456：本月配额已用完，请到账户页查看。'.repeat(20), 'status')).toBe(short);
   });
 });

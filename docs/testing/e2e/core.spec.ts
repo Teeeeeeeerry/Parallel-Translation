@@ -4270,3 +4270,38 @@ test.describe('标记密集的段落（#724）', () => {
     }
   });
 });
+
+test.describe('划词翻译的提示（#726）', () => {
+  const TOAST = '#pt-host-toast .pt-toast';
+
+  /** 按住修饰键在元素第一行上从左拖到右，松开即划词翻译（同 TC-E2E-70）。 */
+  async function dragSelect(page: import('@playwright/test').Page, selector: string) {
+    const box = (await page.locator(selector).boundingBox())!;
+    const y = box.y + 8;
+    await page.keyboard.down('Alt');
+    await page.mouse.move(box.x + 1, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 2, y, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.up('Alt');
+  }
+
+  test('@core TC-E2E-146: 划词译文过了三秒仍在 —— 内容类按长度停留，不再与状态提示一样三秒就走（#739）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+
+    await dragSelect(page, 'p:nth-of-type(2)');
+    const toast = page.locator(TOAST);
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    const text = await toast.textContent();
+
+    // 改动前固定 3 秒就消失；现在一句话的译文停留得更久
+    await page.waitForTimeout(3_500);
+    await expect(toast).toHaveText(text!);
+    await expect(toast).toHaveCount(1);
+  });
+});
