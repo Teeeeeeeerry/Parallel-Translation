@@ -123,6 +123,27 @@
   background: var(--pt-danger);
 }
 
+/* 等待态（#746）：转圈与输入翻译进行中的圆点同一个画法（描边缺一角、
+   pt-spin），颜色跟随文字。等待态的文字是扩展的状态，不让它被选中复制 */
+.pt-toast[data-state='pending'] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  cursor: progress;
+}
+
+.pt-toast-spinner {
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: pt-spin 0.8s linear infinite;
+  flex: none;
+}
+
 @keyframes pt-spin {
   to {
     transform: rotate(360deg);

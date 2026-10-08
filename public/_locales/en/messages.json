@@ -488,5 +488,6 @@
   "toastInputTooLong": {
     "message": "This text is longer than $limit$ characters. Input translation doesn't split text into parts, so shorten it and try again",
     "placeholders": { "limit": { "content": "$1" } }
-  }
+  },
+  "toastTranslating": { "message": "Translating" }
 }

@@ -59,8 +59,8 @@ export interface ToastOptions {
 let toastTimer: number | undefined;
 let toastShadow: ShadowRoot | null = null;
 
-/** 显示一条提示；新的一条直接替换旧的。 */
-export function toast(msg: string, { purpose, kind = 'info' }: ToastOptions): void {
+/** 摘掉页面上现有的提示与它的计时，返回可以往里放新提示的 shadow root。 */
+function resetToast(): ShadowRoot {
   // 复用已有 shadow root
   if (!toastShadow) {
     toastShadow = mountIsolated('toast');
@@ -69,15 +69,53 @@ export function toast(msg: string, { purpose, kind = 'info' }: ToastOptions): vo
   // 移除旧 toast
   toastShadow.querySelector('.pt-toast')?.remove();
   clearTimeout(toastTimer);
+  return toastShadow;
+}
+
+/** 显示一条提示；新的一条直接替换旧的。 */
+export function toast(msg: string, { purpose, kind = 'info' }: ToastOptions): void {
+  const root = resetToast();
 
   const el = document.createElement('div');
   el.className = 'pt-toast';
   el.dataset.kind = kind;
   el.dataset.purpose = purpose;
   el.textContent = msg;
-  toastShadow.appendChild(el);
+  root.appendChild(el);
 
   toastTimer = self.setTimeout(() => {
     el.remove();
   }, purpose === 'content' ? contentDuration(msg) : TOAST_DURATION);
+}
+
+/** 等待态的句柄：发起方收尾时调用 dismiss。 */
+export interface PendingToast {
+  /** 这条等待态若仍在页面上（没被结果、失败或另一次发起替换）就收掉。 */
+  dismiss(): void;
+}
+
+/**
+ * 等待态（#746）：发起翻译时立即显示，带转圈，自己不会超时消失 —— 慢的
+ * 引擎不该让用户以为失败了。下一条提示（译文或失败）到来时替换它；没有
+ * 任何提示要接替它的退出路径（准入拦截不提示、出错），由发起方 dismiss。
+ * 转圈复用悬浮球与输入翻译圆点的 pt-spin 动画。
+ */
+export function toastPending(msg: string): PendingToast {
+  const root = resetToast();
+
+  const el = document.createElement('div');
+  el.className = 'pt-toast';
+  el.dataset.kind = 'info';
+  el.dataset.state = 'pending';
+  const spinner = document.createElement('span');
+  spinner.className = 'pt-toast-spinner';
+  spinner.setAttribute('aria-hidden', 'true');
+  el.append(spinner, msg);
+  root.appendChild(el);
+
+  return {
+    dismiss() {
+      if (el.isConnected) el.remove();
+    },
+  };
 }

@@ -4304,4 +4304,33 @@ test.describe('划词翻译的提示（#726）', () => {
     await expect(toast).toHaveText(text!);
     await expect(toast).toHaveCount(1);
   });
+
+  test('@core TC-E2E-147: 划词翻译点下去立即出现“翻译中”并转圈，引擎慢也不自己消失；页面与选区里不多出任何文字（#746）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    // 引擎比状态提示的 3 秒还慢
+    await mockGoogle({ delayMs: 5_000 });
+    const translating = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastTranslating'));
+    await gotoFixture('basic');
+    await waitForBall(page);
+    const bodyBefore = await page.evaluate(() => document.body.innerText);
+
+    await dragSelect(page, 'p:nth-of-type(2)');
+    const toast = page.locator(TOAST);
+    await expect(toast).toHaveText(translating, { timeout: 2_000 });
+    await expect(toast.locator('.pt-toast-spinner')).toBeVisible();
+
+    // 等待态的文字在隔离的提示里，不进页面正文，也不混进用户的选区
+    expect(await page.evaluate(() => document.body.innerText)).toBe(bodyBefore);
+    expect(await page.evaluate(() => getSelection()!.toString())).not.toContain(translating);
+
+    // 过了状态提示的 3 秒仍在等
+    await page.waitForTimeout(3_500);
+    await expect(toast).toHaveText(translating);
+
+    // 译文到达后它不再挂着
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await expect(toast.locator('.pt-toast-spinner')).toHaveCount(0);
+  });
 });
