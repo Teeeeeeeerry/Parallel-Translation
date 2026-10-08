@@ -4286,6 +4286,35 @@ test.describe('划词翻译的提示（#726）', () => {
     await page.keyboard.up('Alt');
   }
 
+  /** 走右键菜单同一条消息发起划词翻译（同 TC-E2E-67），可以送任意长度的文字。 */
+  async function translateSelectionText(sw: import('@playwright/test').Worker, text: string) {
+    await sw.evaluate(async (t: string) => {
+      for (const tab of await chrome.tabs.query({})) {
+        try {
+          await chrome.tabs.sendMessage(tab.id!, { type: 'pt:translate-selection', text: t });
+        } catch {
+          // 扩展页等没有 content script 的标签页
+        }
+      }
+    }, text);
+  }
+
+  /** 提示的实际尺寸、行高与视口宽度。 */
+  async function measureToast(page: import('@playwright/test').Page) {
+    return page.evaluate(() => {
+      const el = document.getElementById('pt-host-toast')!.shadowRoot!.querySelector('.pt-toast')!;
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+      const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+      return {
+        left: r.left, right: r.right, width: r.width, height: r.height,
+        lines: Math.round((r.height - padY) / lineHeight),
+        viewport: document.documentElement.clientWidth,
+      };
+    });
+  }
+
   test('@core TC-E2E-146: 划词译文过了三秒仍在 —— 内容类按长度停留，不再与状态提示一样三秒就走（#739）', async ({
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {
@@ -4380,6 +4409,46 @@ test.describe('划词翻译的提示（#726）', () => {
     expect(last[3]).toContain('【译】Another paragraph');
     // 中间没有别的状态：只有等待态与译文两种
     expect(seq.every(([, , spin, text]) => (spin === 'spin' && text === translating) || text === last[3])).toBe(true);
+  });
+
+  test('@core TC-E2E-149: 长译文在宽度上限内换行，不横着铺满屏幕底部；窄窗口下也不溢出视口；状态提示仍是原来的单行（#744）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+    const long = 'The quick brown fox jumps over the lazy dog while the translation keeps going. '.repeat(6);
+    const toast = page.locator(TOAST);
+
+    await translateSelectionText(serviceWorker, long);
+    await expect(toast).toContainText('【译】The quick brown fox', { timeout: 20_000 });
+    const wide = await measureToast(page);
+    // 不横着铺开：宽度不到视口的一半，文字折成多行
+    expect(wide.width).toBeLessThan(wide.viewport / 2);
+    expect(wide.lines).toBeGreaterThan(2);
+    expect(wide.left).toBeGreaterThanOrEqual(0);
+    expect(wide.right).toBeLessThanOrEqual(wide.viewport);
+
+    // 窄窗口：左右都不出视口
+    await page.setViewportSize({ width: 320, height: 640 });
+    await translateSelectionText(serviceWorker, long);
+    await expect(toast).toContainText('【译】The quick brown fox', { timeout: 20_000 });
+    const narrow = await measureToast(page);
+    expect(narrow.left).toBeGreaterThanOrEqual(0);
+    expect(narrow.right).toBeLessThanOrEqual(narrow.viewport);
+
+    // 状态类不受影响：失败提示仍是一行，宽度跟着文字走，不套宽度上限
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await mockGoogle({ fail: true });
+    await translateSelectionText(serviceWorker, 'Hello world');
+    const failText = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastTranslateFail'));
+    await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(failText, { timeout: 20_000 });
+    const status = await measureToast(page);
+    expect(status.lines).toBe(1);
+    expect(
+      await toast.evaluate((el) => getComputedStyle(el).maxWidth),
+    ).toBe('none');
   });
 });
 
