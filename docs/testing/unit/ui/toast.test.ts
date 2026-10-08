@@ -8,11 +8,14 @@
  * #739：内容类按字数换算停留时长，有下限有上限；状态类的时长不随长度变化。
  * 断言的是“长比短久”“都落在上下限之间”这类关系，不写死毫秒数。
  *
+ * #746：等待态 —— 发起划词翻译时显示“翻译中”并带转圈，它自己不会超时
+ * 消失；下一条提示到来时被替换，发起方收尾时把仍在等待的那一条收掉。
+ *
  * 只看外部可观察的行为：提示里显示了什么文字、过了多久还在不在、同一时刻
  * 页面上有几条提示。假定时器推进时间。
  */
 import { describe, test, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
-import { toast } from '~/src/ui/toast';
+import { toast, toastPending } from '~/src/ui/toast';
 import { unmountIsolated } from '~/src/ui/mount';
 
 /** 页面上当前的提示（挂在隔离的 shadow root 里）。 */
@@ -148,5 +151,62 @@ describe('状态类的时长不随长度变化（#739）', () => {
   test('短状态与长错误消息停留一样久', () => {
     const short = lifetime('翻译失败', 'status');
     expect(lifetime('DeepL 返回 456：本月配额已用完，请到账户页查看。'.repeat(20), 'status')).toBe(short);
+  });
+});
+
+describe('等待态（#746）', () => {
+  test('立即显示“翻译中”并带转圈', () => {
+    toastPending('翻译中');
+    expect(shown()).toEqual(['翻译中']);
+    expect(toasts()[0]?.querySelector('.pt-toast-spinner')).not.toBeNull();
+  });
+
+  test('自己不会超时消失：十分钟后仍在', () => {
+    toastPending('翻译中');
+    vi.advanceTimersByTime(600_000);
+    expect(shown()).toEqual(['翻译中']);
+  });
+
+  test('之前那条提示的计时不会把它带走', () => {
+    toast('扩展已开启', { purpose: 'status' });
+    vi.advanceTimersByTime(2000);
+    toastPending('翻译中');
+    vi.advanceTimersByTime(5000);
+    expect(shown()).toEqual(['翻译中']);
+  });
+
+  test('结果到来时被替换，页面上只有一条', () => {
+    toastPending('翻译中');
+    toast('你好世界', { purpose: 'content' });
+    expect(shown()).toEqual(['你好世界']);
+    expect(toasts()[0]?.querySelector('.pt-toast-spinner')).toBeNull();
+  });
+
+  test('失败到来时同样被替换，按状态类计时后消失', () => {
+    toastPending('翻译中');
+    toast('翻译失败', { purpose: 'status', kind: 'error' });
+    expect(shown()).toEqual(['翻译失败']);
+    vi.advanceTimersByTime(3000);
+    expect(shown()).toEqual([]);
+  });
+
+  test('发起方收尾：没有任何提示替换它时（如准入拦截不提示）收掉', () => {
+    const pending = toastPending('翻译中');
+    pending.dismiss();
+    expect(shown()).toEqual([]);
+  });
+
+  test('发起方收尾不碰已经替换它的提示', () => {
+    const pending = toastPending('翻译中');
+    toast('你好世界', { purpose: 'content' });
+    pending.dismiss();
+    expect(shown()).toEqual(['你好世界']);
+  });
+
+  test('发起方收尾不碰后来另一次发起的等待态', () => {
+    const first = toastPending('翻译中');
+    toastPending('翻译中');
+    first.dismiss();
+    expect(shown()).toEqual(['翻译中']);
   });
 });

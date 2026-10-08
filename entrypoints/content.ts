@@ -36,7 +36,7 @@ import { decideWriteBack } from '~/src/ui/input-writeback';
 import { decideInputTarget } from '~/src/ui/input-target-lang';
 import { decideInputLength } from '~/src/ui/input-length';
 import { inputMaxLength, inputText, type TextInput } from '~/src/ui/input-eligibility';
-import { toast } from '~/src/ui/toast';
+import { toast, toastPending } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
 import { createLifecycleRegistry } from '~/src/ui/lifecycle-registry';
@@ -765,6 +765,18 @@ export default defineContentScript({
       // 跨行划词时选区文本天然带 \n，入口归一化
       text = normalizeText(text);
 
+      // #746：点下去立即显示等待态，它自己不消失，由译文或失败替换。准入
+      // 拦截不提示、出错等没有提示接替它的退出路径，收尾时收掉
+      const pending = toastPending(tf('toastTranslating', '翻译中'));
+      try {
+        await translateSelectionResult(text);
+      } finally {
+        pending.dismiss();
+      }
+    }
+
+    /** 划词翻译的请求与结果提示；等待态由 translateSelection 管。 */
+    async function translateSelectionResult(text: string): Promise<void> {
       // #315: 划词翻译走编排模块的单文本入口 —— 与逐段翻译共用
       // 同一份准入判定与失败提示语义，不再直连消息通道
       const ns = getSettings();

@@ -488,5 +488,6 @@
   "toastInputTooLong": {
     "message": "这段文字超过 $limit$ 个字符。输入翻译不分段翻译，请删减后再试",
     "placeholders": { "limit": { "content": "$1" } }
-  }
+  },
+  "toastTranslating": { "message": "翻译中" }
 }
