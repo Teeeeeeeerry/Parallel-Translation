@@ -42,7 +42,15 @@ export type PageGateDecision =
 
 export function decidePageGate(input: PageGateInput): PageGateDecision {
   const page = pageLanguage(input);
-  if (page.ok && page.lang === normalizeLangCode(input.to)) {
+  // #789：判不出页面语言就放行，照常翻译。这与输入翻译那边相反，是有意的，
+  // 不是漏改：
+  // - 输入翻译判不出对方的语言时宁可不猜（ADR-0005）：猜错是把一段不对的
+  //   文字发给别人，而发送不可撤回
+  // - 阅读方向猜错只是多翻一遍本来不用翻的内容，单元级兜底（#783）还会
+  //   拦下原样还回来的段落；拦错的代价却是用户想翻的页面翻不了
+  // 两边代价不对称，取舍也就相反。不要改成“判不出就不翻”
+  if (!page.ok) return { translate: true };
+  if (page.lang === normalizeLangCode(input.to)) {
     return { translate: false, reason: 'same-language', lang: page.lang };
   }
   return { translate: true };
