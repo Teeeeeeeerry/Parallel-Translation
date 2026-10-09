@@ -495,5 +495,6 @@
     "message": "$count$ 段已经是目标语言，没有插入译文",
     "placeholders": { "count": { "content": "$1" } }
   },
-  "toastParaSameAsSource": { "message": "这一段已经是目标语言" }
+  "toastParaSameAsSource": { "message": "这一段已经是目标语言" },
+  "toastSelectionSameAsSource": { "message": "这段文字已经是目标语言" }
 }

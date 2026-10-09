@@ -8,13 +8,13 @@
 // content script 的副作用里摘出来单测。
 
 import type { RenderResult } from '../dom/renderer';
-import type { ToastPurpose } from '../ui/toast';
+import { checkTranslation } from '../dom/translation-check';
+import type { ToastOptions } from '../ui/toast';
 import { tf } from '../i18n';
 
-export interface TextNotice {
+/** 提示的文字与选项，原样交给 toast()。 */
+export interface TextNotice extends ToastOptions {
   message: string;
-  purpose: ToastPurpose;
-  kind: 'info' | 'error';
 }
 
 /**
@@ -40,4 +40,24 @@ export function paraNotice(result: RenderResult): TextNotice | null {
     purpose: 'status',
     kind: 'error',
   };
+}
+
+/**
+ * 划词翻译拿到译文之后的提示。划词不走渲染层，与渲染层共用同一个比对
+ * 纯函数（#783），不另写一份。
+ */
+export function selectionNotice(source: string, translation: string): TextNotice {
+  // #787：译文与原文相同时不把它弹出来 —— 用户会以为扩展把原文当译文给了他。
+  // 说明这段已经是目标语言，它是状态不是内容，走状态类；等待态就地换成这条，
+  // 与译文到达时同一条替换路径（#747），不留一个转圈的“翻译中”
+  if (!checkTranslation(source, translation).ok) {
+    return {
+      message: tf('toastSelectionSameAsSource', '这段文字已经是目标语言'),
+      purpose: 'status',
+      kind: 'info',
+      replacePending: true,
+    };
+  }
+  // #738：划词译文是用户要读完的内容，不是状态
+  return { message: translation, purpose: 'content' };
 }

@@ -55,6 +55,11 @@ export interface ToastOptions {
   purpose: ToastPurpose;
   /** 'error' 用 --pt-danger，其余用 --pt-forest。缺省 'info'。 */
   kind?: 'info' | 'error';
+  /**
+   * 状态类的这一条也就地替换等待态（#787）。内容类总是就地替换（#747）；
+   * 失败提示的就地替换是 #748 的事，在那之前失败不传，仍是摘掉再弹。
+   */
+  replacePending?: boolean;
 }
 
 let toastTimer: number | undefined;
@@ -79,10 +84,16 @@ function resetToast(): ShadowRoot {
  * #747：译文（内容类）到达时页面上若是等待态，就地把它变成译文 —— 同一条
  * 提示换掉内容、摘掉转圈，不先摘掉再弹一条新的。失败到达时的就地替换另由
  * #748 做，这里仍是摘掉再弹，等待态同样不会留下。
+ *
+ * #787：划词命中兜底时的那条状态类说明显式要求就地替换（replacePending），
+ * 与译文走同一条路径。
  */
-export function toast(msg: string, { purpose, kind = 'info' }: ToastOptions): void {
+export function toast(
+  msg: string,
+  { purpose, kind = 'info', replacePending = false }: ToastOptions,
+): void {
   const pending =
-    purpose === 'content'
+    purpose === 'content' || replacePending
       ? toastShadow?.querySelector<HTMLElement>('.pt-toast[data-state="pending"]')
       : null;
   let el: HTMLElement;
