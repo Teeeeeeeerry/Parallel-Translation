@@ -2270,6 +2270,22 @@ async function stubChatEndpoint(
   }, { endpoint, p: prefix });
 }
 
+/**
+ * 把目标语言定成 to，在设置页里存下的其余设置不动（#792）。
+ *
+ * 自带 key 引擎的两条用例走设置页配置，不写设置种子，目标语言是首装时按
+ * 界面语言推导的：CI 的界面是 en-US，推导成 en，而 basic 夹具声明
+ * lang="en"，页面级闸门会判定本页已经是目标语言、一个请求都不发。
+ */
+async function setTargetLang(sw: import('@playwright/test').Worker, to: string) {
+  await sw.evaluate(async (to: string) => {
+    const r = await chrome.storage.sync.get('pt-settings');
+    await chrome.storage.sync.set({
+      'pt-settings': { ...((r['pt-settings'] as object | undefined) ?? {}), to },
+    });
+  }, to);
+}
+
 const DEEPSEEK_CHAT = 'https://api.deepseek.com/chat/completions';
 
 test.describe('自带 key 引擎：DeepSeek', () => {
@@ -2326,6 +2342,7 @@ test.describe('自带 key 引擎：DeepSeek', () => {
       chrome.permissions.contains = (async () => true) as typeof chrome.permissions.contains;
     });
     await stubChatEndpoint(serviceWorker, DEEPSEEK_CHAT, '[DS] ');
+    await setTargetLang(serviceWorker, 'zh-CN');
     await gotoFixture('basic');
     await translateAndWait(page);
     await expect(page.locator('.pt-trans').first()).toContainText('[DS] ');
@@ -2471,6 +2488,7 @@ test.describe('自带 key 引擎：Grok', () => {
       chrome.permissions.contains = (async () => true) as typeof chrome.permissions.contains;
     });
     await stubChatEndpoint(serviceWorker, 'https://api.x.ai/v1/chat/completions', '[GK] ');
+    await setTargetLang(serviceWorker, 'zh-CN');
     await gotoFixture('basic');
     await translateAndWait(page);
     await expect(page.locator('.pt-trans').first()).toContainText('[GK] ');

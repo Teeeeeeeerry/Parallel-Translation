@@ -25,6 +25,7 @@ import type { Settings } from '~/src/storage/schema';
 import { currentDomain } from '~/src/storage/domains';
 import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { isSiteBlocked } from '~/src/dom/site-filter';
+import { decidePageGate, type PageGateDecision } from './page-gate';
 import { normalizeLangCode } from './lang-code';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
@@ -171,7 +172,7 @@ export interface TranslationOrchestrator {
    * 翻译分支与 translatePage 同一条流水线（准入 / 批次 / 中止 / 提示语义）。
    */
   togglePage(
-    items: TranslateItem<unknown>[],
+    items: TranslateItem<unknown>[] | (() => TranslateItem<unknown>[]),
     from: string,
     to: string,
   ): Promise<PageToggleResult>;
@@ -195,6 +196,8 @@ export interface PageToggleResult {
   admission: Admission;
   /** 翻译分支的批次汇总（错误提示 / display 决策用）。 */
   summary?: PageTranslateSummary;
+  /** 页面级闸门命中时的判定与原因（#792，status 为 same-language）。 */
+  gate?: Extract<PageGateDecision, { translate: false }>;
 }
 
 /**
@@ -205,6 +208,7 @@ export interface PageToggleResult {
  *   - aborted：翻译中还原（中止不计失败）
  *   - error：全部引擎失败
  *   - no-elements：本页没有可翻译的内容
+ *   - same-language：页面级闸门命中，本页已经是目标语言（#792，零请求）
  */
 export type PageToggleStatus =
   | 'translated'
@@ -214,7 +218,8 @@ export type PageToggleStatus =
   | 'busy'
   | 'aborted'
   | 'error'
-  | 'no-elements';
+  | 'no-elements'
+  | 'same-language';
 
 export interface OrchestratorOptions {
   /** 消息发送层（测试注入假层；content 注入 translateViaBackground）。 */
@@ -284,6 +289,11 @@ export interface OrchestratorOptions {
    * 已完成状态 —— 调用方经 onBatchResult 统计渲染成败后在此报告。
    */
   allRenderRejected?: () => boolean;
+  /**
+   * 本 frame 页面的语言声明（`<html lang>` 的原值，#792）：页面级闸门的
+   * 取数之一，经注入读取 —— 模块不触碰 DOM。未注入或没有声明时为 null。
+   */
+  getPageLang?: () => string | null;
   /**
    * 增量补翻观察器启动钩子（#328）：只在整页翻译成功后调用 ——
    * 调用方接线到生命周期注册表（启停幂等，未启动为空操作）。
@@ -521,14 +531,34 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         return { status: 'restored', admission };
       }
 
-      if (items.length === 0) {
+      // #792：页面级闸门 —— 本页已经是目标语言就一个请求都不发，页面一个
+      // 字不动（连采集都不做：采集会把超长段落切成切块）。排在准入与还原
+      // 之后：站点被禁用照旧是准入拦截，已翻译的页面照旧能还原。
+      // 只接在整页开关入口上，不进 admissionFrom —— 它被单文本入口共用，
+      // 放进去会把逐段与划词一起拦下；那两条靠渲染层的单元级兜底（#783）。
+      // 增量补翻（translatePage）也不判：观察器只在整页翻译成功后启动，
+      // 命中闸门时它不启动，后来的新节点不会被补翻。
+      // 检测语言不随还原清掉：换了目标语言再点，闸门可能按检测语言命中，
+      // 这一页确实就是新目标语言
+      const gate = decidePageGate({
+        to,
+        detectedLang,
+        pageLang: opts.getPageLang?.() ?? null,
+      });
+      if (!gate.translate) {
+        return { status: 'same-language', admission, gate };
+      }
+
+      // 采集可以按需进行（传函数）：闸门命中、准入拦截、还原时不采集
+      const list = typeof items === 'function' ? items() : items;
+      if (list.length === 0) {
         return { status: 'no-elements', admission };
       }
 
       toggleInFlight = true;
       pushVisual('loading');
       try {
-        const summary = await translatePageImpl(items, from, to);
+        const summary = await translatePageImpl(list, from, to);
         const status: PageToggleStatus = summary.aborted
           ? 'aborted'
           : summary.allFailed || opts.allRenderRejected?.()
