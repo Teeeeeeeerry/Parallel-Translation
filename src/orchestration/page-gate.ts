@@ -50,6 +50,9 @@ export function decidePageGate(input: PageGateInput): PageGateDecision {
   //   拦下原样还回来的段落；拦错的代价却是用户想翻的页面翻不了
   // 两边代价不对称，取舍也就相反。不要改成“判不出就不翻”
   if (!page.ok) return { translate: true };
+  // #790：繁简不算同语言 —— normalizeLangCode 把中文按文字与地区分成 zh-TW
+  // 与 zh-CN（#691），繁体页面对简体目标是真的要翻。直接比归一化后的码，
+  // 不另写中文的比较
   if (page.lang === normalizeLangCode(input.to)) {
     return { translate: false, reason: 'same-language', lang: page.lang };
   }

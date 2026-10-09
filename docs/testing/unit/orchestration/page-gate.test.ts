@@ -71,3 +71,49 @@ describe('判不出页面语言时放行照翻（#789）', () => {
     });
   });
 });
+
+describe('繁简不算同语言（#790）', () => {
+  // 口径是 #691 那套：normalizeLangCode 把中文按文字与地区分成 zh-TW 与 zh-CN
+  test('繁体页面、简体目标：照常翻译', () => {
+    for (const pageLang of ['zh-TW', 'zh-Hant', 'zh-HK', 'zh-MO', 'zh_Hant_TW']) {
+      expect(decidePageGate({ to: 'zh-CN', detectedLang: null, pageLang })).toEqual({
+        translate: true,
+      });
+    }
+  });
+
+  test('简体页面、繁体目标：照常翻译', () => {
+    for (const pageLang of ['zh-CN', 'zh', 'zh-Hans', 'zh-SG', 'zh-Hans-HK']) {
+      expect(decidePageGate({ to: 'zh-TW', detectedLang: null, pageLang })).toEqual({
+        translate: true,
+      });
+    }
+  });
+
+  test('引擎报告的检测语言是繁体、目标是简体：照常翻译', () => {
+    expect(decidePageGate({ to: 'zh-CN', detectedLang: 'zh-Hant', pageLang: 'zh-CN' })).toEqual({
+      translate: true,
+    });
+  });
+
+  test('同为简体：不翻', () => {
+    expect(decidePageGate({ to: 'zh-CN', detectedLang: null, pageLang: 'zh-Hans' })).toEqual({
+      translate: false,
+      reason: 'same-language',
+      lang: 'zh-CN',
+    });
+    expect(decidePageGate({ to: 'zh-CN', detectedLang: null, pageLang: 'zh' })).toEqual({
+      translate: false,
+      reason: 'same-language',
+      lang: 'zh-CN',
+    });
+  });
+
+  test('同为繁体：不翻', () => {
+    expect(decidePageGate({ to: 'zh-TW', detectedLang: null, pageLang: 'zh-Hant-HK' })).toEqual({
+      translate: false,
+      reason: 'same-language',
+      lang: 'zh-TW',
+    });
+  });
+});
