@@ -590,6 +590,9 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // #311: 与整页入口同一份准入判定 —— 拦截时零请求
       const admission = admissionFrom(opts);
       if (admission !== 'allowed') return { admission, ok: false };
+      // #794：这里不判页面级闸门。逐段与划词是用户点名要翻的一段，中文页面
+      // 上划中一段英文引文单独翻译完全合理；目标语言的文字由渲染层与划词
+      // 共用的单元级兜底（#783、#786、#787）各自说明
 
       // 单文本单请求，与整页入口共用注入的消息层（#312）。逐段翻译与
       // 划词翻译同样携带当前领域，术语译法与全页翻译一致（#383/#384）
