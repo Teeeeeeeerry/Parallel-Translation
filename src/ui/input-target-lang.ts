@@ -16,19 +16,18 @@
 // 3. 页面的语言声明 `<html lang>` 可识别 —— 取语言码主段（#658）；中文
 //    按文字与地区分成 zh-TW / zh-CN，与源语言设置同一套码（#691）
 // 4. 都没有 —— 判不出来，提示用户去设置里指定源语言
+// 第 2、3 两级是“这一页是什么语言”，与阅读方向共用 page-lang.ts（#782）；
+// 第 1 级是输入翻译独有的，留在这里。
 //
 // 定出对方的语言后，再看用户写的是不是已经是这种语言（#661）：是就不替换、
 // 不发请求 —— 措辞不同的同一种语言只会把写好的句子换掉。比较在归一化之后
 // 做，与 #691 同一口径（zh-CN 与 zh-TW 不算同语言）。
 //
-// 检测语言排在声明之前（#660）：大量中文站点把声明写成 en，而引擎是照着
-// 真实文字判的。默认引擎 google-web 不返回检测语言，所以这一级对多数用户
-// 不生效，等于回落到声明 —— 它是“能用上就更准”，不是前置条件。
-//
 // 返回原因而非裸 boolean，与 changelog/decide.ts 同一风格：调用方拿到
 // 原因直接渲染提示。
 
 import { normalizeLangCode } from '../orchestration/lang-code';
+import { pageLanguage } from '../orchestration/page-lang';
 
 export interface InputTargetInput {
   /** 设置里的源语言：具体语言码，或 'auto' */
@@ -79,11 +78,7 @@ function targetLang(input: InputTargetInput): InputTargetDecision {
   if (input.from && input.from !== 'auto') {
     return { ok: true, lang: input.from, via: 'source-setting' };
   }
-  const detected = normalizeLangCode(input.detectedLang);
-  if (detected) return { ok: true, lang: detected, via: 'detected-lang' };
-  const pageLang = normalizeLangCode(input.pageLang);
-  if (pageLang) return { ok: true, lang: pageLang, via: 'page-lang' };
-  return { ok: false, reason: 'undetermined' };
+  return pageLanguage(input);
 }
 
 /**
