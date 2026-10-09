@@ -16,7 +16,7 @@ describe('render', () => {
   test('创建 .pt-origin + .pt-trans 子元素', () => {
     const p = el('<p>Hello World</p>');
     const result = render(p, '你好世界');
-    expect(result).toBe(true);
+    expect(result).toEqual({ rendered: true });
     expect(p.querySelector(':scope > .pt-origin')).not.toBeNull();
     expect(p.querySelector(':scope > .pt-trans')).not.toBeNull();
   });
@@ -64,20 +64,81 @@ describe('render', () => {
     expect(trans.classList.contains('pt-pre')).toBe(true);
   });
 
-  test('含非文本内容 → 返回 false（纵深防御）', () => {
+  test('含非文本内容 → 拒绝渲染，原因是含非文本内容（纵深防御）', () => {
     // img 包裹在 block 级元素中，阻断翻译
     const div = el('<div><p><img src="x.png"></p> text</div>');
     const result = render(div, '译文');
-    expect(result).toBe(false);
+    expect(result).toEqual({ rendered: false, reason: 'non-text-content' });
   });
 
-  test('已标记 done → 返回 true（幂等，不二次渲染）', () => {
+  test('已标记 done → 算已渲染（幂等，不二次渲染，不算失败）', () => {
     const p = el('<p>Hello</p>');
     render(p, '你好');
     const result = render(p, '再次渲染');
-    expect(result).toBe(true);
+    expect(result).toEqual({ rendered: true });
     // 译文不变化
     expect(p.querySelector(':scope > .pt-trans')!.textContent).toBe('你好');
+  });
+});
+
+describe('render — 译文与原文相同时不插入（#783）', () => {
+  test('引擎原样还回来：不插入译文，页面一个字不变，原因是与原文相同', () => {
+    const p = el('<p>我的H5 <b>我的图文</b> 我的文档</p>');
+    const before = p.outerHTML;
+    const result = render(p, '我的H5 我的图文 我的文档');
+    expect(result).toEqual({ rendered: false, reason: 'same-as-source' });
+    expect(p.outerHTML).toBe(before);
+    expect(p.querySelector('.pt-trans')).toBeNull();
+  });
+
+  test('命中的单元不标记为已翻译', () => {
+    const p = el('<p>回收站</p>');
+    render(p, '回收站');
+    expect(p.hasAttribute('data-pt')).toBe(false);
+    expect(p.hasAttribute('data-pt-src')).toBe(false);
+  });
+
+  test('比对的是送去翻译的原文：显式传入时以它为准，不看单元里其余的文字', () => {
+    // 含带文字的块级子元素的单元只送自身的浅层文字（子段落另成单元），
+    // 单元的全部文字里多出子段落，单看它永远比不上
+    const div = el('<div>风格秀<p>Style show</p></div>');
+    const before = div.outerHTML;
+    const result = render(div, '风格秀', 'page', '风格秀');
+    expect(result).toEqual({ rendered: false, reason: 'same-as-source' });
+    expect(div.outerHTML).toBe(before);
+  });
+
+  test('译文确实不同的单元照常插入并标记', () => {
+    const p = el('<p>Recycle bin</p>');
+    const result = render(p, '回收站', 'page', 'Recycle bin');
+    expect(result).toEqual({ rendered: true });
+    expect(p.querySelector(':scope > .pt-trans')!.textContent).toBe('回收站');
+    expect(p.getAttribute('data-pt')).toBe('done');
+  });
+
+  test('整页命中兜底后还原：页面逐字节回到原样', () => {
+    const root = document.createElement('div');
+    root.innerHTML = [
+      '<nav><a href="/h5">我的H5</a> <a href="/doc">我的文档</a></nav>',
+      '<p class="tip" style="color:red">采用风格排版后需替换文案内容，\n  以免遇到<b>公众号</b>原创保护问题</p>',
+      '<p>Recycle bin</p>',
+      '<ul><li>用途</li><li>行业</li></ul>',
+    ].join('');
+    document.body.appendChild(root);
+    const before = root.innerHTML;
+
+    // 每个单元按原文送翻；只有英文那段引擎真的翻了
+    const units = [...root.querySelectorAll('a, p, li')];
+    for (const u of units) {
+      const source = u.textContent!;
+      render(u, source === 'Recycle bin' ? '回收站' : source, 'page', source);
+    }
+    expect(root.querySelectorAll('.pt-trans')).toHaveLength(1);
+
+    // 还原只认已翻译标记（与整页还原同一口径）
+    root.querySelectorAll('[data-pt="done"]').forEach((u) => unrender(u));
+    expect(root.innerHTML).toBe(before);
+    root.remove();
   });
 });
 
