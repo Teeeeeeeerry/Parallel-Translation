@@ -5,8 +5,9 @@
  * 纯函数，目标语言、检测语言、页面语言声明全部显式传入；断言返回的结论
  * 与原因。
  */
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, vi } from 'vitest';
 import { decidePageGate } from '~/src/orchestration/page-gate';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
 
 describe('decidePageGate — 页面语言与目标语言比对（#788）', () => {
   test('页面语言与目标语言相同：不翻，带原因与判出的页面语言', () => {
@@ -115,5 +116,82 @@ describe('繁简不算同语言（#790）', () => {
       reason: 'same-language',
       lang: 'zh-TW',
     });
+  });
+});
+
+describe('检测语言优先于页面的语言声明（#791）', () => {
+  // 优先级由 pageLanguage（#782）实现，这里在页面级判定上钉死它
+  test('两者都有且冲突：以检测语言为准 —— 声明写成 en 的中文站点照样判成中文', () => {
+    expect(decidePageGate({ to: 'zh-CN', detectedLang: 'zh-CN', pageLang: 'en' })).toEqual({
+      translate: false,
+      reason: 'same-language',
+      lang: 'zh-CN',
+    });
+  });
+
+  test('两者都有且冲突、检测语言与目标不同：照常翻译，不因声明是目标语言而拦下', () => {
+    expect(decidePageGate({ to: 'zh-CN', detectedLang: 'en', pageLang: 'zh-CN' })).toEqual({
+      translate: true,
+    });
+  });
+
+  test('检测语言认不出：回落到声明', () => {
+    expect(decidePageGate({ to: 'en', detectedLang: 'und', pageLang: 'en-GB' })).toEqual({
+      translate: false,
+      reason: 'same-language',
+      lang: 'en',
+    });
+  });
+
+  test('只有声明：用声明', () => {
+    expect(decidePageGate({ to: 'ja', detectedLang: null, pageLang: 'ja' })).toEqual({
+      translate: false,
+      reason: 'same-language',
+      lang: 'ja',
+    });
+    expect(decidePageGate({ to: 'ja', detectedLang: null, pageLang: 'ko' })).toEqual({
+      translate: true,
+    });
+  });
+
+  test('都没有：放行照翻（#789）', () => {
+    expect(decidePageGate({ to: 'ja', detectedLang: null, pageLang: null })).toEqual({
+      translate: true,
+    });
+  });
+});
+
+describe('第一次点整页翻译时只有语言声明可用（#791）', () => {
+  // 编排里的检测语言是从翻译响应里攒出来的，第一次整页翻译之前一定是 null。
+  // 检测语言不是前置条件：此时闸门只看声明，不为拿检测语言先发探测请求
+  test('还没翻过：检测语言为 null，判定按声明给出，一个请求都没发', () => {
+    const send = vi.fn();
+    const orch = createOrchestrator({ send } as Parameters<typeof createOrchestrator>[0]);
+    orch.start();
+
+    expect(orch.detectedLang()).toBeNull();
+    expect(
+      decidePageGate({ to: 'zh-CN', detectedLang: orch.detectedLang(), pageLang: 'zh-CN' }),
+    ).toEqual({ translate: false, reason: 'same-language', lang: 'zh-CN' });
+    expect(
+      decidePageGate({ to: 'zh-CN', detectedLang: orch.detectedLang(), pageLang: 'en' }),
+    ).toEqual({ translate: true });
+    expect(send).not.toHaveBeenCalled();
+    orch.stop();
+  });
+
+  test('翻过一次、引擎报告了检测语言之后：检测语言盖过声明', async () => {
+    const send = vi.fn(async () => ({
+      ok: true,
+      data: { translations: ['你好'], detectedFrom: 'zh-CN' },
+    }));
+    const orch = createOrchestrator({ send } as Parameters<typeof createOrchestrator>[0]);
+    orch.start();
+    await orch.translatePage([{ text: '你好', ctx: 0 }], 'auto', 'en');
+
+    expect(
+      decidePageGate({ to: 'zh-CN', detectedLang: orch.detectedLang(), pageLang: 'en' }),
+    ).toEqual({ translate: false, reason: 'same-language', lang: 'zh-CN' });
+    orch.stop();
   });
 });
