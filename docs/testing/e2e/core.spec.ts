@@ -4224,6 +4224,62 @@ test.describe('标记密集的段落（#724）', () => {
       await expect(page.locator(id)).not.toHaveAttribute('data-pt', /./);
     }
   });
+
+  /** 维基形态夹具（#735）里的段落：标记密集的正常正文、普通段落、文字真正超长的段落 */
+  const WIKI_DENSE = ['#dense-career', '#dense-early', '#dense-recognition'];
+  const WIKI_PLAIN = ['#lead', '#plain', '#light'];
+
+  /** 段落的形状：文字长度、序列化后的 HTML 长度、子树元素个数 */
+  function shapeOf(page: import('@playwright/test').Page, id: string) {
+    return page.locator(id).evaluate((el) => ({
+      text: (el.textContent ?? '').trim().length,
+      html: el.outerHTML.length,
+      elements: el.getElementsByTagName('*').length,
+    }));
+  }
+
+  test('@core TC-E2E-155: 维基形态的条目页整页翻译 —— 标记密集的段落有译文，同页普通段落照常翻译，文字真正超长的段落仍然没有译文（#735）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('wiki-article');
+
+    // 前提：夹具照 #724、#730 的实测造。标记密集的段落文字远低于上限、序列化后
+    // 远超旧的 HTML 上限（4096），元素个数落在实测的正常正文范围（37 到 87）
+    for (const id of WIKI_DENSE) {
+      const s = await shapeOf(page, id);
+      expect(s.text, id).toBeLessThan(3072);
+      expect(s.html, id).toBeGreaterThan(4096);
+      expect(s.elements, id).toBeGreaterThanOrEqual(37);
+      expect(s.elements, id).toBeLessThanOrEqual(87);
+    }
+    for (const id of WIKI_PLAIN) expect((await shapeOf(page, id)).html, id).toBeLessThan(4096);
+    // 超长段落只超文字上限，HTML 并不超 —— 拦住它的只能是文字上限
+    const long = await shapeOf(page, '#long');
+    expect(long.text).toBeGreaterThan(3072);
+    expect(long.html).toBeLessThan(4096);
+
+    await translateAndWait(page);
+
+    for (const id of [...WIKI_DENSE, ...WIKI_PLAIN]) {
+      await expect(page.locator(id), id).toHaveAttribute('data-pt', 'done', { timeout: 30_000 });
+    }
+    // 标记密集的段落：译文是整段正文，链接与引用角标都还在原文里
+    const career = page.locator('#dense-career');
+    await expect(career.locator('.pt-trans')).toHaveText(/^【译】Valcourt began her career with small parts in French cinema/);
+    await expect(career.locator('.pt-origin a[rel="mw:WikiLink"]')).toHaveCount(26);
+    await expect(career.locator('.pt-origin sup.reference')).toHaveCount(9);
+    await expect(page.locator('#dense-early .pt-trans')).toHaveText(/^【译】Valcourt was born in Lyon/);
+    await expect(page.locator('#dense-recognition .pt-trans')).toHaveText(/^【译】By the middle of the decade/);
+    await expect(page.locator('#plain .pt-trans')).toHaveText(/^【译】Valcourt has spoken only rarely/);
+
+    // 文字真正超长的段落仍然不翻
+    await expect(page.locator('#long')).not.toHaveAttribute('data-pt', /./);
+    await expect(page.locator('#long .pt-trans')).toHaveCount(0);
+    // 参考文献列表是非正文区域，照旧不翻
+    await expect(page.locator('.references .pt-trans')).toHaveCount(0);
+  });
 });
 
 test.describe('划词翻译的提示（#726）', () => {
