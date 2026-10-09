@@ -72,8 +72,8 @@ describe('整页全部命中兜底（#783）', () => {
     expect(root.querySelector('[data-pt]')).toBeNull();
     expect(pushes).not.toContain('done');
 
-    const notice = pageNotice(result, stats);
-    expect(notice?.message).not.toBe(chrome.i18n.getMessage('toastAllRejected'));
+    // #785：不说“所有段落均含图片/按钮”，而是一条带数量的说明，状态类
+    expect(pageNotice(result, stats)).toEqual({ message: 'toastSameAsSource:4', kind: 'info' });
     root.remove();
   });
 
@@ -90,6 +90,42 @@ describe('整页全部命中兜底（#783）', () => {
     expect(en!.getAttribute('data-pt')).toBe('done');
     expect(en!.querySelector('.pt-trans')!.textContent).toBe('回收站');
     root.remove();
+  });
+});
+
+describe('被兜底拦下的单元计入汇总（#785）', () => {
+  const translated = (): PageToggleResult =>
+    ({ status: 'translated', admission: 'allowed', summary: { display: { showRealReason: false } } }) as PageToggleResult;
+
+  test('整页翻译结束后按数量汇总一条', async () => {
+    const html = '<p>我的文档</p><p>回收站</p><p>Recycle bin</p>';
+    const { root, result, stats } = await translatePage(html, (t) =>
+      t === 'Recycle bin' ? '回收站' : t,
+    );
+    expect(pageNotice(result, stats)).toEqual({ message: 'toastSameAsSource:2', kind: 'info' });
+    root.remove();
+  });
+
+  test('数量为零时不因此多弹提示', () => {
+    expect(pageNotice(translated(), { ...emptyRenderStats(), succeeded: 4 })).toBeNull();
+  });
+
+  test('与“含图片/按钮”并存：给这一条（排在它之上）', () => {
+    const stats = { ...emptyRenderStats(), succeeded: 2, rejected: 1, sameAsSource: 3 };
+    expect(pageNotice(translated(), stats)).toEqual({ message: 'toastSameAsSource:3', kind: 'info' });
+  });
+
+  test('与翻译失败并存：同一时刻只显示一条，失败那条优先', () => {
+    const stats = { ...emptyRenderStats(), succeeded: 2, sameAsSource: 3, failed: 1 };
+    expect(pageNotice(translated(), stats)).toEqual({ message: 'domainPartialFail:1', kind: 'error' });
+    const all = { ...emptyRenderStats(), succeeded: 2, rejected: 1, sameAsSource: 3, failed: 1 };
+    expect(pageNotice(translated(), all)).toEqual({ message: 'domainPartialFail:1', kind: 'error' });
+  });
+
+  test('没有一段插入译文、其中既有含图片/按钮也有与原文相同的：给这一条，不说“所有段落均含图片/按钮”', () => {
+    const result = { status: 'error', admission: 'allowed', summary: { allFailed: false } } as PageToggleResult;
+    const stats = { ...emptyRenderStats(), rejected: 1, sameAsSource: 2 };
+    expect(pageNotice(result, stats)).toEqual({ message: 'toastSameAsSource:2', kind: 'info' });
   });
 });
 

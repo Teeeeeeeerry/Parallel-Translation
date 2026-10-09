@@ -490,5 +490,9 @@
     "placeholders": { "limit": { "content": "$1" } }
   },
   "toastTranslating": { "message": "翻譯中" },
-  "toastClose": { "message": "關閉" }
+  "toastClose": { "message": "關閉" },
+  "toastSameAsSource": {
+    "message": "$count$ 段已經是目標語言，沒有插入譯文",
+    "placeholders": { "count": { "content": "$1" } }
+  }
 }

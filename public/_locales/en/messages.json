@@ -490,5 +490,9 @@
     "placeholders": { "limit": { "content": "$1" } }
   },
   "toastTranslating": { "message": "Translating" },
-  "toastClose": { "message": "Close" }
+  "toastClose": { "message": "Close" },
+  "toastSameAsSource": {
+    "message": "$count$ paragraphs are already in the target language; no translation was inserted",
+    "placeholders": { "count": { "content": "$1" } }
+  }
 }

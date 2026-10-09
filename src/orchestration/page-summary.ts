@@ -87,6 +87,22 @@ export function partialFailNotice(
   };
 }
 
+/**
+ * #785：译文与原文相同、没有插入的单元按数量汇总一条 —— 不说的话用户只看到
+ * 这几段没变，会觉得扩展时灵时不灵。它是状态不是内容，走状态类。
+ */
+function sameAsSourceNotice(stats: RenderStats): PageNotice | null {
+  if (stats.sameAsSource === 0) return null;
+  return {
+    message: tf(
+      'toastSameAsSource',
+      `${stats.sameAsSource} 段已经是目标语言，没有插入译文`,
+      String(stats.sameAsSource),
+    ),
+    kind: 'info',
+  };
+}
+
 /** 整页开关入口结束后要弹的那一条提示；不需要提示时为 null。 */
 export function pageNotice(result: PageToggleResult, stats: RenderStats): PageNotice | null {
   switch (result.status) {
@@ -98,13 +114,19 @@ export function pageNotice(result: PageToggleResult, stats: RenderStats): PageNo
       if (result.summary?.allFailed) return allFailedNotice(result.summary.display);
       // #783：被拦下的单元里有译文与原文相同的，就不是“所有段落均含
       // 图片/按钮” —— 对一个同语言页面说这句话比什么都不说更糟
-      if (stats.sameAsSource > 0) return null;
+      if (stats.sameAsSource > 0) return sameAsSourceNotice(stats);
       // #49: 引擎返回了结果但全被拒绝渲染（纵深防御命中）
       return { message: tf('toastAllRejected', '所有段落均含图片/按钮，无法翻译'), kind: 'error' };
     case 'translated':
-      // 失败排在被拒之前：同一时刻只显示一条，失败更需要被看到
+      // 几条并存时只给一条，排序是 失败 > 已经是目标语言 > 含图片/按钮：
+      // - 失败压在最上面：只有它意味着用户想看的内容没有到，要去处理
+      //   （换引擎、查 key），其余两条都是“没插，也不用插”
+      // - 已经是目标语言排在含图片/按钮之上：同语言页面整页都命中时它
+      //   的数量往往占了大半，不说的话用户只看到页面没变，会以为没点中
+      //   而再点一次、再花一次配额；含图片/按钮的段落原文本就看得见
       return (
         partialFailNotice(stats, result.summary?.display) ??
+        sameAsSourceNotice(stats) ??
         // #49：整页翻译结束后用一条提示汇总被拒数量，而不是逐条刷屏
         (stats.rejected > 0
           ? {
