@@ -21,6 +21,10 @@
 //
 // #723：自带 key 的 DeepL 也走这套描述符。用例在 SW 里直接改写 self.fetch
 // 的替身随实例消失，请求打到真实端点，假 key 失败或拿回真实译文。
+//
+// #766：Bing、OpenAI 兼容的对话式引擎同样走描述符；请求记录（发给 Google
+// 的原文、各端点的请求数）也记在这一层，不再由用例叠一层包裹。记录只活在
+// 实例内存里，SW 被替换会清零 —— 读记录的一侧要先确认实例没换过。
 
 export interface E2EMockConfig {
   prefix?: string;
@@ -49,6 +53,17 @@ export interface E2EMockConfig {
    * 检测语言恒报 detectedSourceLanguage。不设则 DeepL 请求照常直连。
    */
   deepl?: { detectedSourceLanguage: string };
+  /**
+   * Bing 两个端点的替身（#766）：鉴权端点给固定令牌，翻译端点把原文加上
+   * prefix 回显。不设则 Bing 请求照常直连。
+   */
+  bing?: { prefix: string };
+  /**
+   * OpenAI 兼容的对话式端点替身（#766），键是端点完整 URL。按请求里的编号行
+   * 回显并加 prefix；dropText 命中的编号行不回显（模拟 LLM 漏行）；status
+   * 不是 200 时直接按该状态码失败。没登记的端点照常直连。
+   */
+  chat?: Record<string, { prefix?: string; status?: number; dropText?: string }>;
 }
 
 /** DeepL 的两个翻译端点（免费 key 与付费 key） */
@@ -56,6 +71,10 @@ const DEEPL_ENDPOINTS = [
   'https://api-free.deepl.com/v2/translate',
   'https://api.deepl.com/v2/translate',
 ];
+
+/** Bing 的鉴权端点与翻译端点 */
+const BING_AUTH = 'https://edge.microsoft.com/translate/auth';
+const BING_TRANSLATE = 'https://api-edge.cognitive.microsofttranslator.com/';
 
 const STORAGE_KEY = 'pt-e2e-mock';
 
@@ -74,14 +93,56 @@ let failTextsServed = 0;
 /** 已服务的翻译请求总数（#158：断言增量补翻每单元只发一次请求）。 */
 let totalServed = 0;
 
+/** 发给 Google 的原文，按请求顺序（#766：替代用例自己叠的记录层）。 */
+const queries: string[] = [];
+
+/** Bing 翻译端点已服务的请求数（#766）。 */
+let bingServed = 0;
+
+/** 各对话式端点已服务的请求数，键是端点 URL（#766）。 */
+const chatServed: Record<string, number> = {};
+
 /** 测试探针：返回 mock 统计。 */
 export function getE2EMockStats(): {
   failOnceServed: number;
   failServed: number;
   failTextsServed: number;
   totalServed: number;
+  queries: string[];
+  bingServed: number;
+  chatServed: Record<string, number>;
 } {
-  return { failOnceServed, failServed, failTextsServed, totalServed };
+  return {
+    failOnceServed,
+    failServed,
+    failTextsServed,
+    totalServed,
+    queries: [...queries],
+    bingServed,
+    chatServed: { ...chatServed },
+  };
+}
+
+/** 对话式端点：按请求里的编号行回显（#766，原为 core 的 stubChatEndpoint 与 extended 的 stubOpenAI）。 */
+function chatResponse(
+  init: any,
+  stub: { prefix?: string; status?: number; dropText?: string },
+): Response {
+  if (stub.status !== undefined && stub.status !== 200) {
+    return new Response('Unauthorized', { status: stub.status });
+  }
+  const req = JSON.parse(String(init?.body ?? '{}')) as {
+    messages?: Array<{ content?: string }>;
+  };
+  const lines = (req.messages?.[0]?.content ?? '').split('\n').flatMap((l) => {
+    const m = l.match(/^(\d+)\. (.+)$/);
+    if (!m || (stub.dropText && m[2]!.includes(stub.dropText))) return [];
+    return [`${m[1]}. ${stub.prefix ?? ''}${m[2]}`];
+  });
+  return new Response(
+    JSON.stringify({ choices: [{ message: { content: lines.join('\n') } }] }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
 }
 
 /** mock 包裹层函数：带标记字段以便幂等安装 */
@@ -116,12 +177,29 @@ function installStub(): void {
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
     }
+    if (cfg.bing && url.startsWith(BING_AUTH)) {
+      return new Response('mock-jwt-token', { status: 200 });
+    }
+    if (cfg.bing && url.startsWith(BING_TRANSLATE)) {
+      bingServed++;
+      const body = JSON.parse(String(init?.body ?? '[]')) as Array<{ Text: string }>;
+      return new Response(
+        JSON.stringify(body.map((t) => ({ translations: [{ text: `${cfg.bing!.prefix}${t.Text}` }] }))),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    const chat = cfg.chat?.[url];
+    if (chat) {
+      chatServed[url] = (chatServed[url] ?? 0) + 1;
+      return chatResponse(init, chat);
+    }
     if (!url.startsWith('https://translate.googleapis.com/')) {
       return realFetch(input, init);
     }
     const q = new URL(url).searchParams.get('q') ?? '';
     const tl = new URL(url).searchParams.get('tl') ?? '';
     totalServed++;
+    queries.push(q);
     if (cfg.failOnce) {
       // 一次性故障：只活在实例内存里（不持久化）。消费即清除 ——
       // 并发批次消息各自在路由前重读 storage 描述符，若 failOnce

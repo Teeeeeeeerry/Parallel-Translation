@@ -7,7 +7,7 @@
  * 翻译端点由 mockGoogle 拦截，完全确定性，不依赖外网。
  */
 import fs from 'fs';
-import { test, expect, waitForBall } from './fixtures';
+import { test, expect, waitForBall, type MockRequests } from './fixtures';
 import type { UserSiteRules } from '~/src/storage/specialization';
 
 // ── 辅助：触发翻译并等待完成 ──
@@ -1093,43 +1093,41 @@ test.describe('引擎', () => {
     await expect(trans).toContainText('[GOOGLE]');
   });
 
-  test('@core TC-E2E-16: Bing mock 返回译文', async ({
-    page, serviceWorker, seedSettings, gotoFixture,
+  test('@core TC-E2E-16: Bing mock 返回译文；SW 实例被替换后替身自愈、请求记录以“不可信”报错（#766）', async ({
+    page, serviceWorker, mockBing, mockRequests, seedSettings, gotoFixture,
   }) => {
-    // #89: 在 SW 内 stub Bing 的两个端点（CDP route 对 SW 请求拦截不确定）
-    await serviceWorker.evaluate(() => {
-      const realFetch = self.fetch.bind(self);
-      (self as any).fetch = async (input: any, init?: any) => {
-        const url =
-          typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
-        if (url.startsWith('https://edge.microsoft.com/translate/auth')) {
-          return new Response('mock-jwt-token', { status: 200 });
-        }
-        if (
-          url.startsWith('https://api-edge.cognitive.microsofttranslator.com/')
-        ) {
-          const body = JSON.parse((init?.body ?? '[]') as string) as Array<{
-            Text: string;
-          }>;
-          return new Response(
-            JSON.stringify(
-              body.map((t) => ({
-                translations: [{ text: `[BING] ${t.Text}` }],
-              })),
-            ),
-            { status: 200, headers: { 'content-type': 'application/json' } },
-          );
-        }
-        return realFetch(input, init);
-      };
-    });
-
     await seedSettings({ enginePriority: ['bing-edge'] });
+    // 在装替身前捕获真实 fetch，用于模拟 SW 实例被替换（同 TC-E2E-46）
+    await serviceWorker.evaluate(() => {
+      (self as any).__ptRealFetch = self.fetch.bind(self);
+    });
+    // #766：Bing 的鉴权与翻译两个端点走 e2e-mock 描述符，不再由用例改写 self.fetch
+    await mockBing({ prefix: '[BING] ' });
     await gotoFixture('basic');
+    const requests = await mockRequests();
 
     await translateAndWait(page);
 
     const trans = page.locator('.pt-trans').first();
+    await expect(trans).toContainText('[BING]');
+    expect((await requests()).bing).toBeGreaterThan(0);
+
+    // 模拟 SW 实例被替换：SW 上被改写的 fetch 回到真实 fetch，实例内存里的
+    // 存活标记一并消失。改动前用例自己改写的替身到这里就没了，下一次翻译
+    // 直连真实 Bing（本地拿回不带前缀的真实译文，CI 无外网则直接失败）
+    await serviceWorker.evaluate(() => {
+      (self as any).fetch = (self as any).__ptRealFetch;
+      delete (self as any).__ptLiveTokens;
+    });
+    // 替身层的记录随实例清零，读取以“不可信”报错，而不是给出清零后的数
+    await expect(requests()).rejects.toThrow('不可信');
+
+    // 还原后再整页翻译一次：路由前从描述符自愈，译文仍来自替身
+    const ball = page.locator('#pt-host-ball .pt-ball');
+    await ball.click();
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0, { timeout: 10_000 });
+    await ball.click();
+    await expect(page.locator('[data-pt="done"]').first()).toBeVisible({ timeout: 30_000 });
     await expect(trans).toContainText('[BING]');
   });
 });
@@ -1412,7 +1410,7 @@ test.describe('站点页面规则', () => {
   });
 
   test('@core TC-E2E-62: 设置页填写保留原文 → 刷新 → 行内元素原文留在译文里（#373）', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({});
     await mockGoogle();
@@ -1424,29 +1422,15 @@ test.describe('站点页面规则', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     const ball = await waitForBall(page);
 
-    // mock 引擎原样回显原文，译文看不出差别 —— 记下送去引擎的文本。
-    // 记录层带上 mock 层标记，路由前的自愈安装不会再包一层
-    await serviceWorker.evaluate(() => {
-      const inner = (self as any).fetch;
-      const qs: string[] = [];
-      (self as any).__ptE2EQueries = qs;
-      const rec = (input: any, init?: any) => {
-        const url = typeof input === 'string' ? input : input?.url ?? '';
-        if (url.startsWith('https://translate.googleapis.com/')) {
-          qs.push(new URL(url).searchParams.get('q') ?? '');
-        }
-        return inner(input, init);
-      };
-      rec.__ptMockStubbed = true;
-      (self as any).fetch = rec;
-    });
+    // 译文看不出占位符有没有起作用 —— 记下送去引擎的文本（#766：记在替身层）
+    const requests = await mockRequests();
 
     await ball.click();
     const mention = page.locator('p', { hasText: '@alice' });
     await expect(mention).toHaveAttribute('data-pt', 'done', { timeout: 30_000 });
 
     // 送去引擎的是占位符，用户名不在其中；回填后译文里是原文
-    const sent = (await serviceWorker.evaluate(() => (self as any).__ptE2EQueries)) as string[];
+    const sent = (await requests()).queries;
     expect(sent.join('\n')).toMatch(/⟦PT\d+⟧/);
     expect(sent.join('\n')).not.toContain('@alice');
     expect(sent.join('\n')).toContain('useful resource');
@@ -2240,36 +2224,6 @@ test.describe('站点页面规则', () => {
 // 自带 key 引擎：DeepSeek（#609）
 // ================================================================
 
-/** 在 SW 内 stub 一个 OpenAI 兼容的 chat 端点：按请求的编号行回显，译文加上前缀。 */
-async function stubChatEndpoint(
-  sw: import('@playwright/test').Worker,
-  endpoint: string,
-  prefix: string,
-) {
-  await sw.evaluate(({ endpoint, p }: { endpoint: string; p: string }) => {
-    const realFetch = self.fetch.bind(self);
-    (self as any).fetch = async (input: any, init?: any) => {
-      const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
-      if (url === endpoint) {
-        const req = JSON.parse(String(init?.body ?? '{}')) as {
-          messages?: Array<{ content?: string }>;
-        };
-        const lines = (req.messages?.[0]?.content ?? '')
-          .split('\n')
-          .flatMap((l) => {
-            const m = l.match(/^(\d+)\. (.+)$/);
-            return m ? [`${m[1]}. ${p}${m[2]}`] : [];
-          });
-        return new Response(
-          JSON.stringify({ choices: [{ message: { content: lines.join('\n') } }] }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        );
-      }
-      return realFetch(input, init);
-    };
-  }, { endpoint, p: prefix });
-}
-
 /**
  * 把目标语言定成 to，在设置页里存下的其余设置不动（#792）。
  *
@@ -2290,7 +2244,7 @@ const DEEPSEEK_CHAT = 'https://api.deepseek.com/chat/completions';
 
 test.describe('自带 key 引擎：DeepSeek', () => {
   test('@core TC-E2E-103: 设置页填 DeepSeek key 并保存、拖到优先级首位 → 整页翻译用 DeepSeek（#609）', async ({
-    page, serviceWorker, gotoFixture,
+    page, serviceWorker, mockChat, gotoFixture,
   }) => {
     const extId = new URL(serviceWorker.url()).host;
     // e2e 环境自动同意权限申请；测试连接的探测请求在设置页发出
@@ -2341,7 +2295,7 @@ test.describe('自带 key 引擎：DeepSeek', () => {
     await serviceWorker.evaluate(() => {
       chrome.permissions.contains = (async () => true) as typeof chrome.permissions.contains;
     });
-    await stubChatEndpoint(serviceWorker, DEEPSEEK_CHAT, '[DS] ');
+    await mockChat(DEEPSEEK_CHAT, { prefix: '[DS] ' });
     await setTargetLang(serviceWorker, 'zh-CN');
     await gotoFixture('basic');
     await translateAndWait(page);
@@ -2391,7 +2345,7 @@ test.describe('自带 key 引擎：DeepSeek', () => {
   });
 
   test('@core TC-E2E-105: DeepSeek 的访问权限被撤销 → 整页翻译不发请求，提示缺权限的真实原因（#610）', async ({
-    page, serviceWorker, seedSettings, gotoFixture,
+    page, serviceWorker, mockChat, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ enginePriority: ['deepseek'] });
     await serviceWorker.evaluate(async () => {
@@ -2399,16 +2353,8 @@ test.describe('自带 key 引擎：DeepSeek', () => {
       // 在浏览器扩展管理里撤销了访问权限
       chrome.permissions.contains = (async () => false) as typeof chrome.permissions.contains;
     });
-    await stubChatEndpoint(serviceWorker, DEEPSEEK_CHAT, '[DS] ');
-    await serviceWorker.evaluate(() => {
-      const inner = (self as any).fetch.bind(self);
-      (self as any).__ptDeepSeekCalls = 0;
-      (self as any).fetch = async (input: any, init?: any) => {
-        const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
-        if (url.startsWith('https://api.deepseek.com/')) (self as any).__ptDeepSeekCalls++;
-        return inner(input, init);
-      };
-    });
+    await mockChat(DEEPSEEK_CHAT, { prefix: '[DS] ' });
+    const requests = await mockRequests();
     await gotoFixture('basic');
 
     const ball = await waitForBall(page);
@@ -2418,7 +2364,7 @@ test.describe('自带 key 引擎：DeepSeek', () => {
     );
     const toast = page.locator('#pt-host-toast .pt-toast[data-kind="error"]');
     await expect(toast).toHaveText(expected, { timeout: 30_000 });
-    expect(await serviceWorker.evaluate(() => (self as any).__ptDeepSeekCalls)).toBe(0);
+    expect((await requests()).chat[DEEPSEEK_CHAT] ?? 0).toBe(0);
   });
 });
 
@@ -2428,7 +2374,7 @@ test.describe('自带 key 引擎：DeepSeek', () => {
 
 test.describe('自带 key 引擎：Grok', () => {
   test('@core TC-E2E-107: 设置页填 Grok key 并保存、拖到优先级首位 → 整页翻译用 Grok（#613）', async ({
-    page, serviceWorker, gotoFixture,
+    page, serviceWorker, mockChat, gotoFixture,
   }) => {
     const extId = new URL(serviceWorker.url()).host;
     // e2e 环境自动同意权限申请；测试连接发的最小 chat 请求在设置页发出
@@ -2487,7 +2433,7 @@ test.describe('自带 key 引擎：Grok', () => {
     await serviceWorker.evaluate(() => {
       chrome.permissions.contains = (async () => true) as typeof chrome.permissions.contains;
     });
-    await stubChatEndpoint(serviceWorker, 'https://api.x.ai/v1/chat/completions', '[GK] ');
+    await mockChat('https://api.x.ai/v1/chat/completions', { prefix: '[GK] ' });
     await setTargetLang(serviceWorker, 'zh-CN');
     await gotoFixture('basic');
     await translateAndWait(page);
@@ -3223,26 +3169,17 @@ test.describe('输入翻译：点圆点翻译', () => {
   const DOT = '#pt-host-input-dot .pt-input-dot';
   const TOAST = '#pt-host-toast .pt-toast';
 
-  /** 记录发给 Google 的原文（叠在 mock 层之上，同 TC-E2E-67）。 */
-  async function recordGoogleQueries(sw: import('@playwright/test').Worker) {
-    await sw.evaluate(() => {
-      const inner = (self as any).fetch.bind(self);
-      (self as any).__ptQueries = [] as string[];
-      const recorder = async (input: any, init?: any) => {
-        const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
-        if (url.startsWith('https://translate.googleapis.com/')) {
-          (self as any).__ptQueries.push(new URL(url).searchParams.get('q') ?? '');
-        }
-        return inner(input, init);
-      };
-      (recorder as any).__ptMockStubbed = true;
-      (self as any).fetch = recorder;
-    });
-    return () => sw.evaluate(() => [...(self as any).__ptQueries] as string[]);
+  /**
+   * 记录发给 Google 的原文（#766）：记在替身层，SW 中途换了实例时以“不可信”
+   * 报错，不在清零后的记录上断言“零请求”。
+   */
+  async function recordGoogleQueries(mockRequests: () => Promise<() => Promise<MockRequests>>) {
+    const requests = await mockRequests();
+    return async () => (await requests()).queries;
   }
 
   test('@core TC-E2E-112: 点圆点 → 译成源语言，术语照常生效（#639；#644 起译文写回输入框）', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     // ADR-0005：目标语言取源语言。当前领域按目标语言解析，所以领域是 en 方向的
     await seedSettings({ from: 'en', to: 'zh-CN' });
@@ -3262,7 +3199,7 @@ test.describe('输入翻译：点圆点翻译', () => {
         },
       }),
     );
-    const queries = await recordGoogleQueries(serviceWorker);
+    const queries = await recordGoogleQueries(mockRequests);
 
     await gotoFixture('input');
     await waitForBall(page);
@@ -3342,12 +3279,12 @@ test.describe('输入翻译：点圆点翻译', () => {
   });
 
   test('@core TC-E2E-117: 翻译进行中连点圆点只发一次请求，框里文字一个字不动；完成后恢复可点（#647）', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ from: 'en' });
     // 译文晚 1.5 秒回来，连点都落在翻译进行中
     await mockGoogle({ delayMs: 1_500 });
-    const queries = await recordGoogleQueries(serviceWorker);
+    const queries = await recordGoogleQueries(mockRequests);
 
     await gotoFixture('input');
     await waitForBall(page);
@@ -3375,11 +3312,11 @@ test.describe('输入翻译：点圆点翻译', () => {
   });
 
   test('@core TC-E2E-118: 源语言是 auto（默认）且页面没有语言声明时点圆点 → 不发请求，提示去设置里指定源语言，框里文字不动（#640；#658 起有声明时按声明翻译）', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({});
     await mockGoogle();
-    const queries = await recordGoogleQueries(serviceWorker);
+    const queries = await recordGoogleQueries(mockRequests);
     const hint = await serviceWorker.evaluate(() =>
       chrome.i18n.getMessage('toastInputSourceLangNeeded'),
     );
@@ -3400,11 +3337,11 @@ test.describe('输入翻译：点圆点翻译', () => {
   });
 
   test('@core TC-E2E-125: 源语言是 auto（默认）时按页面的语言声明翻译，取语言码主段；声明畸形时仍提示去指定源语言（#658）', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({});
     await mockGoogle({ echoTargetLang: true });
-    const queries = await recordGoogleQueries(serviceWorker);
+    const queries = await recordGoogleQueries(mockRequests);
     const hint = await serviceWorker.evaluate(() =>
       chrome.i18n.getMessage('toastInputSourceLangNeeded'),
     );
@@ -3438,11 +3375,11 @@ test.describe('输入翻译：点圆点翻译', () => {
   });
 
   test('@core TC-E2E-127: 写的已经是对方的语言 → 不替换、不发请求并提示；zh-CN 与 zh-TW 不算同语言（#661）', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({});
     await mockGoogle({ echoTargetLang: true });
-    const queries = await recordGoogleQueries(serviceWorker);
+    const queries = await recordGoogleQueries(mockRequests);
     const hint = await serviceWorker.evaluate(() =>
       chrome.i18n.getMessage('toastInputSameLanguage'),
     );
@@ -3548,11 +3485,11 @@ test.describe('输入翻译：点圆点翻译', () => {
   });
 
   test('@core TC-E2E-130: 受控编辑器里同样有原文快照、在飞标记与转圈 —— 进行中再点不发第二次请求，送翻后又打了字就不覆盖、译文进提示条（#656）', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ from: 'en' });
     await mockGoogle({ delayMs: 1_500 });
-    const queries = await recordGoogleQueries(serviceWorker);
+    const queries = await recordGoogleQueries(mockRequests);
     await gotoFixture('rich-input');
     await waitForBall(page);
     const dot = page.locator(DOT);
@@ -3648,11 +3585,11 @@ test.describe('输入翻译：点圆点翻译', () => {
   });
 
   test('@core TC-E2E-133: 输入超过阅读侧单元上限（3072 字符）→ 不发请求、不分段，提示删减；刚好等于上限照常翻译（#643）', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ from: 'en' });
     await mockGoogle();
-    const queries = await recordGoogleQueries(serviceWorker);
+    const queries = await recordGoogleQueries(mockRequests);
     const hint = await serviceWorker.evaluate(() =>
       chrome.i18n.getMessage('toastInputTooLong', ['3072']),
     );
@@ -3736,11 +3673,11 @@ test.describe('输入翻译：点圆点翻译', () => {
   });
 
   test('@core TC-E2E-113: 站点被拉黑时圆点不出现，打字、聚焦都零请求（#639；#649 起圆点不注册）', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ from: 'en', siteList: { mode: 'blacklist', list: ['localhost'] } });
     await mockGoogle();
-    const queries = await recordGoogleQueries(serviceWorker);
+    const queries = await recordGoogleQueries(mockRequests);
 
     await gotoFixture('input');
     await waitForBall(page);
@@ -4592,30 +4529,8 @@ test.describe('划词翻译的提示（#726）', () => {
 test.describe('页面级闸门（#777）', () => {
   const TOAST = '#pt-host-toast .pt-toast';
 
-  /**
-   * 翻译请求计数：读 e2e-mock 替身层自己记的已服务请求数（#723 的描述符写法，
-   * SW 换了实例也会在下一次翻译路由前自愈）。计数只活在 SW 实例内存里，SW
-   * 若中途被回收重启会清零，“零请求”就会假绿 —— 所以先在 SW 上打一个存活
-   * 标记，读计数时标记必须还在，否则以“计数不可信”报错而不是放行（#766）。
-   */
-  async function requestCounter(sw: import('@playwright/test').Worker) {
-    const token = `pt-${Date.now()}-${Math.random()}`;
-    await sw.evaluate((t: string) => {
-      (self as any).__ptLiveToken = t;
-    }, token);
-    const base: number = await sw.evaluate(() => (self as any).getE2EMockStats().totalServed);
-    return async () => {
-      const { live, served } = await sw.evaluate((t: string) => ({
-        live: (self as any).__ptLiveToken === t,
-        served: (self as any).getE2EMockStats().totalServed as number,
-      }), token);
-      if (!live) throw new Error('service worker 中途被替换，替身层的请求计数已清零，不可信');
-      return served - base;
-    };
-  }
-
   test('@core TC-E2E-153: 本来就是目标语言的页面上点整页翻译 —— 零请求、页面逐字节不变、弹出说明、悬浮球是未翻译态；同页划词照常能翻（#795）', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     // 夹具声明 lang="zh-CN"，目标语言 zh-CN
     await seedSettings({ to: 'zh-CN' });
@@ -4626,7 +4541,8 @@ test.describe('页面级闸门（#777）', () => {
 
     const content = () => page.locator('#content').evaluate((el) => el.outerHTML);
     const before = await content();
-    const requests = await requestCounter(serviceWorker);
+    // 计数记在替身层，读之前先认 SW 存活标记：实例中途被换就以“不可信”报错（#766）
+    const requests = await mockRequests();
     const message = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastPageSameLanguage'));
 
     await ball.click();
@@ -4642,14 +4558,14 @@ test.describe('页面级闸门（#777）', () => {
     expect(await content()).toBe(before);
     await expect(page.locator('[data-pt], .pt-chunk, [data-pt-split]')).toHaveCount(0);
     // 一个翻译请求都没发
-    expect(await requests()).toBe(0);
+    expect((await requests()).google).toBe(0);
 
     // 再点一次：页面上没有译文可还原，仍是同一条说明，页面仍逐字节不变，仍零请求
     await ball.click();
     await expect(toast).toHaveText(message, { timeout: 10_000 });
     await expect(ball).toHaveAttribute('data-state', 'idle');
     expect(await content()).toBe(before);
-    expect(await requests()).toBe(0);
+    expect((await requests()).google).toBe(0);
 
     // 同一页面上划中那段英文引文：闸门只管整页，划词照常送翻（#794）。
     // 计数随之变成 1，也证明上面的“零”不是计数器失灵
@@ -4666,7 +4582,7 @@ test.describe('页面级闸门（#777）', () => {
     await expect(page.locator(`${TOAST}[data-purpose="content"]`)).toContainText(`【译】${quote}`, {
       timeout: 20_000,
     });
-    expect(await requests()).toBe(1);
+    expect((await requests()).google).toBe(1);
     expect(await content()).toBe(before);
   });
 

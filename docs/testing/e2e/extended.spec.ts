@@ -25,109 +25,15 @@
  * #535：TC-E2E-88 覆盖设置页读取领域失败时的提示。
  * #590：TC-E2E-100 覆盖导入 GBK 编码、两列、带中文表头的术语 CSV。
  * #603：TC-E2E-101 覆盖在“新建领域”卡片里从术语 CSV 直接新建领域。
- * 网络全部走 SW 内 stub（google mock / bing / openai），完全确定性；
+ * 网络全部走 e2e-mock 描述符替身（google / bing / openai，#766），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
 import fs from 'fs';
 import { test, expect, fixtureFileUrl, fixtureUrl, waitForBall } from './fixtures';
-import type { Page, Worker } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-// ── 辅助：在 SW 内 stub Bing 两个端点（与 core.spec.ts TC-E2E-16 同法）──
-async function stubBing(sw: Worker, prefix = '[BING] ') {
-  await sw.evaluate(
-    (p: string) => {
-      const realFetch = self.fetch.bind(self);
-      (self as any).fetch = async (input: any, init?: any) => {
-        const url =
-          typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
-        if (url.startsWith('https://edge.microsoft.com/translate/auth')) {
-          return new Response('mock-jwt-token', { status: 200 });
-        }
-        if (url.startsWith('https://api-edge.cognitive.microsofttranslator.com/')) {
-          const body = JSON.parse((init?.body ?? '[]') as string) as Array<{
-            Text: string;
-          }>;
-          return new Response(
-            JSON.stringify(
-              body.map((t) => ({
-                translations: [{ text: `${p}${t.Text}` }],
-              })),
-            ),
-            { status: 200, headers: { 'content-type': 'application/json' } },
-          );
-        }
-        return realFetch(input, init);
-      };
-    },
-    prefix,
-  );
-}
-
-// ── 辅助：在 SW 内 stub OpenAI 端点（BYOK）──
-// content: 固定编号输出；dropText: 按请求编号行回显并去掉含该文本的行
-// （模拟 LLM 漏行 —— parseNumbered 须按编号回填，其余不错位）
-async function stubOpenAI(
-  sw: Worker,
-  opts: { status?: number; content?: string; dropText?: string } = {},
-) {
-  const { status = 200, content = '', dropText } = opts;
-  await sw.evaluate(
-    (cfg: { status: number; content: string; dropText?: string }) => {
-      const realFetch = self.fetch.bind(self);
-      (self as any).fetch = async (input: any, init?: any) => {
-        const url =
-          typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
-        if (url.startsWith('https://api.openai.com/')) {
-          if (cfg.status !== 200) {
-            return new Response('Unauthorized', { status: cfg.status });
-          }
-          let body = cfg.content;
-          if (cfg.dropText) {
-            const req = JSON.parse((init?.body ?? '{}') as string) as {
-              messages?: Array<{ content?: string }>;
-            };
-            const prompt = req.messages?.[0]?.content ?? '';
-            body = prompt
-              .split('\n')
-              .filter(
-                (l) =>
-                  !/^\s*\d+[.、)]\s*/.test(l) ||
-                  !l.includes(cfg.dropText!),
-              )
-              .join('\n');
-          }
-          return new Response(
-            JSON.stringify({ choices: [{ message: { content: body } }] }),
-            { status: 200, headers: { 'content-type': 'application/json' } },
-          );
-        }
-        return realFetch(input, init);
-      };
-    },
-    { status, content, dropText },
-  );
-}
-
-// ── 辅助：请求计数包裹层 —— 统计 google/openai 请求，委托给当前 fetch ──
-async function installRequestCounter(sw: Worker) {
-  await sw.evaluate(() => {
-    if ((self as any).__ptReqCounter) return;
-    const inner = (self as any).fetch.bind(self);
-    const counts = { google: 0, openai: 0 };
-    (self as any).__ptReqCounter = counts;
-    (self as any).fetch = async (input: any, init?: any) => {
-      const url =
-        typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
-      if (url.startsWith('https://translate.googleapis.com/')) counts.google++;
-      if (url.startsWith('https://api.openai.com/')) counts.openai++;
-      return inner(input, init);
-    };
-  });
-}
-
-async function getReqCounts(sw: Worker): Promise<{ google: number; openai: number }> {
-  return sw.evaluate(() => ({ ...(self as any).__ptReqCounter }));
-}
+/** OpenAI 的对话端点：替身由 mockChat 按这个 URL 登记（#766） */
+const OPENAI_CHAT = 'https://api.openai.com/v1/chat/completions';
 
 // ── 辅助：注入 N 个已知文本的段落（翻译前调用，采集器会一起收走）──
 async function injectParagraphs(page: Page, texts: string[]) {
@@ -144,11 +50,11 @@ async function injectParagraphs(page: Page, texts: string[]) {
 
 test.describe('故障切换 @extended', () => {
   test('TC-E2E-31: mock Google 500 → 自动切 Bing', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockBing, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ enginePriority: ['google-web', 'bing-edge'] });
     await mockGoogle({ fail: true, prefix: '[GOOGLE] ' });
-    await stubBing(serviceWorker, '[BING] ');
+    await mockBing({ prefix: '[BING] ' });
     await gotoFixture('basic');
 
     const ball = await waitForBall(page);
@@ -182,12 +88,12 @@ test.describe('故障切换 @extended', () => {
   });
 
   test('TC-E2E-33: 3/5 段成功 → 成功段渲染 + 失败段交给下一引擎', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockBing, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ enginePriority: ['google-web', 'bing-edge'] });
     const texts = ['Alpha one', 'Bravo two', 'Charlie fail', 'Delta four', 'Echo fail'];
     await mockGoogle({ prefix: '[GOOGLE] ', failTexts: ['Charlie fail', 'Echo fail'] });
-    await stubBing(serviceWorker, '[BING] ');
+    await mockBing({ prefix: '[BING] ' });
     await gotoFixture('basic');
     await injectParagraphs(page, texts);
     await waitForBall(page);
@@ -212,7 +118,7 @@ test.describe('故障切换 @extended', () => {
   });
 
   test('TC-E2E-64: Google 部分成功 + 下一个引擎 key 无效 → 成功段渲染，toast 显示真实原因（#440）', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockChat, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ enginePriority: ['google-web', 'openai'] });
     await serviceWorker.evaluate(() => {
@@ -220,8 +126,8 @@ test.describe('故障切换 @extended', () => {
     });
     const texts = ['Alpha one', 'Bravo two', 'Charlie fail'];
     await mockGoogle({ prefix: '[GOOGLE] ', failTexts: ['Charlie fail'] });
-    await stubOpenAI(serviceWorker, { status: 401 });
-    await installRequestCounter(serviceWorker);
+    await mockChat(OPENAI_CHAT, { status: 401 });
+    const requests = await mockRequests();
     await gotoFixture('basic');
     await injectParagraphs(page, texts);
 
@@ -240,8 +146,7 @@ test.describe('故障切换 @extended', () => {
     await expect(toast).toHaveText(/API key/);
     await expect(page.locator('p', { hasText: 'Charlie fail' }).locator('.pt-trans')).toHaveCount(0);
     // 失败段只交给 openai 一次：不可重试的失败不做批次重试
-    const counts = await getReqCounts(serviceWorker);
-    expect(counts.openai).toBe(1);
+    expect((await requests()).chat[OPENAI_CHAT]).toBe(1);
   });
 });
 
@@ -273,11 +178,13 @@ test.describe('样式 @extended', () => {
 
 test.describe('边界情况 @extended', () => {
   test('TC-E2E-39: enabled=false → 不发送翻译请求', async ({
-    page, serviceWorker, seedSettings, gotoFixture,
+    page, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ enabled: false });
+    // 装上替身：万一发了请求，也是替身接住并记下，不会打到真实 Google
+    await mockGoogle();
     await gotoFixture('basic');
-    await installRequestCounter(serviceWorker);
+    const requests = await mockRequests();
 
     const ball = await waitForBall(page);
     await ball.click();
@@ -285,20 +192,19 @@ test.describe('边界情况 @extended', () => {
     // 翻译请求为零；悬浮球短暂 loading 后回到 idle，页面无译文
     await expect(ball).toHaveAttribute('data-state', 'idle', { timeout: 10_000 });
     await expect(page.locator('[data-pt="done"]')).toHaveCount(0);
-    const counts = await getReqCounts(serviceWorker);
-    expect(counts.google).toBe(0);
+    expect((await requests()).google).toBe(0);
   });
 
   test('TC-E2E-40: BYOK key 无效 → 直接报错不故障切换', async ({
-    page, serviceWorker, seedSettings, gotoFixture,
+    page, serviceWorker, mockChat, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ enginePriority: ['openai', 'google-web'] });
     // 无效 key：openai 401 → 非 retryable 错误，router 不得尝试 google
     await serviceWorker.evaluate(() => {
       chrome.storage.local.set({ 'pt-keys': { openai: 'invalid-key' } });
     });
-    await stubOpenAI(serviceWorker, { status: 401 });
-    await installRequestCounter(serviceWorker);
+    await mockChat(OPENAI_CHAT, { status: 401 });
+    const requests = await mockRequests();
     await gotoFixture('basic');
 
     const ball = await waitForBall(page);
@@ -306,14 +212,15 @@ test.describe('边界情况 @extended', () => {
 
     const toast = page.locator('#pt-host-toast .pt-toast[data-kind="error"]');
     await expect(toast).toBeVisible({ timeout: 40_000 });
-    // 请求确实打到了 openai，且 google 零请求 —— 无故障切换
-    const counts = await getReqCounts(serviceWorker);
-    expect(counts.openai).toBeGreaterThan(0);
+    // 请求确实打到了 openai，且 google 零请求 —— 无故障切换。
+    // 只装了 OpenAI 的替身时，Google 端点同样被替身接住并计数
+    const counts = await requests();
+    expect(counts.chat[OPENAI_CHAT]).toBeGreaterThan(0);
     expect(counts.google).toBe(0);
   });
 
   test('TC-E2E-41: 译文条目数不足 → 缺的填空串其余不错位', async ({
-    page, serviceWorker, seedSettings, gotoFixture,
+    page, serviceWorker, mockChat, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ enginePriority: ['openai'] });
     await serviceWorker.evaluate(() => {
@@ -321,7 +228,7 @@ test.describe('边界情况 @extended', () => {
     });
     // LLM 漏掉含 'P two' 的行 —— parseNumbered 按编号回填：缺失槽位空串，
     // 其余槽位仍对齐自己的编号，不发生整体错位
-    await stubOpenAI(serviceWorker, { dropText: 'P two' });
+    await mockChat(OPENAI_CHAT, { dropText: 'P two' });
     await gotoFixture('basic');
     await injectParagraphs(page, ['P one', 'P two', 'P three']);
     await waitForBall(page);
@@ -451,7 +358,7 @@ test.describe('边界情况 @extended', () => {
   });
 
   test('TC-E2E-67: 逐段翻译与划词翻译带上当前领域，排除区域内的文字划词后术语照样生效（#383/#384）', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({});
     await mockGoogle();
@@ -475,21 +382,9 @@ test.describe('边界情况 @extended', () => {
         'pt-site-rules': { user: [{ site: 'localhost', scope: [], exclude: ['ul'], preserve: [] }] },
       }),
     );
-    // 记录发给 Google 的原文；带上 mock 层的标记，免得路由前被 mock 重新包在外层
-    await serviceWorker.evaluate(() => {
-      const inner = (self as any).fetch.bind(self);
-      (self as any).__ptQueries = [] as string[];
-      const recorder = async (input: any, init?: any) => {
-        const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
-        if (url.startsWith('https://translate.googleapis.com/')) {
-          (self as any).__ptQueries.push(new URL(url).searchParams.get('q') ?? '');
-        }
-        return inner(input, init);
-      };
-      (recorder as any).__ptMockStubbed = true;
-      (self as any).fetch = recorder;
-    });
-    const queries = () => serviceWorker.evaluate(() => [...(self as any).__ptQueries] as string[]);
+    // 记录发给 Google 的原文（#766：记在替身层，SW 中途换了实例时以“不可信”报错）
+    const requests = await mockRequests();
+    const queries = async () => (await requests()).queries;
 
     await gotoFixture('basic');
     await waitForBall(page);
@@ -527,7 +422,7 @@ test.describe('边界情况 @extended', () => {
   });
 
   test('TC-E2E-70: 跨域 iframe 里的文字按顶层页面判定当前领域，全页翻译与拖选划词的术语都生效（#471）', async ({
-    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({});
     await mockGoogle();
@@ -551,20 +446,8 @@ test.describe('边界情况 @extended', () => {
       }),
     );
     // 记录发给 Google 的原文（同 TC-E2E-67）
-    await serviceWorker.evaluate(() => {
-      const inner = (self as any).fetch.bind(self);
-      (self as any).__ptQueries = [] as string[];
-      const recorder = async (input: any, init?: any) => {
-        const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
-        if (url.startsWith('https://translate.googleapis.com/')) {
-          (self as any).__ptQueries.push(new URL(url).searchParams.get('q') ?? '');
-        }
-        return inner(input, init);
-      };
-      (recorder as any).__ptMockStubbed = true;
-      (self as any).fetch = recorder;
-    });
-    const queries = () => serviceWorker.evaluate(() => [...(self as any).__ptQueries] as string[]);
+    const requests = await mockRequests();
+    const queries = async () => (await requests()).queries;
 
     await gotoFixture('iframe-cross');
     await waitForBall(page);
@@ -1270,7 +1153,7 @@ test.describe('设置页：翻译领域 @extended', () => {
 
 test.describe('popup：翻译领域 @extended', () => {
   test('TC-E2E-77: popup 临时切换领域与“无领域” → 只影响本标签页之后的翻译，刷新后回到自动（#400）', async ({
-    page, context, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+    page, context, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     await seedSettings({});
     await mockGoogle();
@@ -1293,23 +1176,8 @@ test.describe('popup：翻译领域 @extended', () => {
       }),
     );
     // 记录发给 Google 的原文（同 TC-E2E-67）
-    await serviceWorker.evaluate(() => {
-      const inner = (self as any).fetch.bind(self);
-      (self as any).__ptQueries = [] as string[];
-      const recorder = async (input: any, init?: any) => {
-        const url = typeof input === 'string' ? input : input?.url ?? input?.href ?? '';
-        if (url.startsWith('https://translate.googleapis.com/')) {
-          (self as any).__ptQueries.push(new URL(url).searchParams.get('q') ?? '');
-        }
-        return inner(input, init);
-      };
-      (recorder as any).__ptMockStubbed = true;
-      (self as any).fetch = recorder;
-    });
-    const sent = async (text: string) =>
-      (await serviceWorker.evaluate(() => [...(self as any).__ptQueries] as string[])).some((q) =>
-        q.includes(text),
-      );
+    const requests = await mockRequests();
+    const sent = async (text: string) => (await requests()).queries.some((q) => q.includes(text));
     const MANUAL = 'Another ⟦TM0⟧ with different content. The quick brown fox';
     const SITE = 'Another paragraph with different content. The quick brown ⟦TM0⟧ jumps';
     const PLAIN = 'Another paragraph with different content. The quick brown fox jumps';
