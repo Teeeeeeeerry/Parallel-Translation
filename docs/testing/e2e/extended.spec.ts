@@ -624,6 +624,9 @@ test.describe('设置页：翻译领域 @extended', () => {
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="domains"]');
+    // 提示文案随浏览器界面语言（CI 是英文）
+    const msg = (key: string, subs: string[] = []) =>
+      page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
     const terms = page.locator('.pt-domain-item', { hasText: '法律/合同' }).locator('.pt-domain-terms');
     await terms.locator('summary').click();
     // #527：记下被释放的临时链接。Firefox 的下载异步开始，触发下载时就释放会下载失败
@@ -650,7 +653,7 @@ test.describe('设置页：翻译领域 @extended', () => {
         '"the ""Act""",“该法”,false\r\n' +
         'Esq.,,true\r\n',
     );
-    await expect(page.locator('#pt-toast')).toHaveText('术语已导出');
+    await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsExported'));
   });
 
   test('TC-E2E-80: 领域卡片导入术语 CSV → 与已有术语合并，同一原词以导入为准；导入到内置领域写入叠加层（#403）', async ({
@@ -681,13 +684,16 @@ test.describe('设置页：翻译领域 @extended', () => {
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="domains"]');
+    // 提示文案随浏览器界面语言（CI 是英文）
+    const msg = (key: string, subs: string[] = []) =>
+      page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
     const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms');
     await terms.locator('summary').click();
 
     await terms.locator('input[type="file"]').setInputFiles(
       csv('TORT,侵权行为,false\r\n"terms, conditions",条款，条件,false\r\n'),
     );
-    await expect(page.locator('#pt-toast')).toHaveText('已导入 2 条术语');
+    await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsImported', ['2']));
     expect((await stored()).user[0].terms).toEqual([
       { source: 'TORT', target: '侵权行为' },
       { source: 'Esq.', noTranslate: true },
@@ -704,7 +710,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' }).locator('.pt-domain-terms');
     await builtin.locator('summary').click();
     await builtin.locator('input[type="file"]').setInputFiles(csv('monorepo,单仓库,false\r\n'));
-    await expect(page.locator('#pt-toast')).toHaveText('已导入 1 条术语');
+    await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsImported', ['1']));
     expect((await stored()).builtin['builtin:software-zh-CN'].terms).toEqual([
       { source: 'monorepo', target: '单仓库' },
     ]);
@@ -717,7 +723,7 @@ test.describe('设置页：翻译领域 @extended', () => {
       void d.dismiss();
     });
     await terms.locator('.pt-domain-terms-import').click();
-    expect(message).toBe('术语表有未保存的修改，导入后会被替换。继续导入吗？');
+    expect(message).toBe(await msg('domainTermsImportDiscard'));
     await expect(terms.locator('.pt-term-target').first()).toHaveValue('改了没保存');
   });
 
@@ -743,6 +749,9 @@ test.describe('设置页：翻译领域 @extended', () => {
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="domains"]');
+    // 提示文案随浏览器界面语言（CI 是英文）
+    const msg = (key: string, subs: string[] = []) =>
+      page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
     const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms');
     await terms.locator('summary').click();
 
@@ -750,9 +759,9 @@ test.describe('设置页：翻译领域 @extended', () => {
     await terms.locator('input[type="file"]').setInputFiles(
       csv('tort,侵权,false\r\nonly-two,列\r\n,被告,false\r\nEsq.,,true\r\n'),
     );
-    await expect(page.locator('#pt-toast')).toHaveText('已导入 2 条术语，跳过 2 行');
+    await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsImportedSkipped', ['2', '2']));
     await expect(terms.locator('.pt-domain-terms-error')).toHaveText(
-      '第 3 行：列数不对，应为 3 列\n第 4 行：原词为空',
+      `${await msg('domainTermsSkipColumnsHeader', ['3', '3'])}\n${await msg('domainTermsSkipMissingSource', ['4'])}`,
     );
     expect((await stored()).user[0].terms).toEqual([
       { source: 'tort', target: '侵权' },
@@ -764,11 +773,11 @@ test.describe('设置页：翻译领域 @extended', () => {
     await terms.locator('input[type="file"]').setInputFiles(
       csv(Array.from({ length: N }, (_, i) => `term-${i},译法 ${i},false\r\n`).join('')),
     );
-    await expect(page.locator('#pt-toast')).toHaveText(`已导入 ${N} 条术语`, { timeout: 30_000 });
+    await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsImported', [String(N)]), { timeout: 30_000 });
     await expect(terms.locator('.pt-domain-terms-error')).toBeHidden();
     await expect(terms.locator('tbody tr')).toHaveCount(N + 2, { timeout: 30_000 });
     await terms.locator('.pt-domain-terms-actions .pt-btn:not(.pt-btn-secondary)').click();
-    await expect(page.locator('#pt-toast')).toHaveText('已保存术语', { timeout: 30_000 });
+    await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsSaved'), { timeout: 30_000 });
     expect((await stored()).user[0].terms).toHaveLength(N + 2);
 
     // 通用设置照常保存
@@ -918,6 +927,9 @@ test.describe('设置页：翻译领域 @extended', () => {
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="domains"]');
+    // 提示文案随浏览器界面语言（CI 是英文）
+    const msg = (key: string, subs: string[] = []) =>
+      page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
     const item = page.locator('.pt-domain-item', { hasText: '待删除' });
     await expect(item).toBeVisible();
 
@@ -930,7 +942,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     // 新建失败：提示原因（不带“[PT] ”前缀），名称留在输入框，列表里没有新领域
     await page.fill('#pt-domain-name-input', '法律');
     await page.click('#pt-domain-create-btn');
-    await expect(toast).toHaveText('新建领域失败：存储配额已满');
+    await expect(toast).toHaveText(await msg('domainCreateFailed', ['存储配额已满']));
     await expect(page.locator('#pt-domain-name-input')).toHaveValue('法律');
     await expect(page.locator('.pt-domain-item', { hasText: '法律' })).toHaveCount(0);
 
@@ -938,12 +950,12 @@ test.describe('设置页：翻译领域 @extended', () => {
     page.once('dialog', (d) => void d.accept());
     // 只取领域行自己的删除按钮，术语行里也有同名按钮
     await item.locator(':scope > .pt-site-remove').click();
-    await expect(toast).toHaveText('删除领域失败：存储配额已满');
+    await expect(toast).toHaveText(await msg('domainDeleteFailed', ['存储配额已满']));
     await expect(item).toBeVisible();
 
     // 调整顺序失败（#394）：提示原因，顺序不变
     await item.locator(':scope > .pt-domain-move[data-direction="up"]').click();
-    await expect(toast).toHaveText('调整顺序失败：存储配额已满');
+    await expect(toast).toHaveText(await msg('domainMoveFailed', ['存储配额已满']));
     await expect(page.locator('.pt-domain-item .pt-domain-name')).toHaveText(['软件开发(简体中文)', '待删除']);
   });
 
@@ -991,6 +1003,9 @@ test.describe('设置页：翻译领域 @extended', () => {
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="domains"]');
+    // 提示文案随浏览器界面语言（CI 是英文）
+    const msg = (key: string, subs: string[] = []) =>
+      page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
     const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' });
     const terms = builtin.locator('.pt-domain-terms');
     await terms.locator('summary').click();
@@ -1004,7 +1019,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     await expect(row.locator('.pt-term-source')).toHaveAttribute('readonly', '');
     await row.locator('.pt-site-remove').click();
     await terms.locator('.pt-domain-terms-actions .pt-btn:not(.pt-btn-secondary)').click();
-    await expect(page.locator('#pt-toast')).toHaveText('已保存术语');
+    await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsSaved'));
 
     await page.reload();
     await page.click('.pt-nav-btn[data-section="domains"]');
@@ -1019,6 +1034,9 @@ test.describe('设置页：翻译领域 @extended', () => {
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="domains"]');
+    // 提示文案随浏览器界面语言（CI 是英文）
+    const msg = (key: string, subs: string[] = []) =>
+      page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
     const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' });
     const sites = builtin.locator('.pt-domain-sites');
     await sites.locator('summary').click();
@@ -1030,7 +1048,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     const after = [...before.filter((s) => s !== 'gitlab.com'), 'gitee.com'];
     await textarea.fill(after.join('\n'));
     await sites.locator('.pt-btn').click();
-    await expect(page.locator('#pt-toast')).toHaveText('已保存适用网址');
+    await expect(page.locator('#pt-toast')).toHaveText(await msg('domainSitesSaved'));
 
     await page.reload();
     await page.click('.pt-nav-btn[data-section="domains"]');
@@ -1052,6 +1070,9 @@ test.describe('设置页：翻译领域 @extended', () => {
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="domains"]');
+    // 提示文案随浏览器界面语言（CI 是英文）
+    const msg = (key: string, subs: string[] = []) =>
+      page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
     const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' });
     const mine = page.locator('.pt-domain-item', { hasText: '我的开发' });
     const reset = builtin.locator(':scope > .pt-domain-reset');
@@ -1085,7 +1106,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     // 确认后恢复，按钮消失
     page.once('dialog', (d) => void d.accept());
     await reset.click();
-    await expect(page.locator('#pt-toast')).toHaveText('已恢复默认');
+    await expect(page.locator('#pt-toast')).toHaveText(await msg('domainResetDone'));
     await expect(reset).toHaveCount(0);
     await expect(textarea).toHaveValue(original);
     expect(await overlay()).toBeNull();
@@ -1113,10 +1134,13 @@ test.describe('设置页：翻译领域 @extended', () => {
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="domains"]');
+    // 提示文案随浏览器界面语言（CI 是英文）
+    const msg = (key: string, subs: string[] = []) =>
+      page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
     const names = page.locator('.pt-domain-item .pt-domain-name');
     await expect(names).toHaveText(['软件开发(简体中文)', '大术语表', '小领域']);
     const big = page.locator('.pt-domain-item', { hasText: '大术语表' }).locator('.pt-domain-terms');
-    await expect(big.locator('summary')).toHaveText(`术语（${N}）`);
+    await expect(big.locator('summary')).toHaveText(await msg('domainTermsSummary', [String(N)]));
 
     // 收起状态下调整另一个领域的顺序：每次都整表重绘
     const small = () => page.locator('.pt-domain-item', { hasText: '小领域' });
@@ -1139,12 +1163,12 @@ test.describe('设置页：翻译领域 @extended', () => {
     await expect(rows).toHaveCount(N);
     await rows.nth(N - 1).locator('input').nth(1).fill('新译法');
     await big.locator('.pt-domain-terms-actions .pt-btn:not(.pt-btn-secondary)').click();
-    await expect(page.locator('#pt-toast')).toHaveText('已保存术语');
+    await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsSaved'));
     const stored = await serviceWorker.evaluate(
       async () => (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any,
     );
     expect(stored.user[0].terms[N - 1]).toEqual({ source: `term-${N - 1}`, target: '新译法' });
-    await expect(big.locator('summary')).toHaveText(`术语（${N}）`);
+    await expect(big.locator('summary')).toHaveText(await msg('domainTermsSummary', [String(N)]));
   });
 
   test('TC-E2E-85: 保存术语遇到存储空间不足 → 提示可以清空缓存后重试，术语不变（#510）', async ({
@@ -1167,6 +1191,9 @@ test.describe('设置页：翻译领域 @extended', () => {
     const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms');
     await terms.locator('summary').click();
     await terms.locator('.pt-term-target').first().fill('侵权行为');
+    // 提示文案随浏览器界面语言（CI 是英文）
+    const msg = (key: string, subs: string[] = []) =>
+      page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
 
     // 设置页里的存储写入报 Chrome 的配额错误
     await page.evaluate(() => {
@@ -1174,7 +1201,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     });
     await terms.locator('.pt-domain-terms-actions .pt-btn:not(.pt-btn-secondary)').click();
     await expect(terms.locator('.pt-domain-terms-error')).toHaveText(
-      '保存失败：存储空间不足，可以在“高级”分区点“清空缓存”后重试',
+      await msg('domainSaveFailed', [await msg('domainStorageFull')]),
     );
     const stored = await serviceWorker.evaluate(
       async () => (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any,
@@ -1295,11 +1322,14 @@ test.describe('popup：翻译领域 @extended', () => {
     const popup = await context.newPage();
     await page.bringToFront();
     await popup.goto(`chrome-extension://${extId}/popup.html`);
+    // 提示文案随浏览器界面语言（CI 是英文）
+    const msg = (key: string, subs: string[] = []) =>
+      popup.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
     const select = popup.locator('#pt-domain-select');
     await expect(select).toBeEnabled({ timeout: 10_000 });
     await expect(select).toHaveValue('auto');
     await expect(select.locator('option')).toHaveText([
-      '自动（站内）', '软件开发(简体中文)', '站内', '手选', '无领域',
+      await msg('domainPopupAuto', ['站内']), '软件开发(简体中文)', '站内', '手选', await msg('domainPopupNone'),
     ]);
 
     // 切换到“手选”后翻译本页：请求带它的术语
@@ -1373,6 +1403,9 @@ test.describe('popup：翻译领域 @extended', () => {
     const select = popup.locator('#pt-domain-select');
     const remember = popup.locator('#pt-domain-remember');
     const hint = popup.locator('#pt-hint');
+    // 提示文案随浏览器界面语言（CI 是英文）
+    const msg = (key: string, subs: string[] = []) =>
+      popup.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
     await expect(select).toBeEnabled({ timeout: 10_000 });
     // 自动选择时不能勾选
     await expect(remember).toBeDisabled();
@@ -1381,7 +1414,7 @@ test.describe('popup：翻译领域 @extended', () => {
     await select.selectOption('user:e2e-manual');
     await expect(remember).toBeEnabled();
     await remember.check();
-    await expect(hint).toHaveText('以后在此站点都使用“手选”');
+    await expect(hint).toHaveText(await msg('domainPopupRemembered', ['手选']));
     let data = await stored();
     expect(data.user.find((d: any) => d.id === 'user:e2e-manual').sites).toEqual(['localhost']);
     // 原先命中这个站点的领域不改
@@ -1395,7 +1428,7 @@ test.describe('popup：翻译领域 @extended', () => {
 
     // 内置领域排在后面：写入叠加层，并提示调整顺序
     await remember.check();
-    await expect(hint).toHaveText('已加入适用网址，但“手选”排在前面，可在设置页调整顺序');
+    await expect(hint).toHaveText(await msg('domainPopupRememberShadowed', ['手选']));
     data = await stored();
     expect(data.builtin['builtin:software-zh-CN'].addedSites).toEqual(['localhost']);
   });
