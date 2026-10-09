@@ -16,6 +16,8 @@ import {
   type RenderStats,
 } from '~/src/orchestration/page-summary';
 import { render } from '~/src/dom/renderer';
+import { toast } from '~/src/ui/toast';
+import { unmountIsolated } from '~/src/ui/mount';
 
 beforeEach(() => {
   // 文案取值带上替换参数，数量看得见
@@ -188,5 +190,33 @@ describe('pageNotice — 既有汇总不变（#49、#416）', () => {
       message: 'hintNoElements',
       kind: 'info',
     });
+  });
+});
+
+describe('页面级闸门命中时的提示（#793）', () => {
+  const sameLanguage = {
+    status: 'same-language',
+    admission: 'allowed',
+    gate: { translate: false, reason: 'same-language', lang: 'zh-CN' },
+  } as PageToggleResult;
+
+  test('说明本页已经是目标语言，状态类、info（与“本页没有可翻译的内容”同一风格）', () => {
+    expect(pageNotice(sameLanguage, emptyRenderStats())).toEqual({
+      message: 'toastPageSameLanguage',
+      kind: 'info',
+    });
+  });
+
+  test('同一时刻只显示一条提示：前一条提示还在时弹出，页面上仍只有这一条', () => {
+    toast('上一条提示', { purpose: 'status' });
+    const notice = pageNotice(sameLanguage, emptyRenderStats())!;
+    toast(notice.message, { purpose: 'status', kind: notice.kind });
+
+    const root = document.getElementById('pt-host-toast')!.shadowRoot!;
+    const shown = [...root.querySelectorAll('.pt-toast')];
+    expect(shown.map((el) => el.textContent)).toEqual(['toastPageSameLanguage']);
+    expect((shown[0] as HTMLElement).dataset.purpose).toBe('status');
+    shown.forEach((el) => el.remove());
+    unmountIsolated('toast');
   });
 });
