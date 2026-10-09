@@ -43,9 +43,17 @@ import { createLifecycleRegistry } from '~/src/ui/lifecycle-registry';
 import {
   createOrchestrator,
   type PageToggleResult,
-  type PageTranslateSummary,
 } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
+import {
+  allFailedNotice,
+  allRenderBlocked,
+  countRender,
+  emptyRenderStats,
+  pageNotice,
+  partialFailNotice,
+  resetRenderStats,
+} from '~/src/orchestration/page-summary';
 import { translateViaBackground } from '~/src/runtime/messaging';
 import { detectOS } from '~/src/hotkeys/platform';
 import {
@@ -356,8 +364,8 @@ export default defineContentScript({
       rawText: string;
     }
 
-    /** 渲染统计（每次整页翻译开始时清零）。failed：翻译失败的段落（#416）。 */
-    const renderStats = { succeeded: 0, rejected: 0, failed: 0 };
+    /** 渲染统计（每次整页翻译与增量补翻开始时清零），各项含义见 RenderStats。 */
+    const renderStats = emptyRenderStats();
 
     // #261: 编排模块 —— 全页翻译的批次流水线在模块内，
     // 渲染回调按批触发（#256 渐进渲染，首屏不等最慢段）
@@ -386,7 +394,7 @@ export default defineContentScript({
       isMainFrame: () => isMainFrame,
       // #327: 引擎返回结果但全部渲染被拒 → 错误态（不点亮完成）
       // #416: 有段落翻译失败时不算“全部被拒”，失败另行提示
-      allRenderRejected: () => renderStats.succeeded === 0 && renderStats.failed === 0,
+      allRenderRejected: () => allRenderBlocked(renderStats),
       // #328: 增量补翻观察器启停经钩子接线到生命周期注册表（幂等）
       onObserverStart: () => registry.ensure('observer', true),
       onObserverStop: () => registry.ensure('observer', false),
@@ -411,11 +419,9 @@ export default defineContentScript({
               ctx.preserves,
               ctx.rawText,
             );
-            if (render(ctx.target, restored, 'page')) {
-              renderStats.succeeded++;
-            } else {
-              renderStats.rejected++;
-            }
+            // #783：译文与送去翻译的原文比对，原文里的占位符同样换回
+            const source = restorePreserves(ctx.rawText, ctx.preserves, ctx.rawText);
+            countRender(renderStats, render(ctx.target, restored, 'page', source));
           } catch (e) {
             throw new Error(
               `[render idx=${j}] ${e instanceof Error ? e.message : String(e)}`,
@@ -463,69 +469,15 @@ export default defineContentScript({
           `[collect] ${e instanceof Error ? e.message : String(e)}`,
         );
       }
-      renderStats.succeeded = 0;
-      renderStats.rejected = 0;
-      renderStats.failed = 0;
+      resetRenderStats(renderStats);
 
       const result = await orchestrator.togglePage(items, ns.from, ns.to);
 
       // ── 提示渲染（DOM 职责；视觉状态已由模块推送）──
-      if (result.status === 'blocked' && isMainFrame) {
-        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), { purpose: 'status', kind: 'error' });
-      }
-      if (result.status === 'no-elements' && isMainFrame) {
-        toast(tf('hintNoElements', '本页没有可翻译的内容'), { purpose: 'status' });
-      }
-      if (result.status === 'error' && isMainFrame) {
-        if (result.summary?.allFailed) {
-          // #313: 展示决策由模块给出 —— key 无效 / 配额真实原因，瞬时泛化
-          const display = result.summary.display;
-          toast(
-            display.showRealReason && display.reason
-              ? display.reason
-              : tf('toastAllEnginesFail', '所有引擎均失败'),
-            { purpose: 'status', kind: 'error' },
-          );
-        } else {
-          // #49: 引擎返回了结果但全被 render() 拒绝（纵深防御命中）
-          toast(
-            tf('toastAllRejected', '所有段落均含图片/按钮，无法翻译'),
-            { purpose: 'status', kind: 'error' },
-          );
-        }
-      }
-      if (
-        result.status === 'translated' &&
-        renderStats.rejected > 0 &&
-        isMainFrame
-      ) {
-        // #49：整页翻译结束后用一条 toast 汇总被拒数量，而不是逐条刷屏
-        toast(
-          tf(
-            'toastRenderRejected',
-            `${renderStats.rejected} 段因含图片/按钮未翻译`,
-            String(renderStats.rejected),
-          ),
-          { purpose: 'status' },
-        );
-      }
-      // 放在被拒提示之后：同一时刻只显示一条 toast，失败更需要看到
-      if (result.status === 'translated') toastPartialFail(result.summary?.display);
+      // 同一时刻只显示一条提示，几种情况并存时给哪一条由汇总决定
+      const notice = pageNotice(result, renderStats);
+      if (notice && isMainFrame) toast(notice.message, { purpose: 'status', kind: notice.kind });
       return result;
-    }
-
-    /**
-     * #416: 部分段落翻译失败 —— 已成功的段落照常渲染，失败段落保持原样，
-     * 结束后用一条 toast 汇总。key 无效 / 配额耗尽时展示真实原因（#313）。
-     */
-    function toastPartialFail(display: PageTranslateSummary['display'] | undefined): void {
-      if (renderStats.failed === 0 || !isMainFrame) return;
-      toast(
-        display?.showRealReason && display.reason
-          ? display.reason
-          : tf('domainPartialFail', `${renderStats.failed} 段翻译失败`, String(renderStats.failed)),
-        { purpose: 'status', kind: 'error' },
-      );
     }
 
     /**
@@ -537,25 +489,16 @@ export default defineContentScript({
       const ns = getSettings();
       const items = buildPageItems(elements);
       if (items.length === 0) return;
-      renderStats.succeeded = 0;
-      renderStats.rejected = 0;
-      renderStats.failed = 0;
+      resetRenderStats(renderStats);
 
       const summary = await orchestrator.translatePage(items, ns.from, ns.to);
 
       // 中止（还原）不算失败；失败提示与整页同口径
       if (summary.aborted) return;
-      if (summary.allFailed && isMainFrame) {
-        const display = summary.display;
-        toast(
-          display.showRealReason && display.reason
-            ? display.reason
-            : tf('toastAllEnginesFail', '所有引擎均失败'),
-          { purpose: 'status', kind: 'error' },
-        );
-      } else {
-        toastPartialFail(summary.display);
-      }
+      const notice = summary.allFailed
+        ? allFailedNotice(summary.display)
+        : partialFailNotice(renderStats, summary.display);
+      if (notice && isMainFrame) toast(notice.message, { purpose: 'status', kind: notice.kind });
     }
 
     // ── 还原（DOM 职责）──
@@ -657,7 +600,9 @@ export default defineContentScript({
 
       // render() 在含媒体 / 交互控件时会拒绝渲染（#22），此时告知用户
       // 而非静默吞掉元素
-      if (!render(unit, restored, 'para')) {
+      const source = restorePreserves(text, preserves, text);
+      const rendered = render(unit, restored, 'para', source);
+      if (!rendered.rendered && rendered.reason === 'non-text-content') {
         toast(tf('toastNotTranslatable', '该区域无法单独翻译'), { purpose: 'status', kind: 'error' });
       }
     }

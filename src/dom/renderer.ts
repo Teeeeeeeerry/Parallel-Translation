@@ -15,23 +15,44 @@
 
 import type { DisplayMode, StyleId } from '../storage/schema';
 import { hasNonTextContent } from './classify';
+import { checkTranslation } from './translation-check';
 import { injectShadowStyles } from '~/src/styles/shadow';
 
 /** 渲染来源：区分整页翻译与单段翻译，落成 data-pt-src 属性供 CSS 分流。 */
 export type RenderSource = 'page' | 'para';
 
 /**
+ * 渲染结果（#783）：带原因而非裸 boolean，与 changelog/decide.ts 同一风格 ——
+ * 调用方要分得清“含图片按钮”与“本来就是目标语言”两种拒绝，提示说的话不同。
+ */
+export type RenderResult =
+  | { rendered: true }
+  | {
+      rendered: false;
+      /**
+       * non-text-content：元素含媒体 / 交互控件（#22）；
+       * same-as-source：译文与原文归一化后相同（#783）
+       */
+      reason: 'non-text-content' | 'same-as-source';
+    };
+
+/**
  * 渲染译文。三种模式共用同一套 DOM 结构。
  *
- * 返回 false 表示元素含非文本内容（媒体 / 交互控件），拒绝渲染，
- * 由调用方决定是否提示用户。
+ * source 是送去翻译的原文（保留原文的占位符已换回），译文与它比对。
+ * 缺省取元素自身的全部文字；含带文字的块级子元素的单元只送自身的浅层
+ * 文字，调用方须显式传入，否则多出的子段落文字让比对永远不成立。
+ *
+ * 拒绝渲染时元素一个字不动、不打已翻译标记，由调用方决定是否提示用户。
  */
 export function render(
   el: Element,
   translation: string,
   src: RenderSource = 'page',
-): boolean {
-  if (el.getAttribute('data-pt') === 'done') return true;
+  source: string = el.textContent ?? '',
+): RenderResult {
+  // 已经翻好了：幂等，不二次渲染，也不算失败
+  if (el.getAttribute('data-pt') === 'done') return { rendered: true };
 
   // #163: 翻译单元位于 shadow root 内时补注入扩展样式 ——
   // 单段翻译路径可能早于 observer 启动，此时 shadow 内尚无样式
@@ -48,8 +69,14 @@ export function render(
   // 绕过采集器（如手动构造 DOM 元素调用）时兜底。
   if (hasNonTextContent(el)) {
     console.debug('[PT] render 拒绝（纵深防御）：元素含非文本内容（媒体 / 交互控件）', el);
-    return false;
+    return { rendered: false, reason: 'non-text-content' };
   }
+
+  // #783：引擎把文字原样还回来，插进去只会让这一段重复一遍、紧凑布局
+  // 两层文字叠在一起。不插入，也不打已翻译标记 —— 标记了的话还原找到
+  // 它却没有 .pt-origin 可搬，属性留在页面上；增量补翻也会把它当成已翻
+  const check = checkTranslation(source, translation);
+  if (!check.ok) return { rendered: false, reason: check.reason };
 
   // 把原有子节点整体包进 .pt-origin，保留其内部结构与事件绑定
   const origin = document.createElement('span');
@@ -78,7 +105,7 @@ export function render(
   el.appendChild(trans);
   el.setAttribute('data-pt', 'done');
   el.setAttribute('data-pt-src', src);
-  return true;
+  return { rendered: true };
 }
 
 /** 还原原文，把 .pt-origin 的子节点放回去 */
