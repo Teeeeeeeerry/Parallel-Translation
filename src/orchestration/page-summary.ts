@@ -139,7 +139,13 @@ export function pageNotice(result: PageToggleResult, stats: RenderStats): PageNo
             }
           : null)
       );
-    default:
+    // #792：页面级闸门命中。提示是 #793 的事
+    case 'same-language':
+    // 还原、在飞忙碌、翻译中被还原中止、总开关关闭：都不提示
+    case 'restored':
+    case 'busy':
+    case 'aborted':
+    case 'disabled':
       return null;
   }
 }

@@ -396,6 +396,8 @@ export default defineContentScript({
       // #327: 引擎返回结果但全部渲染被拒 → 错误态（不点亮完成）
       // #416: 有段落翻译失败时不算“全部被拒”，失败另行提示
       allRenderRejected: () => allRenderBlocked(renderStats),
+      // #792：页面级闸门读本 frame 的语言声明
+      getPageLang: () => document.documentElement.getAttribute('lang'),
       // #328: 增量补翻观察器启停经钩子接线到生命周期注册表（幂等）
       onObserverStart: () => registry.ensure('observer', true),
       onObserverStop: () => registry.ensure('observer', false),
@@ -460,19 +462,20 @@ export default defineContentScript({
      */
     async function togglePage(): Promise<PageToggleResult> {
       const ns = getSettings();
-      let items: TranslateItem<PageItemCtx>[];
-      try {
-        items = buildPageItems(
-          collect(document.body, registerHiddenForObserver),
-        );
-      } catch (e) {
-        throw new Error(
-          `[collect] ${e instanceof Error ? e.message : String(e)}`,
-        );
-      }
+      // #792：按需采集 —— 页面级闸门命中、准入拦截、还原时不采集（采集会把
+      // 超长段落切成切块，页面就不是一个字不动了）
+      const collectItems = (): TranslateItem<PageItemCtx>[] => {
+        try {
+          return buildPageItems(collect(document.body, registerHiddenForObserver));
+        } catch (e) {
+          throw new Error(
+            `[collect] ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
+      };
       resetRenderStats(renderStats);
 
-      const result = await orchestrator.togglePage(items, ns.from, ns.to);
+      const result = await orchestrator.togglePage(collectItems, ns.from, ns.to);
 
       // ── 提示渲染（DOM 职责；视觉状态已由模块推送）──
       // 同一时刻只显示一条提示，几种情况并存时给哪一条由汇总决定
