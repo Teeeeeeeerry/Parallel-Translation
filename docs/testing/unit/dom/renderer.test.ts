@@ -116,6 +116,20 @@ describe('render — 译文与原文相同时不插入（#783）', () => {
     expect(p.getAttribute('data-pt')).toBe('done');
   });
 
+  test('只差大小写或首尾空白：同样不插入、不标记（#784）', () => {
+    const p = el('<p>release notes</p>');
+    const result = render(p, ' Release Notes ', 'page', 'release notes');
+    expect(result).toEqual({ rendered: false, reason: 'same-as-source' });
+    expect(p.outerHTML).toBe('<p>release notes</p>');
+  });
+
+  test('大小写之外真有实质差异：照常插入（#784）', () => {
+    const p = el('<p>Read more</p>');
+    const result = render(p, 'Read less', 'page', 'Read more');
+    expect(result).toEqual({ rendered: true });
+    expect(p.querySelector(':scope > .pt-trans')!.textContent).toBe('Read less');
+  });
+
   test('整页命中兜底后还原：页面逐字节回到原样', () => {
     const root = document.createElement('div');
     root.innerHTML = [
