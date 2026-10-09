@@ -4280,6 +4280,67 @@ test.describe('标记密集的段落（#724）', () => {
     // 参考文献列表是非正文区域，照旧不翻
     await expect(page.locator('.references .pt-trans')).toHaveCount(0);
   });
+
+  test('@core TC-E2E-156: 维基形态的条目页上，鼠标停在标记密集的段落上逐段翻译按钮浮出、点击后这一段出现译文；文字真正超长的段落上不浮出；按钮浮出的段落与整页翻译翻到的段落是同一批（#736）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ showParagraphBtn: true });
+    await mockGoogle();
+    await gotoFixture('wiki-article');
+    await waitForBall(page);
+    const paraBtn = page.locator('.pt-para-btn');
+
+    /**
+     * 停在这一段的第一行上，按钮是否浮出并贴在这一段旁边。按钮离开段落后
+     * 要过一段隐藏延迟才消失，所以按位置认它属于哪一段，而不是只看可见。
+     * 等待时长同 TC-E2E-145：悬停意图延迟（SHOW_DELAY）之外留足余量
+     */
+    const showsButtonOn = async (id: string) => {
+      const p = page.locator(id);
+      await p.hover({ position: { x: 24, y: 8 } });
+      await page.waitForTimeout(600);
+      if (!(await paraBtn.isVisible())) return false;
+      const [b, r] = await Promise.all([paraBtn.boundingBox(), p.boundingBox()]);
+      const mid = b!.y + b!.height / 2;
+      return mid >= r!.y - b!.height && mid <= r!.y + r!.height;
+    };
+
+    // 文字真正超长的段落：停够悬停意图延迟也不浮出
+    expect(await showsButtonOn('#long')).toBe(false);
+    await expect(paraBtn).toBeHidden();
+
+    // 逐段停一遍，记下哪些段落浮出按钮
+    const paragraphs = await page.locator('.mw-parser-output p[id]').evaluateAll((els) => els.map((e) => `#${e.id}`));
+    expect(paragraphs).toEqual(['#lead', '#dense-career', '#dense-early', '#plain', '#dense-recognition', '#light', '#long']);
+    const withButton: string[] = [];
+    for (const id of paragraphs) if (await showsButtonOn(id)) withButton.push(id);
+    expect(withButton.sort()).toEqual([...WIKI_DENSE, ...WIKI_PLAIN].sort());
+
+    // 标记密集的段落：停在一个条目链接上，按钮浮出，点击后只翻这一段
+    const career = page.locator('#dense-career');
+    // 先等上一段的按钮过了隐藏延迟消失，免得点到别的段
+    await page.mouse.move(0, 0);
+    await expect(paraBtn).toBeHidden({ timeout: 5_000 });
+    await career.locator('a[rel="mw:WikiLink"]').nth(12).hover();
+    await expect(paraBtn).toBeVisible({ timeout: 5_000 });
+    await paraBtn.click();
+    await expect(career).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
+    await expect(career.locator('.pt-trans')).toHaveText(/^【译】Valcourt began her career with small parts in French cinema/);
+    for (const id of paragraphs.filter((x) => x !== '#dense-career')) {
+      await expect(page.locator(id), id).not.toHaveAttribute('data-pt', /./);
+    }
+
+    // 两条路口径一致：重新载入后整页翻译，翻到的段落正是上面浮出按钮的那一批
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await translateAndWait(page);
+    for (const id of withButton) {
+      await expect(page.locator(id), id).toHaveAttribute('data-pt', 'done', { timeout: 30_000 });
+    }
+    const translated = await page
+      .locator('.mw-parser-output p[id][data-pt="done"]')
+      .evaluateAll((els) => els.map((e) => `#${e.id}`));
+    expect(translated.sort()).toEqual(withButton);
+  });
 });
 
 test.describe('划词翻译的提示（#726）', () => {
