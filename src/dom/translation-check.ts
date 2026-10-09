@@ -24,12 +24,27 @@ export type TranslationCheck =
     };
 
 /**
- * 译文能不能用。归一化沿用取文本处的 normalizeText（空白折叠、去首尾
- * 空白），不另写一套。
+ * 译文能不能用。比对口径：首尾空白、空白折叠、大小写都不算差异（#784）——
+ * 引擎常常把文字原样还回来，只多一个首尾空格或把首字母大写了，这样的
+ * “译文”插进去只会让人看两遍一样的话。空白沿用取文本处的 normalizeText，
+ * 不另写一套；大小写在它之上折叠。
  */
 export function checkTranslation(source: string, translation: string): TranslationCheck {
-  if (normalizeText(source) === normalizeText(translation)) {
+  if (fold(source) === fold(translation)) {
     return { ok: false, reason: 'same-as-source' };
   }
   return { ok: true };
+}
+
+/**
+ * 大小写折叠用 toLowerCase 而不是 toLocaleLowerCase。toLocaleLowerCase 按
+ * 运行环境的语言折叠，而运行环境的语言是用户浏览器的界面语言，与这段文字
+ * 是什么语言无关：界面是土耳其语时 'I' 折成无点的 'ı'，英文的 INFO 与 info
+ * 就比不上了，同一段文字在不同用户那里结论不同。toLowerCase 用 Unicode 的
+ * 默认映射，与环境无关、结论确定。它在土耳其语文字上的偏差（'İ' 折成 i 加
+ * 组合附加点，'I' 折成 i 而不是 'ı'）只会让本该相同的两段比不上，结果是照常
+ * 插入译文、退回兜底之前的行为，不会把真有差异的译文错拦下来。
+ */
+function fold(s: string): string {
+  return normalizeText(s).toLowerCase();
 }

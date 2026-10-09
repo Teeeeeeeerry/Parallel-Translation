@@ -33,4 +33,50 @@ describe('checkTranslation', () => {
   test('只多出一个字也算不同：照常可以用', () => {
     expect(checkTranslation('回收站', '回收站。')).toEqual({ ok: true });
   });
+
+  describe('归一化口径：首尾空白、空白折叠、大小写（#784）', () => {
+    test('只差首尾空白：视为相同', () => {
+      expect(checkTranslation('Release notes', ' Release notes ')).toEqual({
+        ok: false,
+        reason: 'same-as-source',
+      });
+    });
+
+    test('只差大小写：视为相同（引擎把首字母大写了）', () => {
+      expect(checkTranslation('release notes', 'Release notes')).toEqual({
+        ok: false,
+        reason: 'same-as-source',
+      });
+      expect(checkTranslation('Read more', 'READ MORE')).toEqual({
+        ok: false,
+        reason: 'same-as-source',
+      });
+    });
+
+    test('中间空白折叠后相同：视为相同', () => {
+      expect(checkTranslation('Release\n   notes', 'release notes')).toEqual({
+        ok: false,
+        reason: 'same-as-source',
+      });
+    });
+
+    test('三种差异叠在一起：仍视为相同', () => {
+      expect(checkTranslation('  read\tMORE ', 'Read more')).toEqual({
+        ok: false,
+        reason: 'same-as-source',
+      });
+    });
+
+    test('真有实质差异：照常可以用', () => {
+      expect(checkTranslation('Read more', '阅读更多')).toEqual({ ok: true });
+      expect(checkTranslation('Read more', 'Read less')).toEqual({ ok: true });
+      // 大小写之外还差一个标点，也是实质差异
+      expect(checkTranslation('read more', 'Read more.')).toEqual({ ok: true });
+    });
+
+    test('土耳其语的带点大写 İ：按与语言环境无关的折叠，比不上就照常插入，不会错拦', () => {
+      // 'İ'.toLowerCase() 是 i 加一个组合附加点，与普通的 i 不相等
+      expect(checkTranslation('İstanbul', 'istanbul')).toEqual({ ok: true });
+    });
+  });
 });
