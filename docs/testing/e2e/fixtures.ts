@@ -39,6 +39,7 @@ export const FIXTURES = [
   'svg-chart',
   'rich-input',
   'br-post',
+  'same-language',
   'markup-dense',
 ] as const;
 

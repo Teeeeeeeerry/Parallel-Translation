@@ -4588,3 +4588,85 @@ test.describe('划词翻译的提示（#726）', () => {
   });
 });
 
+
+test.describe('页面级闸门（#777）', () => {
+  const TOAST = '#pt-host-toast .pt-toast';
+
+  /**
+   * 翻译请求计数：读 e2e-mock 替身层自己记的已服务请求数（#723 的描述符写法，
+   * SW 换了实例也会在下一次翻译路由前自愈）。计数只活在 SW 实例内存里，SW
+   * 若中途被回收重启会清零，“零请求”就会假绿 —— 所以先在 SW 上打一个存活
+   * 标记，读计数时标记必须还在，否则以“计数不可信”报错而不是放行（#766）。
+   */
+  async function requestCounter(sw: import('@playwright/test').Worker) {
+    const token = `pt-${Date.now()}-${Math.random()}`;
+    await sw.evaluate((t: string) => {
+      (self as any).__ptLiveToken = t;
+    }, token);
+    const base: number = await sw.evaluate(() => (self as any).getE2EMockStats().totalServed);
+    return async () => {
+      const { live, served } = await sw.evaluate((t: string) => ({
+        live: (self as any).__ptLiveToken === t,
+        served: (self as any).getE2EMockStats().totalServed as number,
+      }), token);
+      if (!live) throw new Error('service worker 中途被替换，替身层的请求计数已清零，不可信');
+      return served - base;
+    };
+  }
+
+  test('@core TC-E2E-153: 本来就是目标语言的页面上点整页翻译 —— 零请求、页面逐字节不变、弹出说明、悬浮球是未翻译态；同页划词照常能翻（#795）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    // 夹具声明 lang="zh-CN"，目标语言 zh-CN
+    await seedSettings({ to: 'zh-CN' });
+    await mockGoogle();
+    await gotoFixture('same-language');
+    const ball = await waitForBall(page);
+    await expect(ball).toHaveAttribute('data-state', 'idle');
+
+    const content = () => page.locator('#content').evaluate((el) => el.outerHTML);
+    const before = await content();
+    const requests = await requestCounter(serviceWorker);
+    const message = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastPageSameLanguage'));
+
+    await ball.click();
+
+    // 说明已经是目标语言：状态类，同一时刻只有这一条
+    const toast = page.locator(TOAST);
+    await expect(toast).toHaveText(message, { timeout: 10_000 });
+    await expect(toast).toHaveCount(1);
+    await expect(toast).toHaveAttribute('data-purpose', 'status');
+    // 悬浮球是未翻译态，不是完成态
+    await expect(ball).toHaveAttribute('data-state', 'idle');
+    // 页面逐字节不变：没有译文、没有已翻译标记，超长段落也没被切成切块
+    expect(await content()).toBe(before);
+    await expect(page.locator('[data-pt], .pt-chunk, [data-pt-split]')).toHaveCount(0);
+    // 一个翻译请求都没发
+    expect(await requests()).toBe(0);
+
+    // 再点一次：页面上没有译文可还原，仍是同一条说明，页面仍逐字节不变，仍零请求
+    await ball.click();
+    await expect(toast).toHaveText(message, { timeout: 10_000 });
+    await expect(ball).toHaveAttribute('data-state', 'idle');
+    expect(await content()).toBe(before);
+    expect(await requests()).toBe(0);
+
+    // 同一页面上划中那段英文引文：闸门只管整页，划词照常送翻（#794）。
+    // 计数随之变成 1，也证明上面的“零”不是计数器失灵
+    const quote = (await page.locator('#quote').textContent())!.trim();
+    await serviceWorker.evaluate(async (t: string) => {
+      for (const tab of await chrome.tabs.query({})) {
+        try {
+          await chrome.tabs.sendMessage(tab.id!, { type: 'pt:translate-selection', text: t });
+        } catch {
+          // 扩展页等没有 content script 的标签页
+        }
+      }
+    }, quote);
+    await expect(page.locator(`${TOAST}[data-purpose="content"]`)).toContainText(`【译】${quote}`, {
+      timeout: 20_000,
+    });
+    expect(await requests()).toBe(1);
+    expect(await content()).toBe(before);
+  });
+});
