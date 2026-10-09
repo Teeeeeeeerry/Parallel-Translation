@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>中英混排的页面</title>
+  <style>
+    body { max-width: 760px; margin: 24px auto; font: 16px/1.5 sans-serif; }
+    .tags span { display: inline-block; margin: 0 4px 4px 0; padding: 0 6px; font-size: 12px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <!-- #796：目标语言（中文）的段落与外文段落交错。这是页面级闸门管不到、只能靠
+       单元级兜底的情形，所以不写语言声明 —— 写成目标语言的话闸门会先命中，
+       什么都验证不到。判不出页面语言时闸门放行（#789）。 -->
+  <main id="content">
+    <h1 id="title">读书笔记：设计的本质</h1>
+    <p class="zh" id="zh1">这本书讲的是设计如何影响我们日常使用的东西，作者举了很多门把手和开关的例子。</p>
+    <p class="en" id="en1">Design is not just what it looks like and feels like. Design is how it works.</p>
+    <p class="zh" id="zh2">下面这段是书里我最喜欢的一句话，原文照抄在这里。</p>
+    <p class="en" id="en2">Good design is actually a lot harder to notice than poor design, in part because good designs fit our needs so well.</p>
+    <div class="tags zh" id="tags"><span>设计</span><span>心理学</span><span>可用性</span><span>读书</span></div>
+    <p class="en" id="en3">When something goes wrong, people tend to blame themselves.</p>
+  </main>
+</body>
+</html>

@@ -109,6 +109,16 @@ describe('e2e-mock', () => {
     expect(body[0][0][0]).toBe('【译】Hello [tl=zh]');
   });
 
+  test('keepCjk：不含拉丁字母的文本原样还回来，含拉丁字母的照常加前缀（#796）', async () => {
+    const { applyE2EMock } = await import('~/src/engines/e2e-mock');
+    await applyE2EMock({ keepCjk: true });
+
+    const zh = await (await fetch(`${G_URL.split('?')[0]}?tl=zh-CN&q=${encodeURIComponent('回收站')}`)).json();
+    expect(zh[0][0][0]).toBe('回收站');
+    const en = await (await fetch(G_URL)).json();
+    expect(en[0][0][0]).toBe('【译】Hello');
+  });
+
   test('delayMs：响应延迟生效', async () => {
     const { applyE2EMock } = await import('~/src/engines/e2e-mock');
     await applyE2EMock({ delayMs: 60 });
