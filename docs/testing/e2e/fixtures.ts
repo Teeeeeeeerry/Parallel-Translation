@@ -46,6 +46,23 @@ export const FIXTURES = [
 
 export type FixtureName = (typeof FIXTURES)[number];
 
+/** e2e-mock 替身层的统计（getE2EMockStats 的返回值） */
+interface MockStats {
+  totalServed: number;
+  queries: string[];
+  bingServed: number;
+  chatServed: Record<string, number>;
+}
+
+/** mockRequests 读到的增量：各端点请求数与发给 Google 的原文（#766） */
+export interface MockRequests {
+  google: number;
+  bing: number;
+  /** 键是对话式端点 URL */
+  chat: Record<string, number>;
+  queries: string[];
+}
+
 /** 获取 fixture 页面的 HTTP URL（content script 通过 <all_urls> 注入） */
 export function fixtureUrl(name: FixtureName): string {
   return `${FIXTURES_BASE}/${name}.html`;
@@ -95,6 +112,22 @@ export const test = base.extend<
     }) => Promise<void>;
     /** DeepL 替身：写入假 key，并装上能扛住 SW 重启的端点替身（#723） */
     mockDeepl: (opts?: { detectedSourceLanguage?: string }) => Promise<void>;
+    /** Bing 替身：鉴权与翻译两个端点，译文是 prefix 加原文（#766） */
+    mockBing: (opts?: { prefix?: string }) => Promise<void>;
+    /**
+     * OpenAI 兼容的对话式端点替身（#766）：按请求的编号行回显并加 prefix；
+     * dropText 命中的行不回显（模拟 LLM 漏行）；status 不是 200 时按它失败
+     */
+    mockChat: (
+      endpoint: string,
+      opts?: { prefix?: string; status?: number; dropText?: string },
+    ) => Promise<void>;
+    /**
+     * 替身层的请求记录（#766）：返回一个读取函数，读到的是调用之后的增量。
+     * 记录只活在 SW 实例内存里，实例被替换就清零 —— 读取时若实例换过，
+     * 以“记录不可信”报错，而不是让“零请求”假绿
+     */
+    mockRequests: () => Promise<() => Promise<MockRequests>>;
     seedSettings: (patch: Record<string, unknown>) => Promise<void>;
     gotoFixture: (name: FixtureName) => Promise<Page>;
   },
@@ -196,7 +229,7 @@ export const test = base.extend<
         keepCjk,
       } = opts;
       await serviceWorker.evaluate(
-        (cfg: {
+        async (cfg: {
           fail: boolean;
           prefix: string;
           failOnce: boolean;
@@ -204,7 +237,11 @@ export const test = base.extend<
           echoTargetLang?: boolean;
           delayMs?: number;
           keepCjk?: boolean;
-        }) => (self as any).applyE2EMock(cfg),
+        }) => {
+          // 其他引擎的替身（mockDeepl、mockBing、mockChat）留着，调用先后不影响
+          const cur: any = (await chrome.storage.local.get('pt-e2e-mock'))['pt-e2e-mock'] ?? {};
+          await (self as any).applyE2EMock({ deepl: cur.deepl, bing: cur.bing, chat: cur.chat, ...cfg });
+        },
         { fail, prefix, failOnce, failTexts, echoTargetLang, delayMs, keepCjk },
       );
     });
@@ -225,6 +262,61 @@ export const test = base.extend<
           deepl: { detectedSourceLanguage: detected },
         });
       }, detectedSourceLanguage);
+    });
+  },
+
+  // ── Mock Bing 与对话式引擎 ──
+  // #766：与 mockDeepl 同一套装法。用例原先在 SW 里直接改写 self.fetch，
+  // SW 被回收重启后替身消失，请求打到真实端点
+  mockBing: async ({ serviceWorker }, use) => {
+    await use(async ({ prefix = '[BING] ' } = {}) => {
+      await serviceWorker.evaluate(async (p: string) => {
+        const cur = (await chrome.storage.local.get('pt-e2e-mock'))['pt-e2e-mock'] ?? {};
+        await (self as any).applyE2EMock({ ...cur, bing: { prefix: p } });
+      }, prefix);
+    });
+  },
+
+  mockChat: async ({ serviceWorker }, use) => {
+    await use(async (endpoint, opts = {}) => {
+      await serviceWorker.evaluate(
+        async ({ endpoint, opts }: { endpoint: string; opts: object }) => {
+          const cur: any = (await chrome.storage.local.get('pt-e2e-mock'))['pt-e2e-mock'] ?? {};
+          await (self as any).applyE2EMock({ ...cur, chat: { ...cur.chat, [endpoint]: opts } });
+        },
+        { endpoint, opts },
+      );
+    });
+  },
+
+  // ── 替身层的请求记录 ──
+  // #766：照 #795 的写法 —— 计数与原文都记在 e2e-mock 替身层，读之前先认
+  // SW 上的存活标记。替身本身随描述符自愈，记录却只在实例内存里，所以实例
+  // 换过就报错，不让“零请求”或“发出去的原文”在清零后的记录上假绿
+  mockRequests: async ({ serviceWorker }, use) => {
+    await use(async () => {
+      const token = `pt-${Date.now()}-${Math.random()}`;
+      const base = await serviceWorker.evaluate(async (t: string) => {
+        if (!(await chrome.storage.local.get('pt-e2e-mock'))['pt-e2e-mock']) return null;
+        ((self as any).__ptLiveTokens ??= new Set<string>()).add(t);
+        return (self as any).getE2EMockStats() as MockStats;
+      }, token);
+      if (!base) throw new Error('还没有装引擎替身，请求不经过替身层，记录不到：先调 mockGoogle 等夹具');
+      return async () => {
+        const { live, stats } = await serviceWorker.evaluate((t: string) => ({
+          live: (self as any).__ptLiveTokens?.has(t) === true,
+          stats: (self as any).getE2EMockStats() as MockStats,
+        }), token);
+        if (!live) throw new Error('service worker 中途被替换，替身层的请求记录已清零，不可信');
+        const chat: Record<string, number> = {};
+        for (const [url, n] of Object.entries(stats.chatServed)) chat[url] = n - (base.chatServed[url] ?? 0);
+        return {
+          google: stats.totalServed - base.totalServed,
+          bing: stats.bingServed - base.bingServed,
+          chat,
+          queries: stats.queries.slice(base.queries.length),
+        };
+      };
     });
   },
 

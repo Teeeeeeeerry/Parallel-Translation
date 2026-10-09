@@ -3,7 +3,8 @@
  *
  * 验证：描述符安装 / 幂等包裹、各类故障模式（failOnce / fail /
  * failTexts）、echoTargetLang、delayMs、非 Google URL 透传、
- * storage 自愈路径（ensureE2EMock）、DeepL 端点替身（#723）。
+ * storage 自愈路径（ensureE2EMock）、DeepL 端点替身（#723）、
+ * Bing 与对话式引擎的端点替身、替身层的请求记录（#766）。
  */
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -185,5 +186,99 @@ describe('e2e-mock', () => {
     });
     expect((await resp.json()).translations[0].text).toBe('[DL:ZH] Hi');
     expect(realFetch).not.toHaveBeenCalled();
+  });
+
+  test('bing：鉴权端点给出令牌，翻译端点按前缀回显，计数可断言（#766）', async () => {
+    const { applyE2EMock, getE2EMockStats } = await import('~/src/engines/e2e-mock');
+    await applyE2EMock({ bing: { prefix: '[BING] ' } });
+    const before = getE2EMockStats().bingServed;
+
+    const auth = await fetch('https://edge.microsoft.com/translate/auth');
+    expect(await auth.text()).toBe('mock-jwt-token');
+    const resp = await fetch(
+      'https://api-edge.cognitive.microsofttranslator.com/translate?api-version=3.0&to=zh-Hans',
+      { method: 'POST', body: JSON.stringify([{ Text: 'Hello' }, { Text: 'World' }]) },
+    );
+    expect(await resp.json()).toEqual([
+      { translations: [{ text: '[BING] Hello' }] },
+      { translations: [{ text: '[BING] World' }] },
+    ]);
+    expect(getE2EMockStats().bingServed - before).toBe(1);
+    expect(realFetch).not.toHaveBeenCalled();
+  });
+
+  test('bing：SW 实例被替换后，下一次 ensureE2EMock 从 storage 恢复 Bing 替身（#766）', async () => {
+    const { ensureE2EMock, applyE2EMock } = await import('~/src/engines/e2e-mock');
+    await applyE2EMock({ bing: { prefix: '[BING] ' } });
+    delete (self as unknown as { fetch?: unknown }).fetch;
+    (self as unknown as { fetch: unknown }).fetch = realFetch;
+
+    await ensureE2EMock();
+    const resp = await fetch('https://api-edge.cognitive.microsofttranslator.com/translate', {
+      method: 'POST',
+      body: JSON.stringify([{ Text: 'Hi' }]),
+    });
+    expect((await resp.json())[0].translations[0].text).toBe('[BING] Hi');
+    expect(realFetch).not.toHaveBeenCalled();
+  });
+
+  describe('chat：OpenAI 兼容的对话式端点（#766）', () => {
+    const CHAT = 'https://api.deepseek.com/chat/completions';
+    const ask = (lines: string[], url = CHAT) =>
+      fetch(url, {
+        method: 'POST',
+        body: JSON.stringify({ messages: [{ content: ['Translate:', ...lines].join('\n') }] }),
+      });
+    const content = async (r: Response) => (await r.json()).choices[0].message.content as string;
+
+    test('按请求的编号行回显，译文加前缀，非编号行不回显；计数按端点', async () => {
+      const { applyE2EMock, getE2EMockStats } = await import('~/src/engines/e2e-mock');
+      await applyE2EMock({ chat: { [CHAT]: { prefix: '[DS] ' } } });
+      const before = getE2EMockStats().chatServed[CHAT] ?? 0;
+
+      expect(await content(await ask(['1. Hello', '2. World']))).toBe('1. [DS] Hello\n2. [DS] World');
+      expect((getE2EMockStats().chatServed[CHAT] ?? 0) - before).toBe(1);
+      expect(realFetch).not.toHaveBeenCalled();
+      // 没登记的端点照常透传
+      await ask(['1. Hello'], 'https://api.x.ai/v1/chat/completions');
+      expect(realFetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('dropText：含该文本的编号行不回显（模拟 LLM 漏行），其余编号不变', async () => {
+      const { applyE2EMock } = await import('~/src/engines/e2e-mock');
+      await applyE2EMock({ chat: { [CHAT]: { dropText: 'P two' } } });
+
+      expect(await content(await ask(['1. P one', '2. P two', '3. P three']))).toBe('1. P one\n3. P three');
+    });
+
+    test('status：按给定状态码失败，照样计数', async () => {
+      const { applyE2EMock, getE2EMockStats } = await import('~/src/engines/e2e-mock');
+      await applyE2EMock({ chat: { [CHAT]: { status: 401 } } });
+      const before = getE2EMockStats().chatServed[CHAT] ?? 0;
+
+      expect((await ask(['1. Hello'])).status).toBe(401);
+      expect((getE2EMockStats().chatServed[CHAT] ?? 0) - before).toBe(1);
+    });
+
+    test('SW 实例被替换后，下一次 ensureE2EMock 从 storage 恢复对话式端点替身', async () => {
+      const { ensureE2EMock, applyE2EMock } = await import('~/src/engines/e2e-mock');
+      await applyE2EMock({ chat: { [CHAT]: { prefix: '[DS] ' } } });
+      delete (self as unknown as { fetch?: unknown }).fetch;
+      (self as unknown as { fetch: unknown }).fetch = realFetch;
+
+      await ensureE2EMock();
+      expect(await content(await ask(['1. Hi']))).toBe('1. [DS] Hi');
+      expect(realFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  test('请求记录：发给 Google 的原文按顺序记在替身层，失败的请求也记（#766）', async () => {
+    const { applyE2EMock, getE2EMockStats } = await import('~/src/engines/e2e-mock');
+    await applyE2EMock({ failTexts: ['Boom'] });
+    const before = getE2EMockStats().queries.length;
+
+    await fetch(G_URL);
+    await fetch(`${G_URL.split('&q=')[0]}&q=Boom`);
+    expect(getE2EMockStats().queries.slice(before)).toEqual(['Hello', 'Boom']);
   });
 });
