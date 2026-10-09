@@ -123,6 +123,9 @@ async function onTranslatePageClick(): Promise<void> {
       showHint(tf('hintDisabled', '总开关已关闭'));
     } else if (resp?.status === 'no-elements') {
       showHint(tf('hintNoElements', '本页没有可翻译的内容'));
+    } else if (resp?.status === 'same-language') {
+      // #793：页面级闸门命中，与页面里那条提示同一句话
+      showHint(tf('toastPageSameLanguage', '本页已经是你的目标语言'));
     }
   } catch {
     // 页面可能不支持内容脚本（如 chrome:// 页）。

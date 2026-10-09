@@ -139,8 +139,10 @@ export function pageNotice(result: PageToggleResult, stats: RenderStats): PageNo
             }
           : null)
       );
-    // #792：页面级闸门命中。提示是 #793 的事
+    // #793：页面级闸门命中，说明原因；它是状态不是内容，与“本页没有可翻译
+    // 的内容”同一风格
     case 'same-language':
+      return { message: tf('toastPageSameLanguage', '本页已经是你的目标语言'), kind: 'info' };
     // 还原、在飞忙碌、翻译中被还原中止、总开关关闭：都不提示
     case 'restored':
     case 'busy':

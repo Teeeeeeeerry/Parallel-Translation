@@ -546,6 +546,9 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         pageLang: opts.getPageLang?.() ?? null,
       });
       if (!gate.translate) {
+        // #793：悬浮球推到未翻译态 —— 推成完成态是在骗人，用户再点一次
+        // 也会困惑。子框架不推（pushVisual 已按 #327 拦下）
+        pushVisual('idle');
         return { status: 'same-language', admission, gate };
       }
 

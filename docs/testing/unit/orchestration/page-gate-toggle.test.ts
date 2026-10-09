@@ -98,6 +98,35 @@ describe('命中闸门：零请求、页面一个字不动（#792）', () => {
     orch.stop();
   });
 
+  test('悬浮球推到未翻译态 idle，而不是完成态（#793）', async () => {
+    const { orch, pushes } = setup({ pageLang: 'zh-CN' });
+
+    await orch.togglePage(items(3), 'auto', 'zh-CN');
+
+    expect(pushes).toEqual(['idle']);
+    orch.stop();
+  });
+
+  test('子框架不推状态（#793，同 #327）', async () => {
+    const pushes: string[] = [];
+    const send = fakeSend();
+    const orch = createOrchestrator({
+      send,
+      getPageLang: () => 'zh-CN',
+      hasTranslated: () => false,
+      isMainFrame: () => false,
+      pushStatus: (s) => pushes.push(s),
+    } as Parameters<typeof createOrchestrator>[0]);
+    orch.start();
+
+    const result = await orch.togglePage(items(3), 'auto', 'zh-CN');
+
+    expect(result.status).toBe('same-language');
+    expect(pushes).toEqual([]);
+    expect(send).toHaveBeenCalledTimes(0);
+    orch.stop();
+  });
+
   test('站点被禁用时仍是准入拦截：闸门排在准入之后', async () => {
     const { orch, send } = setup({ pageLang: 'zh-CN', blocked: true });
 

@@ -496,5 +496,6 @@
     "placeholders": { "count": { "content": "$1" } }
   },
   "toastParaSameAsSource": { "message": "這一段已經是目標語言" },
-  "toastSelectionSameAsSource": { "message": "這段文字已經是目標語言" }
+  "toastSelectionSameAsSource": { "message": "這段文字已經是目標語言" },
+  "toastPageSameLanguage": { "message": "本頁已經是你的目標語言" }
 }
