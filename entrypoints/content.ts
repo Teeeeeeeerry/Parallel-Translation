@@ -54,6 +54,7 @@ import {
   partialFailNotice,
   resetRenderStats,
 } from '~/src/orchestration/page-summary';
+import { paraNotice } from '~/src/orchestration/text-notice';
 import { translateViaBackground } from '~/src/runtime/messaging';
 import { detectOS } from '~/src/hotkeys/platform';
 import {
@@ -598,13 +599,10 @@ export default defineContentScript({
         text,
       );
 
-      // render() 在含媒体 / 交互控件时会拒绝渲染（#22），此时告知用户
-      // 而非静默吞掉元素
+      // 拒绝渲染时按原因提示：含媒体 / 交互控件（#22）、已经是目标语言（#786）
       const source = restorePreserves(text, preserves, text);
-      const rendered = render(unit, restored, 'para', source);
-      if (!rendered.rendered && rendered.reason === 'non-text-content') {
-        toast(tf('toastNotTranslatable', '该区域无法单独翻译'), { purpose: 'status', kind: 'error' });
-      }
+      const notice = paraNotice(render(unit, restored, 'para', source));
+      if (notice) toast(notice.message, notice);
     }
 
     // ── 翻译选区 ──
