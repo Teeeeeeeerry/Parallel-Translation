@@ -495,5 +495,6 @@
     "message": "$count$ paragraphs are already in the target language; no translation was inserted",
     "placeholders": { "count": { "content": "$1" } }
   },
-  "toastParaSameAsSource": { "message": "This paragraph is already in the target language" }
+  "toastParaSameAsSource": { "message": "This paragraph is already in the target language" },
+  "toastSelectionSameAsSource": { "message": "This text is already in the target language" }
 }

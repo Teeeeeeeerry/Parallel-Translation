@@ -6,9 +6,9 @@
  */
 import { describe, test, expect, vi, afterEach, afterAll } from 'vitest';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
-import { paraNotice } from '~/src/orchestration/text-notice';
+import { paraNotice, selectionNotice } from '~/src/orchestration/text-notice';
 import { render } from '~/src/dom/renderer';
-import { toast } from '~/src/ui/toast';
+import { toast, toastPending } from '~/src/ui/toast';
 import { unmountIsolated } from '~/src/ui/mount';
 
 /** 页面上当前的提示（挂在隔离的 shadow root 里）。 */
@@ -81,5 +81,74 @@ describe('逐段翻译命中兜底（#786）', () => {
       purpose: 'status',
       kind: 'error',
     });
+  });
+});
+
+describe('划词翻译命中兜底（#787）', () => {
+  /**
+   * 划词翻译：点下去先显示等待态，单文本入口回来后弹结果提示，收尾时收掉
+   * 仍在等待的那一条 —— 与 content script 同一口径。
+   */
+  async function translateSelection(text: string, reply: (t: string) => string): Promise<void> {
+    const pending = toastPending(chrome.i18n.getMessage('toastTranslating'));
+    try {
+      const result = await translateText(text, reply);
+      const notice = selectionNotice(text, result.translation!);
+      toast(notice.message, notice);
+    } finally {
+      pending.dismiss();
+    }
+  }
+
+  test('划中的已经是目标语言：说明是同语言，不把原文当译文弹出来；状态类', async () => {
+    const text = '采用风格排版后需替换文案内容，以免遇到公众号原创保护问题';
+    await translateSelection(text, (t) => t);
+
+    expect(toasts()).toHaveLength(1);
+    const [t] = toasts();
+    expect(t!.textContent).toBe(chrome.i18n.getMessage('toastSelectionSameAsSource'));
+    expect(t!.textContent).not.toContain(text);
+    expect(t!.dataset.purpose).toBe('status');
+    expect(t!.dataset.kind).toBe('info');
+  });
+
+  test('命中兜底后页面上不再有那条转圈的等待提示：等待态就地换成这条说明', async () => {
+    const pending = toastPending(chrome.i18n.getMessage('toastTranslating'));
+    const [waiting] = toasts();
+    const result = await translateText('回收站', (t) => t);
+    const notice = selectionNotice('回收站', result.translation!);
+    toast(notice.message, notice);
+    pending.dismiss();
+
+    expect(toasts()).toEqual([waiting]);
+    expect(waiting!.querySelector('.pt-toast-spinner')).toBeNull();
+    expect(waiting!.dataset.state).toBeUndefined();
+    expect(waiting!.textContent).toBe(chrome.i18n.getMessage('toastSelectionSameAsSource'));
+  });
+
+  test('命中兜底的说明按状态类计时：满 3 秒消失', async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = toastPending(chrome.i18n.getMessage('toastTranslating'));
+      const notice = selectionNotice('Read more', ' read MORE ');
+      toast(notice.message, notice);
+      pending.dismiss();
+      vi.advanceTimersByTime(2999);
+      expect(toasts()).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      expect(toasts()).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('译文确实不同：仍按内容类把译文弹出来，行为不变', async () => {
+    await translateSelection('Recycle bin', () => '回收站');
+
+    expect(toasts()).toHaveLength(1);
+    const [t] = toasts();
+    expect(t!.querySelector('.pt-toast-body')!.textContent).toBe('回收站');
+    expect(t!.dataset.purpose).toBe('content');
+    expect(t!.querySelector('.pt-toast-spinner')).toBeNull();
   });
 });

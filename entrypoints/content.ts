@@ -54,7 +54,7 @@ import {
   partialFailNotice,
   resetRenderStats,
 } from '~/src/orchestration/page-summary';
-import { paraNotice } from '~/src/orchestration/text-notice';
+import { paraNotice, selectionNotice } from '~/src/orchestration/text-notice';
 import { translateViaBackground } from '~/src/runtime/messaging';
 import { detectOS } from '~/src/hotkeys/platform';
 import {
@@ -743,8 +743,10 @@ export default defineContentScript({
         return;
       }
 
-      // #738：划词译文是用户要读完的内容，不是状态
-      toast(result.translation!, { purpose: 'content' });
+      // #787：划中的已经是目标语言时说明是同语言，不把原文当译文弹出来；
+      // 否则译文走内容类（#738）
+      const notice = selectionNotice(text, result.translation!);
+      toast(notice.message, notice);
     }
 
     /**
