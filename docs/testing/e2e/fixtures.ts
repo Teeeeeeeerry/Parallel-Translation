@@ -40,6 +40,7 @@ export const FIXTURES = [
   'rich-input',
   'br-post',
   'same-language',
+  'mixed-language',
   'markup-dense',
 ] as const;
 
@@ -89,6 +90,8 @@ export const test = base.extend<
       echoTargetLang?: boolean;
       /** 人工响应延迟毫秒，制造在飞窗口（#120） */
       delayMs?: number;
+      /** 不含拉丁字母的文本原样还回来，模拟本来就是目标语言的段落（#796） */
+      keepCjk?: boolean;
     }) => Promise<void>;
     /** DeepL 替身：写入假 key，并装上能扛住 SW 重启的端点替身（#723） */
     mockDeepl: (opts?: { detectedSourceLanguage?: string }) => Promise<void>;
@@ -181,6 +184,7 @@ export const test = base.extend<
       failTexts?: string[];
       echoTargetLang?: boolean;
       delayMs?: number;
+      keepCjk?: boolean;
     } = {}) => {
       const {
         fail = false,
@@ -189,6 +193,7 @@ export const test = base.extend<
         failTexts,
         echoTargetLang,
         delayMs,
+        keepCjk,
       } = opts;
       await serviceWorker.evaluate(
         (cfg: {
@@ -198,8 +203,9 @@ export const test = base.extend<
           failTexts?: string[];
           echoTargetLang?: boolean;
           delayMs?: number;
+          keepCjk?: boolean;
         }) => (self as any).applyE2EMock(cfg),
-        { fail, prefix, failOnce, failTexts, echoTargetLang, delayMs },
+        { fail, prefix, failOnce, failTexts, echoTargetLang, delayMs, keepCjk },
       );
     });
   },

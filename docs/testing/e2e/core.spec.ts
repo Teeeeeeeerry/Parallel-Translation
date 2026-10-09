@@ -4669,4 +4669,48 @@ test.describe('页面级闸门（#777）', () => {
     expect(await requests()).toBe(1);
     expect(await content()).toBe(before);
   });
+
+  test('@core TC-E2E-154: 中英混排的页面 —— 外文段落照常出译文，中文段落不插译文也不标记，被拦下的段数进汇总，还原后整页逐字节回到原样（#796）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    // 夹具不写语言声明，闸门放行（#789）；引擎把中文段落原样还回来，外文加前缀
+    await seedSettings({ to: 'zh-CN' });
+    await mockGoogle({ keepCjk: true });
+    await gotoFixture('mixed-language');
+    const ball = await waitForBall(page);
+
+    const content = () => page.locator('#content').evaluate((el) => el.outerHTML);
+    const before = await content();
+    const zhBefore = await page.locator('#content .zh, #title').evaluateAll((els) =>
+      els.map((el) => el.outerHTML),
+    );
+
+    await ball.click();
+
+    // 外文段落照常出现译文
+    for (const id of ['#en1', '#en2', '#en3']) {
+      const el = page.locator(id);
+      await expect(el).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+      const source = await el.locator('.pt-origin').textContent();
+      await expect(el.locator('.pt-trans')).toHaveText(`【译】${source!.trim()}`);
+    }
+    await expect(ball).toHaveAttribute('data-state', 'done');
+    // 中文段落不插译文、不被标记为已翻译，一个字不动
+    expect(
+      await page.locator('#content .zh, #title').evaluateAll((els) => els.map((el) => el.outerHTML)),
+    ).toEqual(zhBefore);
+    await expect(page.locator('#content .zh .pt-trans, #title .pt-trans')).toHaveCount(0);
+    // 被拦下的段数出现在汇总提示里（#785）：标题、两段中文、标签区共 4 个单元
+    const summary = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastSameAsSource', ['4']));
+    const toast = page.locator('#pt-host-toast .pt-toast');
+    await expect(toast).toHaveText(summary, { timeout: 10_000 });
+    await expect(toast).toHaveCount(1);
+    await expect(toast).toHaveAttribute('data-purpose', 'status');
+
+    // 还原：整页逐字节回到原样
+    await ball.click();
+    await expect(page.locator('[data-pt]')).toHaveCount(0, { timeout: 10_000 });
+    await expect(ball).toHaveAttribute('data-state', 'idle');
+    expect(await content()).toBe(before);
+  });
 });

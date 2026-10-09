@@ -40,6 +40,11 @@ export interface E2EMockConfig {
   /** 人工响应延迟（毫秒），制造在飞翻译窗口（#120 TC-E2E-42）。 */
   delayMs?: number;
   /**
+   * 不含拉丁字母的文本原样还回来，不加前缀（#796）—— 真实引擎在目标语言是
+   * 中文时，对本来就是中文的文字就是这样。用于混合语言页面的单元级兜底。
+   */
+  keepCjk?: boolean;
+  /**
    * DeepL 端点替身（#723）：译文为 `[DL:<target_lang>] <原文>`，
    * 检测语言恒报 detectedSourceLanguage。不设则 DeepL 请求照常直连。
    */
@@ -139,8 +144,10 @@ function installStub(): void {
     }
     // 与真实端点同形：data[0] 是分句数组，每项 [0] 为译文。
     const suffix = cfg.echoTargetLang ? ` [tl=${tl}]` : '';
+    const translated =
+      cfg.keepCjk && !/[A-Za-z]/.test(q) ? q : (cfg.prefix ?? '【译】') + q + suffix;
     const body = JSON.stringify([
-      [[(cfg.prefix ?? '【译】') + q + suffix, '', null, null, 1]],
+      [[translated, '', null, null, 1]],
       null,
       'en',
     ]);
