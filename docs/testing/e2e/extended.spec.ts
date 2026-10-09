@@ -227,8 +227,9 @@ test.describe('边界情况 @extended', () => {
       chrome.storage.local.set({ 'pt-keys': { openai: 'test-key' } });
     });
     // LLM 漏掉含 'P two' 的行 —— parseNumbered 按编号回填：缺失槽位空串，
-    // 其余槽位仍对齐自己的编号，不发生整体错位
-    await mockChat(OPENAI_CHAT, { dropText: 'P two' });
+    // 其余槽位仍对齐自己的编号，不发生整体错位。
+    // 回显带前缀（#808）：原样回显原文会命中同语言兜底（#783），不插译文、不标记
+    await mockChat(OPENAI_CHAT, { prefix: '[OA] ', dropText: 'P two' });
     await gotoFixture('basic');
     await injectParagraphs(page, ['P one', 'P two', 'P three']);
     await waitForBall(page);
@@ -239,11 +240,11 @@ test.describe('边界情况 @extended', () => {
       await expect(page.locator('p', { hasText: t })).toHaveAttribute('data-pt', 'done', { timeout: 30_000 });
     }
 
-    // 第 1、3 段对齐各自译文（译文 == 自己的原文，无错位占用）
+    // 第 1、3 段对齐各自译文（译文 == 前缀加自己的原文，无错位占用）
     await expect(page.locator('p', { hasText: 'P one' }).locator('.pt-trans'))
-      .toContainText('P one');
+      .toContainText('[OA] P one');
     await expect(page.locator('p', { hasText: 'P three' }).locator('.pt-trans'))
-      .toContainText('P three');
+      .toContainText('[OA] P three');
     // 缺的第 2 段为空串，而非吞掉第 3 段的译文
     const secondTrans = page.locator('p', { hasText: 'P two' }).locator('.pt-trans');
     await expect(secondTrans).toHaveText('');
