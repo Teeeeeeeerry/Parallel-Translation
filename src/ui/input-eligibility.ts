@@ -10,8 +10,13 @@
 // 不参与。密码框因此由构造排除 —— 新增放行的类型必须显式写进白名单，
 // 不会因为漏写一条拒绝规则而被激活。
 //
-// 后面的票往这里加分支：密码框静默不响应（与其他拒绝区分开）、长度上限
-// 装不下译文。圆点等调用方只看判定结果，不自己判断元素类型。
+// 后面的票往这里加分支：长度上限装不下译文。圆点等调用方只看判定结果，
+// 不自己判断元素类型。
+//
+// #651：密码框有独立的原因 password，不与 input-type 混在一起 —— 白名单本来
+// 就把它排除了，单列出来是让这条隐私红线能被单独指出来、单独钉死。它是
+// 静默不响应：不出圆点、不发请求，连提示都不出，提示本身就在告诉旁人这里
+// 有个密码框被按了翻译键。只读、禁用的密码框也按密码框算。
 //
 // #653：只读与禁用的文本框写不进去，入口在那儿就是一个点了没反应的圆点。
 // 两个属性同时存在时按禁用算。contenteditable 的编辑宿主没有这两个属性
@@ -52,11 +57,12 @@ export type InputEligibility =
       eligible: false;
       /**
        * not-input：不是输入框，也不是 contenteditable 的编辑宿主；
-       * input-type：单行输入框但类型不在白名单里；
+       * password：密码框，静默不响应（#651）；
+       * input-type：单行输入框但类型不在白名单里（密码框除外）；
        * disabled：禁用的文本框（#653）；
        * read-only：只读的文本框（#653）
        */
-      reason: 'not-input' | 'input-type' | 'disabled' | 'read-only';
+      reason: 'not-input' | 'password' | 'input-type' | 'disabled' | 'read-only';
     };
 
 export function decideInputEligibility(el: Element | null): InputEligibility {
@@ -65,6 +71,7 @@ export function decideInputEligibility(el: Element | null): InputEligibility {
   }
   if (el instanceof HTMLInputElement) {
     // el.type 已经由浏览器归一化：小写，缺省或写错的 type 按 text 处理
+    if (el.type === 'password') return { eligible: false, reason: 'password' };
     const kind = SINGLE_LINE_TYPES.find((t) => t === el.type);
     if (!kind) return { eligible: false, reason: 'input-type' };
     return unwritable(el) ?? { eligible: true, kind };
