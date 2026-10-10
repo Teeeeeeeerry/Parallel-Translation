@@ -22,6 +22,12 @@ export interface TranslateRequest {
    * 引擎按类别注入，不需要的引擎忽略。
    */
   terms?: Term[];
+  /**
+   * 不走翻译缓存（#642）：router 见到它既不查也不写。输入翻译设上 ——
+   * 发出去的句子几乎不会重复，写进缓存只会挤占阅读侧的额度；阅读侧的
+   * 请求一律不携带。
+   */
+  noCache?: boolean;
 }
 
 export interface TranslateResponse {
