@@ -3315,6 +3315,47 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect(await cacheEntries()).toBe(entriesBefore);
   });
 
+  test('@core TC-E2E-158: 翻译失败时弹出与另三条入口同一口径的提示，输入框里的文字一个字不变，焦点还在、圆点回到可点；引擎恢复后再点照常替换（#641）', async ({
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await mockGoogle({ fail: true });
+    const requests = await mockRequests();
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator(DOT);
+
+    // 换行、前导与末尾空格、全角标点都要原样留着
+    const original = '第一行，原文。\n  第二行带前导空格与末尾空格  ';
+    await box.click();
+    await page.keyboard.type(original);
+    await expect(box).toHaveValue(original);
+    // 光标停在中间，确认失败之后它也没被挪动
+    await box.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(3, 3));
+
+    await dot.click();
+    // 瞬时故障展示泛化文案，不带引擎原因（#313）；文案在运行时取，不写死
+    const failText = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastTranslateFail'));
+    await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(failText, { timeout: 10_000 });
+    await expect(page.locator(TOAST)).toHaveCount(1);
+    // 框里一个字不变，光标位置也不变，焦点还在框里
+    await expect(box).toHaveValue(original);
+    expect(await box.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([3, 3]);
+    await expect(box).toBeFocused();
+    // 只发了一次请求，失败不自动重试
+    expect((await requests()).google).toBe(1);
+    // 圆点回到常态，还能再点（#647、#648）
+    await expect(dot).toBeVisible();
+    await expect(dot).not.toHaveAttribute('data-state', 'busy');
+
+    // 引擎恢复之后再点一次：照常整段替换 —— 失败没有留下卡住的状态
+    await mockGoogle();
+    await dot.click();
+    await expect(box).toHaveValue(`【译】${original}`, { timeout: 10_000 });
+    expect((await requests()).google).toBe(2);
+  });
+
   test('@core TC-E2E-114: 译文整段替换框里全部文字 —— 有没有选区都一样，走原生插入，焦点还在（#644）', async ({
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {
