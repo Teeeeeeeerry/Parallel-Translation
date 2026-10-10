@@ -90,6 +90,19 @@
   border: 2px solid var(--pt-paper);
   box-shadow: 0 1px 4px rgba(31, 58, 46, 0.3);
   cursor: pointer;
+  overflow: visible;
+}
+
+/* 可点区（#638）：可见圆点仍是 14px，透明的一圈把可点区扩到 24px 见方，不小于
+   逐段翻译按钮的下限。偏移由 input-dot.ts 按文字末尾与框的位置算好写进两个
+   变量（缺省居中）；伪元素相对内边距盒定位，再减去 2px 描边 */
+.pt-input-dot::before {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  left: calc(var(--pt-hit-x, -5px) - 2px);
+  top: calc(var(--pt-hit-y, -5px) - 2px);
 }
 
 /* 输入翻译进行中（#648）：变灰并转圈，描边缺一角才看得出在转；
@@ -99,6 +112,11 @@
   border-top-color: transparent;
   cursor: progress;
   animation: pt-spin 0.8s linear infinite;
+}
+
+/* 进行中再点本来就无效；偏到一侧的那一圈跟着转起来会扫过文字，先收起 */
+.pt-input-dot[data-state='busy']::before {
+  display: none;
 }
 
 .pt-toast {

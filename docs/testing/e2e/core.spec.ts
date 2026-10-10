@@ -2717,14 +2717,40 @@ test.describe('输入翻译：圆点', () => {
     }).toPass({ timeout: 5_000 });
   });
 
-  test('@core TC-E2E-137: 圆点与光标并排不重叠 —— 与末尾字符之间留 4px 间隙；窄框里末尾顶到右内边缘时圆点也不压住光标（#667）', async ({
-    page, seedSettings, gotoFixture,
+  test('@core TC-E2E-137: 圆点与光标并排不重叠 —— 与末尾字符之间留 4px 间隙；窄框里末尾顶到右内边缘时圆点也不压住光标（#667；#638 起可点区 24px，扩出的一圈不盖文字末尾、不出框）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
   }) => {
-    await seedSettings({});
+    await seedSettings({ from: 'en' });
+    await mockGoogle();
     await gotoFixture('input');
     await waitForBall(page);
     const box = page.locator('#reply');
     const dot = page.locator(DOT);
+
+    /**
+     * 圆点的可点区（#638）：逐像素问圆点所在的 shadow root 这一点落在谁身上，
+     * 落在圆点上的点围成的范围。可见圆点仍是 14px，扩出的一圈是透明的。
+     */
+    const hitArea = () =>
+      page.evaluate(() => {
+        const root = document.getElementById('pt-host-input-dot')!.shadowRoot!;
+        const el = root.querySelector('.pt-input-dot')!;
+        const r = el.getBoundingClientRect();
+        let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+        for (let x = Math.floor(r.left) - 16; x <= Math.ceil(r.right) + 16; x++) {
+          for (let y = Math.floor(r.top) - 16; y <= Math.ceil(r.bottom) + 16; y++) {
+            if (root.elementFromPoint(x + 0.5, y + 0.5) !== el) continue;
+            left = Math.min(left, x);
+            right = Math.max(right, x + 1);
+            top = Math.min(top, y);
+            bottom = Math.max(bottom, y + 1);
+          }
+        }
+        return { left, right, top, bottom, width: right - left, height: bottom - top };
+      });
+    /** 这一点上用户点下去落在谁身上：输入框自己，还是圆点所在的宿主。 */
+    const hitId = (x: number, y: number) =>
+      page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id ?? null, [x, y] as const);
 
     /** 第一行文字 text 的末尾（光标所在）与这一行的上下沿；字宽按同一字体量。 */
     const lineEnd = (text: string) =>
@@ -2762,6 +2788,20 @@ test.describe('输入翻译：圆点', () => {
       expect(Math.abs(d.y + d.height / 2 - (e.top + e.bottom) / 2)).toBeLessThanOrEqual(2);
     }).toPass({ timeout: 5_000 });
 
+    // #638：可见圆点仍是 14px，可点区不小于 24×24
+    const d0 = (await dot.boundingBox())!;
+    expect(d0.width).toBe(14);
+    expect(d0.height).toBe(14);
+    const h = await hitArea();
+    expect(h.width, `可点区 ${JSON.stringify(h)}`).toBeGreaterThanOrEqual(24);
+    expect(h.height, `可点区 ${JSON.stringify(h)}`).toBeGreaterThanOrEqual(24);
+    // 扩出的一圈不伸向文字末尾：末尾字符与光标照常点得进输入框
+    expect(h.left, '可点区没有盖住末尾字符').toBeGreaterThanOrEqual(e.x);
+    expect(await hitId(e.x - 2, (e.top + e.bottom) / 2)).toBe('reply');
+    // 也不出框：滚动条、边框、拖拽手柄仍是输入框自己的
+    expect(h.right).toBeLessThanOrEqual(e.boxRight + 0.5);
+    expect(h.bottom).toBeLessThanOrEqual(e.boxBottom + 0.5);
+
     // 窄框：把框收窄到第一行刚好装下这串字，末尾顶到右内边缘，右侧放不下圆点
     const text = 'mmmmmmmm';
     await box.evaluate((el, t) => {
@@ -2797,6 +2837,25 @@ test.describe('输入翻译：圆点', () => {
       expect(d.y + d.height).toBeLessThanOrEqual(n.boxBottom + 0.5);
     }).toPass({ timeout: 5_000 });
     await expect(dot).toBeVisible();
+
+    // #638：换了位置，扩出的一圈同样不压住光标、不出框
+    const hn = await hitArea();
+    expect(hn.width).toBeGreaterThanOrEqual(24);
+    expect(hn.height).toBeGreaterThanOrEqual(24);
+    const ringClear =
+      hn.top >= n.bottom - 0.5 || hn.bottom <= n.top + 0.5 || hn.left >= n.x + 0.5 || hn.right <= n.x - 0.5;
+    expect(ringClear, `可点区 ${JSON.stringify(hn)} 压住了光标 x=${n.x} 行 ${n.top}–${n.bottom}`).toBe(true);
+    expect(hn.right).toBeLessThanOrEqual(n.boxRight + 0.5);
+    expect(hn.bottom).toBeLessThanOrEqual(n.boxBottom + 0.5);
+
+    // 点在扩出的那一圈上（可见圆点之外）照常翻译
+    const dn = (await dot.boundingBox())!;
+    const ringX = hn.left + 1 < dn.x ? hn.left + 1 : hn.right - 1;
+    const ringY = hn.top + 1 < dn.y ? hn.top + 1 : hn.bottom - 1;
+    expect(ringX < dn.x || ringX > dn.x + dn.width || ringY < dn.y || ringY > dn.y + dn.height).toBe(true);
+    await page.mouse.click(ringX, ringY);
+    await expect(box).toHaveValue(`【译】${text}`, { timeout: 10_000 });
+    await expect(box).toBeFocused();
   });
 
   test('@core TC-E2E-138: 单行文本框里圆点贴文字末尾 —— 短文本在末尾右侧；长文本横向滚动后位置随之更新、钳在框内；RTL 贴在左侧（#666）', async ({
