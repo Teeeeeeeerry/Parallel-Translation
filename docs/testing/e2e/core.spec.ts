@@ -3356,6 +3356,83 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect((await requests()).google).toBe(2);
   });
 
+  test('@core TC-E2E-159: 点圆点不夺走输入框的焦点，也不动光标与选区 —— 多行、单行文本框与带工具条的富文本编辑器；工具条不收起（#637）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    // 译文晚一点回来：点下去之后、写回之前的那段时间里看焦点与选区
+    await mockGoogle({ delayMs: 1_500 });
+    const dot = page.locator(DOT);
+
+    /** 文本框的选区：起点、终点与方向。 */
+    const fieldSelection = (id: string) =>
+      page.locator(id).evaluate((el: HTMLTextAreaElement | HTMLInputElement) => [
+        el.selectionStart,
+        el.selectionEnd,
+        el.selectionDirection,
+      ]);
+
+    await gotoFixture('input');
+    await waitForBall(page);
+    for (const [id, text] of [['#reply', '第一行\n第二行 hello world'], ['#title', 'hello world 你好']] as const) {
+      const box = page.locator(id);
+      await box.click();
+      await page.keyboard.type(text);
+      // 反向选中中间几个字：方向也要原样留着
+      await box.evaluate((el: HTMLTextAreaElement | HTMLInputElement) => el.setSelectionRange(2, 7, 'backward'));
+      const before = await fieldSelection(id);
+      await expect(dot).toBeVisible();
+      await dot.click();
+
+      // 焦点：点完之后仍在这个框上
+      await expect(box, `${id} 点圆点之后失去了焦点`).toBeFocused();
+      // 光标与选区：与点之前逐项相同
+      expect(await fieldSelection(id), `${id} 点圆点之后选区变了`).toEqual(before);
+      // 这时译文还没回来：圆点在转圈，框里还是原文
+      await expect(dot).toHaveAttribute('data-state', 'busy');
+      await expect(box).toHaveValue(text);
+
+      await expect(box).toHaveValue(`【译】${text}`, { timeout: 10_000 });
+    }
+
+    // 富文本编辑器：编辑区失焦就收起工具条
+    await gotoFixture('rich-input');
+    await waitForBall(page);
+    const compose = page.locator('#compose');
+    const toolbar = page.locator('#toolbar');
+    await compose.click();
+    await expect(toolbar).toBeVisible();
+    await page.keyboard.type('hello brave world');
+    // 选中中间的 brave：光标先退到它后面（越过“ world”6 个字符），再往回选 5 个
+    for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowLeft');
+    for (let i = 0; i < 5; i++) await page.keyboard.press('Shift+ArrowLeft');
+    const editorSelection = () =>
+      page.evaluate(() => {
+        const s = getSelection()!;
+        return {
+          text: s.toString(),
+          anchor: [s.anchorNode?.nodeName, s.anchorOffset],
+          focus: [s.focusNode?.nodeName, s.focusOffset],
+        };
+      });
+    const before = await editorSelection();
+    expect(before.text).toBe('brave');
+
+    await expect(dot).toBeVisible();
+    await dot.click();
+
+    // 工具条还开着，编辑区一次失焦都没有发生，焦点仍在编辑区上
+    await expect(toolbar, '点圆点之后工具条收起了').toBeVisible();
+    expect(await page.evaluate(() => (window as any).__composerBlurs), '点圆点时编辑区失焦过').toBe(0);
+    await expect(compose, '点圆点之后编辑区失去了焦点').toBeFocused();
+    // 光标与选区：与点之前逐项相同
+    expect(await editorSelection(), '点圆点之后编辑区里的选区变了').toEqual(before);
+    await expect(dot).toHaveAttribute('data-state', 'busy');
+
+    await expect(compose).toHaveText('【译】hello brave world', { timeout: 10_000 });
+    await expect(toolbar).toBeVisible();
+  });
+
   test('@core TC-E2E-114: 译文整段替换框里全部文字 —— 有没有选区都一样，走原生插入，焦点还在（#644）', async ({
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {
