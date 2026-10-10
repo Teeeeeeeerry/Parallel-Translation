@@ -50,6 +50,11 @@ const MIN_CHARS = 2;
 
 /** 圆点直径，与 injected.css 的 .pt-input-dot 一致。 */
 const SIZE = 14;
+/**
+ * 可点区边长（#638），与 injected.css 的 .pt-input-dot::before 一致：不小于逐段
+ * 翻译按钮的 24px 下限。可见圆点仍是 SIZE —— 直接撑大会挡住文字（ADR-0006）。
+ */
+const HIT = 24;
 /** 回落位置离框内侧边缘的距离。 */
 const INSET = 6;
 
@@ -99,11 +104,60 @@ function innerBox(el: HTMLElement): InnerBox {
   };
 }
 
+/** 文字末尾在圆点的哪一侧（#638）：扩出的那一圈不往这一侧伸。 */
+type EndSide = 'left' | 'right' | 'top' | 'bottom';
+
+/**
+ * 可点区在一条轴上相对可见圆点的偏移（#638）：可点区是 HIT 见方、把圆点
+ * 包在里面的透明一圈，偏移取 [SIZE - HIT, 0]。guardMin / guardMax 是文字
+ * 末尾给出的硬边界；框的可见区域是软边界，框装得下这一圈时才收进去；
+ * 其余情况居中。
+ */
+function hitAxis(dot: number, boxLo: number, boxHi: number, guardMin: number, guardMax: number): number {
+  let min = Math.max(SIZE - HIT, guardMin);
+  let max = Math.min(0, guardMax);
+  const inMin = Math.max(min, boxLo - dot);
+  const inMax = Math.min(max, boxHi - HIT - dot);
+  if (inMin <= inMax) {
+    min = inMin;
+    max = inMax;
+  }
+  return Math.min(max, Math.max(min, (SIZE - HIT) / 2));
+}
+
+/**
+ * 摆放可点区（#638）。圆点贴在文字末尾旁边，扩出的那一圈要是对称地往外长，
+ * 就会盖住末尾字符与光标，用户想点回文字里接着写时点中的是圆点。所以：
+ * 1. 不往文字末尾那一侧伸，与末尾至少隔开 1px —— 末尾字符与光标仍是输入框的；
+ * 2. 尽量不出框的可见区域 —— 滚动条、边框、拖拽手柄仍是输入框的；
+ * 3. 其余情况居中。
+ * 量不出末尾（回落位置）时没有第 1 条。
+ */
+function placeHit(
+  dot: HTMLElement,
+  left: number,
+  top: number,
+  box: InnerBox,
+  end?: { side: EndSide; at: TextEnd },
+): void {
+  const spare = SIZE - HIT;
+  let xMin = spare, xMax = 0, yMin = spare, yMax = 0;
+  if (end?.side === 'left') xMin = Math.min(0, end.at.x + 1 - left);
+  if (end?.side === 'right') xMax = Math.max(spare, end.at.x - 1 - HIT - left);
+  if (end?.side === 'top') yMin = Math.min(0, end.at.y + end.at.height + 1 - top);
+  if (end?.side === 'bottom') yMax = Math.max(spare, end.at.y - 1 - HIT - top);
+  dot.style.setProperty('--pt-hit-x', `${hitAxis(left, box.left, box.right, xMin, xMax)}px`);
+  dot.style.setProperty('--pt-hit-y', `${hitAxis(top, box.top, box.bottom, yMin, yMax)}px`);
+}
+
 /** 回落位置：框内侧右下角（ADR-0006）。 */
 function placeFallback(dot: HTMLElement, el: HTMLElement): void {
   const box = innerBox(el);
-  dot.style.left = `${box.right - INSET - SIZE}px`;
-  dot.style.top = `${box.bottom - INSET - SIZE}px`;
+  const left = box.right - INSET - SIZE;
+  const top = box.bottom - INSET - SIZE;
+  dot.style.left = `${left}px`;
+  dot.style.top = `${top}px`;
+  placeHit(dot, left, top, box);
 }
 
 /**
@@ -127,17 +181,23 @@ function clampToBox(left: number, top: number, box: InnerBox): { left: number; t
  *   上方，横向贴那一侧的内边缘 —— 不在这一行上，就碰不到光标；
  * - 上下也没地方（单行文本框）时放到光标的另一侧，同样留 GAP。
  */
-function besideEnd(end: TextEnd, box: InnerBox, rtl: boolean): { left: number; top: number } {
+function besideEnd(
+  end: TextEnd,
+  box: InnerBox,
+  rtl: boolean,
+): { left: number; top: number; side: EndSide } {
   const centered = end.y + end.height / 2 - SIZE / 2;
   const after = rtl ? end.x - GAP - SIZE : end.x + GAP;
   const before = rtl ? end.x + GAP : end.x - GAP - SIZE;
-  if (after >= box.left && after + SIZE <= box.right) return { left: after, top: centered };
+  if (after >= box.left && after + SIZE <= box.right) {
+    return { left: after, top: centered, side: rtl ? 'right' : 'left' };
+  }
   const left = rtl ? box.left : box.right - SIZE;
   const below = end.y + end.height;
-  if (below + SIZE <= box.bottom) return { left, top: below };
+  if (below + SIZE <= box.bottom) return { left, top: below, side: 'top' };
   const above = end.y - SIZE;
-  if (above >= box.top) return { left, top: above };
-  return { left: before, top: centered };
+  if (above >= box.top) return { left, top: above, side: 'bottom' };
+  return { left: before, top: centered, side: rtl ? 'left' : 'right' };
 }
 
 /**
@@ -159,6 +219,7 @@ function place(dot: HTMLElement, el: HTMLElement, shadow: ShadowRoot): void {
   const { left, top } = clampToBox(beside.left, beside.top, box);
   dot.style.left = `${left}px`;
   dot.style.top = `${top}px`;
+  placeHit(dot, left, top, box, { side: beside.side, at: end });
 }
 
 /** 圆点的回调：点击时拿到当前输入框。 */
