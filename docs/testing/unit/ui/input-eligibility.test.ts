@@ -50,6 +50,26 @@ describe('decideInputEligibility（#650）', () => {
   });
 });
 
+describe('邮箱、电话、数字、网址类型不参与（#652）', () => {
+  // 这几类框里装的不是自然语言。它们不在白名单里，所以由构造排除；每类单独
+  // 一条，哪一类被误放行都能直接指出来
+  test('邮箱框（email）返回 input-type', () => {
+    expect(decideInputEligibility(input('email'))).toEqual({ eligible: false, reason: 'input-type' });
+  });
+
+  test('电话框（tel）返回 input-type', () => {
+    expect(decideInputEligibility(input('tel'))).toEqual({ eligible: false, reason: 'input-type' });
+  });
+
+  test('数字框（number）返回 input-type', () => {
+    expect(decideInputEligibility(input('number'))).toEqual({ eligible: false, reason: 'input-type' });
+  });
+
+  test('网址框（url）返回 input-type', () => {
+    expect(decideInputEligibility(input('url'))).toEqual({ eligible: false, reason: 'input-type' });
+  });
+});
+
 describe('密码框静默不响应（#651）', () => {
   test('密码框有独立的原因 password，不与 input-type 混在一起', () => {
     expect(decideInputEligibility(input('password'))).toEqual({ eligible: false, reason: 'password' });
