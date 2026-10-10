@@ -114,5 +114,23 @@
       observer.observe(editor, { childList: true, characterData: true, subtree: true });
     })();
   </script>
+  <!-- 带格式工具条的编辑器（#637）：与 Slack、Gmail 的输入区一样，编辑区获得焦点时
+       展开工具条，失焦就收起。点圆点要是夺走了焦点，工具条会当场收起。记下失焦次数 -->
+  <div id="composer">
+    <div id="toolbar" hidden><button type="button">B</button> <button type="button">I</button></div>
+    <div id="compose" class="box" contenteditable="true"></div>
+  </div>
+  <script>
+    (() => {
+      const compose = document.getElementById('compose');
+      const toolbar = document.getElementById('toolbar');
+      window.__composerBlurs = 0;
+      compose.addEventListener('focus', () => { toolbar.hidden = false; });
+      compose.addEventListener('blur', () => {
+        toolbar.hidden = true;
+        window.__composerBlurs++;
+      });
+    })();
+  </script>
 </body>
 </html>
