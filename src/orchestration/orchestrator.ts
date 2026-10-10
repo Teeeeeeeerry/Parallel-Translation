@@ -186,6 +186,11 @@ export interface SingleTextOptions {
    * 不能记 —— 所以默认不记录。
    */
   recordDetectedLang?: boolean;
+  /**
+   * 不走翻译缓存（#642）：既不查也不写。输入翻译声明为 true —— 发出去的
+   * 句子几乎不会重复，缓存只会挤占阅读侧的额度；逐段翻译与划词翻译不声明。
+   */
+  noCache?: boolean;
 }
 
 /** 整页开关入口的结果（#325）。 */
@@ -603,6 +608,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         from,
         to,
         ...(domainId !== undefined && { domainId }),
+        ...(textOpts?.noCache && { noCache: true }),
       })) as TranslateBatchResult;
 
       // 在飞期间被中止（还原递增纪元）—— 不返回译文

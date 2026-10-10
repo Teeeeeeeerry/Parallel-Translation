@@ -3178,11 +3178,12 @@ test.describe('输入翻译：点圆点翻译', () => {
     return async () => (await requests()).queries;
   }
 
-  test('@core TC-E2E-112: 点圆点 → 译成源语言，术语照常生效（#639；#644 起译文写回输入框）', async ({
+  test('@core TC-E2E-112: 点圆点 → 译成源语言，术语照常生效（#639；#644 起译文写回输入框；#642 起不进翻译缓存）', async ({
     page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
     // ADR-0005：目标语言取源语言。当前领域按目标语言解析，所以领域是 en 方向的
-    await seedSettings({ from: 'en', to: 'zh-CN' });
+    // #642：打开翻译缓存，确认输入翻译这条调用链真的不写它
+    await seedSettings({ from: 'en', to: 'zh-CN', useCache: true });
     await mockGoogle({ echoTargetLang: true });
     await serviceWorker.evaluate(() =>
       chrome.storage.local.set({
@@ -3200,6 +3201,11 @@ test.describe('输入翻译：点圆点翻译', () => {
       }),
     );
     const queries = await recordGoogleQueries(mockRequests);
+    const cacheEntries = () =>
+      serviceWorker.evaluate(async () =>
+        Object.keys(await chrome.storage.local.get(null)).filter((k) => k.startsWith('pt-c:')).length,
+      );
+    const entriesBefore = await cacheEntries();
 
     await gotoFixture('input');
     await waitForBall(page);
@@ -3214,6 +3220,8 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect(await queries()).toEqual(['我在 ⟦TM0⟧ 上写回复']);
     await expect(page.locator(TOAST)).toHaveCount(0);
     await expect(box).toBeFocused();
+    // #642：译文不进翻译缓存
+    expect(await cacheEntries()).toBe(entriesBefore);
   });
 
   test('@core TC-E2E-114: 译文整段替换框里全部文字 —— 有没有选区都一样，走原生插入，焦点还在（#644）', async ({

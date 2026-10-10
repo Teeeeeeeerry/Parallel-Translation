@@ -657,7 +657,8 @@ export default defineContentScript({
         }
         return;
       }
-      const result = await orchestrator.translateText(snapshot, 'auto', target.lang);
+      // #642：译文不进翻译缓存，也不读它
+      const result = await orchestrator.translateText(snapshot, 'auto', target.lang, { noCache: true });
 
       // 准入拦截：与逐段 / 划词翻译一致的提示，零请求
       if (result.admission === 'blocked') {

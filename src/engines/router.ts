@@ -67,7 +67,10 @@ function effectiveTerms(
 }
 
 export async function route(req: TranslateRequest): Promise<TranslateResponse> {
-  const { enginePriority, useCache, mtApplyTermTargets } = getSettings();
+  const settings = getSettings();
+  const { enginePriority, mtApplyTermTargets } = settings;
+  // #642: 请求声明不走缓存时既不查也不写，与缓存开关关闭同一条路
+  const useCache = settings.useCache && !req.noCache;
   const errors: EngineError[] = [];
 
   // 结果槽位，null 表示尚未取得
