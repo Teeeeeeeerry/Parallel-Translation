@@ -331,6 +331,25 @@ describe('单行文本框与搜索框（#650）', () => {
     }
   });
 
+  // #652：邮箱、电话、数字、网址各一条 —— 框里有字、获得焦点、再打字都不出现，点击不触发翻译
+  for (const [type, value] of [
+    ['email', 'me@example.com'],
+    ['tel', '+86 138 0000 0000'],
+    ['number', '42'],
+    ['url', 'https://example.com/path'],
+  ] as const) {
+    test(`${type} 类型的输入框不出现圆点（#652）`, () => {
+      registry.ensure('input-dot', true);
+      const el = input(type, value);
+      el.focus();
+      expect(shown()).toBe(false);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(shown()).toBe(false);
+      dot()!.click();
+      expect(translate).not.toHaveBeenCalled();
+    });
+  }
+
   test('在密码框里打字也不出现', () => {
     registry.ensure('input-dot', true);
     const pw = input('password', '');
