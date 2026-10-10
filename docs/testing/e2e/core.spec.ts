@@ -2752,7 +2752,11 @@ test.describe('输入翻译：圆点', () => {
     const hitId = (x: number, y: number) =>
       page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id ?? null, [x, y] as const);
 
-    /** 第一行文字 text 的末尾（光标所在）与这一行的上下沿；字宽按同一字体量。 */
+    /**
+     * 第一行文字 text 的末尾（光标所在）、这一行的上下沿，以及光标本身的上下沿；
+     * 字宽按同一字体量。光标只有文字的行内盒那么高，不是整个行高 —— 行高 1.4
+     * 时上下各有约 2px 的行距在光标之外，在真实浏览器里按像素量过。
+     */
     const lineEnd = (text: string) =>
       box.evaluate((el, t) => {
         const cs = getComputedStyle(el);
@@ -2767,11 +2771,30 @@ test.describe('输入翻译：圆点', () => {
           sp.remove();
           return w;
         };
+        // 文字的行内盒在这一行里的位置：用同样的字体与行高排一行，量里面那段文字。
+        // 行距怎么分到上下由浏览器按取整后的字体度量定，不能按 (行高 - 字高) / 2 算
+        const glyph = (() => {
+          const line = document.createElement('div');
+          line.style.font = cs.font;
+          line.style.lineHeight = cs.lineHeight;
+          line.style.whiteSpace = 'pre';
+          const sp = document.createElement('span');
+          sp.textContent = t;
+          line.append(sp);
+          el.parentElement!.append(line);
+          const l = line.getBoundingClientRect();
+          const g = sp.getBoundingClientRect();
+          line.remove();
+          return { offset: g.top - l.top, height: g.height };
+        })();
         const top = r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop);
+        const caretTop = top + glyph.offset;
         return {
           x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + width(t),
           top,
           bottom: top + parseFloat(cs.lineHeight),
+          caretTop,
+          caretBottom: caretTop + glyph.height,
           boxRight: r.left + el.clientLeft + el.clientWidth,
           boxBottom: r.top + el.clientTop + el.clientHeight,
         };
@@ -2823,15 +2846,23 @@ test.describe('输入翻译：圆点', () => {
     await page.keyboard.type(text);
     const n = await lineEnd(text);
     expect(n.x + 4 + 14, '右侧确实放不下圆点').toBeGreaterThan(n.boxRight);
+    // 打字时圆点先落在回落位置，停手 140ms 后才对齐到末尾（#670）。等位置不再变了
+    // 再量 —— 否则量到的是回落位置，不是贴着末尾的那个位置
+    await expect(async () => {
+      const a = (await dot.boundingBox())!;
+      await page.waitForTimeout(250);
+      const z = (await dot.boundingBox())!;
+      expect([z.x, z.y]).toEqual([a.x, a.y]);
+    }).toPass({ timeout: 5_000 });
     await expect(async () => {
       const d = (await dot.boundingBox())!;
-      // 光标是末尾处、这一行高的一条竖线：圆点要么整个在这一行之外，要么横向离开光标至少 3px
+      // 光标是末尾处、字体那么高的一条竖线：圆点要么整个在光标上下沿之外，要么横向离开光标至少 3px
       const clearOfCaret =
-        d.y >= n.bottom - 0.5 ||
-        d.y + d.height <= n.top + 0.5 ||
+        d.y >= n.caretBottom - 0.5 ||
+        d.y + d.height <= n.caretTop + 0.5 ||
         d.x >= n.x + 3 ||
         d.x + d.width <= n.x - 3;
-      expect(clearOfCaret, `圆点 ${JSON.stringify(d)} 压住了光标 x=${n.x} 行 ${n.top}–${n.bottom}`).toBe(true);
+      expect(clearOfCaret, `圆点 ${JSON.stringify(d)} 压住了光标 x=${n.x} 上下沿 ${n.caretTop}–${n.caretBottom}`).toBe(true);
       // 仍在框的可见区域里（#669）
       expect(d.x + d.width).toBeLessThanOrEqual(n.boxRight + 0.5);
       expect(d.y + d.height).toBeLessThanOrEqual(n.boxBottom + 0.5);
@@ -2840,16 +2871,17 @@ test.describe('输入翻译：圆点', () => {
 
     // #638：换了位置，扩出的一圈同样不压住光标、不出框
     const hn = await hitArea();
+    const dn = (await dot.boundingBox())!;
     expect(hn.width).toBeGreaterThanOrEqual(24);
     expect(hn.height).toBeGreaterThanOrEqual(24);
-    const ringClear =
-      hn.top >= n.bottom - 0.5 || hn.bottom <= n.top + 0.5 || hn.left >= n.x + 0.5 || hn.right <= n.x - 0.5;
-    expect(ringClear, `可点区 ${JSON.stringify(hn)} 压住了光标 x=${n.x} 行 ${n.top}–${n.bottom}`).toBe(true);
+    // 这里圆点换到了末尾那一行的下方：扩出的一圈不往上伸，上沿就是圆点的上沿。
+    // 浏览器按整像素判定点中的是谁，圆点自己的上沿也按整像素算
+    expect(dn.y, '窄框里圆点在光标下方').toBeGreaterThanOrEqual(n.caretBottom - 0.5);
+    expect(hn.top, `可点区 ${JSON.stringify(hn)} 往光标那一侧伸了`).toBeGreaterThanOrEqual(Math.floor(dn.y));
     expect(hn.right).toBeLessThanOrEqual(n.boxRight + 0.5);
     expect(hn.bottom).toBeLessThanOrEqual(n.boxBottom + 0.5);
 
     // 点在扩出的那一圈上（可见圆点之外）照常翻译
-    const dn = (await dot.boundingBox())!;
     const ringX = hn.left + 1 < dn.x ? hn.left + 1 : hn.right - 1;
     const ringY = hn.top + 1 < dn.y ? hn.top + 1 : hn.bottom - 1;
     expect(ringX < dn.x || ringX > dn.x + dn.width || ringY < dn.y || ringY > dn.y + dn.height).toBe(true);
