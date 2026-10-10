@@ -37,8 +37,8 @@ describe('decideInputEligibility（#650）', () => {
     expect(decideInputEligibility(input('search'))).toEqual({ eligible: true, kind: 'search' });
   });
 
-  test('其余单行输入框一律不参与，密码框在内', () => {
-    for (const type of ['password', 'email', 'tel', 'number', 'url', 'date', 'checkbox', 'hidden', 'submit']) {
+  test('其余单行输入框一律不参与（密码框另有独立的原因，见 #651）', () => {
+    for (const type of ['email', 'tel', 'number', 'url', 'date', 'checkbox', 'hidden', 'submit']) {
       expect(decideInputEligibility(input(type))).toEqual({ eligible: false, reason: 'input-type' });
     }
   });
@@ -47,6 +47,25 @@ describe('decideInputEligibility（#650）', () => {
     for (const el of [document.createElement('div'), document.createElement('select'), null]) {
       expect(decideInputEligibility(el)).toEqual({ eligible: false, reason: 'not-input' });
     }
+  });
+});
+
+describe('密码框静默不响应（#651）', () => {
+  test('密码框有独立的原因 password，不与 input-type 混在一起', () => {
+    expect(decideInputEligibility(input('password'))).toEqual({ eligible: false, reason: 'password' });
+  });
+
+  test('type 大小写不论', () => {
+    expect(decideInputEligibility(input('PASSWORD'))).toEqual({ eligible: false, reason: 'password' });
+  });
+
+  test('只读、禁用的密码框仍按密码框算 —— 隐私红线优先于其他拒绝', () => {
+    const ro = input('password');
+    ro.readOnly = true;
+    const off = input('password');
+    off.disabled = true;
+    expect(decideInputEligibility(ro)).toEqual({ eligible: false, reason: 'password' });
+    expect(decideInputEligibility(off)).toEqual({ eligible: false, reason: 'password' });
   });
 });
 

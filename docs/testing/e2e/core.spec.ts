@@ -3796,6 +3796,49 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
     await expect(dot).toBeVisible();
   });
 
+  test('@core TC-E2E-157: 密码框静默不响应 —— 键入、点击、全选、按逐段翻译快捷键之后都不出圆点、不发请求、不弹任何提示；同一页的普通文本框照常（#651）', async ({
+    page, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await mockGoogle();
+    const requests = await mockRequests();
+    await gotoFixture('input');
+    await waitForBall(page);
+    const dot = page.locator(DOT);
+    const toasts = page.locator('#pt-host-toast .pt-toast');
+
+    const secret = page.locator('#secret');
+    await secret.click();
+    await page.keyboard.type('hunter22 我的密码');
+    // 停手对齐（140ms）与提示的出现都早已过去
+    await page.waitForTimeout(500);
+    await expect(dot).toBeHidden();
+
+    // 再点一次、双击、全选、按逐段翻译快捷键，都不该有任何反应
+    await secret.click();
+    await secret.dblclick();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('ControlOrMeta+Shift+d');
+    // 圆点若在，就在框的右侧；在那儿点一下也不该触发什么
+    const b = (await secret.boundingBox())!;
+    await page.mouse.click(b.x + b.width - 12, b.y + b.height / 2);
+    await page.waitForTimeout(500);
+
+    await expect(dot).toBeHidden();
+    expect((await requests()).google, '密码框不发任何翻译请求').toBe(0);
+    await expect(toasts, '密码框不弹任何提示').toHaveCount(0);
+    await expect(secret).toHaveValue('hunter22 我的密码');
+
+    // 对照：同一页的普通文本框照常浮出圆点、点下去发一次请求 —— 上面的“没有”不是因为功能没起来
+    const title = page.locator('#title');
+    await title.click();
+    await page.keyboard.type('你好世界');
+    await expect(dot).toBeVisible();
+    await dot.click();
+    await expect(title).toHaveValue('【译】你好世界', { timeout: 10_000 });
+    expect((await requests()).google).toBe(1);
+  });
+
   test('@core TC-E2E-122: 单行文本框与搜索框里圆点的位置 —— 整颗在框里，不出框（#650，实地再看；#666 起贴文字末尾）', async ({
     page, seedSettings, gotoFixture,
   }, testInfo) => {
