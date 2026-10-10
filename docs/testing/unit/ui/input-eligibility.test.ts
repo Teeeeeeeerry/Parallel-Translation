@@ -50,6 +50,62 @@ describe('decideInputEligibility（#650）', () => {
   });
 });
 
+describe('只读与禁用不参与（#653）', () => {
+  function field(tag: 'input' | 'textarea', attrs: { readonly?: boolean; disabled?: boolean }) {
+    const el = document.createElement(tag);
+    if (attrs.readonly) el.setAttribute('readonly', '');
+    if (attrs.disabled) el.setAttribute('disabled', '');
+    return el;
+  }
+
+  test('只读的单行框：普通文本框与搜索框都不参与', () => {
+    expect(decideInputEligibility(field('input', { readonly: true }))).toEqual({
+      eligible: false,
+      reason: 'read-only',
+    });
+    const search = field('input', { readonly: true });
+    search.setAttribute('type', 'search');
+    expect(decideInputEligibility(search)).toEqual({ eligible: false, reason: 'read-only' });
+  });
+
+  test('只读的多行框不参与', () => {
+    expect(decideInputEligibility(field('textarea', { readonly: true }))).toEqual({
+      eligible: false,
+      reason: 'read-only',
+    });
+  });
+
+  test('禁用的单行框不参与', () => {
+    expect(decideInputEligibility(field('input', { disabled: true }))).toEqual({
+      eligible: false,
+      reason: 'disabled',
+    });
+  });
+
+  test('禁用的多行框不参与', () => {
+    expect(decideInputEligibility(field('textarea', { disabled: true }))).toEqual({
+      eligible: false,
+      reason: 'disabled',
+    });
+  });
+
+  test('只读与禁用同时存在：单行、多行都按禁用拒绝', () => {
+    for (const tag of ['input', 'textarea'] as const) {
+      expect(decideInputEligibility(field(tag, { readonly: true, disabled: true })), tag).toEqual({
+        eligible: false,
+        reason: 'disabled',
+      });
+    }
+  });
+
+  test('属性被去掉之后照常放行', () => {
+    const ta = field('textarea', { readonly: true, disabled: true });
+    ta.removeAttribute('readonly');
+    ta.removeAttribute('disabled');
+    expect(decideInputEligibility(ta)).toEqual({ eligible: true, kind: 'textarea' });
+  });
+});
+
 describe('contenteditable（#655）', () => {
   function el(html: string, id: string): HTMLElement {
     document.body.innerHTML = html;

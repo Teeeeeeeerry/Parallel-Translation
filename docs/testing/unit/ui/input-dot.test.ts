@@ -343,6 +343,28 @@ describe('单行文本框与搜索框（#650）', () => {
   });
 });
 
+describe('只读的框不出现圆点（#653）', () => {
+  test('只读的多行框获得焦点、框里有字 → 不出现，点击不触发翻译', () => {
+    registry.ensure('input-dot', true);
+    const ta = textarea('写不进去的框');
+    ta.readOnly = true;
+    ta.focus();
+    expect(shown()).toBe(false);
+    dot()!.click();
+    expect(translate).not.toHaveBeenCalled();
+  });
+
+  test('只读的单行框获得焦点、框里有字 → 不出现', () => {
+    registry.ensure('input-dot', true);
+    const el = document.createElement('input');
+    el.value = '写不进去的框';
+    el.readOnly = true;
+    document.body.appendChild(el);
+    el.focus();
+    expect(shown()).toBe(false);
+  });
+});
+
 describe('进行中状态长在圆点上（#648）', () => {
   function deferredTranslate() {
     const pending: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];

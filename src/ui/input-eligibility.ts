@@ -10,8 +10,12 @@
 // 不参与。密码框因此由构造排除 —— 新增放行的类型必须显式写进白名单，
 // 不会因为漏写一条拒绝规则而被激活。
 //
-// 后面的票往这里加分支：密码框静默不响应（与其他拒绝区分开）、只读与
-// 禁用、长度上限装不下译文。圆点等调用方只看判定结果，不自己判断元素类型。
+// 后面的票往这里加分支：密码框静默不响应（与其他拒绝区分开）、长度上限
+// 装不下译文。圆点等调用方只看判定结果，不自己判断元素类型。
+//
+// #653：只读与禁用的文本框写不进去，入口在那儿就是一个点了没反应的圆点。
+// 两个属性同时存在时按禁用算。contenteditable 的编辑宿主没有这两个属性
+// （不可编辑就不是编辑宿主），不另立一条。
 //
 // #655：contenteditable 只放行编辑宿主 —— 自己可编辑、父元素不可编辑的那个
 // 元素。焦点在可编辑区时落在宿主上；宿主里的普通子元素不是独立的输入框，
@@ -48,23 +52,34 @@ export type InputEligibility =
       eligible: false;
       /**
        * not-input：不是输入框，也不是 contenteditable 的编辑宿主；
-       * input-type：单行输入框但类型不在白名单里
+       * input-type：单行输入框但类型不在白名单里；
+       * disabled：禁用的文本框（#653）；
+       * read-only：只读的文本框（#653）
        */
-      reason: 'not-input' | 'input-type';
+      reason: 'not-input' | 'input-type' | 'disabled' | 'read-only';
     };
 
 export function decideInputEligibility(el: Element | null): InputEligibility {
-  if (el instanceof HTMLTextAreaElement) return { eligible: true, kind: 'textarea' };
+  if (el instanceof HTMLTextAreaElement) {
+    return unwritable(el) ?? { eligible: true, kind: 'textarea' };
+  }
   if (el instanceof HTMLInputElement) {
     // el.type 已经由浏览器归一化：小写，缺省或写错的 type 按 text 处理
     const kind = SINGLE_LINE_TYPES.find((t) => t === el.type);
     if (!kind) return { eligible: false, reason: 'input-type' };
-    return { eligible: true, kind };
+    return unwritable(el) ?? { eligible: true, kind };
   }
   if (el instanceof HTMLElement && isEditingHost(el)) {
     return { eligible: true, kind: 'contenteditable' };
   }
   return { eligible: false, reason: 'not-input' };
+}
+
+/** 文本框写不进去的原因（#653）；写得进去为 null。 */
+function unwritable(el: HTMLTextAreaElement | HTMLInputElement): InputEligibility | null {
+  if (el.disabled) return { eligible: false, reason: 'disabled' };
+  if (el.readOnly) return { eligible: false, reason: 'read-only' };
+  return null;
 }
 
 /** contenteditable 属性自身给出的状态；没写或认不出的值为 null（跟随父元素）。 */
