@@ -608,12 +608,18 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // （#326）；没注入识别就不等，时序与改动前一致
       let contentLang: ContentLang | null = null;
       if (opts.detectContentLang) {
+        // #862：等识别的这段时间里用户可以还原（逐段翻译过一段之后再点，
+        // 还原分支不受在飞互斥拦）或被 abort 中止，两者都递增纪元（#262、
+        // #328）。识别回来时纪元变了，这次判定已经作废：不判闸门、不翻译、
+        // 不推送状态 —— 还原那一下已经推过未翻译态。中止不算失败，不提示
+        const epochAtToggle = epoch;
         toggleInFlight = true;
         try {
           contentLang = await detectContent(items);
         } finally {
           toggleInFlight = false;
         }
+        if (epoch !== epochAtToggle) return { status: 'aborted', admission };
       }
       const gate = decidePageGate({
         to,
