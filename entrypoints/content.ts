@@ -45,7 +45,6 @@ import {
   type PageToggleResult,
 } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
-import type { ContentLang } from '~/src/orchestration/page-gate';
 import {
   allFailedNotice,
   allRenderBlocked,
@@ -57,6 +56,7 @@ import {
 } from '~/src/orchestration/page-summary';
 import { paraNotice, selectionNotice } from '~/src/orchestration/text-notice';
 import { translateViaBackground } from '~/src/runtime/messaging';
+import { createLangDetector } from '~/src/runtime/lang-detect';
 import { detectOS } from '~/src/hotkeys/platform';
 import {
   settingsReady,
@@ -406,6 +406,10 @@ export default defineContentScript({
     /** 渲染统计（每次整页翻译与增量补翻开始时清零），各项含义见 RenderStats。 */
     const renderStats = emptyRenderStats();
 
+    // #852：浏览器自带的本地语言识别，不发网络请求。页面级闸门取各语言占比
+    // （#843），输入翻译取单一可靠结果（#661）
+    const langDetector = createLangDetector();
+
     // #261: 编排模块 —— 全页翻译的批次流水线在模块内，
     // 渲染回调按批触发（#256 渐进渲染，首屏不等最慢段）
     const orchestrator = createOrchestrator({
@@ -437,7 +441,7 @@ export default defineContentScript({
       // #792：页面级闸门读本 frame 的语言声明
       getPageLang: () => document.documentElement.getAttribute('lang'),
       // #843：页面级闸门的第一级 —— 浏览器自带的语言识别，零网络请求
-      detectContentLang: contentLang,
+      detectContentLang: langDetector.distribution,
       // #328: 增量补翻观察器启停经钩子接线到生命周期注册表（幂等）
       onObserverStart: () => registry.ensure('observer', true),
       onObserverStop: () => registry.ensure('observer', false),
@@ -689,7 +693,7 @@ export default defineContentScript({
         pageLang: document.documentElement.getAttribute('lang'),
         detectedLang: orchestrator.detectedLang(),
         text: snapshot,
-        textLang: await reliableTextLang(snapshot),
+        textLang: await langDetector.reliableLang(snapshot),
       });
       if (!target.ok) {
         if (target.reason === 'same-language') {
@@ -734,44 +738,6 @@ export default defineContentScript({
         // 交出的译文本属内容类，切过去是 #751 的事；在那之前沿用状态类的行为
         toast(result.translation!, { purpose: 'status' });
       }
-    }
-
-    /**
-     * 浏览器语言检测器对这段文字的可靠结果（#661）；不可靠、拿不到或出错时
-     * 为 null。检测在本地进行，不发网络请求。
-     */
-    function reliableTextLang(text: string): Promise<string | null> {
-      return new Promise((resolve) => {
-        try {
-          chrome.i18n.detectLanguage(text, (r) => {
-            const reliable = !chrome.runtime.lastError && r?.isReliable;
-            resolve(reliable ? (r.languages[0]?.language ?? null) : null);
-          });
-        } catch {
-          resolve(null);
-        }
-      });
-    }
-
-    /**
-     * 浏览器语言检测器对整页样本的结果（#843），原样给出各语言占比与可靠
-     * 标志，由页面级闸门判定；拿不到或出错时为 null。与 reliableTextLang
-     * 同一个本地识别，不发网络请求。
-     */
-    function contentLang(sample: string): Promise<ContentLang | null> {
-      return new Promise((resolve) => {
-        try {
-          chrome.i18n.detectLanguage(sample, (r) => {
-            if (chrome.runtime.lastError || !r) return resolve(null);
-            resolve({
-              reliable: r.isReliable,
-              languages: r.languages.map((l) => ({ lang: l.language, percentage: l.percentage })),
-            });
-          });
-        } catch {
-          resolve(null);
-        }
-      });
     }
 
     async function translateSelection(text: string): Promise<void> {
