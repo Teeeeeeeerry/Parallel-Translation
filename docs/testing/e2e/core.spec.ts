@@ -5617,4 +5617,72 @@ test.describe('页面级闸门（#777）', () => {
     expect(await content()).toBe(before);
     expect((await requests()).google).toBe(0);
   });
+
+  test('@core TC-E2E-171: 带三个 iframe 的纯目标语言页面，popup 整页翻译广播到全部 frame —— 只有主文档弹一条说明，子框架不弹；悬浮球始终是未翻译态，从不点亮完成态；零请求、各 frame 逐字节不变（#870）', async ({
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    // 夹具与三个子框架的声明都是 en、内容都是中文：拦下只能来自内容识别
+    await seedSettings({ to: 'zh-CN' });
+    await mockGoogle();
+    await gotoFixture('same-language-frames');
+    const ball = await waitForBall(page);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    const frames = ['#f1', '#f2', '#f3'].map((id) => page.frameLocator(id));
+    for (const frame of frames) {
+      await expect(frame.locator('#content p')).toHaveCount(3, { timeout: 10_000 });
+      await expect(frame.locator('html')).toHaveAttribute('lang', 'en');
+    }
+    // 子框架的 content script 在 document_idle 注入：等各 frame 加载完再留一点余量
+    await page.waitForLoadState('load');
+    await page.waitForTimeout(500);
+
+    const snapshot = () =>
+      Promise.all([
+        page.locator('#content').evaluate((el) => el.outerHTML),
+        ...frames.map((f) => f.locator('#content').evaluate((el) => el.outerHTML)),
+      ]);
+    const before = await snapshot();
+    const requests = await mockRequests();
+    const message = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastPageSameLanguage'));
+
+    // popup 的整页翻译：不带 frameId，广播到这个标签页的全部 frame，各自判一次闸门
+    await serviceWorker.evaluate(async () => {
+      for (const tab of await chrome.tabs.query({})) {
+        try {
+          await chrome.tabs.sendMessage(tab.id!, { type: 'pt:toggle-translate' });
+        } catch {
+          // 扩展页等没有 content script 的标签页
+        }
+      }
+    });
+
+    // 持续采样一段时间（会重试的断言抓不住一闪而过的东西，见 #832）：主文档
+    // 任何时刻至多一条提示、采到过那条说明；子框架任何时刻都没有提示；悬浮球
+    // 任何时刻都是未翻译态
+    const mainToasts = page.locator(TOAST);
+    const frameToasts = frames.map((f) => f.locator(TOAST));
+    const seen = new Set<string>();
+    let maxMain = 0;
+    const end = Date.now() + 3_500;
+    for (;;) {
+      const visible: string[] = [];
+      for (const t of await mainToasts.all()) {
+        if (await t.isVisible().catch(() => false)) visible.push(((await t.textContent()) ?? '').trim());
+      }
+      maxMain = Math.max(maxMain, visible.length);
+      visible.forEach((v) => seen.add(v));
+      for (const [i, toasts] of frameToasts.entries()) {
+        expect(await toasts.count(), `子框架 #f${i + 1} 弹了提示`).toBe(0);
+      }
+      expect(await ball.getAttribute('data-state')).toBe('idle');
+      if (Date.now() >= end) break;
+      await page.waitForTimeout(150);
+    }
+    expect([...seen]).toEqual([message]);
+    expect(maxMain).toBe(1);
+
+    expect(await snapshot()).toEqual(before);
+    await expect(page.locator('[data-pt], .pt-chunk, [data-pt-split]')).toHaveCount(0);
+    expect((await requests()).google).toBe(0);
+  });
 });
