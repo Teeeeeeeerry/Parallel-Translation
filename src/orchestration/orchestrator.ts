@@ -25,7 +25,12 @@ import type { Settings } from '~/src/storage/schema';
 import { currentDomain } from '~/src/storage/domains';
 import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { isSiteBlocked } from '~/src/dom/site-filter';
-import { decidePageGate, type PageGateDecision } from './page-gate';
+import {
+  decidePageGate,
+  sampleUnitTexts,
+  type ContentLang,
+  type PageGateDecision,
+} from './page-gate';
 import { normalizeLangCode } from './lang-code';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
@@ -171,12 +176,17 @@ export interface TranslationOrchestrator {
    * （OrchestratorOptions.hasTranslated / restore），模块不触碰 DOM。
    * 翻译分支与 translatePage 同一条流水线（准入 / 批次 / 中止 / 提示语义）。
    */
-  togglePage(
-    items: TranslateItem<unknown>[] | (() => TranslateItem<unknown>[]),
-    from: string,
-    to: string,
-  ): Promise<PageToggleResult>;
+  togglePage(items: PageItemsSource, from: string, to: string): Promise<PageToggleResult>;
 }
+
+/**
+ * 整页开关入口的翻译项来源：现成的数组，或按需采集的函数（#792）。函数收到
+ * `{ readOnly: true }` 时只读采集，供页面级闸门取样（#843）：不切块、不登记
+ * 隐藏单元，页面一个字不动；不带参数时是照常翻译的那一次采集。
+ */
+export type PageItemsSource =
+  | TranslateItem<unknown>[]
+  | ((mode?: { readOnly: boolean }) => TranslateItem<unknown>[]);
 
 /** 单文本入口的选项（#659）。 */
 export interface SingleTextOptions {
@@ -300,6 +310,12 @@ export interface OrchestratorOptions {
    */
   getPageLang?: () => string | null;
   /**
+   * 本地内容识别（#843）：对翻译单元的文字样本给出各语言占比，页面级闸门的
+   * 第一级取数。调用方用浏览器自带的语言识别实现，零网络请求 —— 模块不碰
+   * 浏览器接口。未注入、不可用或出错时为 null，闸门回落到检测语言与声明。
+   */
+  detectContentLang?: (sample: string) => Promise<ContentLang | null>;
+  /**
    * 增量补翻观察器启动钩子（#328）：只在整页翻译成功后调用 ——
    * 调用方接线到生命周期注册表（启停幂等，未启动为空操作）。
    */
@@ -348,6 +364,19 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   let detectedLang: string | null = null;
   const recordDetectedLang = (raw: string | undefined): void => {
     detectedLang = normalizeLangCode(raw) ?? detectedLang;
+  };
+
+  // #843：页面级闸门的内容识别。没注入识别就不取样；取样或识别出错当拿不到，
+  // 闸门回落到检测语言与声明 —— 一个可选能力出错不该让整页翻译坏掉
+  const detectContent = async (items: PageItemsSource): Promise<ContentLang | null> => {
+    if (!opts.detectContentLang) return null;
+    try {
+      const list = typeof items === 'function' ? items({ readOnly: true }) : items;
+      const sample = sampleUnitTexts(list.map((item) => item.text));
+      return sample ? await opts.detectContentLang(sample) : null;
+    } catch {
+      return null;
+    }
   };
 
   // #325: 全页翻译流水线本体（translatePage 与 togglePage 共用）
@@ -545,10 +574,24 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // 命中闸门时它不启动，后来的新节点不会被补翻。
       // 检测语言不随还原清掉：换了目标语言再点，闸门可能按检测语言命中，
       // 这一页确实就是新目标语言
+      // #843：第一级是本地内容识别。样本取自同一个采集函数的只读模式 ——
+      // 照常翻译的那次采集会切块，闸门命中时页面就不是一个字不动了。识别是
+      // 异步的：等它的这段时间已经算在飞，否则连点两下会各自开一轮翻译
+      // （#326）；没注入识别就不等，时序与改动前一致
+      let contentLang: ContentLang | null = null;
+      if (opts.detectContentLang) {
+        toggleInFlight = true;
+        try {
+          contentLang = await detectContent(items);
+        } finally {
+          toggleInFlight = false;
+        }
+      }
       const gate = decidePageGate({
         to,
         detectedLang,
         pageLang: opts.getPageLang?.() ?? null,
+        contentLang,
       });
       if (!gate.translate) {
         // #793：悬浮球推到未翻译态 —— 推成完成态是在骗人，用户再点一次
