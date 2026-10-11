@@ -175,6 +175,18 @@ export default defineBackground(() => {
     return true;
   });
 
+  // #836：主文档发现单页应用换了路径，这一次的对方语言（输入翻译）回到跟随
+  // 设置 —— 广播给该标签页全部 frame（不带 frameId，否则 iframe 收不到）。
+  // 只认主文档发来的：子 frame 自己的网址变了不算这一页跳页
+  chrome.runtime.onMessage.addListener((msg, sender) => {
+    if (msg?.type !== 'pt:input-lang-path-changed') return;
+    const tabId = sender.tab?.id;
+    if (tabId == null || sender.frameId !== 0) return;
+    chrome.tabs
+      .sendMessage(tabId, { type: 'pt:set-input-lang', choice: { kind: 'auto' } })
+      .catch(() => {});
+  });
+
   // 健康检查（E2E 测试用于验证消息通道就绪）
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'pt:ping') {

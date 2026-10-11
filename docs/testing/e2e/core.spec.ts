@@ -4268,6 +4268,76 @@ test.describe('输入翻译：对方语言的判定链', () => {
     // 别的标签页从头到尾没被动过
     expect(await translateIn(other, '#reply', '回头见')).toBe('【译】回头见 [tl=en]');
   });
+
+  test('@core TC-E2E-166: 单页应用用 pushState 换到别的路径，这一次的对方语言回到自动判定，主文档与 iframe 都是；同一路径上只换查询参数或 hash 不算（#836）', async ({
+    page, context, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    // 源语言 auto：自动判定按页面声明（夹具都是 lang="en"）
+    await seedSettings({});
+    await mockGoogle({ echoTargetLang: true });
+    await gotoFixture('input-frames');
+    await waitForBall(page);
+    const same = page.frameLocator('#same');
+    await expect(same.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
+    const extId = new URL(serviceWorker.url()).host;
+    const popup = await context.newPage();
+    const select = popup.locator('#pt-input-lang-select');
+
+    /** 在 frame 里的框写一段话、点圆点，返回框里换成的值。 */
+    const translateIn = async (
+      frame: { locator: (s: string) => import('@playwright/test').Locator },
+      boxSel: string,
+      text: string,
+    ) => {
+      const box = frame.locator(boxSel);
+      await box.click();
+      await box.fill('');
+      await page.keyboard.type(text);
+      await frame.locator(DOT).click();
+      await expect(box).not.toHaveValue(text, { timeout: 10_000 });
+      return box.inputValue();
+    };
+    const openPopup = async () => {
+      await page.bringToFront();
+      await popup.goto(`chrome-extension://${extId}/popup.html`);
+      await expect(select).toBeEnabled({ timeout: 10_000 });
+    };
+    /** 单页应用换路由：页面自己调 history，不重新加载 */
+    const pushState = (url: string) => page.evaluate((u) => history.pushState({}, '', u), url);
+
+    await openPopup();
+    await select.selectOption('ja');
+    await expect(select).toHaveValue('ja');
+    expect(await translateIn(page, '#reply', '早上好')).toBe('【译】早上好 [tl=ja]');
+    expect(await translateIn(same, '#child', '谢谢你')).toBe('【译】谢谢你 [tl=ja]');
+
+    // 1. 反向：同一路径上只换查询参数、只换 hash —— 还是这一页，选择不重置
+    const path = new URL(page.url()).pathname;
+    await pushState(`${path}?sort=new`);
+    await pushState(`${path}?sort=new#comment-5`);
+    await page.evaluate(() => history.replaceState({}, '', `${location.pathname}?sort=top`));
+    expect.soft(await translateIn(page, '#reply', '你好'), '只换查询参数与 hash：主文档').toBe('【译】你好 [tl=ja]');
+    expect.soft(await translateIn(same, '#child', '你好'), '只换查询参数与 hash：iframe').toBe('【译】你好 [tl=ja]');
+
+    // 2. pushState 换到别的路径：主文档与 iframe 都回到自动判定，按页面声明译成英文
+    await pushState('/some/other/route');
+    expect(new URL(page.url()).pathname).toBe('/some/other/route');
+    expect.soft(await translateIn(page, '#reply', '晚安'), '换路径之后：主文档').toBe('【译】晚安 [tl=en]');
+    expect.soft(await translateIn(same, '#child', '再见'), '换路径之后：iframe').toBe('【译】再见 [tl=en]');
+    // popup 也显示“跟随设置”
+    await openPopup();
+    await expect.soft(select, '换路径之后：popup').toHaveValue('auto');
+
+    // 3. 换路径之后再选一次照常生效：重置的是这一次的选择，不是把功能关掉
+    await select.selectOption('ja');
+    await expect(select).toHaveValue('ja');
+    expect(await translateIn(same, '#child', '明天见')).toBe('【译】明天见 [tl=ja]');
+    // 后退回原来的路径（popstate）同样算换路径
+    await page.goBack();
+    await expect.poll(() => new URL(page.url()).pathname).toBe(path);
+    expect.soft(await translateIn(page, '#reply', '回头见'), '后退之后：主文档').toBe('【译】回头见 [tl=en]');
+    expect.soft(await translateIn(same, '#child', '回头见'), '后退之后：iframe').toBe('【译】回头见 [tl=en]');
+  });
 });
 
 test.describe('输入翻译：iframe 里的输入框（#672）', () => {
