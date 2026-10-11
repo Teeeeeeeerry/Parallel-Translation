@@ -366,3 +366,44 @@ describe('识别在飞时中止：纪元变了就丢弃识别结果（#862，#32
     orch.stop();
   });
 });
+
+describe('内容识别这一级拦下纯目标语言页面：#777 的几条在新判定来源上重走（#863）', () => {
+  // 声明写成 en：只靠声明会照常翻译，拦下只能是内容识别这一级给出的
+  test('连点两次：两次都拦下、页面逐字节不变、零请求，增量补翻的观察器不启动', async () => {
+    const line = (i: number) => `第 ${i} 行：采用风格排版后需替换文案内容，以免遇到公众号原创保护问题。`;
+    document.body.innerHTML =
+      `<h1>风格秀 风格排版 风格设计</h1><p>采用风格排版后需替换文案内容</p>` +
+      `<p>${Array.from({ length: 120 }, (_, i) => line(i)).join('<br>\n')}</p>`;
+    const before = document.body.innerHTML;
+    const restoreRects = mockAllBoundingRects();
+    const collectItems = (mode?: { readOnly: boolean }) =>
+      collect(document.body, undefined, mode).map((el, i) => ({ text: el.textContent!, ctx: i }));
+    const send = fakeSend();
+    const pushes: string[] = [];
+    const onObserverStart = vi.fn();
+    const detect = vi.fn<Detect>(async () => reliable(['zh', 97], ['en', 3]));
+    const orch = createOrchestrator({
+      send,
+      getPageLang: () => 'en',
+      hasTranslated: () => document.querySelector('[data-pt]') !== null,
+      pushStatus: (s) => pushes.push(s),
+      onObserverStart,
+      detectContentLang: detect,
+    } as Parameters<typeof createOrchestrator>[0]);
+    orch.start();
+
+    for (let click = 1; click <= 2; click++) {
+      const result = await orch.togglePage(collectItems, 'auto', 'zh-CN');
+      expect(result.status).toBe('same-language');
+      expect(document.body.innerHTML).toBe(before);
+      expect(document.querySelectorAll('[data-pt], .pt-chunk, [data-pt-split]')).toHaveLength(0);
+      expect(send).toHaveBeenCalledTimes(0);
+      expect(detect).toHaveBeenCalledTimes(click);
+    }
+
+    restoreRects();
+    expect(onObserverStart).not.toHaveBeenCalled();
+    expect(pushes).toEqual(['idle', 'idle']);
+    orch.stop();
+  });
+});
