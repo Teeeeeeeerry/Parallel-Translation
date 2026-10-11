@@ -5738,4 +5738,55 @@ test.describe('页面级闸门（#777）', () => {
     expect((await requests()).google).toBeGreaterThan(0);
     expect(await page.locator(TOAST).allTextContents()).not.toContain(message);
   });
+
+  test('@core TC-E2E-169: 本地化界面形态的页面整页翻译后，目标语言的界面文字不插译文、不标记为已翻译，被拦下的单元数进汇总提示；还原后整页逐字节回到原样（#872）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    // 与 TC-E2E-168 同一份夹具。闸门放行之后，页面上本来就是目标语言的界面
+    // 文字照样进了采集、送了翻译，引擎原样还回来，由单元级兜底（#783）拦下：
+    // 不插译文、不标记为已翻译，结束后汇总成一条提示（#785）
+    await seedSettings({ to: 'zh-CN' });
+    await mockGoogle({ keepCjk: true });
+    await gotoFixture('content-foreign');
+    const ball = await waitForBall(page);
+
+    // 整页快照：body 里去掉扩展自己挂的界面宿主（悬浮球、提示）
+    const pageHtml = () =>
+      page.evaluate(() => {
+        const body = document.body.cloneNode(true) as HTMLElement;
+        body.querySelectorAll('[id^="pt-host-"]').forEach((el) => el.remove());
+        return body.outerHTML;
+      });
+    const UI = '#menu, #crumbs, #title, #review, #about, #buy';
+    const before = await pageHtml();
+    const uiBefore = await page.locator(UI).evaluateAll((els) => els.map((el) => el.outerHTML));
+    expect(uiBefore).toHaveLength(6);
+
+    await ball.click();
+
+    for (const id of ['#en1', '#en2', '#en3', '#en4']) {
+      await expect(page.locator(id)).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+    }
+    await expect(ball).toHaveAttribute('data-state', 'done');
+    // 界面文字：没有译文、没有已翻译标记，一个字不动
+    await expect(page.locator('#menu, #crumbs, #title, #review, #about, #buy').locator('.pt-trans')).toHaveCount(0);
+    for (const sel of UI.split(', ')) {
+      await expect(page.locator(sel)).not.toHaveAttribute('data-pt', /.*/);
+      await expect(page.locator(sel).locator('[data-pt]')).toHaveCount(0);
+    }
+    expect(await page.locator(UI).evaluateAll((els) => els.map((el) => el.outerHTML))).toEqual(uiBefore);
+    // 被兜底拦下的单元数进汇总：菜单、面包屑、标题、评测、“关于这款游戏”、
+    // “加入购物车”共 6 个单元
+    const summary = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastSameAsSource', ['6']));
+    const toast = page.locator(TOAST);
+    await expect(toast).toHaveText(summary, { timeout: 10_000 });
+    await expect(toast).toHaveCount(1);
+    await expect(toast).toHaveAttribute('data-purpose', 'status');
+
+    // 还原：整页逐字节回到原样
+    await ball.click();
+    await expect(page.locator('[data-pt]')).toHaveCount(0, { timeout: 10_000 });
+    await expect(ball).toHaveAttribute('data-state', 'idle');
+    expect(await pageHtml()).toBe(before);
+  });
 });
