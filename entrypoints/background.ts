@@ -163,6 +163,18 @@ export default defineBackground(() => {
     return true;
   });
 
+  // #663: 子 frame 启动时要本标签页这一次的对方语言（输入翻译）—— 与上面
+  // 的临时领域同一条路，转问该标签页的主文档
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg?.type !== 'pt:top-input-lang-choice') return;
+    const tabId = sender.tab?.id;
+    if (tabId == null) return;
+    chrome.tabs
+      .sendMessage(tabId, { type: 'pt:get-input-lang-choice' }, { frameId: 0 })
+      .then(sendResponse, () => sendResponse(undefined));
+    return true;
+  });
+
   // 健康检查（E2E 测试用于验证消息通道就绪）
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'pt:ping') {

@@ -108,6 +108,19 @@ async function requestTopDomainChoice(): Promise<DomainChoice | null> {
   }
 }
 
+/**
+ * #663: 子 frame 向主文档要本标签页这一次的对方语言（经 background 转问
+ * frameId 0），与 requestTopDomainChoice 同一条路。取不到时返回 null，跟随设置。
+ */
+async function requestTopInputLangChoice(): Promise<InputLangChoice | null> {
+  try {
+    const res: unknown = await chrome.runtime.sendMessage({ type: 'pt:top-input-lang-choice' });
+    return parseInputLangChoice((res as { choice?: unknown } | undefined)?.choice);
+  } catch {
+    return null;
+  }
+}
+
 export default defineContentScript({
   matches: ['<all_urls>'],
   allFrames: true,
@@ -155,8 +168,13 @@ export default defineContentScript({
     let choiceBroadcast = false;
 
     // #662: 用户在 popup 里为本标签页临时选的对方语言（输入翻译），与上面
-    // 的临时领域并列：只存在本页主文档的内存里，不进后台、不写存储
+    // 的临时领域并列：只存在本页的内存里，不进后台、不写存储。所以刷新、
+    // 跳页、关闭标签页后自然回到跟随设置，别的标签页也不受影响。
+    // #663: 选择广播到本页全部 frame，每个 frame 各存一份；子 frame 启动时
+    // 向主文档问一次
     let inputLangChoice: InputLangChoice = { kind: 'auto' };
+    /** 本 frame 是否已收到过语言选择的广播 —— 收到过就不再采用启动时问来的选择。 */
+    let inputLangBroadcast = false;
 
     // ── 注入 UI（仅主文档）──
     if (isMainFrame) {
@@ -643,8 +661,12 @@ export default defineContentScript({
       // #658：源语言是 auto 时读本 frame 页面的语言声明；
       // #660：本 frame 翻译时引擎报告过检测语言就优先用它
       // #661：用户写的已经是对方的语言就不替换，零请求
+      // #663：popup 里临时选了这一次的对方语言，就用它顶替源语言设置这一级。
+      // 临时选择是调用方的输入，判定链本身不改：选了具体语言，链的第一级就
+      // 定下它；选“跟随设置”照旧走完整条链。写的已经是所选语言时同样不替换
+      const from = inputLangChoice.kind === 'lang' ? inputLangChoice.lang : ns.from;
       const target = decideInputTarget({
-        from: ns.from,
+        from,
         pageLang: document.documentElement.getAttribute('lang'),
         detectedLang: orchestrator.detectedLang(),
         text: snapshot,
@@ -821,17 +843,20 @@ export default defineContentScript({
       }
 
       if (msg?.type === 'pt:set-input-lang') {
-        // #662: popup 选好这一次的对方语言，交给主文档保存；回复保存后的选择
-        if (!isMainFrame) return;
+        // #662: popup 选好这一次的对方语言。#663: 广播到全部 frame，iframe 里
+        // 的输入翻译与主文档用同一种语言；只有主文档回复保存后的选择
         const choice = parseInputLangChoice(msg.choice);
         if (!choice) return;
         inputLangChoice = choice;
+        inputLangBroadcast = true;
+        if (!isMainFrame) return;
         sendResponse({ choice: inputLangChoice });
         return;
       }
 
       if (msg?.type === 'pt:get-input-lang-choice') {
-        // #662: popup 打开时来问
+        // #662: popup 打开时来问；#663: 子 frame 启动时经 background 来问
+        // （见 requestTopInputLangChoice）
         if (!isMainFrame) return;
         sendResponse({ choice: inputLangChoice });
         return;
@@ -853,6 +878,10 @@ export default defineContentScript({
     if (!isMainFrame) {
       void requestTopDomainChoice().then((choice) => {
         if (choice && !choiceBroadcast) domainChoice = choice;
+      });
+      // #663: 这一次的对方语言同理
+      void requestTopInputLangChoice().then((choice) => {
+        if (choice && !inputLangBroadcast) inputLangChoice = choice;
       });
     }
   },

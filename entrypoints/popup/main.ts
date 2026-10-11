@@ -372,8 +372,9 @@ async function refreshInputLang(): Promise<void> {
 }
 
 /**
- * 选好这一次的对方语言（#662）：立即交给本页主文档保存，与领域的临时选择
- * 并列，不是设置项、不写设置。主文档回复保存后的选择。
+ * 选好这一次的对方语言（#662）：立即交给本页保存，与领域的临时选择并列，
+ * 不是设置项、不写设置。#663：广播到本页全部 frame（不带 frameId，否则
+ * all_frames 注入的 iframe 收不到），主文档回复保存后的选择。
  */
 async function onInputLangChange(): Promise<void> {
   const refresh = ++inputLangRefresh;
@@ -382,11 +383,7 @@ async function onInputLangChange(): Promise<void> {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab?.id == null) throw new Error('no active tab');
-    const resp = await chrome.tabs.sendMessage(
-      tab.id,
-      { type: 'pt:set-input-lang', choice },
-      { frameId: 0 },
-    );
+    const resp = await chrome.tabs.sendMessage(tab.id, { type: 'pt:set-input-lang', choice });
     if (refresh === inputLangRefresh) {
       renderInputLangSelect(parseInputLangChoice((resp as { choice?: unknown } | undefined)?.choice));
     }

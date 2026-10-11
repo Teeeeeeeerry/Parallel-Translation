@@ -4120,6 +4120,68 @@ test.describe('输入翻译：对方语言的判定链', () => {
     await expect(box, `输入翻译${stubLost}`).toHaveValue(viaStub, { timeout: 10_000 });
     await expect(box).toHaveValue('[DL:JA] 你好世界');
   });
+
+  test('@core TC-E2E-161: popup 里临时选这一次的对方语言 → 主文档、已有的 iframe、之后才加载的 iframe 都按它翻译；选回“跟随设置”回到自动判定（#663）', async ({
+    page, context, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    // 源语言 auto：自动判定按各自 frame 的页面声明（夹具都是 lang="en"）
+    await seedSettings({});
+    await mockGoogle({ echoTargetLang: true });
+    await gotoFixture('input-frames');
+    await waitForBall(page);
+    const same = page.frameLocator('#same');
+    await expect(same.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
+
+    /** 在 frame 里的框写一段话、点圆点，断言框里换成了译成 lang 的译文。 */
+    const translateIn = async (
+      frame: { locator: (s: string) => import('@playwright/test').Locator },
+      boxSel: string,
+      text: string,
+      lang: string,
+    ) => {
+      const box = frame.locator(boxSel);
+      await box.click();
+      await box.fill('');
+      await page.keyboard.type(text);
+      await frame.locator(DOT).click();
+      await expect(box, `${boxSel} 译成 ${lang}`).toHaveValue(`【译】${text} [tl=${lang}]`, { timeout: 10_000 });
+    };
+
+    // 选之前：自动判定，译成页面声明的英文
+    await translateIn(page, '#reply', '你好世界', 'en');
+
+    // popup 开在后台标签页里：它操作的“当前标签页”是前台的测试页
+    const extId = new URL(serviceWorker.url()).host;
+    const popup = await context.newPage();
+    await page.bringToFront();
+    await popup.goto(`chrome-extension://${extId}/popup.html`);
+    const select = popup.locator('#pt-input-lang-select');
+    await expect(select).toBeEnabled({ timeout: 10_000 });
+    await select.selectOption('ja');
+    await expect(select).toHaveValue('ja');
+
+    // 主文档与已有的同域 iframe 都按日文翻译
+    await translateIn(page, '#reply', '早上好', 'ja');
+    await translateIn(same, '#child', '谢谢你', 'ja');
+
+    // 选完之后才加载的 iframe：启动时问主文档，同样按日文翻译
+    await page.evaluate(() => {
+      const iframe = document.createElement('iframe');
+      iframe.id = 'late';
+      iframe.src = 'input-frame-child.html';
+      document.body.append(iframe);
+    });
+    const late = page.frameLocator('#late');
+    await expect(late.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
+    await translateIn(late, '#child', '明天见', 'ja');
+
+    // 选回“跟随设置”：三处都回到自动判定链，按页面声明译成英文
+    await select.selectOption('auto');
+    await expect(select).toHaveValue('auto');
+    await translateIn(page, '#reply', '晚安', 'en');
+    await translateIn(same, '#child', '再见', 'en');
+    await translateIn(late, '#child', '回头见', 'en');
+  });
 });
 
 test.describe('输入翻译：站点名单与总开关', () => {
