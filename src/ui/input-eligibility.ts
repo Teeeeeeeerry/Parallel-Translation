@@ -18,6 +18,15 @@
 // 静默不响应：不出圆点、不发请求，连提示都不出，提示本身就在告诉旁人这里
 // 有个密码框被按了翻译键。只读、禁用的密码框也按密码框算。
 //
+// #826：登录页的“显示密码”按钮把同一个框的 type 从 password 改成 text，
+// 只按 type 判定，切成明文之后它就是普通文本框，密码会被发给翻译引擎。
+// 所以再看 autocomplete：值是 current-password 或 new-password 的单行输入框
+// 同样返回 password。浏览器与密码管理器都按这两个值识别密码框，切换 type
+// 时它不跟着变。仍只看元素自身的属性：不记“这个框以前是不是密码框”，也
+// 不按 name、id 里的字样去猜 —— 那样既误拦正常框，也拦不住没写这些字样的。
+// 已知残余：既切 type 又没写 autocomplete 的站点，切成明文之后 DOM 里没有
+// 任何东西能把它与普通文本框区分开，这条盖不住。
+//
 // #653：只读与禁用的文本框写不进去，入口在那儿就是一个点了没反应的圆点。
 // 两个属性同时存在时按禁用算。contenteditable 的编辑宿主没有这两个属性
 // （不可编辑就不是编辑宿主），不另立一条。
@@ -57,7 +66,8 @@ export type InputEligibility =
       eligible: false;
       /**
        * not-input：不是输入框，也不是 contenteditable 的编辑宿主；
-       * password：密码框，静默不响应（#651）；
+       * password：密码框，静默不响应（#651）；含切成明文、但 autocomplete
+       *   仍标明是密码框的（#826）；
        * input-type：单行输入框但类型不在白名单里（密码框除外）；
        * disabled：禁用的文本框（#653）；
        * read-only：只读的文本框（#653）
@@ -71,7 +81,9 @@ export function decideInputEligibility(el: Element | null): InputEligibility {
   }
   if (el instanceof HTMLInputElement) {
     // el.type 已经由浏览器归一化：小写，缺省或写错的 type 按 text 处理
-    if (el.type === 'password') return { eligible: false, reason: 'password' };
+    if (el.type === 'password' || isPasswordAutocomplete(el)) {
+      return { eligible: false, reason: 'password' };
+    }
     const kind = SINGLE_LINE_TYPES.find((t) => t === el.type);
     if (!kind) return { eligible: false, reason: 'input-type' };
     return unwritable(el) ?? { eligible: true, kind };
@@ -80,6 +92,18 @@ export function decideInputEligibility(el: Element | null): InputEligibility {
     return { eligible: true, kind: 'contenteditable' };
   }
   return { eligible: false, reason: 'not-input' };
+}
+
+/** 密码框的 autocomplete 取值（#826）。 */
+const PASSWORD_AUTOCOMPLETE = ['current-password', 'new-password'];
+
+/**
+ * autocomplete 标明这是密码框（#826）。属性值按 HTML 规范是空白分隔、大小写
+ * 不论的若干标记，字段名前可以带分组与地址类标记（section-login、shipping）。
+ */
+function isPasswordAutocomplete(el: HTMLInputElement): boolean {
+  const tokens = (el.getAttribute('autocomplete') ?? '').toLowerCase().split(/\s+/);
+  return tokens.some((t) => PASSWORD_AUTOCOMPLETE.includes(t));
 }
 
 /** 文本框写不进去的原因（#653）；写得进去为 null。 */

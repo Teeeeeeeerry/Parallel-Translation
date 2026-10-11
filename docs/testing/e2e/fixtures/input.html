@@ -17,5 +17,14 @@
   <input type="search" id="query">
   <input type="password" id="secret">
   <input type="email" id="mail">
+  <!-- #826：登录页的“显示密码”按钮把同一个框的 type 在 password 与 text 之间切换，autocomplete 不变 -->
+  <input type="password" id="login-pass" autocomplete="current-password">
+  <button type="button" id="show-pass">Show password</button>
+  <script>
+    document.getElementById('show-pass').addEventListener('click', function () {
+      var f = document.getElementById('login-pass');
+      f.type = f.type === 'password' ? 'text' : 'password';
+    });
+  </script>
 </body>
 </html>

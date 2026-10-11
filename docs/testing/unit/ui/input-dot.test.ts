@@ -362,6 +362,50 @@ describe('单行文本框与搜索框（#650）', () => {
   });
 });
 
+describe('显示密码切成明文之后不出现圆点（#826）', () => {
+  function loginPassword(value: string): HTMLInputElement {
+    const el = document.createElement('input');
+    el.type = 'password';
+    el.setAttribute('autocomplete', 'current-password');
+    el.value = value;
+    document.body.appendChild(el);
+    return el;
+  }
+
+  test('切成 type=text 后获得焦点、框里有字 → 不出现，点击不触发翻译', () => {
+    registry.ensure('input-dot', true);
+    const pw = loginPassword('hunter22');
+    pw.type = 'text';
+    pw.focus();
+    expect(shown()).toBe(false);
+    dot()!.click();
+    expect(translate).not.toHaveBeenCalled();
+  });
+
+  test('焦点一直在框里时切成明文，再打字也不出现', () => {
+    registry.ensure('input-dot', true);
+    const pw = loginPassword('');
+    pw.focus();
+    pw.type = 'text';
+    pw.value = 'hunter22';
+    pw.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(shown()).toBe(false);
+    dot()!.click();
+    expect(translate).not.toHaveBeenCalled();
+  });
+
+  test('反向：没写 autocomplete 的普通文本框照常出现', () => {
+    registry.ensure('input-dot', true);
+    const el = document.createElement('input');
+    el.type = 'text';
+    el.setAttribute('autocomplete', 'username');
+    el.value = 'hunter22';
+    document.body.appendChild(el);
+    el.focus();
+    expect(shown()).toBe(true);
+  });
+});
+
 describe('只读的框不出现圆点（#653）', () => {
   test('只读的多行框获得焦点、框里有字 → 不出现，点击不触发翻译', () => {
     registry.ensure('input-dot', true);

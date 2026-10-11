@@ -3989,6 +3989,77 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
     expect((await requests()).google).toBe(1);
   });
 
+  test('@core TC-E2E-160: 登录页按“显示密码”把密码框切成明文之后，键入与点击都不出圆点、不发请求、不弹任何提示；同一页的普通文本框照常（#826）', async ({
+    page, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    // 前半段让引擎失败：圆点一旦被触发就会发出请求并弹出失败提示，下面
+    // “不发请求”“不弹提示”两条断言因此都抓得住，不只靠“不出圆点”那一条
+    await mockGoogle({ fail: true });
+    const requests = await mockRequests();
+    await gotoFixture('input');
+    await waitForBall(page);
+    const dot = page.locator(DOT);
+    const toasts = page.locator('#pt-host-toast .pt-toast');
+    const pass = page.locator('#login-pass');
+
+    await pass.click();
+    await page.keyboard.type('hunter22 我的密码');
+
+    // 点眼睛按钮：同一个框切成明文，焦点跟着到了按钮上
+    await page.locator('#show-pass').click();
+    await expect(pass, '“显示密码”确实把框切成了明文').toHaveAttribute('type', 'text');
+
+    // 回到框里接着打字、点击、全选、按逐段翻译快捷键，都不该有任何反应
+    await pass.click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' 再加几个字');
+    await pass.dblclick();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('ControlOrMeta+Shift+d');
+    // 圆点若在，就贴在文字末尾或框的右侧；在那儿点一下也不该触发什么
+    const b = (await pass.boundingBox())!;
+    await page.mouse.click(b.x + b.width - 12, b.y + b.height / 2);
+    await page.waitForTimeout(500);
+    await expect.soft(dot, '点眼睛按钮切成明文之后不出圆点').toBeHidden();
+
+    // 另一种眼睛按钮：按下时不夺焦点，焦点一直在框里时切换 type。先切回密码再切成明文
+    await page.locator('#show-pass').click();
+    await expect(pass).toHaveAttribute('type', 'password');
+    await pass.click();
+    await page.keyboard.press('End');
+    await page.evaluate(() => document.getElementById('show-pass')!.click());
+    await expect(pass).toHaveAttribute('type', 'text');
+    await expect(pass).toBeFocused();
+    await page.keyboard.type('!!');
+    // 停手对齐（140ms）早已过去；圆点若浮出，就像用户那样点它一下
+    await page.waitForTimeout(500);
+    const leaked = await dot.isVisible();
+    if (leaked) {
+      await dot.click();
+      // 等这次翻译走完（失败），失败提示该出就已经出了
+      await expect(dot).not.toHaveAttribute('data-state', 'busy', { timeout: 10_000 });
+    }
+    await page.waitForTimeout(500);
+
+    // 三条各自断言，任何一条漏了都单独报出来
+    expect.soft(leaked, '切成明文的密码框不出圆点').toBe(false);
+    expect.soft((await requests()).google, '切成明文的密码框不发任何翻译请求').toBe(0);
+    // 取当下的条数，不用会重试的 toHaveCount(0)：状态提示 3 秒后自己消失，重试等得到 0
+    expect.soft(await toasts.count(), '切成明文的密码框不弹任何提示').toBe(0);
+    await expect(pass).toHaveValue('hunter22 我的密码 再加几个字!!');
+
+    // 对照：引擎恢复，同一页的普通文本框照常浮出圆点、点下去发一次请求 —— 上面的“没有”不是因为功能没起来
+    await mockGoogle();
+    const title = page.locator('#title');
+    await title.click();
+    await page.keyboard.type('你好世界');
+    await expect(dot).toBeVisible();
+    await dot.click();
+    await expect(title).toHaveValue('【译】你好世界', { timeout: 10_000 });
+    expect((await requests()).google).toBe(1);
+  });
+
   test('@core TC-E2E-122: 单行文本框与搜索框里圆点的位置 —— 整颗在框里，不出框（#650，实地再看；#666 起贴文字末尾）', async ({
     page, seedSettings, gotoFixture,
   }, testInfo) => {
