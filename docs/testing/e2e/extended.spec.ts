@@ -998,7 +998,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     await expect(builtin.locator(':scope > .pt-domain-move:focus')).toHaveCount(1);
   });
 
-  test('TC-E2E-84: 5000 条术语的领域收起时，别的领域上移、下移在限定时间内完成；展开后看到全部术语并能保存（#509）', async ({
+  test('TC-E2E-84: 5000 条术语的领域收起时，别的领域上移、下移整表重绘不生成任何术语行；展开后看到全部术语并能保存（#509）', async ({
     page, serviceWorker,
   }) => {
     const N = 5000;
@@ -1026,20 +1026,27 @@ test.describe('设置页：翻译领域 @extended', () => {
     const big = page.locator('.pt-domain-item', { hasText: '大术语表' }).locator('.pt-domain-terms');
     await expect(big.locator('summary')).toHaveText(await msg('domainTermsSummary', [String(N)]));
 
-    // 收起状态下调整另一个领域的顺序：每次都整表重绘
+    // 收起状态下调整另一个领域的顺序：每次都整表重绘。#509 修的是重绘时不为
+    // 收起的术语编辑区生成表格 —— 直接数 DOM 里的术语行，与机器快慢无关
+    // （#818：原先断言四次调整的墙钟耗时 < 1200ms，机器一忙就越线）
     const small = () => page.locator('.pt-domain-item', { hasText: '小领域' });
+    const termRows = page.locator('.pt-domain-terms tr');
+    // 取当下的行数，不用会重试的 toHaveCount(0)；软断言，每次重绘各自报出来
+    expect.soft(await termRows.count(), '初次渲染：收起的术语编辑区不生成术语行').toBe(0);
+    const moves = [
+      ['up', ['软件开发(简体中文)', '小领域', '大术语表']],
+      ['up', ['小领域', '软件开发(简体中文)', '大术语表']],
+      ['down', ['软件开发(简体中文)', '小领域', '大术语表']],
+      ['down', ['软件开发(简体中文)', '大术语表', '小领域']],
+    ] as const;
     const start = Date.now();
-    await small().locator(':scope > .pt-domain-move[data-direction="up"]').click();
-    await expect(names).toHaveText(['软件开发(简体中文)', '小领域', '大术语表']);
-    await small().locator(':scope > .pt-domain-move[data-direction="up"]').click();
-    await expect(names).toHaveText(['小领域', '软件开发(简体中文)', '大术语表']);
-    await small().locator(':scope > .pt-domain-move[data-direction="down"]').click();
-    await expect(names).toHaveText(['软件开发(简体中文)', '小领域', '大术语表']);
-    await small().locator(':scope > .pt-domain-move[data-direction="down"]').click();
-    await expect(names).toHaveText(['软件开发(简体中文)', '大术语表', '小领域']);
-    const elapsed = Date.now() - start;
-    console.log(`TC-E2E-84 四次调整顺序耗时 ${elapsed}ms`);
-    expect(elapsed).toBeLessThan(1200);
+    for (const [direction, order] of moves) {
+      await small().locator(`:scope > .pt-domain-move[data-direction="${direction}"]`).click();
+      await expect(names).toHaveText([...order]);
+      expect.soft(await termRows.count(), `${direction} 之后的重绘：收起的术语编辑区不生成术语行`).toBe(0);
+    }
+    // 耗时只打出来看趋势，不断言
+    console.log(`TC-E2E-84 四次调整顺序耗时 ${Date.now() - start}ms`);
 
     // 展开：看到全部术语，改一条并保存
     await big.locator('summary').click();
