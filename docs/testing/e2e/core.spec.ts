@@ -5789,4 +5789,69 @@ test.describe('页面级闸门（#777）', () => {
     await expect(ball).toHaveAttribute('data-state', 'idle');
     expect(await pageHtml()).toBe(before);
   });
+
+  test('@core TC-E2E-170: 纯目标语言页面在内容识别这一级上拦下 —— 零请求、页面逐字节不变、弹出说明、悬浮球是未翻译态，再点一次仍如此（#873）', async ({
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    // 与 TC-E2E-153 同一份夹具（#795 造的 same-language.html），但验的不是同一件事：
+    // - TC-E2E-153 是在旧判定路径（只看检测语言与语言声明，#791）下立的，夹具
+    //   声明 zh-CN，拦下来自声明
+    // - 这一条验换了判定来源（#843）之后，拦下来自内容识别这一级：点之前先把
+    //   声明改成 en，只看声明的话这一页会照常翻译。仍然零请求、仍然弹说明、
+    //   悬浮球仍然是未翻译态，才说明内容识别这一级接住了 #777 的那件事
+    // 零请求用替身层自己记的已服务请求数，读之前先认 SW 存活标记：实例中途被
+    // 换就以“计数不可信”报错，不会假绿（#766）
+    await seedSettings({ to: 'zh-CN' });
+    await mockGoogle();
+    await gotoFixture('same-language');
+    const ball = await waitForBall(page);
+    await expect(ball).toHaveAttribute('data-state', 'idle');
+    await page.evaluate(() => document.documentElement.setAttribute('lang', 'en'));
+
+    // 整页快照：body 里去掉扩展自己挂的界面宿主（悬浮球、提示）
+    const pageHtml = () =>
+      page.evaluate(() => {
+        const body = document.body.cloneNode(true) as HTMLElement;
+        body.querySelectorAll('[id^="pt-host-"]').forEach((el) => el.remove());
+        return body.outerHTML;
+      });
+    const before = await pageHtml();
+    const requests = await mockRequests();
+    const message = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastPageSameLanguage'));
+    const toast = page.locator(TOAST);
+
+    for (let click = 1; click <= 2; click++) {
+      await ball.click();
+      // 说明已经是目标语言：状态类，同一时刻只有这一条
+      await expect(toast).toHaveText(message, { timeout: 10_000 });
+      await expect(toast).toHaveCount(1);
+      await expect(toast).toHaveAttribute('data-purpose', 'status');
+      // 悬浮球是未翻译态，不是完成态
+      await expect(ball).toHaveAttribute('data-state', 'idle');
+      // 页面逐字节不变：没有译文、没有已翻译标记，超长段落也没被切成切块
+      expect(await pageHtml()).toBe(before);
+      await expect(page.locator('[data-pt], .pt-chunk, [data-pt-split]')).toHaveCount(0);
+      // 一个翻译请求都没发
+      expect((await requests()).google).toBe(0);
+      // 等这条说明自己消失，下一次点击的说明才是新弹的
+      await expect(toast).toHaveCount(0, { timeout: 10_000 });
+    }
+
+    // 计数器没失灵：同一页面上划中那段英文引文，划词照常送翻（#794），计数变成 1
+    const quote = (await page.locator('#quote').textContent())!.trim();
+    await serviceWorker.evaluate(async (t: string) => {
+      for (const tab of await chrome.tabs.query({})) {
+        try {
+          await chrome.tabs.sendMessage(tab.id!, { type: 'pt:translate-selection', text: t });
+        } catch {
+          // 扩展页等没有 content script 的标签页
+        }
+      }
+    }, quote);
+    await expect(page.locator(`${TOAST}[data-purpose="content"]`)).toContainText(`【译】${quote}`, {
+      timeout: 20_000,
+    });
+    expect((await requests()).google).toBe(1);
+    expect(await pageHtml()).toBe(before);
+  });
 });
