@@ -8,7 +8,14 @@
  *    之前先等首装按界面语言写入的目标语言落盘（#723）
  * 4. fixture 页面通过 HTTP 提供（绕开 file:// 的 content script 限制）
  */
-import { test as base, chromium, expect, type Page, type Worker } from '@playwright/test';
+import {
+  test as base,
+  chromium,
+  expect,
+  type Locator,
+  type Page,
+  type Worker,
+} from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
@@ -358,5 +365,36 @@ export const test = base.extend<
     });
   },
 });
+
+/**
+ * 在一段时间内始终没有提示（#832）。
+ *
+ * 会重试的否定断言（`toHaveCount(0)`、`toBeHidden()`）抓不住“本该不出现、却
+ * 出现了一下又消失”的提示：状态类提示 3 秒后自己消失（设置页的提示 2 秒），
+ * 重试一直等到条数变成 0，断言照样通过。这里从现在起持续采样 `ms` 毫秒，
+ * 任何一次采到可见的提示就失败，并报出采到的文字。
+ *
+ * 在“该出现提示的时刻”之后立即调用：提示若在调用之前就出现过，只要还没自己
+ * 消失，第一次采样就能采到。
+ */
+export async function expectNoToastFor(
+  toasts: Locator,
+  message: string,
+  ms = 3_500,
+): Promise<void> {
+  const page = toasts.page();
+  const end = Date.now() + ms;
+  for (;;) {
+    const visible: string[] = [];
+    for (const toast of await toasts.all()) {
+      if (await toast.isVisible().catch(() => false)) {
+        visible.push(((await toast.textContent().catch(() => '')) ?? '').trim());
+      }
+    }
+    expect(visible, message).toEqual([]);
+    if (Date.now() >= end) return;
+    await page.waitForTimeout(200);
+  }
+}
 
 export { expect };

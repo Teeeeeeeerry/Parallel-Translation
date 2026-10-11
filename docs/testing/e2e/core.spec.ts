@@ -7,7 +7,14 @@
  * 翻译端点由 mockGoogle 拦截，完全确定性，不依赖外网。
  */
 import fs from 'fs';
-import { test, expect, waitForBall, fixtureUrl, type MockRequests } from './fixtures';
+import {
+  test,
+  expect,
+  waitForBall,
+  fixtureUrl,
+  expectNoToastFor,
+  type MockRequests,
+} from './fixtures';
 import type { UserSiteRules } from '~/src/storage/specialization';
 
 // ── 辅助：触发翻译并等待完成 ──
@@ -882,9 +889,10 @@ test.describe('还原 vs 在飞翻译（#157）', () => {
     await expect(ball).toHaveAttribute('data-state', 'idle', { timeout: 10_000 });
     await expect(page.locator('[data-pt="done"]')).toHaveCount(0, { timeout: 10_000 });
 
-    // 等所有在飞批次结算，确认无“所有引擎均失败”错误 toast
+    // 等所有在飞批次结算，确认无“所有引擎均失败”错误 toast（持续采样：提示
+    // 3 秒后自己消失，会重试的 toHaveCount(0) 等得到 0，#832）
     await waitDrained(page, served);
-    await expect(errorToast).toHaveCount(0);
+    await expectNoToastFor(errorToast, '还原后不弹“所有引擎均失败”');
 
     // 还原后不启动 observer：新增段落不被自动补翻（无新请求、无译文）
     const before = await served();
@@ -937,16 +945,7 @@ test.describe('还原 vs 在飞翻译（#157）', () => {
     // 等在飞/排队批次结算（#157 前：全批中止 → 结算瞬间弹「所有引擎均失败」
     // 并停留 3s —— toHaveCount(0) 会等 toast 自动过期而漏检，须持续采样）
     await waitDrained(page, served);
-    let sawErrorToast = false;
-    const toastEnd = Date.now() + 3500;
-    while (Date.now() < toastEnd) {
-      if ((await errorToast.count()) > 0) {
-        sawErrorToast = true;
-        break;
-      }
-      await page.waitForTimeout(250);
-    }
-    expect(sawErrorToast).toBe(false);
+    await expectNoToastFor(errorToast, '增量补翻在飞时还原，不误报“所有引擎均失败”');
 
     // observer 已停：追加内容不再触发新请求
     const settled = await served();
@@ -1456,7 +1455,8 @@ test.describe('站点页面规则', () => {
     await expect(error).toBeVisible();
     await expect(error).toContainText('3');
     await expect(error).toContainText('.promo,');
-    await expect(page.locator('#pt-toast')).toBeHidden();
+    // 不弹“已保存”：设置页的提示 2 秒后自己隐藏，持续采样（#832）
+    await expectNoToastFor(page.locator('#pt-toast'), '无效选择器不弹保存提示');
     const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('pt-site-rules'));
     expect(JSON.stringify(stored)).not.toContain('promo');
 
@@ -3309,7 +3309,7 @@ test.describe('输入翻译：点圆点翻译', () => {
     await expect(box).toHaveValue('【译】我在 GitHub 上写回复 [tl=en]', { timeout: 10_000 });
     // “不翻译”术语以占位符发出，回来换回原词
     expect(await queries()).toEqual(['我在 ⟦TM0⟧ 上写回复']);
-    await expect(page.locator(TOAST)).toHaveCount(0);
+    await expectNoToastFor(page.locator(TOAST), '写回之后不再弹提示条');
     await expect(box).toBeFocused();
     // #642：译文不进翻译缓存
     expect(await cacheEntries()).toBe(entriesBefore);
@@ -3976,7 +3976,7 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
 
     await expect(dot).toBeHidden();
     expect((await requests()).google, '密码框不发任何翻译请求').toBe(0);
-    await expect(toasts, '密码框不弹任何提示').toHaveCount(0);
+    await expectNoToastFor(toasts, '密码框不弹任何提示');
     await expect(secret).toHaveValue('hunter22 我的密码');
 
     // 对照：同一页的普通文本框照常浮出圆点、点下去发一次请求 —— 上面的“没有”不是因为功能没起来
