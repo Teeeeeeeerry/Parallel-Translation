@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>带多个 iframe 的纯目标语言页面</title>
+  <style>body { max-width: 760px; margin: 24px auto; font: 16px/1.5 sans-serif; } iframe { width: 100%; height: 160px; }</style>
+</head>
+<body>
+  <!-- #870（规格 #831）：主文档与三个同源 iframe 的内容都是中文，声明都写成 en。
+       只看声明会照常翻译；拦下只能来自内容识别。popup 的整页翻译广播到全部
+       frame，每个 frame 各自判一次闸门：只有主文档弹说明、推悬浮球状态，子框架
+       不推状态、不弹提示，页面上同一时刻只有一条提示。 -->
+  <main id="content">
+    <h1 id="title">春季新品发布会邀请函</h1>
+    <p id="p1">诚挚邀请您参加我们的春季新品发布会，届时将展示全新的产品线与设计理念。</p>
+    <p id="p2">发布会将于下周六下午两点在市中心会展中心举行，现场备有茶点，欢迎携友人一同前来。</p>
+    <p id="p3">如需报名，请在本周五之前回复本邀请函，我们会为您预留座位并寄送入场凭证。</p>
+  </main>
+  <iframe id="f1" src="same-language-frame-child.html"></iframe>
+  <iframe id="f2" src="same-language-frame-child.html"></iframe>
+  <iframe id="f3" src="same-language-frame-child.html"></iframe>
+</body>
+</html>

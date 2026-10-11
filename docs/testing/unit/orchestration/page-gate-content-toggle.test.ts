@@ -407,3 +407,38 @@ describe('内容识别这一级拦下纯目标语言页面：#777 的几条在�
     orch.stop();
   });
 });
+
+describe('内容识别这一级拦下时的悬浮球状态（#870，同 #793、#327）', () => {
+  // 声明都写成 en：拦下只能来自内容识别
+  test('主文档：悬浮球推到未翻译态 idle，从不推 loading 或完成态 done', async () => {
+    const { orch, send, pushes } = setup('en', async () => reliable(['zh', 96], ['en', 4]));
+
+    const result = await orch.togglePage(ZH, 'auto', 'zh-CN');
+
+    expect(result.status).toBe('same-language');
+    expect(send).toHaveBeenCalledTimes(0);
+    expect(pushes).toEqual(['idle']);
+    orch.stop();
+  });
+
+  test('子框架：照样判、照样拦，但一次状态都不推', async () => {
+    const send = fakeSend();
+    const pushes: string[] = [];
+    const orch = createOrchestrator({
+      send,
+      getPageLang: () => 'en',
+      hasTranslated: () => false,
+      isMainFrame: () => false,
+      pushStatus: (s) => pushes.push(s),
+      detectContentLang: async () => reliable(['zh', 96], ['en', 4]),
+    } as Parameters<typeof createOrchestrator>[0]);
+    orch.start();
+
+    const result = await orch.togglePage(ZH, 'auto', 'zh-CN');
+
+    expect(result.status).toBe('same-language');
+    expect(send).toHaveBeenCalledTimes(0);
+    expect(pushes).toEqual([]);
+    orch.stop();
+  });
+});

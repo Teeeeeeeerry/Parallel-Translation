@@ -56,6 +56,7 @@ export const FIXTURES = [
   'wiki-article',
   'input-frames',
   'input-blank-frames',
+  'same-language-frames',
 ] as const;
 
 export type FixtureName = (typeof FIXTURES)[number];
