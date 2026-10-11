@@ -89,6 +89,58 @@ describe('密码框静默不响应（#651）', () => {
   });
 });
 
+describe('显示密码切成明文之后仍按密码框算（#826）', () => {
+  // 登录页的“显示密码”按钮把 type 从 password 改成 text，autocomplete 不跟着变。
+  // 浏览器与密码管理器都按这两个值识别密码框，判定只看元素自身的属性
+  function shown(autocomplete: string): HTMLInputElement {
+    const el = input('text');
+    el.setAttribute('autocomplete', autocomplete);
+    return el;
+  }
+
+  test('type=text、autocomplete=current-password → password', () => {
+    expect(decideInputEligibility(shown('current-password'))).toEqual({ eligible: false, reason: 'password' });
+  });
+
+  test('type=text、autocomplete=new-password → password', () => {
+    expect(decideInputEligibility(shown('new-password'))).toEqual({ eligible: false, reason: 'password' });
+  });
+
+  test('密码框切换 type 前后判定一致：同一个元素从 password 改成 text 仍是 password', () => {
+    const el = input('password');
+    el.setAttribute('autocomplete', 'current-password');
+    expect(decideInputEligibility(el)).toEqual({ eligible: false, reason: 'password' });
+    el.setAttribute('type', 'text');
+    expect(decideInputEligibility(el)).toEqual({ eligible: false, reason: 'password' });
+  });
+
+  test('属性值大小写不论，前面带分组与地址类标记也认（HTML 规范的写法）', () => {
+    for (const v of ['Current-Password', 'NEW-PASSWORD', 'section-login current-password', 'shipping new-password']) {
+      expect(decideInputEligibility(shown(v)), v).toEqual({ eligible: false, reason: 'password' });
+    }
+  });
+
+  test('搜索框写了这两个值同样按密码框算', () => {
+    const el = input('search');
+    el.setAttribute('autocomplete', 'current-password');
+    expect(decideInputEligibility(el)).toEqual({ eligible: false, reason: 'password' });
+  });
+
+  test('反向：没写这两个值的普通文本框照常放行', () => {
+    expect(decideInputEligibility(input('text'))).toEqual({ eligible: true, kind: 'text' });
+    for (const v of ['', 'on', 'off', 'username', 'email', 'one-time-code', 'cc-number', 'password']) {
+      expect(decideInputEligibility(shown(v)), v).toEqual({ eligible: true, kind: 'text' });
+    }
+  });
+
+  test('反向：name 或 id 里带 password 字样不算 —— 只认 autocomplete', () => {
+    const el = input('text');
+    el.name = 'password';
+    el.id = 'new-password';
+    expect(decideInputEligibility(el)).toEqual({ eligible: true, kind: 'text' });
+  });
+});
+
 describe('只读与禁用不参与（#653）', () => {
   function field(tag: 'input' | 'textarea', attrs: { readonly?: boolean; disabled?: boolean }) {
     const el = document.createElement(tag);
