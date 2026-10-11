@@ -5,8 +5,8 @@
  * 模式），识别结果由注入的识别函数给出。经整页开关入口 togglePage 断言，
  * 假消息层数请求条数；识别函数是浏览器本地识别的替身。
  */
-import { describe, test, expect, vi } from 'vitest';
-import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { describe, test, expect, vi, afterEach } from 'vitest';
+import { createOrchestrator, CONTENT_DETECT_TIMEOUT_MS } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import type { ContentLang } from '~/src/orchestration/page-gate';
 import { collect } from '~/src/dom/walker';
@@ -187,6 +187,78 @@ describe('等识别的这段时间算在飞（#326 不回退）', () => {
     expect((await first).status).toBe('translated');
     expect(send).toHaveBeenCalledTimes(1);
     expect(detect).toHaveBeenCalledTimes(1);
+    orch.stop();
+  });
+});
+
+describe('识别的回调永远不来：到时间上限就当拿不到，照常翻译（#866）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // 识别替身永不兑现，模拟 chrome.i18n.detectLanguage 的回调一直不来
+  const hang: Detect = () => new Promise<ContentLang | null>(() => {});
+
+  test('声明是外文：上限之前算在飞，到上限后走回落照常翻译，在飞回落、悬浮球停在完成态', async () => {
+    vi.useFakeTimers();
+    const detect = vi.fn<Detect>(hang);
+    const { orch, send, pushes } = setup('en', detect);
+
+    const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
+    await vi.advanceTimersByTimeAsync(CONTENT_DETECT_TIMEOUT_MS - 1);
+    // 上限之前仍在等识别：再点一次是忙碌，一个请求都还没发
+    expect((await orch.togglePage(STEAM, 'auto', 'zh-CN')).status).toBe('busy');
+    expect(send).toHaveBeenCalledTimes(0);
+
+    await vi.advanceTimersByTimeAsync(1);
+    const result = await first;
+    expect(result.status).toBe('translated');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0].texts).toHaveLength(STEAM.length);
+    expect(pushes).toEqual(['loading', 'done']);
+
+    // 在飞标记已经回落：再点一次不是忙碌，而是又走一轮（识别照样挂住、照样到点放弃）
+    const again = orch.togglePage(STEAM, 'auto', 'zh-CN');
+    await vi.advanceTimersByTimeAsync(CONTENT_DETECT_TIMEOUT_MS);
+    expect((await again).status).toBe('translated');
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(pushes.at(-1)).toBe('done');
+    orch.stop();
+  });
+
+  test('声明是目标语言：到上限后按声明拦下，零请求，悬浮球回到未翻译态', async () => {
+    vi.useFakeTimers();
+    const { orch, send, pushes } = setup('zh-CN', hang);
+
+    const first = orch.togglePage(ZH, 'auto', 'zh-CN');
+    await vi.advanceTimersByTimeAsync(CONTENT_DETECT_TIMEOUT_MS);
+    const result = await first;
+
+    expect(result.status).toBe('same-language');
+    expect(send).toHaveBeenCalledTimes(0);
+    expect(pushes).toEqual(['idle']);
+    // 在飞已回落：再点一次照样判、照样拦，不是忙碌
+    const again = orch.togglePage(ZH, 'auto', 'zh-CN');
+    await vi.advanceTimersByTimeAsync(CONTENT_DETECT_TIMEOUT_MS);
+    expect((await again).status).toBe('same-language');
+    expect(send).toHaveBeenCalledTimes(0);
+    orch.stop();
+  });
+
+  test('识别在上限之内回来：用识别的结论，不等到上限', async () => {
+    vi.useFakeTimers();
+    let release!: (v: ContentLang) => void;
+    const { orch, send } = setup('zh-cn', () => new Promise((r) => (release = r)));
+
+    const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
+    await vi.advanceTimersByTimeAsync(5);
+    release(reliable(['en', 76], ['zh', 23]));
+    await vi.advanceTimersByTimeAsync(0);
+    const result = await first;
+
+    // 声明是 zh-cn，按回落会拦下；照常翻译说明用的是识别的结论
+    expect(result.status).toBe('translated');
+    expect(send).toHaveBeenCalledTimes(1);
     orch.stop();
   });
 });

@@ -348,6 +348,32 @@ export function splitBatches<T>(
   return batches;
 }
 
+/**
+ * 页面级闸门等本地内容识别的时间上限（毫秒，#866）。识别是纯本地的 CPU 操作，
+ * 在 Chrome 上实测（2200 字符的中英混排样本，连跑 30 次）中位 0.9 毫秒、最慢
+ * 1.1 毫秒，样本上限 4000 字符也只是几毫秒。这个上限是给“回调永远不来”兜底，
+ * 不是给“识别慢”兜底，所以取得短：比实测高出两到三个数量级，挂死时用户最多
+ * 多等一秒，随后照常翻译。
+ */
+export const CONTENT_DETECT_TIMEOUT_MS = 1000;
+
+/** 在 ms 毫秒内兑现就给它的结果，否则给 null；原 Promise 之后再兑现也不理会。 */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export function createOrchestrator(opts: OrchestratorOptions): TranslationOrchestrator {
   const batchSize = opts.batchSize ?? FULL_PAGE_BATCH_SIZE;
   const sleepFn = opts.sleep ?? defaultSleep;
@@ -368,12 +394,14 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
 
   // #843：页面级闸门的内容识别。没注入识别就不取样；取样或识别出错当拿不到，
   // 闸门回落到检测语言与声明 —— 一个可选能力出错不该让整页翻译坏掉
+  // #866：识别超过时间上限同样当拿不到。识别的回调不来时，没有上限的等待会
+  // 让整页翻译永远停在在飞，再点只返回忙碌，只能刷新页面
   const detectContent = async (items: PageItemsSource): Promise<ContentLang | null> => {
     if (!opts.detectContentLang) return null;
     try {
       const list = typeof items === 'function' ? items({ readOnly: true }) : items;
       const sample = sampleUnitTexts(list.map((item) => item.text));
-      return sample ? await opts.detectContentLang(sample) : null;
+      return sample ? await withTimeout(opts.detectContentLang(sample), CONTENT_DETECT_TIMEOUT_MS) : null;
     } catch {
       return null;
     }
