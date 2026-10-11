@@ -27,14 +27,14 @@ const PASS = { translate: true };
 
 describe('内容识别可靠时只看它，声明退到后面（#843）', () => {
   test('声明是目标语言、内容大半是外文（Steam 中文界面加英文介绍）：照常翻译', () => {
-    // 量自 Chrome 的 i18n.detectLanguage：content-foreign 夹具的单元样本给出 en 76、zh 23；
-    // 另一份 Steam 形状的样本（导航更多、介绍更短）给出 en 61、zh 38
+    // 实测（#851，docs/research/page-gate-content-share.md）：Steam Path of Exile 2
+    // 以中文界面打开，声明 zh-cn，识别器给出 en 52、zh 41，可靠
     expect(
       decidePageGate({
         to: 'zh-CN',
         detectedLang: null,
         pageLang: 'zh-cn',
-        contentLang: reliable(['en', 61], ['zh', 38]),
+        contentLang: reliable(['en', 52], ['zh', 41]),
       }),
     ).toEqual(PASS);
   });
@@ -94,8 +94,9 @@ describe('内容识别可靠时只看它，声明退到后面（#843）', () => 
 
 describe('“绝大部分是目标语言”的阈值（#843）', () => {
   test(`阈值暂定 ${CONTENT_SHARE_THRESHOLD}`, () => {
-    // #831 的初值 80 在真实样本上分不开纯中文模板页（zh 75）与中英各半的页面
-    // （zh 49），按量出的数取 65，见 page-gate.ts 的注释
+    // 依据是 #851 在真实页面上的实测（docs/research/page-gate-content-share.md）。
+    // 实测里两类页面交叉，单一占比阈值分不开，数值暂不动，原因见 page-gate.ts
+    // 的注释；更稳的判据见 #883
     expect(CONTENT_SHARE_THRESHOLD).toBe(65);
   });
 
@@ -130,26 +131,54 @@ describe('“绝大部分是目标语言”的阈值（#843）', () => {
     ).toEqual({ translate: false, reason: 'same-language', lang: 'en' });
   });
 
-  test('#777 那种纯中文页面夹一段英文引文：仍然拦下', () => {
-    // 量自 Chrome 的 i18n.detectLanguage：same-language 夹具的单元样本给出 zh 75、en 24
+  // 下面四条的数都取自 #851 的实测记录（docs/research/page-gate-content-share.md），
+  // 是实测里识别器报可靠、且现行阈值判对了的页面里离阈值最近的几张
+
+  test('中文页面夹成块的英文新闻与评语（Steam 已有中文介绍）：仍然拦下', () => {
+    // Steam Dwarf Fortress：介绍正文是中文，开发者新闻与媒体评语是英文，zh 74、en 17
     expect(
       decidePageGate({
         to: 'zh-CN',
         detectedLang: null,
-        pageLang: 'zh-CN',
-        contentLang: reliable(['zh', 75], ['en', 24]),
+        pageLang: 'zh-cn',
+        contentLang: reliable(['zh', 74], ['en', 17]),
       }),
     ).toEqual(BLOCK_ZH);
   });
 
-  test('中英段落交错、各占一半：照常翻译', () => {
-    // 量自 Chrome 的 i18n.detectLanguage：mixed-language 夹具（TC-E2E-154）给出 en 50、zh 49
+  test('中文页面夹零星外文词，声明是外文（GitHub 中文 README）：拦下', () => {
+    // GitHub ruanyf/weekly：声明 en，zh 94、en 1
     expect(
       decidePageGate({
         to: 'zh-CN',
         detectedLang: null,
-        pageLang: 'zh-CN',
-        contentLang: reliable(['en', 50], ['zh', 49]),
+        pageLang: 'en',
+        contentLang: reliable(['zh', 94], ['en', 1]),
+      }),
+    ).toEqual(BLOCK_ZH);
+  });
+
+  test('中文界面加成块英文介绍、中文略多（Steam 英文介绍的游戏）：照常翻译', () => {
+    // Steam Lethal Company：声明 zh-cn，识别器按字节算，中文界面一个字算三份，
+    // 所以中文略多：zh 53、en 42
+    expect(
+      decidePageGate({
+        to: 'zh-CN',
+        detectedLang: null,
+        pageLang: 'zh-cn',
+        contentLang: reliable(['zh', 53], ['en', 42]),
+      }),
+    ).toEqual(PASS);
+  });
+
+  test('中文界面加英文评论（App Store 美区）：照常翻译', () => {
+    // App Store Notion：声明 zh-Hans-CN，介绍已本地化、评论是英文，en 52、zh 43
+    expect(
+      decidePageGate({
+        to: 'zh-CN',
+        detectedLang: null,
+        pageLang: 'zh-Hans-CN',
+        contentLang: reliable(['en', 52], ['zh', 43]),
       }),
     ).toEqual(PASS);
   });
