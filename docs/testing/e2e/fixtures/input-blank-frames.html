@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Input — Frames Without a URL</title>
+  <style>
+    body { font: 16px/1.5 sans-serif; margin: 16px; }
+    iframe { display: block; width: 420px; height: 140px; margin: 12px 0; border: 1px solid #888; }
+  </style>
+</head>
+<body>
+  <!-- #838：没有网址的 iframe。TinyMCE、CKEditor 4 一类经典富文本编辑器把编辑区
+       放在 about:blank 的 iframe 里：页面在 iframe 加载之后用 document.write 写出
+       文档，`<body contenteditable>` 就是编辑区。另一种是 srcdoc 的 iframe。以前
+       内容脚本只按网址匹配，这两种 frame 一律不注入。 -->
+  <h1 id="title">Reply to the thread</h1>
+  <p id="intro">The editor below lives in an iframe without a URL.</p>
+  <div id="blank-slot"></div>
+  <iframe id="srcdoc" title="Comment box" srcdoc="<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><style>body{font:16px/1.5 sans-serif;margin:8px}</style></head><body><p id='note'>Comments are reviewed before they appear.</p><textarea id='child' rows='2' cols='40'></textarea></body></html>"></iframe>
+  <script>
+    // 先挂 load 监听再插入：about:blank 的 iframe 插入时就同步触发 load
+    const blank = document.createElement('iframe');
+    blank.id = 'blank';
+    blank.title = 'Rich text editor';
+    blank.addEventListener('load', () => {
+      const doc = blank.contentDocument;
+      doc.open();
+      doc.write('<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><style>body{font:16px/1.5 sans-serif;margin:8px;min-height:100px}</style></head><body id="tinymce" contenteditable="true"><p>Draft</p></body></html>');
+      doc.close();
+    }, { once: true });
+    blank.src = 'about:blank';
+    document.getElementById('blank-slot').replaceWith(blank);
+  </script>
+</body>
+</html>

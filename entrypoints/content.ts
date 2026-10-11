@@ -118,6 +118,7 @@ async function requestTopInputLangChoice(): Promise<InputLangChoice | null> {
 export default defineContentScript({
   matches: ['<all_urls>'],
   allFrames: true,
+  matchAboutBlank: true,
   runAt: 'document_end',
   async main(ctx) {
     await settingsReady();

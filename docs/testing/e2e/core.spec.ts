@@ -1018,19 +1018,50 @@ test.describe('Fixture: media-mix', () => {
 });
 
 test.describe('Fixture: iframe', () => {
-  test('@core TC-E2E-30: iframe 存在且可访问', async ({
-    page, mockGoogle, seedSettings, gotoFixture,
+  test('@core TC-E2E-30: about:blank 写出的 iframe 注入内容脚本 —— 悬浮球只翻主文档，iframe 里的段落不动；popup 整页翻译广播到全部 frame，iframe 段落跟着翻译、跟着还原（#838）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
   }) => {
     await seedSettings({});
     await mockGoogle();
     await gotoFixture('iframe');
-
-    await translateAndWait(page);
-
-    // iframe 存在
     const frame = page.frameLocator('#frame1');
-    // 验证 iframe 内容可访问
-    await expect(frame.locator('body')).toBeVisible();
+    const inner = frame.locator('#inner');
+    // 页面在 iframe 加载之后用 document.write 写出文档；内容脚本注入了（#838 之前没有）
+    await expect(inner).toBeVisible({ timeout: 10_000 });
+    await expect(frame.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
+    const innerBefore = await inner.evaluate((el) => el.outerHTML);
+
+    // 悬浮球只翻主文档（与有网址的 iframe 相同）：主文档出译文，iframe 里的段落一个字不动
+    await translateAndWait(page);
+    const ball = await waitForBall(page);
+    await expect(ball).toHaveAttribute('data-state', 'done');
+    expect(await inner.evaluate((el) => el.outerHTML)).toBe(innerBefore);
+    await ball.click();
+    await expect(page.locator('[data-pt]')).toHaveCount(0, { timeout: 10_000 });
+
+    // popup 的整页翻译：不带 frameId 广播到全部 frame，iframe 里的段落同样出译文
+    const toggleAll = () =>
+      serviceWorker.evaluate(async () => {
+        for (const tab of await chrome.tabs.query({})) {
+          try {
+            const r = await chrome.tabs.sendMessage(tab.id!, { type: 'pt:toggle-translate' });
+            if (r) return (r as { status?: string }).status;
+          } catch {
+            // 没有 content script 的标签页
+          }
+        }
+        return null;
+      });
+    expect(await toggleAll()).toBe('translated');
+    await expect(inner).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+    const source = (await inner.locator('.pt-origin').textContent())!.trim();
+    await expect(inner.locator('.pt-trans')).toHaveText(`【译】${source}`);
+    await expect(page.locator('[data-pt="done"]').first()).toBeVisible();
+
+    // 再点一次还原：iframe 里的段落逐字节回到原样
+    expect(await toggleAll()).toBe('restored');
+    await expect(frame.locator('[data-pt]')).toHaveCount(0, { timeout: 10_000 });
+    expect(await inner.evaluate((el) => el.outerHTML)).toBe(innerBefore);
   });
 
   test('@core TC-E2E-58: popup 广播到多 frame —— 响应必是主 frame 的结果（#180 验证）', async ({
@@ -4417,6 +4448,89 @@ test.describe('输入翻译：iframe 里的输入框（#672）', () => {
     await expect(select).toHaveValue('ja');
     await translateIn('cross', '#child', '明天见', 'ja');
     await translateIn('same', '#child', '早上好', 'ja');
+  });
+
+  test('@core TC-E2E-167: 没有网址的 iframe 里也有圆点 —— about:blank 写出的 <body contenteditable> 编辑区（TinyMCE 的形状）圆点贴文字末尾、点下去完成翻译，扩展的节点不进编辑内容；srcdoc 里的文本框同样可用；整页翻译不动编辑区（#838）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    // 源语言 auto：自动判定按各自 frame 的页面声明（都是 lang="en"）
+    await seedSettings({});
+    await mockGoogle({ echoTargetLang: true });
+    await gotoFixture('input-blank-frames');
+    await waitForBall(page);
+
+    // ── about:blank 加 document.write，<body contenteditable> 是编辑区 ──
+    const blank = page.frameLocator('#blank');
+    const editor = blank.locator('body');
+    await expect(editor).toHaveAttribute('contenteditable', 'true', { timeout: 10_000 });
+    await expect(blank.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('你好世界');
+    const dot = blank.locator(DOT);
+    await expect(dot).toBeVisible();
+
+    // 圆点贴文字末尾（ADR-0006）：末尾右侧 4px（#667），竖直居中于末尾那一行。
+    // 末尾的真值是 frame 里折叠在最后一个字之后的选区矩形，加上 iframe 内容区在页面上的起点
+    const origin = await page.locator('#blank').evaluate((f) => {
+      const r = f.getBoundingClientRect();
+      return { x: r.left + f.clientLeft, y: r.top + f.clientTop };
+    });
+    await expect(async () => {
+      const end = await editor.evaluate((body) => {
+        const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+        let last: Text | null = null;
+        while (walker.nextNode()) if ((walker.currentNode as Text).length > 0) last = walker.currentNode as Text;
+        const r = document.createRange();
+        r.setStart(last!, last!.length);
+        r.collapse(true);
+        const c = r.getClientRects()[0]!;
+        return { x: c.left, cy: c.top + c.height / 2 };
+      });
+      const d = (await dot.boundingBox())!;
+      expect(Math.abs(d.x - (origin.x + end.x + 4)), '横向：文字末尾右侧 4px').toBeLessThanOrEqual(2);
+      expect(Math.abs(d.y + d.height / 2 - (origin.y + end.cy)), '竖向：末尾那一行').toBeLessThanOrEqual(2);
+    }).toPass({ timeout: 5_000 });
+
+    // 扩展的节点挂在 <html> 下、body 之外：编辑器按 body 取稿，取到的只有用户的文字
+    const editorHtml = () => editor.evaluate((b) => b.innerHTML);
+    expect(await editorHtml()).not.toMatch(/pt-host|data-pt/);
+    expect(await editor.evaluate((b) => b.textContent)).toBe('你好世界');
+
+    await dot.click();
+    await expect(editor).toHaveText('【译】你好世界 [tl=en]', { timeout: 10_000 });
+    expect(await editorHtml()).not.toMatch(/pt-host|data-pt/);
+
+    // ── srcdoc 的 iframe 里的文本框 ──
+    const srcdoc = page.frameLocator('#srcdoc');
+    await expect(srcdoc.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
+    const box = srcdoc.locator('#child');
+    await box.click();
+    await page.keyboard.type('谢谢你');
+    await srcdoc.locator(DOT).click();
+    await expect(box).toHaveValue('【译】谢谢你 [tl=en]', { timeout: 10_000 });
+
+    // ── 整页翻译（popup 广播到全部 frame）：srcdoc 里的段落出译文，编辑区一个字不动 ──
+    const draft = await editorHtml();
+    const toggleAll = () =>
+      serviceWorker.evaluate(async () => {
+        for (const tab of await chrome.tabs.query({})) {
+          try {
+            const r = await chrome.tabs.sendMessage(tab.id!, { type: 'pt:toggle-translate' });
+            if (r) return (r as { status?: string }).status;
+          } catch {
+            // 没有 content script 的标签页
+          }
+        }
+        return null;
+      });
+    expect(await toggleAll()).toBe('translated');
+    await expect(srcdoc.locator('#note')).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+    await expect(page.locator('#intro')).toHaveAttribute('data-pt', 'done');
+    expect(await editorHtml()).toBe(draft);
+    expect(await toggleAll()).toBe('restored');
+    await expect(srcdoc.locator('[data-pt]')).toHaveCount(0, { timeout: 10_000 });
+    expect(await editorHtml()).toBe(draft);
   });
 });
 
