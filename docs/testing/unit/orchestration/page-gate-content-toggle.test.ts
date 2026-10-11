@@ -10,6 +10,7 @@ import { createOrchestrator, CONTENT_DETECT_TIMEOUT_MS } from '~/src/orchestrati
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import type { ContentLang } from '~/src/orchestration/page-gate';
 import { collect } from '~/src/dom/walker';
+import { pageNotice, emptyRenderStats } from '~/src/orchestration/page-summary';
 import { mockAllBoundingRects } from '../../setup';
 
 function fakeSend() {
@@ -259,6 +260,109 @@ describe('识别的回调永远不来：到时间上限就当拿不到，照常�
     // 声明是 zh-cn，按回落会拦下；照常翻译说明用的是识别的结论
     expect(result.status).toBe('translated');
     expect(send).toHaveBeenCalledTimes(1);
+    orch.stop();
+  });
+});
+
+describe('识别在飞时中止：纪元变了就丢弃识别结果（#862，#328 的中止纪元）', () => {
+  /** 可控的识别替身：release 之前一直在飞。 */
+  function pendingDetect() {
+    let release!: (v: ContentLang | null) => void;
+    const detect = vi.fn<Detect>(() => new Promise((r) => (release = r)));
+    return { detect, release: (v: ContentLang | null) => release(v) };
+  }
+
+  /** 页面有没有译文由用例控制：识别在飞时用户可以逐段翻译一段，再点悬浮球就是还原。 */
+  function setupWithPage(pageLang: string | null, detect: Detect) {
+    const send = fakeSend();
+    const pushes: string[] = [];
+    const page = { translated: false };
+    const restore = vi.fn(() => {
+      page.translated = false;
+    });
+    const orch = createOrchestrator({
+      send,
+      getPageLang: () => pageLang,
+      hasTranslated: () => page.translated,
+      restore,
+      pushStatus: (s) => pushes.push(s),
+      detectContentLang: detect,
+    } as Parameters<typeof createOrchestrator>[0]);
+    orch.start();
+    return { orch, send, pushes, page, restore };
+  }
+
+  test('识别在飞时点还原：还原立即完成，不等识别返回', async () => {
+    const { detect } = pendingDetect();
+    const { orch, page, restore, pushes } = setupWithPage('zh-cn', detect);
+
+    void orch.togglePage(STEAM, 'auto', 'zh-CN');
+    // 识别在飞期间逐段翻译了一段，页面有了译文，再点悬浮球就是还原
+    page.translated = true;
+    const restored = await orch.togglePage(STEAM, 'auto', 'zh-CN');
+
+    // 识别一直没放行，还原照样走完
+    expect(restored.status).toBe('restored');
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(pushes).toEqual(['idle']);
+    orch.stop();
+  });
+
+  test('还原之后识别才回来：结果丢弃，不翻译、不推送状态', async () => {
+    const { detect, release } = pendingDetect();
+    const { orch, send, pushes, page } = setupWithPage('zh-cn', detect);
+
+    const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
+    page.translated = true;
+    await orch.togglePage(STEAM, 'auto', 'zh-CN');
+    expect(pushes).toEqual(['idle']);
+    // 识别说大半是英文：纪元没变的话这里会照常整页翻译
+    release(reliable(['en', 76], ['zh', 23]));
+
+    const result = await first;
+    expect(result.status).toBe('aborted');
+    expect(send).toHaveBeenCalledTimes(0);
+    // 只有还原那一次推的 idle，识别回来之后什么都没推
+    expect(pushes).toEqual(['idle']);
+    orch.stop();
+  });
+
+  test('abort 递增纪元（导航等中止）：识别回来不翻译也不推送；识别说是目标语言也不推未翻译态', async () => {
+    for (const verdict of [reliable(['en', 76], ['zh', 23]), reliable(['zh', 95], ['en', 5])]) {
+      const { detect, release } = pendingDetect();
+      const { orch, send, pushes } = setupWithPage('zh-cn', detect);
+
+      const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
+      orch.abort();
+      release(verdict);
+
+      const result = await first;
+      expect(result.status).toBe('aborted');
+      expect(result.gate).toBeUndefined();
+      expect(send).toHaveBeenCalledTimes(0);
+      expect(pushes).toEqual([]);
+      orch.stop();
+    }
+  });
+
+  test('中止不计失败、不弹提示；在飞已回落，之后再点照常翻译', async () => {
+    const { detect, release } = pendingDetect();
+    const { orch, send, pushes } = setupWithPage('zh-cn', detect);
+
+    const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
+    orch.abort();
+    release(reliable(['en', 76], ['zh', 23]));
+    const result = await first;
+
+    expect(result.status).not.toBe('error');
+    expect(result.summary).toBeUndefined();
+    expect(pageNotice(result, emptyRenderStats())).toBeNull();
+
+    detect.mockImplementation(async () => reliable(['en', 76], ['zh', 23]));
+    const again = await orch.togglePage(STEAM, 'auto', 'zh-CN');
+    expect(again.status).toBe('translated');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(pushes).toEqual(['loading', 'done']);
     orch.stop();
   });
 });
