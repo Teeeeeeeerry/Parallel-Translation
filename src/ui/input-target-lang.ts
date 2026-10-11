@@ -28,6 +28,31 @@
 
 import { normalizeLangCode } from '../orchestration/lang-code';
 import { pageLanguage } from '../orchestration/page-lang';
+import { LANG_LIST } from '../storage/schema';
+
+/**
+ * 用户在 popup 里为当前标签页临时选的对方语言（#662）：跟随设置（走下面的
+ * 判定链），或指定一种语言。ADR-0005 之上的一条人工覆盖，不推翻它 —— 选
+ * “跟随设置”就回到判定链。与领域的临时选择（#400）并列：只存在本页主文档
+ * 的内存里，不进后台、不写存储，刷新、跳页或关闭标签页后自然回到跟随设置。
+ */
+export type InputLangChoice = { kind: 'auto' } | { kind: 'lang'; lang: string };
+
+/** 可指定的语言：语言列表里除“自动检测”以外的语言码。 */
+const CHOOSABLE = new Set(LANG_LIST.map((l) => l.code).filter((c) => c !== 'auto'));
+
+/**
+ * 校验跨上下文传来的临时语言选择（#662）；形状不对返回 null。语言码必须是
+ * 语言列表里的 —— 它会原样作为目标语言发给翻译引擎。
+ */
+export function parseInputLangChoice(v: unknown): InputLangChoice | null {
+  const c = v as Partial<{ kind: unknown; lang: unknown }> | null | undefined;
+  if (c?.kind === 'auto') return { kind: 'auto' };
+  if (c?.kind === 'lang' && typeof c.lang === 'string' && CHOOSABLE.has(c.lang)) {
+    return { kind: 'lang', lang: c.lang };
+  }
+  return null;
+}
 
 export interface InputTargetInput {
   /** 设置里的源语言：具体语言码，或 'auto' */

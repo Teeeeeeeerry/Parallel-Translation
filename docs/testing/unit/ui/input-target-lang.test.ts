@@ -23,7 +23,7 @@
  * 只用浏览器检测器给出的可靠结果，不可靠时照常翻译。
  */
 import { describe, test, expect } from 'vitest';
-import { decideInputTarget } from '~/src/ui/input-target-lang';
+import { parseInputLangChoice, decideInputTarget } from '~/src/ui/input-target-lang';
 import { LANG_LIST } from '~/src/storage/schema';
 
 describe('decideInputTarget（#640）', () => {
@@ -286,5 +286,27 @@ describe('用户写的已经是对方的语言 → 不替换、不发请求（#6
       ok: false,
       reason: 'undetermined',
     });
+  });
+});
+
+describe('跨上下文传来的临时语言选择（#662）', () => {
+  test('跟随设置与语言列表里的语言照收', () => {
+    expect(parseInputLangChoice({ kind: 'auto' })).toEqual({ kind: 'auto' });
+    expect(parseInputLangChoice({ kind: 'lang', lang: 'en' })).toEqual({ kind: 'lang', lang: 'en' });
+    expect(parseInputLangChoice({ kind: 'lang', lang: 'zh-TW' })).toEqual({ kind: 'lang', lang: 'zh-TW' });
+  });
+
+  test('多带的字段丢掉，只留形状里的', () => {
+    expect(parseInputLangChoice({ kind: 'auto', lang: 'en' })).toEqual({ kind: 'auto' });
+  });
+
+  test('形状不对返回 null：缺语言码、不是字符串、不在语言列表里、“自动检测”、别的类型', () => {
+    for (const bad of [
+      undefined, null, 'en', 42, {}, { kind: 'lang' }, { kind: 'lang', lang: 42 },
+      { kind: 'lang', lang: 'xx' }, { kind: 'lang', lang: 'auto' }, { kind: 'lang', lang: 'EN' },
+      { kind: 'domain', id: 'x' }, { kind: 'none' },
+    ]) {
+      expect(parseInputLangChoice(bad), JSON.stringify(bad)).toBeNull();
+    }
   });
 });

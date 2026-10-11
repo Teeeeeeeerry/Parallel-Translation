@@ -497,5 +497,7 @@
   },
   "toastParaSameAsSource": { "message": "This paragraph is already in the target language" },
   "toastSelectionSameAsSource": { "message": "This text is already in the target language" },
-  "toastPageSameLanguage": { "message": "This page is already in your target language" }
+  "toastPageSameLanguage": { "message": "This page is already in your target language" },
+  "inputLangPopupLabel": { "message": "Translate input into (this page)" },
+  "inputLangPopupFollow": { "message": "Follow settings" }
 }
