@@ -41,3 +41,21 @@ export function normalizePreText(s: string): string {
     .join('\n')
     .trimEnd();
 }
+
+/**
+ * 整段一个单元、带 br 的段落的归一化（#840）：送翻文字里的 \n 只来自 br
+ * （提取时文本节点里的空白已折叠成空格），逐行按 normalizeText 折叠，行
+ * 结构保留。连着的空行只留一个（诗的段间空行），开头、结尾的空行去掉。
+ * 没有 \n 时与 normalizeText 逐字节相同 —— 不带 br 的段落送翻文字不变，
+ * 缓存 key 也不变。
+ */
+export function normalizeLines(s: string): string {
+  const lines = s.split('\n').map(normalizeText);
+  const out: string[] = [];
+  for (const line of lines) {
+    if (line === '' && (out.length === 0 || out[out.length - 1] === '')) continue;
+    out.push(line);
+  }
+  while (out.length > 0 && out[out.length - 1] === '') out.pop();
+  return out.join('\n');
+}
