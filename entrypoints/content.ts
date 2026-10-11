@@ -33,6 +33,7 @@ import { createInputDot, deepActiveElement } from '~/src/ui/input-dot';
 import { replaceInputText } from '~/src/ui/input-replace';
 import { decideWriteBack } from '~/src/ui/input-writeback';
 import { decideInputTarget, parseInputLangChoice, type InputLangChoice } from '~/src/ui/input-target-lang';
+import { watchPathChange } from '~/src/ui/path-watch';
 import { decideInputLength } from '~/src/ui/input-length';
 import { inputMaxLength, inputText, type TextInput } from '~/src/ui/input-eligibility';
 import { toast, toastPending } from '~/src/ui/toast';
@@ -168,6 +169,27 @@ export default defineContentScript({
     let inputLangChoice: InputLangChoice = { kind: 'auto' };
     /** 本 frame 是否已收到过语言选择的广播 —— 收到过就不再采用启动时问来的选择。 */
     let inputLangBroadcast = false;
+
+    // #836：单页应用换路由也算跳页。主文档盯住网址，路径变了就把这一次的
+    // 对方语言重置为跟随设置，并经 background 广播给本页全部 frame —— 不广播
+    // 的话 iframe 里还留着旧的选择。同一路径上只换查询参数或 hash 不算。
+    // 拍板理由：在用户眼里，单页应用里点进另一个帖子就是跳页；临时选择的
+    // 全部意义就是不悄悄变成长期设置。两种错的代价也不对称：多重置一次只是
+    // 回到自动判定，那本来就是默认行为；不重置的话，用户在国际站点上选了
+    // 英文，点进一个日文帖子回复时仍被译成英文。
+    // 只管输入翻译这一次的对方语言，领域的临时选择不在这里改
+    const pathWatch = isMainFrame
+      ? watchPathChange({
+          getHref: () => location.href,
+          navigation: (window as { navigation?: EventTarget }).navigation,
+          win: window,
+          onChange: () => {
+            if (inputLangChoice.kind === 'auto') return;
+            inputLangChoice = { kind: 'auto' };
+            chrome.runtime.sendMessage({ type: 'pt:input-lang-path-changed' }).catch(() => {});
+          },
+        })
+      : null;
 
     // ── 注入 UI（仅主文档）──
     if (isMainFrame) {
@@ -658,6 +680,8 @@ export default defineContentScript({
       // #663：popup 里临时选了这一次的对方语言，就用它顶替源语言设置这一级。
       // 临时选择是调用方的输入，判定链本身不改：选了具体语言，链的第一级就
       // 定下它；选“跟随设置”照旧走完整条链。写的已经是所选语言时同样不替换
+      // #836：浏览器没有 Navigation API 时收不到 pushState，用之前补判一次
+      pathWatch?.check();
       const from = inputLangChoice.kind === 'lang' ? inputLangChoice.lang : ns.from;
       const target = decideInputTarget({
         from,
@@ -871,8 +895,9 @@ export default defineContentScript({
 
       if (msg?.type === 'pt:get-input-lang-choice') {
         // #662: popup 打开时来问；#663: 子 frame 启动时经 background 来问
-        // （见 requestTopInputLangChoice）
+        // （见 requestTopInputLangChoice）。#836：答之前补判一次路径
         if (!isMainFrame) return;
+        pathWatch?.check();
         sendResponse({ choice: inputLangChoice });
         return;
       }
