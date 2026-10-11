@@ -57,6 +57,7 @@ export const FIXTURES = [
   'input-frames',
   'input-blank-frames',
   'same-language-frames',
+  'input-content-zh',
 ] as const;
 
 export type FixtureName = (typeof FIXTURES)[number];

@@ -4371,6 +4371,101 @@ test.describe('输入翻译：对方语言的判定链', () => {
   });
 });
 
+test.describe('输入翻译：与页面级闸门共用识别模块之后（#869）', () => {
+  // #852 把浏览器自带的本地语言识别并成一个模块，输入翻译与页面级闸门共用。
+  // 两者要的东西不同：闸门判整页内容的各语言占比，输入翻译判用户写的那一段，
+  // 对方的语言仍按判定链（ADR-0005）取自设置与本页的声明、检测语言。
+  // 夹具声明 en、正文是成段中文：页面内容的识别结果（zh）与声明不同，输入
+  // 翻译只要拿错了一处（把页面内容当成对方的语言，或把整页识别当成那段文字
+  // 的语言），下面三条就会有一条红
+  const DOT = '#pt-host-input-dot .pt-input-dot';
+  const TOAST = '#pt-host-toast .pt-toast';
+
+  test.beforeEach(async ({ page, serviceWorker, seedSettings, mockGoogle, gotoFixture }) => {
+    await seedSettings({});
+    await mockGoogle({ echoTargetLang: true });
+    await gotoFixture('input-content-zh');
+    await waitForBall(page);
+    // 先验夹具前提：正文在识别器上可靠地判成中文，声明却是 en。不成立时下面
+    // 三条什么都没区分开
+    const bodyText = await page.evaluate(() =>
+      [...document.querySelectorAll('h1, p')].map((el) => el.textContent).join('\n'),
+    );
+    const content = await serviceWorker.evaluate(
+      (t) => new Promise<chrome.i18n.LanguageDetectionResult>((r) => chrome.i18n.detectLanguage(t, r)),
+      bodyText,
+    );
+    expect(content.isReliable, '夹具正文的识别结果不可靠').toBe(true);
+    expect(content.languages[0]?.language, '夹具正文没被识别成中文').toBe('zh');
+    expect(await page.evaluate(() => document.documentElement.lang)).toBe('en');
+    // 源语言跟随设置（auto），目标语言 zh-CN
+    const settings = await serviceWorker.evaluate(async () =>
+      (await chrome.storage.sync.get('pt-settings'))['pt-settings'] as { from: string; to: string },
+    );
+    expect([settings.from, settings.to]).toEqual(['auto', 'zh-CN']);
+  });
+
+  /** 清空输入框、写一段字、点圆点。 */
+  async function write(page: import('@playwright/test').Page, text: string) {
+    const box = page.locator('#reply');
+    await box.click();
+    await box.fill('');
+    await page.keyboard.type(text);
+    await page.locator(DOT).click();
+  }
+
+  test('@core TC-E2E-172: 对方的语言仍取自声明而不是页面内容的识别结果 —— 声明 en、正文中文的页面上写中文，译成英文；声明换成 ja 就译成日文（#869）', async ({
+    page, mockRequests,
+  }) => {
+    const requests = await mockRequests();
+    const box = page.locator('#reply');
+
+    // 页面内容是中文。若把它当成对方的语言，对方就是 zh，写中文会被判成同语言
+    await write(page, '这个问题我们明天再讨论');
+    await expect(box).toHaveValue('【译】这个问题我们明天再讨论 [tl=en]', { timeout: 10_000 });
+
+    // 判定链跟着声明走
+    await page.evaluate(() => document.documentElement.setAttribute('lang', 'ja'));
+    await write(page, '早上好');
+    await expect(box).toHaveValue('【译】早上好 [tl=ja]', { timeout: 10_000 });
+    expect((await requests()).queries).toEqual(['这个问题我们明天再讨论', '早上好']);
+  });
+
+  test('@core TC-E2E-173: 写的已经是对方的语言 → 按写的那段文字判，不按页面内容：正文中文、声明 en 的页面上写英文，不替换、零请求并提示（#869）', async ({
+    page, serviceWorker, mockRequests,
+  }) => {
+    const requests = await mockRequests();
+    const hint = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastInputSameLanguage'));
+    const box = page.locator('#reply');
+    const toast = page.locator(TOAST);
+    const text = 'I think we should discuss this issue tomorrow morning.';
+
+    // 若拿整页内容的识别结果（zh）当这段文字的语言，就不算同语言、照常送翻
+    await write(page, text);
+    await expect(toast).toHaveText(hint);
+    await expect(toast).toHaveAttribute('data-kind', 'info');
+    await expect(box).toHaveValue(text);
+    expect((await requests()).queries).toEqual([]);
+  });
+
+  test('@core TC-E2E-174: 判不出对方的语言时不猜 —— 去掉声明后，正文明明是中文也不拿它当对方的语言，提示去设置里指定源语言、零请求、框里不变（#869，ADR-0005）', async ({
+    page, serviceWorker, mockRequests,
+  }) => {
+    const requests = await mockRequests();
+    const hint = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastInputSourceLangNeeded'));
+    const box = page.locator('#reply');
+    const text = 'Could we move the release to Thursday evening instead?';
+
+    // 源语言 auto、本页没翻译过（没有检测语言）、没有声明：判定链判不出。
+    // 若拿页面内容的识别结果顶上，对方就成了 zh，这段英文会被送翻
+    await page.evaluate(() => document.documentElement.removeAttribute('lang'));
+    await write(page, text);
+    await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(hint);
+    await expect(box).toHaveValue(text);
+    expect((await requests()).queries).toEqual([]);
+  });
+});
+
 test.describe('输入翻译：iframe 里的输入框（#672）', () => {
   const DOT = '#pt-host-input-dot .pt-input-dot';
 
