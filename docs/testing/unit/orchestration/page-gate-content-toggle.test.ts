@@ -8,7 +8,7 @@
 import { describe, test, expect, vi, afterEach } from 'vitest';
 import { createOrchestrator, CONTENT_DETECT_TIMEOUT_MS } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
-import type { ContentLang } from '~/src/orchestration/page-gate';
+import { CONTENT_SAMPLE_MIN_CHARS, type ContentLang } from '~/src/orchestration/page-gate';
 import { collect } from '~/src/dom/walker';
 import { pageNotice, emptyRenderStats } from '~/src/orchestration/page-summary';
 import { mockAllBoundingRects } from '../../setup';
@@ -41,6 +41,11 @@ const reliable = (...languages: [string, number][]): ContentLang => ({
   languages: languages.map(([lang, percentage]) => ({ lang, percentage })),
 });
 
+/** 一段正常长度的中文正文（真实 DOM 的用例里用，让只读取样够得着下限）。 */
+const PARA =
+  '排版完成后记得在手机上预览一遍，确认图片与段落间距都正常再发布。如果文章里引用了别人的内容，' +
+  '请在文末注明出处并附上原文链接。有任何排版上的问题可以在下面留言，我们会在一个工作日内回复。';
+
 function items(texts: string[]): TranslateItem<number>[] {
   return texts.map((text, i) => ({ text, ctx: i }));
 }
@@ -52,7 +57,14 @@ const STEAM = items([
   'Explore a vast open world full of secrets and survive the night with friends.',
   'Over 200 hand-crafted quests await you across five unique biomes.',
 ]);
-const ZH = items(['风格秀 风格排版 风格设计', '采用风格排版后需替换文案内容，以免遇到公众号原创保护问题']);
+// #859：样本要够长才按占比判，这里取真实页面的量级（真实页面的样本最短也有五百多字符）
+const ZH = items([
+  '风格秀 风格排版 风格设计',
+  '采用风格排版后需替换文案内容，以免遇到公众号原创保护问题',
+  '排版完成后记得在手机上预览一遍，确认图片与段落间距都正常再发布',
+  '如果文章里引用了别人的内容，请在文末注明出处，并附上原文链接',
+  '有任何排版上的问题，可以在下面留言，我们会在一个工作日内回复',
+]);
 
 describe('声明是目标语言、内容成块外文：照常翻译（#843）', () => {
   test('Steam 那一类页面：声明 zh-cn，识别说大半是英文 —— 照常送翻，不弹同语言', async () => {
@@ -90,6 +102,8 @@ describe('纯目标语言页面：仍然拦下，零请求（#777 不回退）',
     const line = (i: number) => `第 ${i} 行：采用风格排版后需替换文案内容，以免遇到公众号原创保护问题。`;
     document.body.innerHTML =
       `<h1>风格秀 风格排版 风格设计</h1><p>采用风格排版后需替换文案内容</p>` +
+      // #859：样本不到下限就不送去识别，补一段正常长度的正文，让样本到真实页面的量级
+      `<p>${PARA}</p>` +
       `<p>${Array.from({ length: 120 }, (_, i) => line(i)).join('<br>\n')}</p>`;
     const before = document.body.innerHTML;
     const restoreRects = mockAllBoundingRects();
@@ -373,6 +387,8 @@ describe('内容识别这一级拦下纯目标语言页面：#777 的几条在�
     const line = (i: number) => `第 ${i} 行：采用风格排版后需替换文案内容，以免遇到公众号原创保护问题。`;
     document.body.innerHTML =
       `<h1>风格秀 风格排版 风格设计</h1><p>采用风格排版后需替换文案内容</p>` +
+      // #859：样本不到下限就不送去识别，补一段正常长度的正文，让样本到真实页面的量级
+      `<p>${PARA}</p>` +
       `<p>${Array.from({ length: 120 }, (_, i) => line(i)).join('<br>\n')}</p>`;
     const before = document.body.innerHTML;
     const restoreRects = mockAllBoundingRects();
@@ -439,6 +455,72 @@ describe('内容识别这一级拦下时的悬浮球状态（#870，同 #793、#
     expect(result.status).toBe('same-language');
     expect(send).toHaveBeenCalledTimes(0);
     expect(pushes).toEqual([]);
+    orch.stop();
+  });
+});
+
+describe('样本太短不按占比判，走回落那条链（#859）', () => {
+  // 下限的依据见 page-gate.ts 的 CONTENT_SAMPLE_MIN_CHARS：识别器对几十个字符的
+  // 样本也会报可靠，一句外文就能让占比翻过阈值
+  /** 一个翻译单元，文字恰好 n 个字符。 */
+  const unitOf = (n: number) =>
+    items([('Explore a vast open world full of secrets. '.repeat(10)).slice(0, n - 1) + '.']);
+
+  test(`下限是 ${CONTENT_SAMPLE_MIN_CHARS} 个字符`, () => {
+    expect(CONTENT_SAMPLE_MIN_CHARS).toBe(100);
+  });
+
+  test('差 1 个字符到下限：不送去识别，按声明拦下，零请求', async () => {
+    // 识别若被调用会说可靠的英文，页面就会照常翻译 —— 拦下说明没按占比判
+    const detect = vi.fn<Detect>(async () => reliable(['en', 100]));
+    const { orch, send, pushes } = setup('zh-CN', detect);
+    const page = unitOf(CONTENT_SAMPLE_MIN_CHARS - 1);
+    expect(page[0]!.text).toHaveLength(CONTENT_SAMPLE_MIN_CHARS - 1);
+
+    const result = await orch.togglePage(page, 'auto', 'zh-CN');
+
+    expect(detect).not.toHaveBeenCalled();
+    expect(result.status).toBe('same-language');
+    expect(send).not.toHaveBeenCalled();
+    expect(pushes).toEqual(['idle']);
+    orch.stop();
+  });
+
+  test('恰好到下限：送去识别，按识别的占比判，照常翻译', async () => {
+    const detect = vi.fn<Detect>(async () => reliable(['en', 100]));
+    const { orch, send, pushes } = setup('zh-CN', detect);
+
+    const result = await orch.togglePage(unitOf(CONTENT_SAMPLE_MIN_CHARS), 'auto', 'zh-CN');
+
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(detect.mock.calls[0]![0]).toHaveLength(CONTENT_SAMPLE_MIN_CHARS);
+    expect(result.status).toBe('translated');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(pushes).toEqual(['loading', 'done']);
+    orch.stop();
+  });
+
+  test('与“识别不可靠”是两条分支：够长但识别器说不可靠，照样送去识别，再回落到声明', async () => {
+    const detect = vi.fn<Detect>(async () => ({ ...reliable(['en', 100]), reliable: false }));
+    const { orch, send } = setup('zh-CN', detect);
+
+    const result = await orch.togglePage(unitOf(CONTENT_SAMPLE_MIN_CHARS), 'auto', 'zh-CN');
+
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe('same-language');
+    expect(send).not.toHaveBeenCalled();
+    orch.stop();
+  });
+
+  test('声明是外文、样本太短：不送去识别，按声明照常翻译', async () => {
+    const detect = vi.fn<Detect>(async () => reliable(['zh', 100]));
+    const { orch, send } = setup('en', detect);
+
+    const result = await orch.togglePage(items(['你好世界', '登录后继续']), 'auto', 'zh-CN');
+
+    expect(detect).not.toHaveBeenCalled();
+    expect(result.status).toBe('translated');
+    expect(send).toHaveBeenCalledTimes(1);
     orch.stop();
   });
 });
