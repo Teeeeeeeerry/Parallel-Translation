@@ -4270,6 +4270,86 @@ test.describe('输入翻译：对方语言的判定链', () => {
   });
 });
 
+test.describe('输入翻译：iframe 里的输入框（#672）', () => {
+  const DOT = '#pt-host-input-dot .pt-input-dot';
+
+  test('@core TC-E2E-163: 同域与跨域 iframe 里的输入框都浮出圆点并完成翻译，跨域 iframe 也用得上这一次的对方语言；焦点在哪个 frame 只有那里的圆点可见，同一时刻页面上只有一个（#672）', async ({
+    page, context, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    // 源语言 auto：自动判定按各自 frame 的页面声明（夹具都是 lang="en"）
+    await seedSettings({});
+    await mockGoogle({ echoTargetLang: true });
+    const requests = await mockRequests();
+    await gotoFixture('input-frames');
+    await waitForBall(page);
+    const same = page.frameLocator('#same');
+    const cross = page.frameLocator('#cross');
+    await expect(same.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
+    await expect(cross.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
+    // 跨域确实是跨域：子 frame 的主机名与顶层不同
+    expect(await page.frame({ url: /127\.0\.0\.1/ })!.evaluate(() => location.hostname)).toBe('127.0.0.1');
+
+    const frames = { main: page, same, cross } as const;
+    const dots = {
+      main: page.locator(DOT),
+      same: same.locator(DOT),
+      cross: cross.locator(DOT),
+    };
+    /** 当下哪些 frame 的圆点可见 —— 取当下，不重试。 */
+    const visibleDots = async () => {
+      const shown: string[] = [];
+      for (const [name, dot] of Object.entries(dots)) if (await dot.isVisible()) shown.push(name);
+      return shown;
+    };
+    /** 焦点放进某个 frame 的框里打字：那里的圆点浮出，而且此刻只有它一个。 */
+    const typeIn = async (name: keyof typeof frames, boxSel: string, text: string) => {
+      await frames[name].locator(boxSel).click();
+      await page.keyboard.type(text);
+      await expect(dots[name], `${name} 的圆点浮出`).toBeVisible();
+      expect(await visibleDots(), `焦点在 ${name}：同一时刻只有一个圆点`).toEqual([name]);
+    };
+    const translateIn = async (name: keyof typeof frames, boxSel: string, text: string, lang: string) => {
+      const box = frames[name].locator(boxSel);
+      await box.fill('');
+      await typeIn(name, boxSel, text);
+      await dots[name].click();
+      await expect(box, `${name} 译成 ${lang}`).toHaveValue(`【译】${text} [tl=${lang}]`, { timeout: 10_000 });
+      // 点完焦点还在这个框里，别的 frame 的圆点仍不可见
+      await expect(box).toBeFocused();
+      expect(await visibleDots(), `${name} 翻译之后`).toEqual([name]);
+    };
+
+    // 主文档先写半句，圆点浮出
+    await typeIn('main', '#reply', '主文档里写了一半');
+    // 焦点换到同域 iframe：主文档的圆点不再显示；翻译完成
+    await translateIn('same', '#child', '你好世界', 'en');
+    // 焦点换到跨域 iframe：同域 iframe 与主文档的圆点都不显示；翻译完成
+    await translateIn('cross', '#child', '谢谢你', 'en');
+    // 回到主文档：只有主文档的圆点，主文档那半句没被动过
+    await page.locator('#reply').click();
+    await expect(dots.main).toBeVisible();
+    expect(await visibleDots(), '回到主文档').toEqual(['main']);
+    await expect(page.locator('#reply')).toHaveValue('主文档里写了一半');
+    // 焦点离开所有输入框：一个圆点都没有
+    await page.locator('h1').click();
+    await expect(dots.main).toBeHidden();
+    expect(await visibleDots(), '焦点不在任何输入框').toEqual([]);
+    expect((await requests()).google).toBe(2);
+
+    // popup 里选这一次译成日文：广播到跨域 iframe，那里的输入翻译也用上
+    const extId = new URL(serviceWorker.url()).host;
+    const popup = await context.newPage();
+    await page.bringToFront();
+    await popup.goto(`chrome-extension://${extId}/popup.html`);
+    const select = popup.locator('#pt-input-lang-select');
+    await expect(select).toBeEnabled({ timeout: 10_000 });
+    await select.selectOption('ja');
+    await expect(select).toHaveValue('ja');
+    await translateIn('cross', '#child', '明天见', 'ja');
+    await translateIn('same', '#child', '早上好', 'ja');
+  });
+});
+
 test.describe('输入翻译：站点名单与总开关', () => {
   const DOT = '#pt-host-input-dot .pt-input-dot';
 

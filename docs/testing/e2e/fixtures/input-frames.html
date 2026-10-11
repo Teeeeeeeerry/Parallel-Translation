@@ -13,5 +13,7 @@
   <textarea id="reply"></textarea>
   <!-- 同域 iframe：同一个主机名 -->
   <iframe id="same" src="input-frame-child.html"></iframe>
+  <!-- 跨域 iframe：顶层页面是 localhost，这里用 127.0.0.1，主机名不同（#672） -->
+  <iframe id="cross" src="http://127.0.0.1:4173/input-frame-child.html"></iframe>
 </body>
 </html>
