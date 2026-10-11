@@ -20,6 +20,7 @@ import {
   InvalidSitesError,
 } from '~/src/storage/domains';
 import type { DomainChoice } from '~/src/storage/domains';
+import { parseInputLangChoice, type InputLangChoice } from '~/src/ui/input-target-lang';
 import {
   settingsReady,
   getSettings,
@@ -39,6 +40,7 @@ const settingsBtn = document.getElementById('pt-settings-btn')!;
 const reportBtn = document.getElementById('pt-report-btn')!;
 const domainSelect = document.getElementById('pt-domain-select') as HTMLSelectElement;
 const domainRemember = document.getElementById('pt-domain-remember') as HTMLInputElement;
+const inputLangSelect = document.getElementById('pt-input-lang-select') as HTMLSelectElement;
 
 /** 汇报问题的落点。GitHub 的新建 issue 页，带模板选择。 */
 const ISSUE_URL = 'https://github.com/Teeeeeeeerry/Parallel-Translation/issues/new';
@@ -313,6 +315,87 @@ async function onDomainChange(): Promise<void> {
   }
 }
 
+/** 每次刷新递增；后发起的刷新开始后，先前的重试不再写界面（同 domainRefresh）。 */
+let inputLangRefresh = 0;
+
+/** 问一次本页主文档的临时语言选择（#662）；问不到或回复形状不对时返回 null。 */
+async function askInputLangChoice(tabId: number): Promise<InputLangChoice | null> {
+  try {
+    const resp = await chrome.tabs.sendMessage(
+      tabId,
+      { type: 'pt:get-input-lang-choice' },
+      { frameId: 0 },
+    );
+    return parseInputLangChoice((resp as { choice?: unknown } | undefined)?.choice);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 输入翻译这一次译成什么语言（#662）：第一项“跟随设置”，然后是语言列表
+ * 里的语言（复用 buildLangOptions，不含“自动检测”）。问不到本页的选择
+ * （页面不支持内容脚本）时禁用，与领域下拉同一个处理。
+ */
+function renderInputLangSelect(choice: InputLangChoice | null): void {
+  const selected = choice?.kind === 'lang' ? choice.lang : 'auto';
+  inputLangSelect.innerHTML = buildLangOptions(selected, false);
+  const follow = document.createElement('option');
+  follow.value = 'auto';
+  follow.textContent = tf('inputLangPopupFollow', '跟随设置');
+  inputLangSelect.prepend(follow);
+  inputLangSelect.value = selected;
+  inputLangSelect.disabled = !choice;
+}
+
+/** 打开 popup 时问本页的临时语言选择；与 refreshDomain 同一个有界重试（#429）。 */
+async function refreshInputLang(): Promise<void> {
+  const refresh = ++inputLangRefresh;
+  let tabId: number | undefined;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    tabId = tab?.id;
+  } catch {
+    // 拿不到标签页：按问不到处理
+  }
+  let choice: InputLangChoice | null = null;
+  if (tabId != null) {
+    for (let attempt = 0; ; attempt++) {
+      choice = await askInputLangChoice(tabId);
+      if (choice || attempt >= DOMAIN_RETRY_DELAYS_MS.length) break;
+      await sleep(DOMAIN_RETRY_DELAYS_MS[attempt]!);
+      if (refresh !== inputLangRefresh) return;
+    }
+  }
+  if (refresh !== inputLangRefresh) return;
+  renderInputLangSelect(choice);
+}
+
+/**
+ * 选好这一次的对方语言（#662）：立即交给本页主文档保存，与领域的临时选择
+ * 并列，不是设置项、不写设置。主文档回复保存后的选择。
+ */
+async function onInputLangChange(): Promise<void> {
+  const refresh = ++inputLangRefresh;
+  const v = inputLangSelect.value;
+  const choice: InputLangChoice = v === 'auto' ? { kind: 'auto' } : { kind: 'lang', lang: v };
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id == null) throw new Error('no active tab');
+    const resp = await chrome.tabs.sendMessage(
+      tab.id,
+      { type: 'pt:set-input-lang', choice },
+      { frameId: 0 },
+    );
+    if (refresh === inputLangRefresh) {
+      renderInputLangSelect(parseInputLangChoice((resp as { choice?: unknown } | undefined)?.choice));
+    }
+  } catch {
+    showHint(tf('hintCantTranslate', '当前页面无法翻译'));
+    void refreshInputLang();
+  }
+}
+
 function showHint(msg: string, ms = 2000): void {
   const hint = document.getElementById('pt-hint');
   if (hint) {
@@ -378,8 +461,10 @@ async function init(): Promise<void> {
   styleSelect.addEventListener('change', onStyleChange);
   domainSelect.addEventListener('change', () => void onDomainChange());
   domainRemember.addEventListener('change', () => void rememberSite());
+  inputLangSelect.addEventListener('change', () => void onInputLangChange());
 
   refreshDomain();
+  void refreshInputLang();
 
   // 跨上下文同步：别处改了设置 → 自动刷新 UI；目标语言变了当前领域
   // 可能随之变化（#399）

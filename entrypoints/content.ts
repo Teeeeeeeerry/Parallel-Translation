@@ -33,7 +33,7 @@ import { createParaBtn } from '~/src/ui/paragraph-btn';
 import { createInputDot, deepActiveElement } from '~/src/ui/input-dot';
 import { replaceInputText } from '~/src/ui/input-replace';
 import { decideWriteBack } from '~/src/ui/input-writeback';
-import { decideInputTarget } from '~/src/ui/input-target-lang';
+import { decideInputTarget, parseInputLangChoice, type InputLangChoice } from '~/src/ui/input-target-lang';
 import { decideInputLength } from '~/src/ui/input-length';
 import { inputMaxLength, inputText, type TextInput } from '~/src/ui/input-eligibility';
 import { toast, toastPending } from '~/src/ui/toast';
@@ -153,6 +153,10 @@ export default defineContentScript({
     let domainChoice: DomainChoice = { kind: 'auto' };
     /** 本 frame 是否已收到过切换广播 —— 收到过就不再采用启动时问来的选择。 */
     let choiceBroadcast = false;
+
+    // #662: 用户在 popup 里为本标签页临时选的对方语言（输入翻译），与上面
+    // 的临时领域并列：只存在本页主文档的内存里，不进后台、不写存储
+    let inputLangChoice: InputLangChoice = { kind: 'auto' };
 
     // ── 注入 UI（仅主文档）──
     if (isMainFrame) {
@@ -813,6 +817,23 @@ export default defineContentScript({
         // #400: 子 frame 启动时经 background 来问（见 requestTopDomainChoice）
         if (!isMainFrame) return;
         sendResponse({ choice: domainChoice });
+        return;
+      }
+
+      if (msg?.type === 'pt:set-input-lang') {
+        // #662: popup 选好这一次的对方语言，交给主文档保存；回复保存后的选择
+        if (!isMainFrame) return;
+        const choice = parseInputLangChoice(msg.choice);
+        if (!choice) return;
+        inputLangChoice = choice;
+        sendResponse({ choice: inputLangChoice });
+        return;
+      }
+
+      if (msg?.type === 'pt:get-input-lang-choice') {
+        // #662: popup 打开时来问
+        if (!isMainFrame) return;
+        sendResponse({ choice: inputLangChoice });
         return;
       }
 
