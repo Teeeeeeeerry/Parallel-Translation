@@ -108,10 +108,10 @@ const NON_CONTENT =
 
 export const MAX_TEXT = 3072;
 /**
- * 序列化后的 outerHTML 长度上限。#731 之后它不再是跳过判定的条件 —— 切块与
- * 普通元素一样只受文字上限约束（#174 当年给切块开的豁免随之并入同一条路径，
- * #734）。现在只剩按 br 切行的触发条件还在用它，那里与跳过判定口径不一，
- * 见 #768。
+ * 序列化后的 outerHTML 长度的旧上限。#731 之后它不再是跳过判定的条件 —— 切块
+ * 与普通元素一样只受文字上限约束（#174 当年给切块开的豁免随之并入同一条路径，
+ * #734）；#768 之后按 br 切行的触发条件也只看文字。采集里已经没有任何判定用
+ * 它，留着是给用例构造“HTML 超过旧上限”的段落，钉住这类段落照常是单元。
  */
 export const MAX_HTML = 4096;
 const MIN_TEXT = 3;
@@ -171,9 +171,8 @@ export function shouldSkipNonVisual(el: Element): boolean {
   // —— 旧的 closest('[data-pt="done"]') 会把新内容一并拦掉，永久漏翻
   if (el.getAttribute('data-pt') === 'done') return true;
   if (el.closest('.pt-origin')) return true;
-  // #731：切成切块的容器本身不是单元，它的切块才是。以前文字不长、HTML
-  // 超限而被按行切开的段落（#706）由 HTML 上限顺带挡住，上限去掉之后
-  // 要明说，否则容器整段与逐行切块各翻一遍
+  // #731：切成切块的容器本身不是单元，它的切块才是。这里明说，不靠哪条
+  // 长度上限恰好把容器挡住 —— 否则容器整段与切块各翻一遍
   if (el.getAttribute('data-pt-split') === '1') return true;
 
   // 扩展自身注入的 UI —— 绝不能翻译自己的按钮文字

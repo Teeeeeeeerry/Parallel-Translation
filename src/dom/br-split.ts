@@ -21,7 +21,6 @@ import {
   CONTAINER_SET,
   DIRECT_SET,
   INLINE_SET,
-  MAX_HTML,
   MAX_TEXT,
   inCodeBlockContext,
 } from './classify';
@@ -51,11 +50,17 @@ function isParagraphTag(tag: string): boolean {
 }
 
 /**
- * 超过长度上限：文本或 HTML 任一超限。注意跳过判定自 #731 起只看文字，这里
- * 仍看 HTML，两边口径不一，见 #768。
+ * 超过长度上限：只看文字长度，与跳过判定（classify.ts，#731 起）同一口径 ——
+ * 同一个段落，跳过判定放行的这里就不切，跳过判定因为太长而拒绝的这里才切。
+ *
+ * #768：不再看 outerHTML。#706 当初要求“文字不长但 HTML 超限”也切，是因为
+ * 那时跳过判定按 HTML 上限拒绝，不切就整段漏翻；#731 去掉 HTML 上限之后不切
+ * 也不漏翻，这条要求的前提已经不存在了。留着它的后果是同样形状的段落，带 br
+ * 的被切成逐行、不带 br 的整段翻译；而逐行切块对 DOM 的改动更大，偏偏标记
+ * 密集的页面最容易出事。
  */
 function isOverLimit(el: Element): boolean {
-  return (el.textContent ?? '').trim().length > MAX_TEXT || el.outerHTML.length > MAX_HTML;
+  return (el.textContent ?? '').trim().length > MAX_TEXT;
 }
 
 /**
