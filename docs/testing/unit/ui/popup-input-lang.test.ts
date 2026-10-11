@@ -6,7 +6,8 @@
  * 与领域的临时选择（#400）并列，只存在本标签页当前页面里，不是设置项，
  * 不写设置。打开 popup 时向主文档问当前的选择并显示出来。
  *
- * 广播到各 frame、在翻译时生效是 #663 的事，这里只测选择与保存。
+ * #663：选择广播给本页全部 frame（不带 frameId），主文档回复；在翻译时
+ * 生效由端到端 TC-E2E-161 覆盖。
  *
  * 从 popup 的渲染与消息发送这条缝测：DOM 里有没有这个选择器、选项是什么、
  * 选完向页面发了什么消息、页面回复的选择怎么显示。
@@ -114,7 +115,7 @@ describe('popup 里的“这一次译成”选择器（#662）', () => {
     await vi.waitFor(() => expect(select()?.value).toBe('en'));
   });
 
-  test('选一种语言 → 立即把这一次的选择交给本页主文档保存，按回复显示', async () => {
+  test('选一种语言 → 立即把这一次的选择广播给本页全部 frame，按主文档的回复显示（#663）', async () => {
     await openPopup();
     await vi.waitFor(() => expect(select()?.disabled).toBe(false));
     select()!.value = 'ja';
@@ -122,7 +123,8 @@ describe('popup 里的“这一次译成”选择器（#662）', () => {
     await vi.waitFor(() => expect(sentOf('pt:set-input-lang')).toHaveLength(1));
     const [set] = sentOf('pt:set-input-lang');
     expect(set!.msg.choice).toEqual({ kind: 'lang', lang: 'ja' });
-    expect(set!.opts).toEqual({ frameId: 0 });
+    // 不带 frameId：带了只有主文档收得到，all_frames 注入的 iframe 收不到
+    expect(set!.opts).toBeUndefined();
     expect(select()!.value).toBe('ja');
   });
 
