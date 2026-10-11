@@ -50,7 +50,7 @@ export function mountIsolated(id: string, opts: MountOptions = {}): ShadowRoot {
   style.textContent = tokens + injected;
   shadow.appendChild(style);
 
-  document.body.appendChild(host);
+  hostParent().appendChild(host);
 
   // 启动守护：监听 host 被外部脚本（如 React SPA 渲染）移除的情况
   startHostGuard(id, host);
@@ -64,6 +64,21 @@ export function unmountIsolated(id: string): void {
   document.getElementById(`pt-host-${id}`)?.remove();
 }
 
+/**
+ * 挂载点放在哪里（#838）：平常挂在 body 下。body 自身可编辑时（TinyMCE、
+ * CKEditor 4 一类经典富文本编辑器把编辑区放在 about:blank 的 iframe 里，
+ * `<body contenteditable>` 或 designMode）挂到 `<html>` 下、body 之外 ——
+ * 挂进 body 就成了编辑内容的一部分，编辑器按 body 的 innerHTML 取稿，会把
+ * 扩展的节点连同用户的文字一起提交出去。
+ */
+function hostParent(): HTMLElement {
+  const body = document.body;
+  if (body && (body.isContentEditable || document.designMode === 'on')) {
+    return document.documentElement;
+  }
+  return body;
+}
+
 // ── 内部：host 守护 ──
 
 function startHostGuard(id: string, host: HTMLDivElement): void {
@@ -75,12 +90,12 @@ function startHostGuard(id: string, host: HTMLDivElement): void {
   const observer = new MutationObserver(() => {
     // 检查 host 是否仍在文档中
     if (!document.getElementById(fullId) && document.body) {
-      document.body.appendChild(host);
+      hostParent().appendChild(host);
     }
   });
 
-  // 监听 body 的直接子节点变化（React 替换 body 内容时触发）
-  observer.observe(document.body, { childList: true });
+  // 监听挂载处的直接子节点变化（React 替换 body 内容时触发）
+  observer.observe(hostParent(), { childList: true });
 
   guards.set(id, observer);
 }

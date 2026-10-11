@@ -4,15 +4,24 @@
 <body>
   <h1>Main Document</h1>
   <p>This paragraph is in the main document and should be translated.</p>
-  <iframe id="frame1" src="about:blank" style="width:100%;height:150px"></iframe>
+  <!-- #838：没有网址的 iframe（about:blank 加 document.write）。内容脚本以前不注入
+       这种 frame；打开 matchAboutBlank 之后它与有网址的 iframe 一样：悬浮球只翻
+       主文档，popup 的整页翻译广播到全部 frame，这一段跟着翻译、跟着还原。 -->
+  <div id="frame-slot"></div>
   <script>
-    const iframe = document.getElementById('frame1');
-    iframe.onload = () => {
+    // 先挂 load 监听再插入：about:blank 的 iframe 插入时就同步触发 load，监听挂晚了
+    // 文档就写不出来（以前“may or may not”的来由之一）
+    const iframe = document.createElement('iframe');
+    iframe.id = 'frame1';
+    iframe.style.cssText = 'width:100%;height:150px';
+    iframe.addEventListener('load', () => {
       const doc = iframe.contentDocument;
       doc.open();
-      doc.write('<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body><p>Iframe content that may or may not be translated depending on configuration.</p></body></html>');
+      doc.write('<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"></head><body><p id="inner">This paragraph lives in an about:blank iframe that the page writes with document.write.</p></body></html>');
       doc.close();
-    };
+    }, { once: true });
+    iframe.src = 'about:blank';
+    document.getElementById('frame-slot').replaceWith(iframe);
   </script>
 </body>
 </html>
