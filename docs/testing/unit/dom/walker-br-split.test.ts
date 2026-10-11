@@ -60,16 +60,42 @@ describe('超长段落按 br 切成逐行切块（#706）', () => {
     expect(document.body.innerHTML).toBe(before);
   });
 
-  test('文本不长、但 HTML 超过上限（满是行内链接）→ 同样按行切', () => {
-    const linked = (i: number) =>
-      `Thread ${i}: see <a href="https://forum.example.com/thread/${i}?ref=archive&amp;page=1">post ${i}</a> and <a href="https://forum.example.com/u/${i}">user</a>`;
+  // #768：触发条件只看文字长度，与跳过判定同一口径。#706 当初要求 HTML 超限也切，
+  // 是因为那时不切就整段漏翻；#731 去掉 HTML 上限之后不切也不漏翻，这条前提已不在
+  const linked = (i: number) =>
+    `Thread ${i}: see <a href="https://forum.example.com/thread/${i}?ref=archive&amp;page=1">post ${i}</a> and <a href="https://forum.example.com/u/${i}">user</a>`;
+
+  test('文本不长、只是链接多导致 HTML 超过旧上限的 br 段落 → 整段一个单元，DOM 不动（#768）', () => {
     document.body.innerHTML = `<div id="archive">${brLines(30, linked)}</div>`;
     const el = document.getElementById('archive')!;
     expect(el.textContent!.trim().length).toBeLessThanOrEqual(3072);
     expect(el.outerHTML.length).toBeGreaterThan(4096);
+    const before = document.body.innerHTML;
 
     const { texts, tags } = collectUnits();
-    expect(texts).toHaveLength(30);
+    expect(tags).toEqual(['div']);
+    expect(texts).toHaveLength(1);
+    expect(texts[0]).toContain('Thread 0: see post 0 and user');
+    expect(texts[0]).toContain('Thread 29: see post 29 and user');
+    expect(document.body.innerHTML).toBe(before);
+  });
+
+  test('同样形状、带 br 与不带 br 的两段切法一致：都是整段一个单元（#768）', () => {
+    document.body.innerHTML =
+      `<div id="with-br">${brLines(30, linked)}</div>` +
+      `<div id="without-br">${Array.from({ length: 30 }, (_, i) => linked(i)).join(' ')}</div>`;
+
+    const { tags } = collectUnits();
+    expect(tags).toEqual(['div', 'div']);
+    expect(document.querySelectorAll('.pt-chunk')).toHaveLength(0);
+  });
+
+  test('文字真正超长、又满是链接的 br 段落 → 仍然逐行切块（#768）', () => {
+    document.body.innerHTML = `<div id="archive">${brLines(120, linked)}</div>`;
+    expect(document.getElementById('archive')!.textContent!.trim().length).toBeGreaterThan(3072);
+
+    const { texts, tags } = collectUnits();
+    expect(texts).toHaveLength(120);
     expect(texts[0]).toBe('Thread 0: see post 0 and user');
     expect(tags.every((t) => t === 'span.pt-chunk')).toBe(true);
   });
