@@ -7,7 +7,7 @@
  * 翻译端点由 mockGoogle 拦截，完全确定性，不依赖外网。
  */
 import fs from 'fs';
-import { test, expect, waitForBall, type MockRequests } from './fixtures';
+import { test, expect, waitForBall, fixtureUrl, type MockRequests } from './fixtures';
 import type { UserSiteRules } from '~/src/storage/specialization';
 
 // ── 辅助：触发翻译并等待完成 ──
@@ -4181,6 +4181,92 @@ test.describe('输入翻译：对方语言的判定链', () => {
     await translateIn(page, '#reply', '晚安', 'en');
     await translateIn(same, '#child', '再见', 'en');
     await translateIn(late, '#child', '回头见', 'en');
+  });
+
+  test('@core TC-E2E-162: 这一次的对方语言只管当前标签页当前打开的页面 —— 刷新、同标签页跳到别的页面、关闭标签页后都回到自动判定；别的标签页不受影响（#664）', async ({
+    page, context, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    // 源语言 auto：自动判定按页面声明（夹具都是 lang="en"）
+    await seedSettings({});
+    await mockGoogle({ echoTargetLang: true });
+    const extId = new URL(serviceWorker.url()).host;
+    const popup = await context.newPage();
+    const select = popup.locator('#pt-input-lang-select');
+
+    /** 在页面的框里写一段话、点圆点，返回框里换成的值。 */
+    const translateIn = async (p: import('@playwright/test').Page, boxSel: string, text: string) => {
+      const box = p.locator(boxSel);
+      await box.click();
+      await box.fill('');
+      await p.keyboard.type(text);
+      await p.locator(DOT).click();
+      await expect(box).not.toHaveValue(text, { timeout: 10_000 });
+      return box.inputValue();
+    };
+    /** popup 当前操作的是哪个标签页：把它放到前台再打开 popup。 */
+    const openPopupFor = async (p: import('@playwright/test').Page) => {
+      await p.bringToFront();
+      await popup.goto(`chrome-extension://${extId}/popup.html`);
+      await expect(select).toBeEnabled({ timeout: 10_000 });
+    };
+    const chooseJa = async (p: import('@playwright/test').Page) => {
+      await openPopupFor(p);
+      await select.selectOption('ja');
+      await expect(select).toHaveValue('ja');
+      // 选择确实生效了：之后几条“回到自动判定”才有意义
+      expect(await translateIn(p, '#reply', '早上好')).toBe('【译】早上好 [tl=ja]');
+    };
+
+    // 另一个标签页先开着
+    const other = await context.newPage();
+    await other.goto(fixtureUrl('input'), { waitUntil: 'domcontentloaded' });
+    await waitForBall(other);
+
+    await gotoFixture('input');
+    await waitForBall(page);
+    await chooseJa(page);
+
+    // 1. 别的标签页不受影响：仍按自动判定译成英文，它的 popup 显示“跟随设置”
+    expect.soft(await translateIn(other, '#reply', '你好'), '别的标签页').toBe('【译】你好 [tl=en]');
+    await openPopupFor(other);
+    await expect.soft(select, '别的标签页的 popup').toHaveValue('auto');
+    // 选完之后才新开的标签页同样不受影响
+    const fresh = await context.newPage();
+    await fresh.goto(fixtureUrl('input'), { waitUntil: 'domcontentloaded' });
+    await waitForBall(fresh);
+    expect.soft(await translateIn(fresh, '#reply', '你好'), '之后新开的标签页').toBe('【译】你好 [tl=en]');
+    await fresh.close();
+    // 本标签页的选择还在：别的标签页没有把它冲掉
+    expect(await translateIn(page, '#reply', '早上好')).toBe('【译】早上好 [tl=ja]');
+
+    // 2. 刷新：回到自动判定
+    await page.reload();
+    await waitForBall(page);
+    expect.soft(await translateIn(page, '#reply', '晚安'), '刷新之后').toBe('【译】晚安 [tl=en]');
+    await openPopupFor(page);
+    await expect.soft(select, '刷新之后的 popup').toHaveValue('auto');
+
+    // 3. 同标签页跳到别的页面：回到自动判定
+    await chooseJa(page);
+    await page.goto(fixtureUrl('input-frames'), { waitUntil: 'domcontentloaded' });
+    await waitForBall(page);
+    expect.soft(await translateIn(page, '#reply', '谢谢'), '跳到别的页面之后').toBe('【译】谢谢 [tl=en]');
+    await openPopupFor(page);
+    await expect.soft(select, '跳到别的页面之后的 popup').toHaveValue('auto');
+
+    // 4. 关闭标签页：重新打开同一个网址，回到自动判定
+    await chooseJa(page);
+    const url = page.url();
+    await page.close();
+    const reopened = await context.newPage();
+    await reopened.goto(url, { waitUntil: 'domcontentloaded' });
+    await waitForBall(reopened);
+    expect.soft(await translateIn(reopened, '#reply', '再见'), '关闭标签页再打开之后').toBe('【译】再见 [tl=en]');
+    await openPopupFor(reopened);
+    await expect.soft(select, '关闭标签页再打开之后的 popup').toHaveValue('auto');
+
+    // 别的标签页从头到尾没被动过
+    expect(await translateIn(other, '#reply', '回头见')).toBe('【译】回头见 [tl=en]');
   });
 });
 
