@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>文字太少、识别拿不准的页面</title>
+  <style>body { max-width: 760px; margin: 24px auto; font: 16px/1.5 sans-serif; }</style>
+</head>
+<body>
+  <!-- #843：只有一句很短的英文，浏览器的识别器给不出可靠结果。闸门回落到语言
+       声明，行为与改动前一致：声明是目标语言就拦下。 -->
+  <main id="content"><p id="p1">Hello there.</p></main>
+</body>
+</html>

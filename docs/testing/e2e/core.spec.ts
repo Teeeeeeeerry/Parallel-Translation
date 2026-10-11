@@ -5305,4 +5305,75 @@ test.describe('页面级闸门（#777）', () => {
     await expect(ball).toHaveAttribute('data-state', 'idle');
     expect(await content()).toBe(before);
   });
+
+  test('@core TC-E2E-164: 闸门以本地内容识别为准 —— 声明是中文、内容是英文的页面照常翻译；纯中文页面与声明是 en 的中文页面零请求拦下；文字太少识别拿不准时按声明，与改动前一致（#843）', async ({
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ to: 'zh-CN' });
+    // 引擎把中文原样还回来、外文加前缀：中文界面文字由单元级兜底（#783）拦下
+    await mockGoogle({ keepCjk: true });
+    const message = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastPageSameLanguage'));
+    const toast = page.locator(TOAST);
+
+    // 1. Steam 的形状：声明 zh-CN，界面文字是中文，介绍是英文。以前闸门只看声明，
+    //    弹“本页已经是你的目标语言”一个字不翻；现在照常翻译
+    await gotoFixture('content-foreign');
+    let ball = await waitForBall(page);
+    let requests = await mockRequests();
+    const zhBefore = await page.locator('#menu, #crumbs, #title, #review, #about, #buy').evaluateAll(
+      (els) => els.map((el) => el.outerHTML),
+    );
+    await ball.click();
+    for (const id of ['#en1', '#en2', '#en3', '#en4']) {
+      const el = page.locator(id);
+      await expect(el).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+      const source = await el.locator('.pt-origin').textContent();
+      await expect(el.locator('.pt-trans')).toHaveText(`【译】${source!.trim()}`);
+    }
+    await expect(ball).toHaveAttribute('data-state', 'done');
+    expect((await requests()).google).toBeGreaterThan(0);
+    expect(await toast.allTextContents()).not.toContain(message);
+    // 中文界面文字不插译文，一个字不动
+    expect(
+      await page.locator('#menu, #crumbs, #title, #review, #about, #buy').evaluateAll((els) =>
+        els.map((el) => el.outerHTML),
+      ),
+    ).toEqual(zhBefore);
+
+    // 2. 纯中文页面（#777 的模板页形状，夹一段英文引文）：仍然拦下，零请求，
+    //    页面一个字不动 —— 内容识别取样是只读的，超长段落没被切成切块
+    await gotoFixture('same-language');
+    ball = await waitForBall(page);
+    requests = await mockRequests();
+    const content = () => page.locator('#content').evaluate((el) => el.outerHTML);
+    let before = await content();
+    await ball.click();
+    await expect(toast).toHaveText(message, { timeout: 10_000 });
+    await expect(ball).toHaveAttribute('data-state', 'idle');
+    expect(await content()).toBe(before);
+    await expect(page.locator('[data-pt], .pt-chunk, [data-pt-split]')).toHaveCount(0);
+    expect((await requests()).google).toBe(0);
+
+    // 3. 声明是 en、内容其实是中文：以前声明不是目标语言就放行，现在内容识别拦下
+    await gotoFixture('content-zh-declared-en');
+    ball = await waitForBall(page);
+    requests = await mockRequests();
+    before = await content();
+    await ball.click();
+    await expect(toast).toHaveText(message, { timeout: 10_000 });
+    await expect(ball).toHaveAttribute('data-state', 'idle');
+    expect(await content()).toBe(before);
+    expect((await requests()).google).toBe(0);
+
+    // 4. 只有一句很短的英文，识别器给不出可靠结果：回落到声明（zh-CN），与改动前
+    //    一样拦下。若内容识别在拿不准时也被采信，这一页会按英文放行
+    await gotoFixture('content-short');
+    ball = await waitForBall(page);
+    requests = await mockRequests();
+    before = await content();
+    await ball.click();
+    await expect(toast).toHaveText(message, { timeout: 10_000 });
+    expect(await content()).toBe(before);
+    expect((await requests()).google).toBe(0);
+  });
 });

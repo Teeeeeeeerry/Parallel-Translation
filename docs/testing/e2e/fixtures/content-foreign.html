@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>界面是中文、内容是外文的页面</title>
+  <style>
+    body { max-width: 760px; margin: 24px auto; font: 16px/1.5 sans-serif; }
+    .menu span { display: inline-block; margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <!-- #843（规格 #831）：Steam 商店页的形状 —— 界面按用户的语言本地化，声明是
+       zh-CN；内容是开发者写的英文介绍。闸门以前只看声明，把整页拦下。界面文字
+       放进普通的 div，让它和介绍一样进入采集，取样里两种文字都有。 -->
+  <div class="menu" id="menu"><span>商店</span><span>社区</span><span>关于</span><span>客服</span></div>
+  <div id="crumbs">所有游戏 &gt; 动作游戏 &gt; 星海余烬</div>
+  <h1 id="title">星海余烬</h1>
+  <div id="review">用户评测：特别好评</div>
+  <main id="content">
+    <h2 id="about">关于这款游戏</h2>
+    <p class="en" id="en1">Explore a vast open world full of secrets. Build your base, craft weapons, and survive the night with friends in online co-op.</p>
+    <p class="en" id="en2">Over two hundred hand-crafted quests await you across five unique biomes, each with its own creatures, weather and dangers.</p>
+    <p class="en" id="en3">Customize your character with hundreds of items and unlock powerful abilities as you progress through the story.</p>
+    <p class="en" id="en4">The world reacts to every choice you make: factions remember your deeds, towns grow or fall, and rivals hunt you down.</p>
+  </main>
+  <div id="buy">加入购物车</div>
+</body>
+</html>

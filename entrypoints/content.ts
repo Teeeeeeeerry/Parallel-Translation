@@ -45,6 +45,7 @@ import {
   type PageToggleResult,
 } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
+import type { ContentLang } from '~/src/orchestration/page-gate';
 import {
   allFailedNotice,
   allRenderBlocked,
@@ -420,6 +421,8 @@ export default defineContentScript({
       allRenderRejected: () => allRenderBlocked(renderStats),
       // #792：页面级闸门读本 frame 的语言声明
       getPageLang: () => document.documentElement.getAttribute('lang'),
+      // #843：页面级闸门的第一级 —— 浏览器自带的语言识别，零网络请求
+      detectContentLang: contentLang,
       // #328: 增量补翻观察器启停经钩子接线到生命周期注册表（幂等）
       onObserverStart: () => registry.ensure('observer', true),
       onObserverStop: () => registry.ensure('observer', false),
@@ -486,8 +489,12 @@ export default defineContentScript({
       const ns = getSettings();
       // #792：按需采集 —— 页面级闸门命中、准入拦截、还原时不采集（采集会把
       // 超长段落切成切块，页面就不是一个字不动了）
-      const collectItems = (): TranslateItem<PageItemCtx>[] => {
+      // #843：只读模式供闸门取样 —— 不切块、不登记隐藏单元，页面一个字不动
+      const collectItems = (mode?: { readOnly: boolean }): TranslateItem<PageItemCtx>[] => {
         try {
+          if (mode?.readOnly) {
+            return buildPageItems(collect(document.body, undefined, { readOnly: true }));
+          }
           return buildPageItems(collect(document.body, registerHiddenForObserver));
         } catch (e) {
           throw new Error(
@@ -727,6 +734,27 @@ export default defineContentScript({
           chrome.i18n.detectLanguage(text, (r) => {
             const reliable = !chrome.runtime.lastError && r?.isReliable;
             resolve(reliable ? (r.languages[0]?.language ?? null) : null);
+          });
+        } catch {
+          resolve(null);
+        }
+      });
+    }
+
+    /**
+     * 浏览器语言检测器对整页样本的结果（#843），原样给出各语言占比与可靠
+     * 标志，由页面级闸门判定；拿不到或出错时为 null。与 reliableTextLang
+     * 同一个本地识别，不发网络请求。
+     */
+    function contentLang(sample: string): Promise<ContentLang | null> {
+      return new Promise((resolve) => {
+        try {
+          chrome.i18n.detectLanguage(sample, (r) => {
+            if (chrome.runtime.lastError || !r) return resolve(null);
+            resolve({
+              reliable: r.isReliable,
+              languages: r.languages.map((l) => ({ lang: l.language, percentage: l.percentage })),
+            });
           });
         } catch {
           resolve(null);

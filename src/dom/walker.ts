@@ -53,6 +53,7 @@ import { walkShadowTree } from './shadow-walk';
 export function collect(
   root: Node = document.body,
   onHidden?: (el: Element) => void,
+  opts: { readOnly?: boolean } = {},
 ): Element[] {
   const out: Element[] = [];
 
@@ -108,8 +109,12 @@ export function collect(
         // 代码块判定（isCodeBlockPre）是唯一站点相关部分（#64）。
         // #706：以 br 分行、超过长度上限的段落按行切块，否则整段被长度上限
         // 静默丢掉；拒切条件（块级子元素、代码块上下文等）在 splitBrParagraph 里
-        if (el.tagName === 'PRE') splitPre(el as HTMLPreElement);
-        else splitBrParagraph(el);
+        // #843：只读采集（页面级闸门取样）不切块 —— 切块会改动页面，闸门命中
+        // 时页面必须一个字不动。不切的超长段落随后被长度上限跳过，样本里没有它
+        if (!opts.readOnly) {
+          if (el.tagName === 'PRE') splitPre(el as HTMLPreElement);
+          else splitBrParagraph(el);
+        }
 
         // D4 翻译单元查表（首步只是一次标签查表）：非单元跳过自身继续子树
         if (!isTranslationUnit(el)) return 'continue';
