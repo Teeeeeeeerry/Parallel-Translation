@@ -28,6 +28,7 @@ import { isSiteBlocked } from '~/src/dom/site-filter';
 import {
   decidePageGate,
   sampleUnitTexts,
+  CONTENT_SAMPLE_MIN_CHARS,
   type ContentLang,
   type PageGateDecision,
 } from './page-gate';
@@ -401,7 +402,9 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     try {
       const list = typeof items === 'function' ? items({ readOnly: true }) : items;
       const sample = sampleUnitTexts(list.map((item) => item.text));
-      return sample ? await withTimeout(opts.detectContentLang(sample), CONTENT_DETECT_TIMEOUT_MS) : null;
+      // #859：样本太短时占比不稳，不送去识别，当拿不到
+      if (sample.length < CONTENT_SAMPLE_MIN_CHARS) return null;
+      return await withTimeout(opts.detectContentLang(sample), CONTENT_DETECT_TIMEOUT_MS);
     } catch {
       return null;
     }
