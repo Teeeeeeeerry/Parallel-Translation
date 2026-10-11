@@ -5685,4 +5685,57 @@ test.describe('页面级闸门（#777）', () => {
     await expect(page.locator('[data-pt], .pt-chunk, [data-pt-split]')).toHaveCount(0);
     expect((await requests()).google).toBe(0);
   });
+
+  test('@core TC-E2E-168: 本地化界面形态的页面（声明是目标语言、开头是目标语言的界面文字、正文是成块外文）上整页翻译，外文段落都出译文（#871）', async ({
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    // 与 TC-E2E-164 第 1 步同一份夹具。这一条先把夹具的前提验实 —— 声明确实
+    // 是目标语言、开头确实是界面文字，只看声明的旧闸门会整页拦下；前提不成立
+    // 的话，“外文段落出译文”什么都没验到
+    await seedSettings({ to: 'zh-CN' });
+    // 引擎把中文原样还回来、外文加前缀，与真实引擎对目标语言文字的行为一致
+    await mockGoogle({ keepCjk: true });
+    await gotoFixture('content-foreign');
+    const ball = await waitForBall(page);
+
+    // 前提一：声明的语言就是目标语言
+    const to = await serviceWorker.evaluate(async () => {
+      const stored = await chrome.storage.sync.get('pt-settings');
+      return (stored['pt-settings'] as { to: string }).to;
+    });
+    expect(to).toBe('zh-CN');
+    await expect(page.locator('html')).toHaveAttribute('lang', to);
+    // 前提二：按文档顺序，页面开头的几块文字全是界面文字（中文，没有拉丁字母），
+    // 外文介绍排在它们之后
+    const blocks = await page.evaluate(() => {
+      const out: string[] = [];
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const t = n.textContent!.trim();
+        if (t && n.parentElement?.closest('script, style') == null) out.push(t);
+      }
+      return out;
+    });
+    const firstForeign = blocks.findIndex((t) => /[A-Za-z]/.test(t));
+    expect(firstForeign).toBeGreaterThanOrEqual(5);
+    for (const t of blocks.slice(0, firstForeign)) expect(t).toMatch(/[\u4e00-\u9fff]/);
+
+    const requests = await mockRequests();
+    const message = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastPageSameLanguage'));
+
+    await ball.click();
+
+    // 外文段落全部出译文
+    for (const id of ['#en1', '#en2', '#en3', '#en4']) {
+      const el = page.locator(id);
+      await expect(el).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+      const source = (await el.locator('.pt-origin').textContent())!.trim();
+      expect(source).toMatch(/^[A-Z]/);
+      await expect(el.locator('.pt-trans')).toHaveText(`【译】${source}`);
+    }
+    await expect(ball).toHaveAttribute('data-state', 'done');
+    // 闸门放行了：请求确实发出去，没有弹“本页已经是你的目标语言”
+    expect((await requests()).google).toBeGreaterThan(0);
+    expect(await page.locator(TOAST).allTextContents()).not.toContain(message);
+  });
 });
