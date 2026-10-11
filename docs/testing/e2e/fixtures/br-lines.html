@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lines Separated by br, Kept as One Unit</title>
+  <style>body { max-width: 760px; margin: 24px auto; font: 16px/1.5 sans-serif; }</style>
+</head>
+<body>
+  <!-- #840：整段作为一个翻译单元、行与行之间只隔一个 br 的两种段落。
+       #poem 是 4 行短诗，长度一直没超上限；#threads 是 #768 那种文字不长、只是
+       链接多的 30 行段落（HTML 超过旧的 4096 上限，文字远不到 3072），#768 之后
+       不再按行切。两段的译文都应在原文换行的位置换行。
+       #poem 的 br 之间没有源码换行，#threads 每行中间有一处源码换行：译文只在
+       br 处换行，源码换行照旧折叠成空格。 -->
+  <h1 id="title">Short Lines</h1>
+  <p id="poem">Roses are red,<br>violets are blue,<br>sugar is sweet,<br>and so are you.</p>
+  <p id="threads">Thread 00: see
+    <a href="/r/forum/comments/0000/a-rather-long-thread-slug-used-for-testing-links">post 00</a> and <a href="/user/someone-with-a-long-name-00">user</a><br>
+Thread 01: see
+    <a href="/r/forum/comments/0001/a-rather-long-thread-slug-used-for-testing-links">post 01</a> and <a href="/user/someone-with-a-long-name-01">user</a><br>
+Thread 02: see
+    <a href="/r/forum/comments/0002/a-rather-long-thread-slug-used-for-testing-links">post 02</a> and <a href="/user/someone-with-a-long-name-02">user</a><br>
+Thread 03: see
+    <a href="/r/forum/comments/0003/a-rather-long-thread-slug-used-for-testing-links">post 03</a> and <a href="/user/someone-with-a-long-name-03">user</a><br>
+Thread 04: see
+    <a href="/r/forum/comments/0004/a-rather-long-thread-slug-used-for-testing-links">post 04</a> and <a href="/user/someone-with-a-long-name-04">user</a><br>
+Thread 05: see
+    <a href="/r/forum/comments/0005/a-rather-long-thread-slug-used-for-testing-links">post 05</a> and <a href="/user/someone-with-a-long-name-05">user</a><br>
+Thread 06: see
+    <a href="/r/forum/comments/0006/a-rather-long-thread-slug-used-for-testing-links">post 06</a> and <a href="/user/someone-with-a-long-name-06">user</a><br>
+Thread 07: see
+    <a href="/r/forum/comments/0007/a-rather-long-thread-slug-used-for-testing-links">post 07</a> and <a href="/user/someone-with-a-long-name-07">user</a><br>
+Thread 08: see
+    <a href="/r/forum/comments/0008/a-rather-long-thread-slug-used-for-testing-links">post 08</a> and <a href="/user/someone-with-a-long-name-08">user</a><br>
+Thread 09: see
+    <a href="/r/forum/comments/0009/a-rather-long-thread-slug-used-for-testing-links">post 09</a> and <a href="/user/someone-with-a-long-name-09">user</a><br>
+Thread 10: see
+    <a href="/r/forum/comments/0010/a-rather-long-thread-slug-used-for-testing-links">post 10</a> and <a href="/user/someone-with-a-long-name-10">user</a><br>
+Thread 11: see
+    <a href="/r/forum/comments/0011/a-rather-long-thread-slug-used-for-testing-links">post 11</a> and <a href="/user/someone-with-a-long-name-11">user</a><br>
+Thread 12: see
+    <a href="/r/forum/comments/0012/a-rather-long-thread-slug-used-for-testing-links">post 12</a> and <a href="/user/someone-with-a-long-name-12">user</a><br>
+Thread 13: see
+    <a href="/r/forum/comments/0013/a-rather-long-thread-slug-used-for-testing-links">post 13</a> and <a href="/user/someone-with-a-long-name-13">user</a><br>
+Thread 14: see
+    <a href="/r/forum/comments/0014/a-rather-long-thread-slug-used-for-testing-links">post 14</a> and <a href="/user/someone-with-a-long-name-14">user</a><br>
+Thread 15: see
+    <a href="/r/forum/comments/0015/a-rather-long-thread-slug-used-for-testing-links">post 15</a> and <a href="/user/someone-with-a-long-name-15">user</a><br>
+Thread 16: see
+    <a href="/r/forum/comments/0016/a-rather-long-thread-slug-used-for-testing-links">post 16</a> and <a href="/user/someone-with-a-long-name-16">user</a><br>
+Thread 17: see
+    <a href="/r/forum/comments/0017/a-rather-long-thread-slug-used-for-testing-links">post 17</a> and <a href="/user/someone-with-a-long-name-17">user</a><br>
+Thread 18: see
+    <a href="/r/forum/comments/0018/a-rather-long-thread-slug-used-for-testing-links">post 18</a> and <a href="/user/someone-with-a-long-name-18">user</a><br>
+Thread 19: see
+    <a href="/r/forum/comments/0019/a-rather-long-thread-slug-used-for-testing-links">post 19</a> and <a href="/user/someone-with-a-long-name-19">user</a><br>
+Thread 20: see
+    <a href="/r/forum/comments/0020/a-rather-long-thread-slug-used-for-testing-links">post 20</a> and <a href="/user/someone-with-a-long-name-20">user</a><br>
+Thread 21: see
+    <a href="/r/forum/comments/0021/a-rather-long-thread-slug-used-for-testing-links">post 21</a> and <a href="/user/someone-with-a-long-name-21">user</a><br>
+Thread 22: see
+    <a href="/r/forum/comments/0022/a-rather-long-thread-slug-used-for-testing-links">post 22</a> and <a href="/user/someone-with-a-long-name-22">user</a><br>
+Thread 23: see
+    <a href="/r/forum/comments/0023/a-rather-long-thread-slug-used-for-testing-links">post 23</a> and <a href="/user/someone-with-a-long-name-23">user</a><br>
+Thread 24: see
+    <a href="/r/forum/comments/0024/a-rather-long-thread-slug-used-for-testing-links">post 24</a> and <a href="/user/someone-with-a-long-name-24">user</a><br>
+Thread 25: see
+    <a href="/r/forum/comments/0025/a-rather-long-thread-slug-used-for-testing-links">post 25</a> and <a href="/user/someone-with-a-long-name-25">user</a><br>
+Thread 26: see
+    <a href="/r/forum/comments/0026/a-rather-long-thread-slug-used-for-testing-links">post 26</a> and <a href="/user/someone-with-a-long-name-26">user</a><br>
+Thread 27: see
+    <a href="/r/forum/comments/0027/a-rather-long-thread-slug-used-for-testing-links">post 27</a> and <a href="/user/someone-with-a-long-name-27">user</a><br>
+Thread 28: see
+    <a href="/r/forum/comments/0028/a-rather-long-thread-slug-used-for-testing-links">post 28</a> and <a href="/user/someone-with-a-long-name-28">user</a><br>
+Thread 29: see
+    <a href="/r/forum/comments/0029/a-rather-long-thread-slug-used-for-testing-links">post 29</a> and <a href="/user/someone-with-a-long-name-29">user</a></p>
+</body>
+</html>

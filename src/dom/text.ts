@@ -17,6 +17,7 @@
 import { shouldOmitText, shouldPreserveText } from './compat';
 import { INLINE_SET, isVisible, isVisuallyHidden } from './classify';
 import { getSiteRules } from '~/src/storage/specialization';
+import { normalizeLines, normalizePreText } from './normalize';
 import type { SiteRules } from '~/src/storage/specialization';
 
 /**
@@ -38,6 +39,11 @@ interface PreserveMap {
   rules: TextRules;
   /** #595 / #600：提取时跳过了看不见的元素（skipHidden） */
   hiddenSkipped: boolean;
+  /**
+   * #840：br 作为换行带出去，文本节点里的空白（源码换行、缩进）当场折叠成
+   * 空格 —— 送翻文字里的 \n 只来自 br。pre 里的单元不开（靠硬换行）
+   */
+  brNewlines?: boolean;
 }
 
 /**
@@ -108,6 +114,31 @@ export function translatableTextEx(el: Element, rules?: TextRules): {
 }
 
 /**
+ * 一个翻译单元送去翻译的文字（含 preserve 占位符）与占位符映射表，已归一化。
+ * 整页翻译与逐段翻译共用。shallow 为 true 时走浅层提取（含带文字的块级子
+ * 元素的混合内容单元，#23）。
+ *
+ * - pre 里的单元（.pt-chunk / 纯文本 pre）保留硬换行与缩进（#117、#141）
+ * - 其余单元折叠空白；#840：br 作为换行带出去，整段一个单元的诗、地址、
+ *   #768 之后不再按行切的链接多的 br 段落，译文在同样的位置换行。引擎对
+ *   换行普遍原样保留（google-web 逐段请求；编号提示词的引擎压成一行，见
+ *   buildNumberedPrompt，译文退回不分行，不会错位）
+ */
+export function unitTextEx(
+  el: Element,
+  opts: { shallow?: boolean; rules?: TextRules } = {},
+): { text: string; preserves: Map<string, string> } {
+  const inPre = el.closest('pre') !== null;
+  const pm = makePreserveMap(opts.rules);
+  pm.brNewlines = !inPre;
+  const raw = opts.shallow ? walkShallow(el, pm) : walkTranslatable(el, pm);
+  return {
+    text: inPre ? normalizePreText(raw) : normalizeLines(raw),
+    preserves: pm.placeholders,
+  };
+}
+
+/**
  * 提取元素的全部可翻译文本：递归遍历子节点，跳过 .notranslate 与
  * 站点元数据子树。无忽略规则时与 textContent 等价。
  */
@@ -126,6 +157,12 @@ function skipHidden(el: Element, unitVisible: boolean): boolean {
   return isVisuallyHidden(el) || (unitVisible && !isVisible(el));
 }
 
+/** 文本节点的文字；br 当换行时空白当场折叠，源码里的换行不冒充 br（#840）。 */
+function textOf(node: Node, pm: PreserveMap | null): string {
+  const text = node.textContent ?? '';
+  return pm?.brNewlines ? text.replace(/\s+/g, ' ') : text;
+}
+
 /** 共享遍历实现：pm 为 null 时不启用 preserve（向后兼容） */
 function walkTranslatable(el: Element, pm: PreserveMap | null): string {
   let out = '';
@@ -133,9 +170,13 @@ function walkTranslatable(el: Element, pm: PreserveMap | null): string {
   const walk = (node: Node) => {
     for (const child of node.childNodes) {
       if (child.nodeType === Node.TEXT_NODE) {
-        out += child.textContent ?? '';
+        out += textOf(child, pm);
       } else if (child.nodeType === Node.ELEMENT_NODE) {
         const c = child as Element;
+        if (pm?.brNewlines && c.tagName === 'BR') {
+          out += '\n';
+          continue;
+        }
 
         // #595 / #600：看不见的文字不送翻 —— 译文不继承隐藏样式，会把原本
         // 看不见的文字显示出来。原文留在原位，读屏软件照常朗读
@@ -202,10 +243,14 @@ function walkShallow(el: Element, pm: PreserveMap | null): string {
   const unitVisible = isVisible(el);
   for (const child of el.childNodes) {
     if (child.nodeType === Node.TEXT_NODE) {
-      out += child.textContent ?? '';
+      out += textOf(child, pm);
     } else if (child.nodeType === Node.ELEMENT_NODE) {
       const c = child as Element;
       const tag = c.tagName.toLowerCase();
+      if (pm?.brNewlines && tag === 'br') {
+        out += '\n';
+        continue;
+      }
 
       // 跳过块级子元素 —— 它们的文本由各自翻译单元覆盖
       if (!INLINE_SET.has(tag)) continue;

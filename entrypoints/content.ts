@@ -14,12 +14,11 @@ import '~/src/styles/tokens.css';
 import '~/src/styles/presets.css';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
-import { normalizeText, normalizePreText } from '~/src/dom/normalize';
+import { normalizeText } from '~/src/dom/normalize';
 import {
   translatableText,
-  translatableTextEx,
   shallowTranslatableText,
-  shallowTranslatableTextEx,
+  unitTextEx,
   hasBlockTextChildren,
   restorePreserves,
 } from '~/src/dom/text';
@@ -72,13 +71,6 @@ import { tf } from '~/src/i18n';
 import { isSiteBlocked } from '~/src/dom/site-filter';
 import { decideShow } from '~/src/changelog/decide';
 import { clearSeen } from '~/src/changelog/state';
-
-// pre 判定统一收敛：#117。pre 内单元（.pt-chunk / 纯文本 pre）保留硬换行，
-// pre 外折叠空白；两处采集/渲染路径共用同一判定，避免只改一处导致行为分叉。
-function normalizeForUnit(el: Element, raw: string): string {
-  const normalize = el.closest('pre') ? normalizePreText : normalizeText;
-  return normalize(raw);
-}
 
 /**
  * 子 frame 取顶层页面的主机名（#471）。跨域时读不到 window.top.location，
@@ -468,11 +460,7 @@ export default defineContentScript({
      */
     function buildPageItems(targets: Element[]): TranslateItem<PageItemCtx>[] {
       return targets.map((el, i) => {
-        const useShallow = hasBlockTextChildren(el);
-        const { text: rawText, preserves } = useShallow
-          ? shallowTranslatableTextEx(el)
-          : translatableTextEx(el);
-        const text = normalizeForUnit(el, rawText);
+        const { text, preserves } = unitTextEx(el, { shallow: hasBlockTextChildren(el) });
         return {
           text,
           ctx: { target: targets[i]!, preserves, rawText: text },
@@ -592,8 +580,7 @@ export default defineContentScript({
         return;
       }
 
-      const { text: rawText, preserves } = translatableTextEx(unit);
-      const text = normalizeForUnit(unit, rawText);
+      const { text, preserves } = unitTextEx(unit);
       if (!text) return;
 
       // #314: 逐段翻译走编排模块的单文本入口 —— 准入判定（总开关 /

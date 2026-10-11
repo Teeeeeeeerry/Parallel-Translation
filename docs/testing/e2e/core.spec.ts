@@ -4726,6 +4726,63 @@ test.describe('超长段落按 br 切行', () => {
     expect(second).toEqual(first);
     await restoreRound('第二次还原');
   });
+
+  test('@core TC-E2E-165: 整段一个单元的 br 段落，送翻时 br 作为换行带出去，译文在同样的位置换行 —— 4 行短诗与 #768 那种链接多的 30 行段落；还原后逐字节回到原样（#840）', async ({
+    page, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    const requests = await mockRequests();
+    await gotoFixture('br-lines');
+    const ball = await waitForBall(page);
+    const poem = page.locator('#poem');
+    const threads = page.locator('#threads');
+    // 源码换行在页面上就是空格，期望的行按同样的口径折叠
+    const fold = (lines: string[]) => lines.map((l) => l.replace(/\s+/g, ' '));
+    const poemLines = fold(await readLines(poem));
+    const threadLines = fold(await readLines(threads));
+    expect(poemLines).toHaveLength(4);
+    expect(threadLines).toHaveLength(30);
+    const before = await page.locator('body').evaluate((el) => el.innerHTML);
+
+    await ball.click();
+    await expect(poem).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+    await expect(threads).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+
+    // 两段都是整段一个单元，没有按行切
+    await expect(page.locator('.pt-chunk, [data-pt-split]')).toHaveCount(0);
+    // 送出去的原文按 br 换行（引擎替身原样回显，加前缀）
+    const queries = (await requests()).queries;
+    expect(queries).toContain(poemLines.join('\n'));
+    expect(queries).toContain(threadLines.join('\n'));
+
+    /** 译文区按 br 分开的各行，与 br 个数。 */
+    const translated = (unit: import('@playwright/test').Locator) =>
+      unit.locator(':scope > .pt-trans').evaluate((el) => {
+        const lines = [''];
+        for (const node of el.childNodes) {
+          if (node.nodeName === 'BR') lines.push('');
+          else lines[lines.length - 1] += node.textContent ?? '';
+        }
+        return { lines, brs: el.querySelectorAll('br').length };
+      });
+    const withPrefix = (lines: string[]) => lines.map((l, i) => (i === 0 ? `【译】${l}` : l));
+    expect(await translated(poem)).toEqual({ lines: withPrefix(poemLines), brs: 3 });
+    expect(await translated(threads)).toEqual({ lines: withPrefix(threadLines), brs: 29 });
+
+    // 真的分行显示：译文区每一行各占一行
+    const rows = await threads.locator(':scope > .pt-trans').evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+    });
+    expect(rows).toBeGreaterThanOrEqual(30);
+
+    // 还原：整页逐字节回到原样
+    await ball.click();
+    await expect(page.locator('[data-pt]')).toHaveCount(0, { timeout: 10_000 });
+    expect(await page.locator('body').evaluate((el) => el.innerHTML)).toBe(before);
+  });
 });
 
 test.describe('标记密集的段落（#724）', () => {

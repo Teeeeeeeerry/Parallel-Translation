@@ -85,7 +85,16 @@ export function render(
 
   const trans = document.createElement('span');
   trans.className = 'pt-trans';
-  trans.textContent = translation;
+  // #840：送翻时单元里的 br 作为换行带出去，译文里的换行还原成 br，与原文
+  // 在同样的位置换行。pre 里的译文靠 .pt-pre 的样式换行，照旧放纯文本
+  if (translation.includes('\n') && !el.closest('pre')) {
+    translation.split('\n').forEach((line, i) => {
+      if (i > 0) trans.appendChild(document.createElement('br'));
+      if (line) trans.appendChild(document.createTextNode(line));
+    });
+  } else {
+    trans.textContent = translation;
+  }
 
   // #66：pre 内译文需要脱离等宽约束，按普通段落排版。
   // closest 从自身沿祖先链向上匹配，覆盖两种场景：
