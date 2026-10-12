@@ -29,6 +29,7 @@ import {
   decidePageGate,
   sampleUnitTexts,
   CONTENT_SAMPLE_MIN_CHARS,
+  CONTENT_UNDETERMINED,
   type ContentLang,
   type PageGateDecision,
 } from './page-gate';
@@ -313,7 +314,8 @@ export interface OrchestratorOptions {
   /**
    * 本地内容识别（#843）：对翻译单元的文字样本给出各语言占比，页面级闸门的
    * 第一级取数。调用方用浏览器自带的语言识别实现，零网络请求 —— 模块不碰
-   * 浏览器接口。未注入、不可用或出错时为 null，闸门回落到检测语言与声明。
+   * 浏览器接口。给不出结果时为 null（或抛错）：闸门当识别器拿不准，照常
+   * 翻译（#889）；未注入时闸门回落到检测语言与声明。
    */
   detectContentLang?: (sample: string) => Promise<ContentLang | null>;
   /**
@@ -393,20 +395,28 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     detectedLang = normalizeLangCode(raw) ?? detectedLang;
   };
 
-  // #843：页面级闸门的内容识别。没注入识别就不取样；取样或识别出错当拿不到，
+  // #843：页面级闸门的内容识别。没注入识别就不取样；取样出错当没做识别，
   // 闸门回落到检测语言与声明 —— 一个可选能力出错不该让整页翻译坏掉
-  // #866：识别超过时间上限同样当拿不到。识别的回调不来时，没有上限的等待会
+  // #866：识别超过时间上限当拿不到结果。识别的回调不来时，没有上限的等待会
   // 让整页翻译永远停在在飞，再点只返回忙碌，只能刷新页面
+  // #889：送去识别却没拿到结果（给不出、出错、超时）与识别器说拿不准同等
+  // 对待，闸门照常翻译，不回落到声明
   const detectContent = async (items: PageItemsSource): Promise<ContentLang | null> => {
     if (!opts.detectContentLang) return null;
+    let sample: string;
     try {
       const list = typeof items === 'function' ? items({ readOnly: true }) : items;
-      const sample = sampleUnitTexts(list.map((item) => item.text));
-      // #859：样本太短时占比不稳，不送去识别，当拿不到
-      if (sample.length < CONTENT_SAMPLE_MIN_CHARS) return null;
-      return await withTimeout(opts.detectContentLang(sample), CONTENT_DETECT_TIMEOUT_MS);
+      sample = sampleUnitTexts(list.map((item) => item.text));
     } catch {
       return null;
+    }
+    // #859：样本太短时占比不稳，不送去识别，当没做识别
+    if (sample.length < CONTENT_SAMPLE_MIN_CHARS) return null;
+    try {
+      const result = await withTimeout(opts.detectContentLang(sample), CONTENT_DETECT_TIMEOUT_MS);
+      return result ?? CONTENT_UNDETERMINED;
+    } catch {
+      return CONTENT_UNDETERMINED;
     }
   };
 

@@ -3,13 +3,15 @@
  *
  * 判定链的第一级是本地内容识别：浏览器自带的语言识别对翻译单元样本给出的
  * 各语言占比，作为一项输入显式传入。识别可靠时只看它 —— 目标语言的占比
- * 达到阈值才拦下，否则照常翻译，不再回头看声明；不可靠或拿不到时回落到
- * 检测语言 → 声明 → 判不出放行。
+ * 达到阈值才拦下，否则照常翻译，不再回头看声明；识别器拿不准（报不可靠、
+ * 被调用却没给出结果）时照常翻译（#889）；没有做识别（未注入、样本太短）
+ * 时回落到检测语言 → 声明 → 判不出放行。
  */
 import { describe, test, expect } from 'vitest';
 import {
   decidePageGate,
   CONTENT_SHARE_THRESHOLD,
+  CONTENT_UNDETERMINED,
   type ContentLang,
 } from '~/src/orchestration/page-gate';
 
@@ -87,6 +89,17 @@ describe('内容识别可靠时只看它，声明退到后面（#843）', () => 
         detectedLang: null,
         pageLang: 'zh-CN',
         contentLang: reliable(['ja', 100]),
+      }),
+    ).toEqual(PASS);
+  });
+
+  test('识别结果里的语言码畸形：不算任何语言', () => {
+    expect(
+      decidePageGate({
+        to: 'zh-CN',
+        detectedLang: null,
+        pageLang: 'en',
+        contentLang: reliable(['und', 90], ['zh', 10]),
       }),
     ).toEqual(PASS);
   });
@@ -184,16 +197,42 @@ describe('“绝大部分是目标语言”的阈值（#843）', () => {
   });
 });
 
-describe('识别拿不准或拿不到：回落到现有链条，结果与改动前一致（#843）', () => {
-  test('识别器说不可靠：不看它，按声明', () => {
+describe('识别拿不准：照常翻译，不回落到声明（#889，取代 #865）', () => {
+  test('识别器说不可靠、声明是目标语言：照常翻译（实测里被误拦的那 5 张外文页的形状）', () => {
+    // #851 实测：YouTube、Cursor 论坛话题列表、Amazon、Steam ULTRAKILL 以中文界面
+    // 打开，声明是 zh，识别器对样本报不可靠。以前回落到声明就整页拦下
+    // Amazon MacBook Pro：声明 zh-cn，en 51、zh 39，不可靠
     expect(
       decidePageGate({
         to: 'zh-CN',
         detectedLang: null,
-        pageLang: 'zh-CN',
-        contentLang: unreliable(['en', 100]),
+        pageLang: 'zh-cn',
+        contentLang: unreliable(['en', 51], ['zh', 39]),
       }),
-    ).toEqual(BLOCK_ZH);
+    ).toEqual(PASS);
+    // YouTube Never Gonna Give You Up 第一遍：zh 64、en 20，不可靠
+    expect(
+      decidePageGate({
+        to: 'zh-CN',
+        detectedLang: null,
+        pageLang: 'zh-Hans-CN',
+        contentLang: unreliable(['zh', 64], ['en', 20]),
+      }),
+    ).toEqual(PASS);
+  });
+
+  test('识别器说不可靠时，引擎报告的检测语言也不再拿来顶上', () => {
+    expect(
+      decidePageGate({
+        to: 'zh-CN',
+        detectedLang: 'zh-CN',
+        pageLang: 'zh-CN',
+        contentLang: unreliable(['zh', 99]),
+      }),
+    ).toEqual(PASS);
+  });
+
+  test('识别器说不可靠、声明是外文：照常翻译（与改动前相同）', () => {
     expect(
       decidePageGate({
         to: 'zh-CN',
@@ -204,6 +243,30 @@ describe('识别拿不准或拿不到：回落到现有链条，结果与改动�
     ).toEqual(PASS);
   });
 
+  test('识别器被调用却没给出结果（出错、超时）：与拿不准同等对待，照常翻译', () => {
+    expect(
+      decidePageGate({
+        to: 'zh-CN',
+        detectedLang: null,
+        pageLang: 'zh-CN',
+        contentLang: CONTENT_UNDETERMINED,
+      }),
+    ).toEqual(PASS);
+  });
+
+  test('可靠但一个语言都没给：同样当拿不准，照常翻译', () => {
+    expect(
+      decidePageGate({
+        to: 'zh-CN',
+        detectedLang: null,
+        pageLang: 'zh-CN',
+        contentLang: reliable(),
+      }),
+    ).toEqual(PASS);
+  });
+});
+
+describe('没有做识别：走现有链条，结果与改动前一致（#843、#859）', () => {
   test('识别不可用（null 或缺省）：按检测语言 → 声明 → 判不出放行', () => {
     for (const contentLang of [null, undefined]) {
       expect(
@@ -216,28 +279,6 @@ describe('识别拿不准或拿不到：回落到现有链条，结果与改动�
         decidePageGate({ to: 'zh-CN', detectedLang: null, pageLang: null, contentLang }),
       ).toEqual(PASS);
     }
-  });
-
-  test('可靠但一个语言都没给：当作拿不到', () => {
-    expect(
-      decidePageGate({
-        to: 'zh-CN',
-        detectedLang: null,
-        pageLang: 'zh-CN',
-        contentLang: reliable(),
-      }),
-    ).toEqual(BLOCK_ZH);
-  });
-
-  test('识别结果里的语言码畸形：不算任何语言', () => {
-    expect(
-      decidePageGate({
-        to: 'zh-CN',
-        detectedLang: null,
-        pageLang: 'en',
-        contentLang: reliable(['und', 90], ['zh', 10]),
-      }),
-    ).toEqual(PASS);
   });
 });
 
