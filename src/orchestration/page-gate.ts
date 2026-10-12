@@ -29,6 +29,13 @@
 // 照常翻译（#889，见 contentLanguage）；没有做识别（未注入、样本太短）时
 // 才走 #791 的链条。
 //
+// #891（父 #883）：内容识别先看翻译单元里有没有一块够长的外文正文，有就
+// 照常翻译，不再看全页占比。全页占比按字节算，一个汉字算三份，中文界面的
+// 菜单与标签再碎也压得住很长的外文正文（#851：Steam Lethal Company 有 1520
+// 字符的英文介绍，全页 zh 仍是 53）；成块的外文正文却天然在最长的几个单元
+// 里。单元级识别的结果由调用方算好传进来（contentUnits），本模块仍不碰浏览器
+// 接口。没有这样的外文块，才轮到全页占比与后面的链条。
+//
 // 返回原因而非裸 boolean，与 changelog/decide.ts、input-target-lang.ts 同一
 // 风格：调用方拿到原因直接渲染提示。
 
@@ -48,7 +55,9 @@ import { pageLanguage } from './page-lang';
  * 两类交叉，单一占比阈值分不开（#858 复核）：65 让可靠的中文页里 56 与 64
  * 判成照常翻译，离 65 差 9 与 1；可靠的外文页最高 59，离 65 差 6。数值暂不动：
  * 换成别的数只是把错判挪到另一侧，而且实测里更多的错判来自识别器报不可靠
- * 后回落到声明，与阈值无关。更稳的判据见 #883。
+ * 后回落到声明，与阈值无关（#889 已改成不可靠时照常翻译）。#891 在占比之前
+ * 加了“够长的外文单元”一级，见 FOREIGN_BLOCK_MIN_CHARS；这个阈值只在没有
+ * 外文块的页面上起作用。
  */
 export const CONTENT_SHARE_THRESHOLD = 65;
 
@@ -72,6 +81,70 @@ export const CONTENT_SAMPLE_MAX_CHARS = 4000;
  * 页面最短也有 552 字符，所以这条下限只管文字极少的页面。
  */
 export const CONTENT_SAMPLE_MIN_CHARS = 100;
+
+/**
+ * 一个单元至少有这么多字符、识别为外文，才算“一块够长的外文正文”（#891）。
+ * 字数是字符数，中英文同一口径。
+ *
+ * 依据是 #890 在 #851 那 31 张真实页面上的实测（2026-10-12，Chromium 151，
+ * 记录见 docs/research/page-gate-longest-units.md），每页最长的外文单元：
+ * - 外文页（13 张）：64 到 1563；其中 Cursor 论坛话题列表一个外文单元都没有
+ * - 中文页（18 张）：0 到 558
+ * 两个区间在 64 到 558 之间重叠，按字数分不开：任何一个下限都至少错 8 张。
+ * 所以不去凑一个“看起来分得开”的数，取外文页里的最小值 64（YouTube 大模型
+ * 入门第一遍，推荐栏的一个视频标题），让实测里有外文单元的外文页全部照常
+ * 翻译。代价是这些中文页会因为一块外文被判成照常翻译（都在实测里）：
+ * - Steam 已有中文介绍的页面带着英文评语、获奖与版权声明、开发者新闻：
+ *   Bastion 558、火线迈阿密 517、Dwarf Fortress 375、Caves of Qud 336、
+ *   邪恶冥刻 179、饥荒联机版 69
+ * - 若依文档首页一串 QQ 群号 448（识别器报可靠的 ht）、V2EX 的节点标签列表
+ *   108（lb）、justjavac/free-programming-books-zh_CN 的英文提交说明 69
+ * 这些页面被放行后，中文的段落由单元级兜底（#783）接住，不插译文、不标记
+ * 已翻译，多花的是一轮请求与配额。Cursor 话题列表没有外文块，靠全页识别
+ * 报不可靠时放行（#889）。
+ *
+ * 不沿用 #859 的 100 字符样本下限：那条下限防的是“一句外文让全页占比翻过
+ * 阈值”，这里不算占比，只问这一个单元是不是外文。#859 实测单一语言的英文
+ * 到 46 字符以上才报可靠，64 已经越过；#890 两遍里单元级的可靠标记没有
+ * 一次翻转。短于这个下限的单元成不了外文块，所以也不送去识别。
+ */
+export const FOREIGN_BLOCK_MIN_CHARS = 64;
+
+/**
+ * 送去单元级识别的单元个数上限（#891）：按文字长度取最前面的这么多个。只识别
+ * 最长的几个而不是全部单元 —— 成块的外文正文天然在最长的几个单元里，界面
+ * 文字天然短而碎 —— 识别次数因此有上限，不随页面变大（#867）。
+ *
+ * 依据 #890：实测里有外文单元的 12 张外文页，最长的外文单元 10 张排第 1，
+ * 其余排第 2、第 4、第 6（YouTube 推荐栏）；量的就是前 10 个。
+ */
+export const UNIT_DETECT_COUNT = 10;
+
+/**
+ * 每个单元送去识别的文字上限（字符，#891）。字数仍按全文算，只是识别只看
+ * 开头这一段。依据 #890：前 10 个单元里超过 1000 字符的 20 个（两遍合计），
+ * 截到 1000 字符再识别，语言与可靠标记全部与识别全文相同。于是单元级识别
+ * 喂给识别器的文字量最多 UNIT_DETECT_COUNT 乘这个数，与页面大小无关。
+ */
+export const UNIT_DETECT_MAX_CHARS = 1000;
+
+/**
+ * 取送去单元级识别的单元（#891）：去掉首尾空白，只要到外文块下限的，按文字
+ * 长度从长到短（等长的保持页面顺序）取前 UNIT_DETECT_COUNT 个，每个截到
+ * UNIT_DETECT_MAX_CHARS。chars 是全文的字符数。
+ */
+export function longestUnitTexts(
+  texts: string[],
+  count = UNIT_DETECT_COUNT,
+): { chars: number; text: string }[] {
+  return texts
+    .map((t) => t.trim())
+    .filter((t) => t.length >= FOREIGN_BLOCK_MIN_CHARS)
+    .map((t, i) => ({ t, i }))
+    .sort((a, b) => b.t.length - a.t.length || a.i - b.i)
+    .slice(0, count)
+    .map(({ t }) => ({ chars: t.length, text: t.slice(0, UNIT_DETECT_MAX_CHARS) }));
+}
 
 /**
  * 从翻译单元文字里取识别样本（#843）：总长不超过上限时全取；超过时在全部
@@ -111,6 +184,16 @@ export const CONTENT_UNDETERMINED: ContentLang = Object.freeze({
   languages: [],
 }) as ContentLang;
 
+/** 单元级识别对一个翻译单元给出的结果（#891）。 */
+export interface UnitLang {
+  /** 单元全文的字符数（不是送去识别的那一段的长度） */
+  chars: number;
+  /** 识别器给出的排第一的语言；拿不到时为 null */
+  lang: string | null;
+  /** 识别器自己说结果可靠 */
+  reliable: boolean;
+}
+
 export interface PageGateInput {
   /** 目标语言设置 */
   to: string;
@@ -123,6 +206,11 @@ export interface PageGateInput {
    * null，缺省同 null；送去识别却没拿到结果时为 CONTENT_UNDETERMINED（#889）
    */
   contentLang?: ContentLang | null;
+  /**
+   * 单元级识别的结果（#891）：按文字长度排在最前面的若干个单元各自识别。
+   * 没有做时为 null，缺省同 null，与空列表一样只是“没有外文块”
+   */
+  contentUnits?: UnitLang[] | null;
 }
 
 export type PageGateDecision =
@@ -137,6 +225,7 @@ export type PageGateDecision =
 
 export function decidePageGate(input: PageGateInput): PageGateDecision {
   const to = normalizeLangCode(input.to);
+  if (hasForeignBlock(input.contentUnits, to)) return { translate: true };
   const content = contentLanguage(input, to);
   if (content === 'foreign' || content === 'undetermined') return { translate: true };
   if (content) {
@@ -164,6 +253,21 @@ export function decidePageGate(input: PageGateInput): PageGateDecision {
 
 /** 语言码的主段（zh-TW 与 zh-CN 都是 zh）。 */
 const primaryOf = (lang: string): string => lang.split('-')[0]!;
+
+/**
+ * 翻译单元里有没有一块够长的外文正文（#891）：识别器报可靠、排第一的语言
+ * 不是目标语言所在的那种语言（主段不同；识别器对繁简都只报 zh，同一种
+ * 中文不算外文，繁简另由 #790 的链条判）、字数到下限。
+ */
+function hasForeignBlock(units: UnitLang[] | null | undefined, to: string | null): boolean {
+  if (!units || !to) return false;
+  const family = primaryOf(to);
+  return units.some((u) => {
+    if (!u.reliable || u.chars < FOREIGN_BLOCK_MIN_CHARS || !u.lang) return false;
+    const code = normalizeLangCode(u.lang);
+    return code !== null && primaryOf(code) !== family;
+  });
+}
 
 /**
  * 内容识别这一级的结论（#843）：
