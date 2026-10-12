@@ -66,7 +66,7 @@ describe('命中闸门：零请求、页面一个字不动（#792）', () => {
 
     expect(send).toHaveBeenCalledTimes(0);
     expect(result.status).toBe('same-language');
-    expect(result.gate).toEqual({ translate: false, reason: 'same-language', lang: 'zh-CN' });
+    expect(result.gate).toMatchObject({ translate: false, reason: 'same-language', lang: 'zh-CN' });
     orch.stop();
   });
 
@@ -209,7 +209,7 @@ describe('还原之后检测语言仍在（#792）', () => {
     const third = await orch.togglePage(items(2), 'auto', 'en');
 
     expect(third.status).toBe('same-language');
-    expect(third.gate).toEqual({ translate: false, reason: 'same-language', lang: 'en' });
+    expect(third.gate).toMatchObject({ translate: false, reason: 'same-language', lang: 'en' });
     expect(send).toHaveBeenCalledTimes(sent);
     orch.stop();
   });

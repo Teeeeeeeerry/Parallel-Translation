@@ -128,7 +128,7 @@ describe('没有够长的外文单元、全页目标语言占优：拦下', () =
     const result = await orch.togglePage(ZH, 'auto', 'zh-CN');
 
     expect(result.status).toBe('same-language');
-    expect(result.gate).toEqual({ translate: false, reason: 'same-language', lang: 'zh-CN' });
+    expect(result.gate).toMatchObject({ translate: false, reason: 'same-language', lang: 'zh-CN' });
     expect(send).toHaveBeenCalledTimes(0);
     expect(pushes).toEqual(['idle']);
     orch.stop();

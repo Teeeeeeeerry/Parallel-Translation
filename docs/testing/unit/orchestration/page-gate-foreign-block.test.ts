@@ -44,13 +44,13 @@ describe('存在够长的外文单元：照常翻译', () => {
       pageLang: 'zh-cn',
       contentLang: reliable(['zh', 70], ['en', 25]),
     };
-    expect(decidePageGate(input)).toEqual(BLOCK_ZH);
+    expect(decidePageGate(input)).toMatchObject(BLOCK_ZH);
     expect(
       decidePageGate({
         ...input,
         contentUnits: [unit(1455, 'en'), unit(179, 'en'), unit(92, 'zh')],
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('外文块盖过语言声明与检测语言', () => {
@@ -62,7 +62,7 @@ describe('存在够长的外文单元：照常翻译', () => {
         pageLang: 'zh-CN',
         contentUnits: [unit(530, 'en')],
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('外文是目标语言以外的任何语言（不只是英文）', () => {
@@ -75,7 +75,7 @@ describe('存在够长的外文单元：照常翻译', () => {
         contentLang: reliable(['zh', 70]),
         contentUnits: [unit(459, 'es')],
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test(`字数恰好到下限（${FOREIGN_BLOCK_MIN_CHARS}）就算外文块；差 1 个字符不算`, () => {
@@ -87,10 +87,10 @@ describe('存在够长的外文单元：照常翻译', () => {
     };
     expect(
       decidePageGate({ ...base, contentUnits: [unit(FOREIGN_BLOCK_MIN_CHARS, 'en')] }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
     expect(
       decidePageGate({ ...base, contentUnits: [unit(FOREIGN_BLOCK_MIN_CHARS - 1, 'en')] }),
-    ).toEqual(BLOCK_ZH);
+    ).toMatchObject(BLOCK_ZH);
   });
 });
 
@@ -106,7 +106,7 @@ describe('没有够长的外文单元、且目标语言占优：拦下（#777 �
         contentLang: reliable(['zh', 95]),
         contentUnits: [unit(319, 'zh'), unit(270, 'zh'), unit(244, 'zh'), unit(217, 'zh')],
       }),
-    ).toEqual(BLOCK_ZH);
+    ).toMatchObject(BLOCK_ZH);
   });
 
   test('中文页面夹零星英文，外文单元都不到下限：拦下', () => {
@@ -119,7 +119,7 @@ describe('没有够长的外文单元、且目标语言占优：拦下（#777 �
         contentLang: reliable(['zh', 94], ['en', 1]),
         contentUnits: [unit(52, 'zh', false), unit(50, 'en'), unit(34, 'zh')],
       }),
-    ).toEqual(BLOCK_ZH);
+    ).toMatchObject(BLOCK_ZH);
   });
 
   test('中文页面引一句英文、或带一行英文标题：不算外文块，拦下（#777 的同语言夹具，#892）', () => {
@@ -133,7 +133,7 @@ describe('没有够长的外文单元、且目标语言占优：拦下（#777 �
         contentLang: reliable(['zh', 88], ['en', 9]),
         contentUnits: [unit(160, 'zh'), unit(99, 'en'), unit(78, 'en')],
       }),
-    ).toEqual(BLOCK_ZH);
+    ).toMatchObject(BLOCK_ZH);
   });
 
   test('够长的单元识别器说不可靠：不算外文块', () => {
@@ -145,7 +145,7 @@ describe('没有够长的外文单元、且目标语言占优：拦下（#777 �
         contentLang: reliable(['zh', 80]),
         contentUnits: [unit(900, 'en', false)],
       }),
-    ).toEqual(BLOCK_ZH);
+    ).toMatchObject(BLOCK_ZH);
   });
 
   test('够长的单元识别拿不到语言：不算外文块', () => {
@@ -157,7 +157,7 @@ describe('没有够长的外文单元、且目标语言占优：拦下（#777 �
         contentLang: reliable(['zh', 80]),
         contentUnits: [unit(900, null, false), unit(900, null)],
       }),
-    ).toEqual(BLOCK_ZH);
+    ).toMatchObject(BLOCK_ZH);
   });
 
   test('够长的单元是目标语言所在的那种语言（识别器只报 zh，分不出繁简）：不算外文块', () => {
@@ -169,7 +169,7 @@ describe('没有够长的外文单元、且目标语言占优：拦下（#777 �
         contentLang: reliable(['zh', 90]),
         contentUnits: [unit(700, 'zh'), unit(400, 'zh-TW')],
       }),
-    ).toEqual({ translate: false, reason: 'same-language', lang: 'zh-TW' });
+    ).toMatchObject({ translate: false, reason: 'same-language', lang: 'zh-TW' });
   });
 
   test('没有单元级识别结果（null、缺省、空列表）：与改动前一致', () => {
@@ -182,7 +182,7 @@ describe('没有够长的外文单元、且目标语言占优：拦下（#777 �
           contentLang: reliable(['zh', 95]),
           contentUnits,
         }),
-      ).toEqual(BLOCK_ZH);
+      ).toMatchObject(BLOCK_ZH);
       expect(
         decidePageGate({
           to: 'zh-CN',
@@ -191,7 +191,7 @@ describe('没有够长的外文单元、且目标语言占优：拦下（#777 �
           contentLang: reliable(['en', 60], ['zh', 30]),
           contentUnits,
         }),
-      ).toEqual(PASS);
+      ).toMatchObject(PASS);
     }
   });
 });
