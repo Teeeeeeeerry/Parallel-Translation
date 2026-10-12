@@ -218,25 +218,38 @@ export interface PageGateInput {
   contentUnits?: UnitLang[] | null;
 }
 
+/**
+ * 结论来自判定链的哪一级（#857）。判定链改过几次（#843、#889、#891），排查
+ * 时要看得出这一次走的是哪一级：
+ * - foreign-block：翻译单元里有够长的外文单元，照常翻译（#891）
+ * - content-share：全页样本里目标语言的占比，到阈值拦下、不到照常翻译（#843）
+ * - declaration：没有做内容识别，按检测语言 → 语言声明的链条（#791）
+ * - pass：判不出就放行 —— 识别器拿不准（#889），或链条也判不出（#789）
+ */
+export type PageGateBasis = 'foreign-block' | 'content-share' | 'declaration' | 'pass';
+
 export type PageGateDecision =
-  | { translate: true }
+  | { translate: true; basis: PageGateBasis }
   | {
       translate: false;
       /** 这一页本来就是目标语言 */
       reason: 'same-language';
       /** 判出的页面语言（归一化后） */
       lang: string;
+      /** 拦下只可能来自这两级 */
+      basis: 'content-share' | 'declaration';
     };
 
 export function decidePageGate(input: PageGateInput): PageGateDecision {
   const to = normalizeLangCode(input.to);
-  if (hasForeignBlock(input.contentUnits, to)) return { translate: true };
+  if (hasForeignBlock(input.contentUnits, to)) return { translate: true, basis: 'foreign-block' };
   const content = contentLanguage(input, to);
-  if (content === 'foreign' || content === 'undetermined') return { translate: true };
+  if (content === 'undetermined') return { translate: true, basis: 'pass' };
+  if (content === 'foreign') return { translate: true, basis: 'content-share' };
   if (content) {
     return content === to
-      ? { translate: false, reason: 'same-language', lang: content }
-      : { translate: true };
+      ? { translate: false, reason: 'same-language', lang: content, basis: 'content-share' }
+      : { translate: true, basis: 'content-share' };
   }
   const page = pageLanguage(input);
   // #789：判不出页面语言就放行，照常翻译。这与输入翻译那边相反，是有意的，
@@ -246,14 +259,30 @@ export function decidePageGate(input: PageGateInput): PageGateDecision {
   // - 阅读方向猜错只是多翻一遍本来不用翻的内容，单元级兜底（#783）还会
   //   拦下原样还回来的段落；拦错的代价却是用户想翻的页面翻不了
   // 两边代价不对称，取舍也就相反。不要改成“判不出就不翻”
-  if (!page.ok) return { translate: true };
+  if (!page.ok) return { translate: true, basis: 'pass' };
   // #790：繁简不算同语言 —— normalizeLangCode 把中文按文字与地区分成 zh-TW
   // 与 zh-CN（#691），繁体页面对简体目标是真的要翻。直接比归一化后的码，
   // 不另写中文的比较
   if (page.lang === to) {
-    return { translate: false, reason: 'same-language', lang: page.lang };
+    return { translate: false, reason: 'same-language', lang: page.lang, basis: 'declaration' };
   }
-  return { translate: true };
+  return { translate: true, basis: 'declaration' };
+}
+
+const BASIS_TEXT: Record<PageGateBasis, string> = {
+  'foreign-block': '翻译单元里有够长的外文单元',
+  'content-share': '全页样本里目标语言的占比',
+  declaration: '检测语言与语言声明',
+  pass: '判不出页面语言，放行',
+};
+
+/**
+ * 判定的可读说明（#857），给控制台输出用，排查时看得出走的是哪一级。不是
+ * 界面文案，不进 messages.json。
+ */
+export function describePageGate(decision: PageGateDecision): string {
+  const verdict = decision.translate ? '照常翻译' : `拦下，本页已经是 ${decision.lang}`;
+  return `${verdict}（依据：${BASIS_TEXT[decision.basis]}，${decision.basis}）`;
 }
 
 /** 语言码的主段（zh-TW 与 zh-CN 都是 zh）。 */

@@ -54,6 +54,7 @@ import {
   partialFailNotice,
   resetRenderStats,
 } from '~/src/orchestration/page-summary';
+import { describePageGate } from '~/src/orchestration/page-gate';
 import { paraNotice, selectionNotice } from '~/src/orchestration/text-notice';
 import { translateViaBackground } from '~/src/runtime/messaging';
 import { createLangDetector } from '~/src/runtime/lang-detect';
@@ -442,6 +443,8 @@ export default defineContentScript({
       getPageLang: () => document.documentElement.getAttribute('lang'),
       // #843：页面级闸门的第一级 —— 浏览器自带的语言识别，零网络请求
       detectContentLang: langDetector.distribution,
+      // #857：闸门每判一次就记一笔，带依据，排查时看得出走的是哪一级
+      onGateDecision: (decision) => console.debug('[PT] 页面级闸门：' + describePageGate(decision)),
       // #328: 增量补翻观察器启停经钩子接线到生命周期注册表（幂等）
       onObserverStart: () => registry.ensure('observer', true),
       onObserverStop: () => registry.ensure('observer', false),

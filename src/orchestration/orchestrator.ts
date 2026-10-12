@@ -215,7 +215,7 @@ export interface PageToggleResult {
   admission: Admission;
   /** 翻译分支的批次汇总（错误提示 / display 决策用）。 */
   summary?: PageTranslateSummary;
-  /** 页面级闸门命中时的判定与原因（#792，status 为 same-language）。 */
+  /** 页面级闸门命中时的判定、原因与依据（#792、#857，status 为 same-language）。 */
   gate?: Extract<PageGateDecision, { translate: false }>;
 }
 
@@ -320,6 +320,11 @@ export interface OrchestratorOptions {
    * 翻译（#889）；未注入时闸门回落到检测语言与声明。
    */
   detectContentLang?: (sample: string) => Promise<ContentLang | null>;
+  /**
+   * 页面级闸门每判一次就报一次判定（#857），带依据，照常翻译时也报。调用方
+   * 拿来写控制台，排查时看得出走的是判定链的哪一级；不影响翻译流程。
+   */
+  onGateDecision?: (decision: PageGateDecision) => void;
   /**
    * 增量补翻观察器启动钩子（#328）：只在整页翻译成功后调用 ——
    * 调用方接线到生命周期注册表（启停幂等，未启动为空操作）。
@@ -664,6 +669,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         contentLang,
         contentUnits,
       });
+      opts.onGateDecision?.(gate);
       if (!gate.translate) {
         // #793：悬浮球推到未翻译态 —— 推成完成态是在骗人，用户再点一次
         // 也会困惑。子框架不推（pushVisual 已按 #327 拦下）

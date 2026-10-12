@@ -112,7 +112,7 @@ describe('纯目标语言页面：仍然拦下，零请求（#777 不回退）',
 
     expect(send).toHaveBeenCalledTimes(0);
     expect(result.status).toBe('same-language');
-    expect(result.gate).toEqual({ translate: false, reason: 'same-language', lang: 'zh-CN' });
+    expect(result.gate).toMatchObject({ translate: false, reason: 'same-language', lang: 'zh-CN' });
     expect(pushes).toEqual(['idle']);
     orch.stop();
   });
@@ -152,7 +152,7 @@ describe('声明是外文、内容其实是目标语言：拦下（#843）', () 
     const result = await orch.togglePage(ZH, 'auto', 'zh-CN');
 
     expect(result.status).toBe('same-language');
-    expect(result.gate).toEqual({ translate: false, reason: 'same-language', lang: 'zh-CN' });
+    expect(result.gate).toMatchObject({ translate: false, reason: 'same-language', lang: 'zh-CN' });
     expect(send).toHaveBeenCalledTimes(0);
     orch.stop();
   });

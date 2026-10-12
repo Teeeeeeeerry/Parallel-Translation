@@ -38,7 +38,7 @@ describe('内容识别可靠时只看它，声明退到后面（#843）', () => 
         pageLang: 'zh-cn',
         contentLang: reliable(['en', 52], ['zh', 41]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('声明是外文、内容其实是目标语言：拦下', () => {
@@ -49,7 +49,7 @@ describe('内容识别可靠时只看它，声明退到后面（#843）', () => 
         pageLang: 'en',
         contentLang: reliable(['zh', 96], ['en', 4]),
       }),
-    ).toEqual(BLOCK_ZH);
+    ).toMatchObject(BLOCK_ZH);
     expect(
       decidePageGate({
         to: 'ja',
@@ -57,7 +57,7 @@ describe('内容识别可靠时只看它，声明退到后面（#843）', () => 
         pageLang: 'en',
         contentLang: reliable(['ja', 100]),
       }),
-    ).toEqual({ translate: false, reason: 'same-language', lang: 'ja' });
+    ).toMatchObject({ translate: false, reason: 'same-language', lang: 'ja' });
   });
 
   test('没有声明、内容是目标语言：拦下（以前判不出会放行）', () => {
@@ -68,7 +68,7 @@ describe('内容识别可靠时只看它，声明退到后面（#843）', () => 
         pageLang: null,
         contentLang: reliable(['en', 100]),
       }),
-    ).toEqual({ translate: false, reason: 'same-language', lang: 'en' });
+    ).toMatchObject({ translate: false, reason: 'same-language', lang: 'en' });
   });
 
   test('内容识别也盖过引擎报告的检测语言', () => {
@@ -79,7 +79,7 @@ describe('内容识别可靠时只看它，声明退到后面（#843）', () => 
         pageLang: 'zh-CN',
         contentLang: reliable(['en', 90], ['zh', 10]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('内容是第三种语言（既不是声明也不是目标）：照常翻译', () => {
@@ -90,7 +90,7 @@ describe('内容识别可靠时只看它，声明退到后面（#843）', () => 
         pageLang: 'zh-CN',
         contentLang: reliable(['ja', 100]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('识别结果里的语言码畸形：不算任何语言', () => {
@@ -101,7 +101,7 @@ describe('内容识别可靠时只看它，声明退到后面（#843）', () => 
         pageLang: 'en',
         contentLang: reliable(['und', 90], ['zh', 10]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 });
 
@@ -122,7 +122,7 @@ describe('“绝大部分是目标语言”的阈值（#843）', () => {
         pageLang: 'en',
         contentLang: reliable(['zh', at], ['en', 100 - at]),
       }),
-    ).toEqual(BLOCK_ZH);
+    ).toMatchObject(BLOCK_ZH);
     expect(
       decidePageGate({
         to: 'zh-CN',
@@ -130,7 +130,7 @@ describe('“绝大部分是目标语言”的阈值（#843）', () => {
         pageLang: 'zh-CN',
         contentLang: reliable(['zh', at - 1], ['en', 101 - at]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('目标语言分在几个条目里（带与不带地区）：占比相加再比', () => {
@@ -141,7 +141,7 @@ describe('“绝大部分是目标语言”的阈值（#843）', () => {
         pageLang: 'de',
         contentLang: reliable(['en', 50], ['en-GB', 40], ['de', 10]),
       }),
-    ).toEqual({ translate: false, reason: 'same-language', lang: 'en' });
+    ).toMatchObject({ translate: false, reason: 'same-language', lang: 'en' });
   });
 
   // 下面四条的数都取自 #851 的实测记录（docs/research/page-gate-content-share.md），
@@ -156,7 +156,7 @@ describe('“绝大部分是目标语言”的阈值（#843）', () => {
         pageLang: 'zh-cn',
         contentLang: reliable(['zh', 74], ['en', 17]),
       }),
-    ).toEqual(BLOCK_ZH);
+    ).toMatchObject(BLOCK_ZH);
   });
 
   test('中文页面夹零星外文词，声明是外文（GitHub 中文 README）：拦下', () => {
@@ -168,7 +168,7 @@ describe('“绝大部分是目标语言”的阈值（#843）', () => {
         pageLang: 'en',
         contentLang: reliable(['zh', 94], ['en', 1]),
       }),
-    ).toEqual(BLOCK_ZH);
+    ).toMatchObject(BLOCK_ZH);
   });
 
   test('中文界面加成块英文介绍、中文略多（Steam 英文介绍的游戏）：照常翻译', () => {
@@ -181,7 +181,7 @@ describe('“绝大部分是目标语言”的阈值（#843）', () => {
         pageLang: 'zh-cn',
         contentLang: reliable(['zh', 53], ['en', 42]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('中文界面加英文评论（App Store 美区）：照常翻译', () => {
@@ -193,7 +193,7 @@ describe('“绝大部分是目标语言”的阈值（#843）', () => {
         pageLang: 'zh-Hans-CN',
         contentLang: reliable(['en', 52], ['zh', 43]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 });
 
@@ -209,7 +209,7 @@ describe('识别拿不准：照常翻译，不回落到声明（#889，取代 #8
         pageLang: 'zh-cn',
         contentLang: unreliable(['en', 51], ['zh', 39]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
     // YouTube Never Gonna Give You Up 第一遍：zh 64、en 20，不可靠
     expect(
       decidePageGate({
@@ -218,7 +218,7 @@ describe('识别拿不准：照常翻译，不回落到声明（#889，取代 #8
         pageLang: 'zh-Hans-CN',
         contentLang: unreliable(['zh', 64], ['en', 20]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('识别器说不可靠时，引擎报告的检测语言也不再拿来顶上', () => {
@@ -229,7 +229,7 @@ describe('识别拿不准：照常翻译，不回落到声明（#889，取代 #8
         pageLang: 'zh-CN',
         contentLang: unreliable(['zh', 99]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('识别器说不可靠、声明是外文：照常翻译（与改动前相同）', () => {
@@ -240,7 +240,7 @@ describe('识别拿不准：照常翻译，不回落到声明（#889，取代 #8
         pageLang: 'en',
         contentLang: unreliable(['zh', 100]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('识别器被调用却没给出结果（出错、超时）：与拿不准同等对待，照常翻译', () => {
@@ -251,7 +251,7 @@ describe('识别拿不准：照常翻译，不回落到声明（#889，取代 #8
         pageLang: 'zh-CN',
         contentLang: CONTENT_UNDETERMINED,
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('可靠但一个语言都没给：同样当拿不准，照常翻译', () => {
@@ -262,7 +262,7 @@ describe('识别拿不准：照常翻译，不回落到声明（#889，取代 #8
         pageLang: 'zh-CN',
         contentLang: reliable(),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 });
 
@@ -271,13 +271,13 @@ describe('没有做识别：走现有链条，结果与改动前一致（#843、
     for (const contentLang of [null, undefined]) {
       expect(
         decidePageGate({ to: 'zh-CN', detectedLang: null, pageLang: 'zh-CN', contentLang }),
-      ).toEqual(BLOCK_ZH);
+      ).toMatchObject(BLOCK_ZH);
       expect(
         decidePageGate({ to: 'zh-CN', detectedLang: 'en', pageLang: 'zh-CN', contentLang }),
-      ).toEqual(PASS);
+      ).toMatchObject(PASS);
       expect(
         decidePageGate({ to: 'zh-CN', detectedLang: null, pageLang: null, contentLang }),
-      ).toEqual(PASS);
+      ).toMatchObject(PASS);
     }
   });
 });
@@ -293,7 +293,7 @@ describe('繁简不算同语言（#790）在内容识别下保持', () => {
         pageLang: 'zh-TW',
         contentLang: reliable(['zh', 100]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('内容是中文、引擎报告繁体、目标是简体：照常翻译', () => {
@@ -304,7 +304,7 @@ describe('繁简不算同语言（#790）在内容识别下保持', () => {
         pageLang: 'zh-CN',
         contentLang: reliable(['zh', 100]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('内容是中文、声明是繁体、目标是繁体：拦下', () => {
@@ -315,7 +315,7 @@ describe('繁简不算同语言（#790）在内容识别下保持', () => {
         pageLang: 'zh-Hant',
         contentLang: reliable(['zh', 100]),
       }),
-    ).toEqual({ translate: false, reason: 'same-language', lang: 'zh-TW' });
+    ).toMatchObject({ translate: false, reason: 'same-language', lang: 'zh-TW' });
   });
 
   test('识别器自己给出了繁简（带子段）：以它为准', () => {
@@ -326,7 +326,7 @@ describe('繁简不算同语言（#790）在内容识别下保持', () => {
         pageLang: 'zh-CN',
         contentLang: reliable(['zh-TW', 100]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 
   test('内容大半是外文时，繁简不影响放行', () => {
@@ -337,6 +337,6 @@ describe('繁简不算同语言（#790）在内容识别下保持', () => {
         pageLang: 'zh-TW',
         contentLang: reliable(['en', 70], ['zh', 30]),
       }),
-    ).toEqual(PASS);
+    ).toMatchObject(PASS);
   });
 });

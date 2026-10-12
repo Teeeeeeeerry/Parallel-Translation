@@ -197,7 +197,7 @@ describe('页面级闸门命中时的提示（#793）', () => {
   const sameLanguage = {
     status: 'same-language',
     admission: 'allowed',
-    gate: { translate: false, reason: 'same-language', lang: 'zh-CN' },
+    gate: { translate: false, reason: 'same-language', lang: 'zh-CN', basis: 'content-share' },
   } as PageToggleResult;
 
   test('说明本页已经是目标语言，状态类、info（与“本页没有可翻译的内容”同一风格）', () => {
