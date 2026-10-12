@@ -122,6 +122,20 @@ describe('没有够长的外文单元、且目标语言占优：拦下（#777 �
     ).toEqual(BLOCK_ZH);
   });
 
+  test('中文页面引一句英文、或带一行英文标题：不算外文块，拦下（#777 的同语言夹具，#892）', () => {
+    // #777 的同语言夹具引了一句 78 字符的英文；#890 实测 YouTube 推荐栏的视频
+    // 标题 64 到 99 字符。一句引文、一行标题都不是成块的外文正文
+    expect(
+      decidePageGate({
+        to: 'zh-CN',
+        detectedLang: null,
+        pageLang: 'zh-CN',
+        contentLang: reliable(['zh', 88], ['en', 9]),
+        contentUnits: [unit(160, 'zh'), unit(99, 'en'), unit(78, 'en')],
+      }),
+    ).toEqual(BLOCK_ZH);
+  });
+
   test('够长的单元识别器说不可靠：不算外文块', () => {
     expect(
       decidePageGate({
@@ -209,9 +223,13 @@ describe('送去单元级识别的单元：按文字长度取最前面的若干�
 
   test('取的是最长的那几个，字数报的是全文长度而不是截过的长度', () => {
     const long = 'A'.repeat(UNIT_DETECT_MAX_CHARS * 2);
-    const texts = ['商店', 'x'.repeat(100), long, 'y'.repeat(300)];
+    const texts = ['商店', 'x'.repeat(FOREIGN_BLOCK_MIN_CHARS), long, 'y'.repeat(FOREIGN_BLOCK_MIN_CHARS + 50)];
     const picked = longestUnitTexts(texts);
-    expect(picked.map((u) => u.chars)).toEqual([UNIT_DETECT_MAX_CHARS * 2, 300, 100]);
+    expect(picked.map((u) => u.chars)).toEqual([
+      UNIT_DETECT_MAX_CHARS * 2,
+      FOREIGN_BLOCK_MIN_CHARS + 50,
+      FOREIGN_BLOCK_MIN_CHARS,
+    ]);
     expect(picked[0]!.text).toHaveLength(UNIT_DETECT_MAX_CHARS);
     expect(picked[0]!.text).toBe(long.slice(0, UNIT_DETECT_MAX_CHARS));
   });
@@ -234,7 +252,7 @@ describe('送去单元级识别的单元：按文字长度取最前面的若干�
     expect(UNIT_DETECT_MAX_CHARS).toBe(1000);
   });
 
-  test('外文块的字数下限取值：64（依据 #890）', () => {
-    expect(FOREIGN_BLOCK_MIN_CHARS).toBe(64);
+  test('外文块的字数下限取值：245（依据 #890，外文页里成块外文正文的最小值）', () => {
+    expect(FOREIGN_BLOCK_MIN_CHARS).toBe(245);
   });
 });

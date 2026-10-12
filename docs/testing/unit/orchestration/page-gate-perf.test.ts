@@ -16,10 +16,19 @@
  * - 页面放大 16 倍，取样那一段的耗时增长不超过翻译本身准备那一段增长的两倍
  *   （两段都随页面线性增长；比增长倍数而不比绝对值，机器忙闲两边一起受影响）
  * 耗时打出来看趋势。
+ *
+ * #892 之后，取样阶段除了全页样本，还把按文字长度排在最前面的若干个单元
+ * 各自送去识别。全页样本仍是第一次调用；单元那几次的个数与每次的文字量
+ * 都有上限，同样不随页面变大。
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
-import { CONTENT_SAMPLE_MAX_CHARS, type ContentLang } from '~/src/orchestration/page-gate';
+import {
+  CONTENT_SAMPLE_MAX_CHARS,
+  UNIT_DETECT_COUNT,
+  UNIT_DETECT_MAX_CHARS,
+  type ContentLang,
+} from '~/src/orchestration/page-gate';
 import { collect } from '~/src/dom/walker';
 import { mockAllBoundingRects } from '../../setup';
 
@@ -37,8 +46,12 @@ function buildPage(n: number): void {
 }
 
 interface Measure {
-  /** 喂给识别器的字符数 */
+  /** 喂给识别器的全页样本字符数 */
   sampleChars: number;
+  /** 单元级识别的次数（#892） */
+  unitCalls: number;
+  /** 单元级识别每次喂进去的最长字符数（#892） */
+  unitMaxChars: number;
   /** 点下去到识别被调用：只读采集与取样 */
   gateMs: number;
   /** 识别返回到第一个请求发出：整页采集、判定、分批 */
@@ -51,14 +64,15 @@ async function measure(n: number): Promise<Measure> {
     collect(document.body, undefined, mode).map((el, i) => ({ text: el.textContent!, ctx: i }));
   let detectAt = 0;
   let sentAt = 0;
-  let sampleChars = 0;
+  const inputs: string[] = [];
   const send = vi.fn(async (req: { texts: string[] }) => {
     sentAt ||= performance.now();
     return { ok: true, data: { translations: req.texts.map((t) => `[译] ${t}`) } };
   });
   const detect = vi.fn(async (sample: string): Promise<ContentLang> => {
-    detectAt = performance.now();
-    sampleChars = sample.length;
+    // 第一次调用是全页样本：取样那一段到这里为止
+    detectAt ||= performance.now();
+    inputs.push(sample);
     return { reliable: true, languages: [{ lang: 'en', percentage: 100 }] };
   });
   const orch = createOrchestrator({
@@ -73,15 +87,27 @@ async function measure(n: number): Promise<Measure> {
   const result = await orch.togglePage(collectItems, 'auto', 'zh-CN');
   orch.stop();
   expect(result.status).toBe('translated');
-  expect(detect).toHaveBeenCalledTimes(1);
-  return { sampleChars, gateMs: detectAt - start, prepMs: sentAt - detectAt };
+  const [sample, ...units] = inputs;
+  return {
+    sampleChars: sample!.length,
+    unitCalls: units.length,
+    unitMaxChars: Math.max(0, ...units.map((t) => t.length)),
+    gateMs: detectAt - start,
+    prepMs: sentAt - detectAt,
+  };
 }
 
 /** 同一页量三次取中位，压一压 jsdom 的抖动。 */
 async function median(n: number): Promise<Measure> {
   const runs = [await measure(n), await measure(n), await measure(n)];
   const mid = <K extends keyof Measure>(k: K) => runs.map((r) => r[k]).sort((a, b) => a - b)[1]!;
-  return { sampleChars: mid('sampleChars'), gateMs: mid('gateMs'), prepMs: mid('prepMs') };
+  return {
+    sampleChars: mid('sampleChars'),
+    unitCalls: mid('unitCalls'),
+    unitMaxChars: mid('unitMaxChars'),
+    gateMs: mid('gateMs'),
+    prepMs: mid('prepMs'),
+  };
 }
 
 let restoreRects: (() => void) | undefined;
@@ -99,7 +125,8 @@ describe('取样与识别的开销不随页面变大而失控（#867）', () => 
     for (const n of SIZES) results.push(await median(n));
     results.forEach((r, i) =>
       console.log(
-        `#867 ${SIZES[i]} 段：识别输入 ${r.sampleChars} 字符，取样 ${r.gateMs.toFixed(1)}ms，` +
+        `#867 ${SIZES[i]} 段：识别输入 ${r.sampleChars} 字符，单元识别 ${r.unitCalls} 次，` +
+          `取样 ${r.gateMs.toFixed(1)}ms，` +
           `之后到第一个请求 ${r.prepMs.toFixed(1)}ms`,
       ),
     );
@@ -107,6 +134,12 @@ describe('取样与识别的开销不随页面变大而失控（#867）', () => 
     // 喂给识别器的文字量：到上限为止，与页面大小无关
     for (const r of results) expect(r.sampleChars).toBeLessThanOrEqual(CONTENT_SAMPLE_MAX_CHARS);
     expect(new Set(results.map((r) => r.sampleChars)).size).toBe(1);
+    // #892：单元级识别的次数与每次的文字量同样到上限为止
+    for (const r of results) {
+      expect(r.unitCalls).toBeLessThanOrEqual(UNIT_DETECT_COUNT);
+      expect(r.unitMaxChars).toBeLessThanOrEqual(UNIT_DETECT_MAX_CHARS);
+    }
+    expect(new Set(results.map((r) => r.unitCalls)).size).toBe(1);
 
     // 取样那一段与随后的准备同一量级（实测约 1 比 1）
     const big = results.at(-1)!;

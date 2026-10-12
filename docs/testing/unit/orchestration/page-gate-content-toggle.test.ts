@@ -8,7 +8,11 @@
 import { describe, test, expect, vi, afterEach } from 'vitest';
 import { createOrchestrator, CONTENT_DETECT_TIMEOUT_MS } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
-import { CONTENT_SAMPLE_MIN_CHARS, type ContentLang } from '~/src/orchestration/page-gate';
+import {
+  CONTENT_SAMPLE_MIN_CHARS,
+  longestUnitTexts,
+  type ContentLang,
+} from '~/src/orchestration/page-gate';
 import { collect } from '~/src/dom/walker';
 import { pageNotice, emptyRenderStats } from '~/src/orchestration/page-summary';
 import { mockAllBoundingRects } from '../../setup';
@@ -46,6 +50,21 @@ const PARA =
   '排版完成后记得在手机上预览一遍，确认图片与段落间距都正常再发布。如果文章里引用了别人的内容，' +
   '请在文末注明出处并附上原文链接。有任何排版上的问题可以在下面留言，我们会在一个工作日内回复。';
 
+/**
+ * 一次整页开关里识别被调用几次（#892）：全页样本一次，加上按文字长度排在
+ * 最前面、够外文块下限的那几个单元各一次。
+ */
+function oneRound(list: { text: string }[]): number {
+  return 1 + longestUnitTexts(list.map((item) => item.text)).length;
+}
+
+/** 可控的识别替身：release 之前每一次调用都在飞，release 时一起兑现。 */
+function heldDetect() {
+  const pending: ((v: ContentLang | null) => void)[] = [];
+  const detect = vi.fn<Detect>(() => new Promise((r) => pending.push(r)));
+  return { detect, release: (v: ContentLang | null) => pending.splice(0).forEach((r) => r(v)) };
+}
+
 function items(texts: string[]): TranslateItem<number>[] {
   return texts.map((text, i) => ({ text, ctx: i }));
 }
@@ -77,8 +96,8 @@ describe('声明是目标语言、内容成块外文：照常翻译（#843）', 
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0]![0].texts).toHaveLength(STEAM.length);
     expect(pushes).toEqual(['loading', 'done']);
-    // 识别拿到的是这批翻译单元的文字
-    expect(detect).toHaveBeenCalledTimes(1);
+    // 识别拿到的是这批翻译单元的文字（第一次是全页样本，其余是单元，#892）
+    expect(detect).toHaveBeenCalledTimes(oneRound(STEAM));
     expect(detect.mock.calls[0]![0]).toContain('Explore a vast open world');
     expect(detect.mock.calls[0]![0]).toContain('愿望单');
     orch.stop();
@@ -111,12 +130,13 @@ describe('纯目标语言页面：仍然拦下，零请求（#777 不回退）',
       collect(document.body, undefined, mode).map((el, i) => ({ text: el.textContent!, ctx: i }));
     const detect = vi.fn<Detect>(async () => reliable(['zh', 100]));
     const { orch, send } = setup('zh-CN', detect);
+    const round = oneRound(collectItems({ readOnly: true }));
 
     const result = await orch.togglePage(collectItems, 'auto', 'zh-CN');
 
     restoreRects();
     expect(result.status).toBe('same-language');
-    expect(detect).toHaveBeenCalledTimes(1);
+    expect(detect).toHaveBeenCalledTimes(round);
     expect(detect.mock.calls[0]![0]).toContain('风格秀');
     expect(document.body.innerHTML).toBe(before);
     expect(document.querySelectorAll('.pt-chunk, [data-pt-split]')).toHaveLength(0);
@@ -150,7 +170,7 @@ describe('识别器拿不准或拿不到结果：照常翻译，不回落到声�
 
     const result = await orch.togglePage(STEAM, 'auto', 'zh-CN');
 
-    expect(detect).toHaveBeenCalledTimes(1);
+    expect(detect).toHaveBeenCalledTimes(oneRound(STEAM));
     expect(result.status).toBe('translated');
     expect(result.gate).toBeUndefined();
     expect(send).toHaveBeenCalledTimes(1);
@@ -220,8 +240,7 @@ describe('没注入识别：整页翻译与改动前一致（#843）', () => {
 
 describe('等识别的这段时间算在飞（#326 不回退）', () => {
   test('识别还没回来时再点一次：第二次返回忙碌，只送出一轮请求', async () => {
-    let release!: (v: ContentLang) => void;
-    const detect = vi.fn<Detect>(() => new Promise((r) => (release = r)));
+    const { detect, release } = heldDetect();
     const { orch, send } = setup('zh-cn', detect);
 
     const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
@@ -231,7 +250,8 @@ describe('等识别的这段时间算在飞（#326 不回退）', () => {
     expect(second.status).toBe('busy');
     expect((await first).status).toBe('translated');
     expect(send).toHaveBeenCalledTimes(1);
-    expect(detect).toHaveBeenCalledTimes(1);
+    // 只识别了一轮：忙碌的那一下没有再送去识别
+    expect(detect).toHaveBeenCalledTimes(oneRound(STEAM));
     orch.stop();
   });
 });
@@ -289,8 +309,8 @@ describe('识别的回调永远不来：到时间上限就当拿不到，照常�
 
   test('识别在上限之内回来：用识别的结论，不等到上限', async () => {
     vi.useFakeTimers();
-    let release!: (v: ContentLang) => void;
-    const { orch, send } = setup('zh-cn', () => new Promise((r) => (release = r)));
+    const { detect, release } = heldDetect();
+    const { orch, send } = setup('zh-cn', detect);
 
     const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
     await vi.advanceTimersByTimeAsync(5);
@@ -307,11 +327,7 @@ describe('识别的回调永远不来：到时间上限就当拿不到，照常�
 
 describe('识别在飞时中止：纪元变了就丢弃识别结果（#862，#328 的中止纪元）', () => {
   /** 可控的识别替身：release 之前一直在飞。 */
-  function pendingDetect() {
-    let release!: (v: ContentLang | null) => void;
-    const detect = vi.fn<Detect>(() => new Promise((r) => (release = r)));
-    return { detect, release: (v: ContentLang | null) => release(v) };
-  }
+  const pendingDetect = heldDetect;
 
   /** 页面有没有译文由用例控制：识别在飞时用户可以逐段翻译一段，再点悬浮球就是还原。 */
   function setupWithPage(pageLang: string | null, detect: Detect) {
@@ -441,7 +457,7 @@ describe('内容识别这一级拦下纯目标语言页面：#777 的几条在�
       expect(document.body.innerHTML).toBe(before);
       expect(document.querySelectorAll('[data-pt], .pt-chunk, [data-pt-split]')).toHaveLength(0);
       expect(send).toHaveBeenCalledTimes(0);
-      expect(detect).toHaveBeenCalledTimes(click);
+      expect(detect).toHaveBeenCalledTimes(click * oneRound(collectItems({ readOnly: true })));
     }
 
     restoreRects();
@@ -517,9 +533,10 @@ describe('样本太短不按占比判，走回落那条链（#859）', () => {
     const detect = vi.fn<Detect>(async () => reliable(['en', 100]));
     const { orch, send, pushes } = setup('zh-CN', detect);
 
-    const result = await orch.togglePage(unitOf(CONTENT_SAMPLE_MIN_CHARS), 'auto', 'zh-CN');
+    const page = unitOf(CONTENT_SAMPLE_MIN_CHARS);
+    const result = await orch.togglePage(page, 'auto', 'zh-CN');
 
-    expect(detect).toHaveBeenCalledTimes(1);
+    expect(detect).toHaveBeenCalledTimes(oneRound(page));
     expect(detect.mock.calls[0]![0]).toHaveLength(CONTENT_SAMPLE_MIN_CHARS);
     expect(result.status).toBe('translated');
     expect(send).toHaveBeenCalledTimes(1);
@@ -531,10 +548,11 @@ describe('样本太短不按占比判，走回落那条链（#859）', () => {
     const detect = vi.fn<Detect>(async () => ({ ...reliable(['zh', 100]), reliable: false }));
     const { orch, send } = setup('zh-CN', detect);
 
-    const result = await orch.togglePage(unitOf(CONTENT_SAMPLE_MIN_CHARS), 'auto', 'zh-CN');
+    const page = unitOf(CONTENT_SAMPLE_MIN_CHARS);
+    const result = await orch.togglePage(page, 'auto', 'zh-CN');
 
     // 同样声明 zh-CN：样本太短时按声明拦下（上一条），够长而拿不准时照常翻译
-    expect(detect).toHaveBeenCalledTimes(1);
+    expect(detect).toHaveBeenCalledTimes(oneRound(page));
     expect(result.status).toBe('translated');
     expect(send).toHaveBeenCalledTimes(1);
     orch.stop();
