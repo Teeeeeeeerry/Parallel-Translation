@@ -5950,3 +5950,97 @@ test.describe('页面级闸门（#777）', () => {
     expect(await pageHtml()).toBe(before);
   });
 });
+
+test.describe('页面级闸门的外文块判据：三种形状（#893，父 #883）', () => {
+  // #889 起识别器拿不准就照常翻译，#891、#892 起翻译单元里有够长的外文单元就
+  // 照常翻译、没有且目标语言占优才拦下。三种形状各一条，走真实浏览器里的
+  // 本地识别。翻译请求数用替身层自己记的已服务请求数（#766）
+  const TOAST = '#pt-host-toast .pt-toast';
+
+  /** 整页快照：body 里去掉扩展自己挂的界面宿主（悬浮球、提示）。 */
+  const pageHtml = (page: import('@playwright/test').Page) =>
+    page.evaluate(() => {
+      const body = document.body.cloneNode(true) as HTMLElement;
+      body.querySelectorAll('[id^="pt-host-"]').forEach((el) => el.remove());
+      return body.outerHTML;
+    });
+
+  test('@core TC-E2E-175: 中文界面加外文正文 —— 外文段落都出译文，不弹“已经是目标语言”，中文界面文字一个字不动（#893）', async ({
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ to: 'zh-CN' });
+    // 引擎把中文原样还回来、外文加前缀：中文界面文字由单元级兜底（#783）拦下
+    await mockGoogle({ keepCjk: true });
+    await gotoFixture('content-foreign');
+    const ball = await waitForBall(page);
+    const requests = await mockRequests();
+    const message = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastPageSameLanguage'));
+    const ui = page.locator('#menu, #crumbs, #title, #review, #about, #buy');
+    const uiBefore = await ui.evaluateAll((els) => els.map((el) => el.outerHTML));
+
+    await ball.click();
+
+    // 闸门没有拦：那条说明在这段时间里一次都没出现过（#832）
+    await expectNoToastFor(page.locator(TOAST).filter({ hasText: message }), '不弹“已经是目标语言”');
+    for (const id of ['#en1', '#en2', '#en3', '#en4']) {
+      const el = page.locator(id);
+      await expect(el).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+      const source = await el.locator('.pt-origin').textContent();
+      await expect(el.locator('.pt-trans')).toHaveText(`【译】${source!.trim()}`);
+    }
+    await expect(ball).toHaveAttribute('data-state', 'done');
+    expect((await requests()).google).toBeGreaterThan(0);
+    expect(await ui.evaluateAll((els) => els.map((el) => el.outerHTML))).toEqual(uiBefore);
+  });
+
+  test('@core TC-E2E-176: 纯中文页面（夹一句英文引文）—— 零请求、页面逐字节不变、弹出说明（#893）', async ({
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    // #777 的夹具引了一句 78 字符的英文。一句引文不是成块的外文正文，不能让
+    // 整页被当成外文页面（#892 把外文块下限定在 245 就是为了它）
+    await seedSettings({ to: 'zh-CN' });
+    await mockGoogle();
+    await gotoFixture('same-language');
+    const ball = await waitForBall(page);
+    const before = await pageHtml(page);
+    const requests = await mockRequests();
+    const message = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastPageSameLanguage'));
+    const toast = page.locator(TOAST);
+
+    await ball.click();
+
+    await expect(toast).toHaveText(message, { timeout: 10_000 });
+    await expect(toast).toHaveAttribute('data-purpose', 'status');
+    await expect(ball).toHaveAttribute('data-state', 'idle');
+    expect(await pageHtml(page)).toBe(before);
+    await expect(page.locator('[data-pt], .pt-chunk, [data-pt-split]')).toHaveCount(0);
+    expect((await requests()).google).toBe(0);
+  });
+
+  test('@core TC-E2E-177: 中文内容夹大量英文书名、网址与版本号，声明 en —— 不被当成外文页面整页送翻（#893）', async ({
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    // 已知失败（#898）：照 #851 实测里 justjavac/free-programming-books-zh_CN 与
+    // 若依文档首页的形状造的夹具，真实识别器对全页样本给出 zh 58、en 20、不可靠，
+    // 单个英文单元都不到外文块下限。识别器拿不准就照常翻译（#889），整页送翻；
+    // 报可靠也不到占比阈值 65。断言照这一侧该有的样子写，不放宽；#898 修好后
+    // 去掉这一行，用例应当直接变绿
+    test.fail(true, '#898：中文内容夹大量英文书名的页面仍被整页送翻');
+    await seedSettings({ to: 'zh-CN' });
+    await mockGoogle();
+    await gotoFixture('content-zh-book-list');
+    const ball = await waitForBall(page);
+    const before = await pageHtml(page);
+    const requests = await mockRequests();
+    const message = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastPageSameLanguage'));
+    const toast = page.locator(TOAST);
+
+    await ball.click();
+
+    await expect(toast).toHaveText(message, { timeout: 10_000 });
+    await expect(ball).toHaveAttribute('data-state', 'idle');
+    expect(await pageHtml(page)).toBe(before);
+    await expect(page.locator('[data-pt], .pt-chunk, [data-pt-split]')).toHaveCount(0);
+    expect((await requests()).google).toBe(0);
+  });
+});
