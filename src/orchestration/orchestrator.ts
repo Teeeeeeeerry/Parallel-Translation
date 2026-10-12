@@ -28,9 +28,11 @@ import { isSiteBlocked } from '~/src/dom/site-filter';
 import {
   decidePageGate,
   sampleUnitTexts,
+  longestUnitTexts,
   CONTENT_SAMPLE_MIN_CHARS,
   CONTENT_UNDETERMINED,
   type ContentLang,
+  type UnitLang,
   type PageGateDecision,
 } from './page-gate';
 import { normalizeLangCode } from './lang-code';
@@ -357,25 +359,13 @@ export function splitBatches<T>(
  * 1.1 毫秒，样本上限 4000 字符也只是几毫秒。这个上限是给“回调永远不来”兜底，
  * 不是给“识别慢”兜底，所以取得短：比实测高出两到三个数量级，挂死时用户最多
  * 多等一秒，随后照常翻译。
+ *
+ * #892：这一秒是整个识别阶段共用的，不是每次识别各一秒。全页样本与单元级
+ * 识别（最多 UNIT_DETECT_COUNT 个单元）同时发出，共用同一个截止时刻：到点还
+ * 没回来的那几次当拿不到，已经回来的照用。最坏情况仍是一秒，不是单元数
+ * 乘一秒。
  */
 export const CONTENT_DETECT_TIMEOUT_MS = 1000;
-
-/** 在 ms 毫秒内兑现就给它的结果，否则给 null；原 Promise 之后再兑现也不理会。 */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => resolve(null), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
-}
 
 export function createOrchestrator(opts: OrchestratorOptions): TranslationOrchestrator {
   const batchSize = opts.batchSize ?? FULL_PAGE_BATCH_SIZE;
@@ -401,22 +391,54 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   // 让整页翻译永远停在在飞，再点只返回忙碌，只能刷新页面
   // #889：送去识别却没拿到结果（给不出、出错、超时）与识别器说拿不准同等
   // 对待，闸门照常翻译，不回落到声明
-  const detectContent = async (items: PageItemsSource): Promise<ContentLang | null> => {
-    if (!opts.detectContentLang) return null;
-    let sample: string;
+  // #892：除了全页样本，再把按文字长度排在最前面的若干个单元各自送去识别
+  // （#891 的“够长的外文单元”），走同一个注入的识别函数。单元识别拿不到
+  // 结果时这个单元不算外文块，不影响全页样本那一边
+  const detectContent = async (
+    items: PageItemsSource,
+  ): Promise<{ contentLang: ContentLang | null; contentUnits: UnitLang[] | null }> => {
+    const none = { contentLang: null, contentUnits: null };
+    const detect = opts.detectContentLang;
+    if (!detect) return none;
+    let texts: string[];
     try {
       const list = typeof items === 'function' ? items({ readOnly: true }) : items;
-      sample = sampleUnitTexts(list.map((item) => item.text));
+      texts = list.map((item) => item.text);
     } catch {
-      return null;
+      return none;
     }
-    // #859：样本太短时占比不稳，不送去识别，当没做识别
-    if (sample.length < CONTENT_SAMPLE_MIN_CHARS) return null;
+    const sample = sampleUnitTexts(texts);
+    // #859：样本太短时占比不稳，不送去识别，当没做识别。单元也不送：全页
+    // 文字不到一百个字符，谈不上哪一块是成块的外文正文
+    if (sample.length < CONTENT_SAMPLE_MIN_CHARS) return none;
+    const units = longestUnitTexts(texts);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), CONTENT_DETECT_TIMEOUT_MS);
+    });
+    const once = async (text: string): Promise<ContentLang | null> => {
+      try {
+        return await Promise.race([detect(text), deadline]);
+      } catch {
+        return null;
+      }
+    };
     try {
-      const result = await withTimeout(opts.detectContentLang(sample), CONTENT_DETECT_TIMEOUT_MS);
-      return result ?? CONTENT_UNDETERMINED;
-    } catch {
-      return CONTENT_UNDETERMINED;
+      const [whole, ...each] = await Promise.all([once(sample), ...units.map((u) => once(u.text))]);
+      return {
+        contentLang: whole ?? CONTENT_UNDETERMINED,
+        contentUnits: units.map((u, i) => {
+          const result = each[i];
+          const top = result?.languages[0];
+          return {
+            chars: u.chars,
+            lang: top?.lang ?? null,
+            reliable: Boolean(result?.reliable && top),
+          };
+        }),
+      };
+    } finally {
+      clearTimeout(timer);
     }
   };
 
@@ -620,6 +642,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // 异步的：等它的这段时间已经算在飞，否则连点两下会各自开一轮翻译
       // （#326）；没注入识别就不等，时序与改动前一致
       let contentLang: ContentLang | null = null;
+      let contentUnits: UnitLang[] | null = null;
       if (opts.detectContentLang) {
         // #862：等识别的这段时间里用户可以还原（逐段翻译过一段之后再点，
         // 还原分支不受在飞互斥拦）或被 abort 中止，两者都递增纪元（#262、
@@ -628,7 +651,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         const epochAtToggle = epoch;
         toggleInFlight = true;
         try {
-          contentLang = await detectContent(items);
+          ({ contentLang, contentUnits } = await detectContent(items));
         } finally {
           toggleInFlight = false;
         }
@@ -639,6 +662,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         detectedLang,
         pageLang: opts.getPageLang?.() ?? null,
         contentLang,
+        contentUnits,
       });
       if (!gate.translate) {
         // #793：悬浮球推到未翻译态 —— 推成完成态是在骗人，用户再点一次
