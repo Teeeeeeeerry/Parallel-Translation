@@ -138,11 +138,30 @@ describe('声明是外文、内容其实是目标语言：拦下（#843）', () 
   });
 });
 
-describe('识别不可用或拿不准：整页翻译与改动前一致（#843）', () => {
-  const cases: [string, Detect | undefined][] = [
-    ['没注入识别', undefined],
+describe('识别器拿不准或拿不到结果：照常翻译，不回落到声明（#889，取代 #865）', () => {
+  test('识别器说不可靠、声明是目标语言：照常翻译，送出整页请求', async () => {
+    // #851 实测里被误拦的 5 张外文页都是这个形状：中文界面，声明 zh，识别器对
+    // 样本报不可靠（Amazon MacBook Pro：en 51、zh 39）
+    const detect = vi.fn<Detect>(async () => ({
+      ...reliable(['en', 51], ['zh', 39]),
+      reliable: false,
+    }));
+    const { orch, send, pushes } = setup('zh-cn', detect);
+
+    const result = await orch.togglePage(STEAM, 'auto', 'zh-CN');
+
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe('translated');
+    expect(result.gate).toBeUndefined();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0].texts).toHaveLength(STEAM.length);
+    expect(pushes).toEqual(['loading', 'done']);
+    orch.stop();
+  });
+
+  const cases: [string, Detect][] = [
     ['识别给不出（null）', async () => null],
-    ['识别说不可靠', async () => ({ reliable: false, languages: [{ lang: 'en', percentage: 100 }] })],
+    ['识别说不可靠', async () => ({ reliable: false, languages: [{ lang: 'zh', percentage: 100 }] })],
     ['识别出错（reject）', async () => Promise.reject(new Error('boom'))],
     [
       '识别函数同步抛错',
@@ -153,22 +172,33 @@ describe('识别不可用或拿不准：整页翻译与改动前一致（#843）
   ];
 
   for (const [name, detect] of cases) {
-    test(`${name}：声明是外文照常翻译，声明是目标语言照旧拦下`, async () => {
-      const a = setup('en', detect);
-      expect((await a.orch.togglePage(STEAM, 'auto', 'zh-CN')).status).toBe('translated');
-      expect(a.send).toHaveBeenCalledTimes(1);
-      a.orch.stop();
-
-      const b = setup('zh-CN', detect);
-      expect((await b.orch.togglePage(STEAM, 'auto', 'zh-CN')).status).toBe('same-language');
-      expect(b.send).toHaveBeenCalledTimes(0);
-      b.orch.stop();
-
-      const c = setup(null, detect);
-      expect((await c.orch.togglePage(STEAM, 'auto', 'zh-CN')).status).toBe('translated');
-      c.orch.stop();
+    test(`${name}：声明是外文、目标语言或没有声明，都照常翻译`, async () => {
+      for (const pageLang of ['en', 'zh-CN', null]) {
+        const a = setup(pageLang, detect);
+        expect((await a.orch.togglePage(STEAM, 'auto', 'zh-CN')).status).toBe('translated');
+        expect(a.send).toHaveBeenCalledTimes(1);
+        a.orch.stop();
+      }
     });
   }
+});
+
+describe('没注入识别：整页翻译与改动前一致（#843）', () => {
+  test('声明是外文照常翻译，声明是目标语言照旧拦下，没有声明照常翻译', async () => {
+    const a = setup('en');
+    expect((await a.orch.togglePage(STEAM, 'auto', 'zh-CN')).status).toBe('translated');
+    expect(a.send).toHaveBeenCalledTimes(1);
+    a.orch.stop();
+
+    const b = setup('zh-CN');
+    expect((await b.orch.togglePage(STEAM, 'auto', 'zh-CN')).status).toBe('same-language');
+    expect(b.send).toHaveBeenCalledTimes(0);
+    b.orch.stop();
+
+    const c = setup(null);
+    expect((await c.orch.togglePage(STEAM, 'auto', 'zh-CN')).status).toBe('translated');
+    c.orch.stop();
+  });
 
   test('采集函数在只读取样时抛错：当识别拿不到，照常翻译', async () => {
     let calls = 0;
@@ -206,7 +236,7 @@ describe('等识别的这段时间算在飞（#326 不回退）', () => {
   });
 });
 
-describe('识别的回调永远不来：到时间上限就当拿不到，照常翻译（#866）', () => {
+describe('识别的回调永远不来：到时间上限就当拿不到，照常翻译（#866、#889）', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -241,22 +271,19 @@ describe('识别的回调永远不来：到时间上限就当拿不到，照常�
     orch.stop();
   });
 
-  test('声明是目标语言：到上限后按声明拦下，零请求，悬浮球回到未翻译态', async () => {
+  test('声明是目标语言：到上限后当拿不到结果，照常翻译（#889，以前按声明拦下）', async () => {
     vi.useFakeTimers();
     const { orch, send, pushes } = setup('zh-CN', hang);
 
     const first = orch.togglePage(ZH, 'auto', 'zh-CN');
-    await vi.advanceTimersByTimeAsync(CONTENT_DETECT_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(CONTENT_DETECT_TIMEOUT_MS - 1);
+    expect(send).toHaveBeenCalledTimes(0);
+    await vi.advanceTimersByTimeAsync(1);
     const result = await first;
 
-    expect(result.status).toBe('same-language');
-    expect(send).toHaveBeenCalledTimes(0);
-    expect(pushes).toEqual(['idle']);
-    // 在飞已回落：再点一次照样判、照样拦，不是忙碌
-    const again = orch.togglePage(ZH, 'auto', 'zh-CN');
-    await vi.advanceTimersByTimeAsync(CONTENT_DETECT_TIMEOUT_MS);
-    expect((await again).status).toBe('same-language');
-    expect(send).toHaveBeenCalledTimes(0);
+    expect(result.status).toBe('translated');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(pushes).toEqual(['loading', 'done']);
     orch.stop();
   });
 
@@ -500,15 +527,16 @@ describe('样本太短不按占比判，走回落那条链（#859）', () => {
     orch.stop();
   });
 
-  test('与“识别不可靠”是两条分支：够长但识别器说不可靠，照样送去识别，再回落到声明', async () => {
-    const detect = vi.fn<Detect>(async () => ({ ...reliable(['en', 100]), reliable: false }));
+  test('与“识别不可靠”是两条分支：够长但识别器说不可靠，照样送去识别，照常翻译（#889）', async () => {
+    const detect = vi.fn<Detect>(async () => ({ ...reliable(['zh', 100]), reliable: false }));
     const { orch, send } = setup('zh-CN', detect);
 
     const result = await orch.togglePage(unitOf(CONTENT_SAMPLE_MIN_CHARS), 'auto', 'zh-CN');
 
+    // 同样声明 zh-CN：样本太短时按声明拦下（上一条），够长而拿不准时照常翻译
     expect(detect).toHaveBeenCalledTimes(1);
-    expect(result.status).toBe('same-language');
-    expect(send).not.toHaveBeenCalled();
+    expect(result.status).toBe('translated');
+    expect(send).toHaveBeenCalledTimes(1);
     orch.stop();
   });
 

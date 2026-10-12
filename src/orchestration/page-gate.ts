@@ -25,8 +25,9 @@
 // 而 `<html lang>` 说的是界面的语言，不是内容的语言：Steam 商店页以中文界面
 // 打开，声明是 zh-cn，游戏介绍却是英文，闸门把用户想翻的页面整页拦下。内容
 // 识别直接看这一次要翻的翻译单元文字，由调用方用浏览器自带的识别算好传进来
-// （零网络请求），本模块不碰浏览器接口。识别可靠时只看它；不可靠或拿不到
-// 时回落到 #791 的链条，行为与改动前一致。
+// （零网络请求），本模块不碰浏览器接口。识别可靠时只看它；识别器拿不准时
+// 照常翻译（#889，见 contentLanguage）；没有做识别（未注入、样本太短）时
+// 才走 #791 的链条。
 //
 // 返回原因而非裸 boolean，与 changelog/decide.ts、input-target-lang.ts 同一
 // 风格：调用方拿到原因直接渲染提示。
@@ -100,6 +101,16 @@ export interface ContentLang {
   languages: { lang: string; percentage: number }[];
 }
 
+/**
+ * 识别器被调用了，却没给出结果（出错、回调超过时间上限）时调用方传这个
+ * （#889）：与识别器自己说拿不准同等对待，照常翻译。与“没有做识别”的
+ * null 不同 —— 那是根本没送去识别（未注入、样本太短），走现有链条。
+ */
+export const CONTENT_UNDETERMINED: ContentLang = Object.freeze({
+  reliable: false,
+  languages: [],
+}) as ContentLang;
+
 export interface PageGateInput {
   /** 目标语言设置 */
   to: string;
@@ -107,7 +118,10 @@ export interface PageGateInput {
   detectedLang: string | null;
   /** 页面的语言声明（`<html lang>` 的原值）；没有声明时为 null */
   pageLang: string | null;
-  /** 本地内容识别的结果（#843）；识别不可用或出错时为 null，缺省同 null */
+  /**
+   * 本地内容识别的结果（#843）。没有做识别（未注入识别、样本太短）时为
+   * null，缺省同 null；送去识别却没拿到结果时为 CONTENT_UNDETERMINED（#889）
+   */
   contentLang?: ContentLang | null;
 }
 
@@ -124,7 +138,7 @@ export type PageGateDecision =
 export function decidePageGate(input: PageGateInput): PageGateDecision {
   const to = normalizeLangCode(input.to);
   const content = contentLanguage(input, to);
-  if (content === 'foreign') return { translate: true };
+  if (content === 'foreign' || content === 'undetermined') return { translate: true };
   if (content) {
     return content === to
       ? { translate: false, reason: 'same-language', lang: content }
@@ -153,13 +167,31 @@ const primaryOf = (lang: string): string => lang.split('-')[0]!;
 
 /**
  * 内容识别这一级的结论（#843）：
- * - null：识别拿不准或拿不到，交给下一级
+ * - null：没有做识别，交给下一级
+ * - 'undetermined'：识别器拿不准（报不可靠、一个语言都没给、被调用却没给出
+ *   结果），照常翻译（#889）
  * - 'foreign'：目标语言的占比不到阈值 —— 内容里有成块的外文，照常翻译
  * - 语言码：内容绝大部分是目标语言所在的那种语言，给出归一化后的语言码
  */
-function contentLanguage(input: PageGateInput, to: string | null): string | null | 'foreign' {
+function contentLanguage(
+  input: PageGateInput,
+  to: string | null,
+): string | null | 'foreign' | 'undetermined' {
   const content = input.contentLang;
-  if (!content?.reliable || content.languages.length === 0 || !to) return null;
+  if (!content || !to) return null;
+  // #889（取代 #865 的“不可靠时回落到声明”）：识别器拿不准就照常翻译，不再
+  // 往下走到检测语言与声明。本地化界面的声明都是目标语言，回落到声明就等于
+  // 拦下：#851 实测两遍各有 5 张中文界面、外文内容的页面（YouTube 视频页、
+  // Cursor 论坛话题列表、Amazon 商品页、Steam ULTRAKILL）识别器对样本报不
+  // 可靠，回落到声明 zh 后整页被拦，而识别器在长样本上的可靠标记本身就靠不住
+  // （31 张页面两遍各有 14 与 12 张报不可靠，4 张在两遍之间翻转）。
+  // 取舍与 #789“判不出页面语言就放行”同一条：拦错的代价是用户想翻的页面翻
+  // 不了，放行的代价只是多翻一遍；真正同语言的段落由单元级兜底（#783）接住，
+  // 译文与原文相同就不插入、不标记已翻译，页面不会乱。
+  // 代价：纯目标语言、识别器却报不可靠的页面（实测里有中文维基、阮一峰的
+  // 网络日志、Steam 本地化页）会多发一轮请求、多花一轮配额。不要为了省这一轮
+  // 改回回落到声明
+  if (!content.reliable || content.languages.length === 0) return 'undetermined';
   const family = primaryOf(to);
   const same = content.languages
     .map((l) => ({ code: normalizeLangCode(l.lang), raw: l.lang, percentage: l.percentage }))
