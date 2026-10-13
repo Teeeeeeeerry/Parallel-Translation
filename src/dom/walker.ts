@@ -42,6 +42,7 @@ import {
 } from './classify';
 import { applyCompat } from './compat';
 import { getSiteRules } from '~/src/storage/specialization';
+import type { EffectiveSiteRules, RuleSource } from '~/src/storage/specialization';
 import { splitPre } from './pre-split';
 import { splitBrParagraph } from './br-split';
 import { hasTranslatableText } from './text';
@@ -52,7 +53,8 @@ import { walkShadowTree } from './shadow-walk';
  * 分支，不另加判定：
  * - too-long：文字超过长度上限（MAX_TEXT）
  * - too-complex：标记复杂度超限（子树元素个数兜底，MAX_ELEMENTS）
- * - site-rule：被站点页面规则的排除或域名补丁的 skip 挡下
+ * - site-rule：被用户写的站点页面规则排除挡下（#922：内置规则的排除与域名
+ *   补丁的 skip 不计入）
  * - other：采集时属性访问抛异常（#54）
  *
  * #754 定的第五类“被判为非正文区域”（NON_CONTENT）在 #756 起不计入跳过，
@@ -64,7 +66,7 @@ export type SkipCategory = 'too-long' | 'too-complex' | 'site-rule' | 'other';
 /** 采集遍历里一个候选元素没被采到，是在哪一步被挡下的。 */
 export type SkipSource =
   | { step: 'non-visual'; reason: NonVisualSkip }
-  | { step: 'site-exclude' }
+  | { step: 'site-exclude'; source: RuleSource }
   | { step: 'compat-skip' }
   | { step: 'hidden' }
   | { step: 'error' };
@@ -94,8 +96,15 @@ export function skipCategory(source: SkipSource): SkipCategory | null {
           return null;
       }
     case 'site-exclude':
+      // #922：内置规则排除的是扩展自己判定本来就不该翻的东西（代码行、文件
+      // 名列、贡献图格子、时长角标），与非正文区域（#756）同一性质，算进去
+      // GitHub 的仓库首页、代码页每次整页翻译都弹一串。用户自己写的排除计入：
+      // 规则写宽了，这条提示能帮他发现
+      return source.source === 'user' ? 'site-rule' : null;
     case 'compat-skip':
-      return 'site-rule';
+      // 域名补丁的 skip 是代码层的内置规则（#366、#367 起选择器部分已迁为
+      // 内置排除数据），与内置排除同样不计入
+      return null;
     case 'hidden':
       // #755：不可见的单元进延迟队列，等可见了由观察器补翻 —— 不是被丢掉，
       // 是还没轮到。算进去提示会虚高，用户以为丢了内容
@@ -116,6 +125,25 @@ export interface CollectOptions {
    * 不传就什么都不发生。
    */
   onSkip?: (el: Element, category: SkipCategory) => void;
+}
+
+/**
+ * 元素被站点页面规则的排除挡下时，按哪个来源算（#922）；没被排除为 null。
+ * 纯函数，规则显式传入。
+ *
+ * 内置与用户都命中时按内置算：没有那条用户规则它也不会被翻，不是用户规则
+ * 写宽了。内置的排除排在前面（getSiteRules 的合并顺序），遇到用户来源的那
+ * 一条时内置的已经全部问过，可以直接返回 —— 与改动前的 exclude.some 问
+ * matches 的次数相同。
+ */
+export function excludeSource(
+  el: Element,
+  rules: Pick<EffectiveSiteRules, 'exclude' | 'excludeSources'>,
+): RuleSource | null {
+  for (let i = 0; i < rules.exclude.length; i++) {
+    if (el.matches(rules.exclude[i]!)) return rules.excludeSources[i] ?? 'user';
+  }
+  return null;
 }
 
 /**
@@ -160,7 +188,8 @@ export function collect(
   // S1 站点页面规则的排除：命中的元素整块不采集。划词翻译只拿选中
   // 文本、不经过本入口，因此不受站点页面规则影响。
   // #468：一次采集只读一次，这次采集里的所有判定都用它
-  const rules = getSiteRules(location.hostname);
+  // #922：带上排除的来源，跳过计数只算用户规则排除的
+  const rules = getSiteRules(location.hostname, { withSources: true });
   const { scope, exclude } = rules;
   if (rootEl && withinAny(rootEl, exclude)) return out;
 
@@ -172,8 +201,9 @@ export function collect(
     root as ParentNode,
     (el) => {
       try {
-        if (exclude.some((sel) => el.matches(sel))) {
-          skipUnit(el, { step: 'site-exclude' });
+        const excludedBy = excludeSource(el, rules);
+        if (excludedBy) {
+          skipUnit(el, { step: 'site-exclude', source: excludedBy });
           return 'skip-subtree';
         }
 
