@@ -54,7 +54,9 @@ import { walkShadowTree } from './shadow-walk';
  * - too-complex：标记复杂度超限（子树元素个数兜底，MAX_ELEMENTS）
  * - non-content：被判为非正文区域（NON_CONTENT）
  * - site-rule：被站点页面规则挡下（排除、限定范围之外、域名补丁的 skip）
- * - other：其余算作跳过的分支（已翻译、扩展 UI、不可见、采集时抛异常）
+ * - other：其余算作跳过的分支（已翻译、扩展 UI、采集时抛异常）
+ *
+ * 不可见的单元不算跳过（#755），见 skipCategory。
  */
 export type SkipCategory = 'too-long' | 'too-complex' | 'non-content' | 'site-rule' | 'other';
 
@@ -94,6 +96,9 @@ export function skipCategory(source: SkipSource): SkipCategory | null {
     case 'compat-skip':
       return 'site-rule';
     case 'hidden':
+      // #755：不可见的单元进延迟队列，等可见了由观察器补翻 —— 不是被丢掉，
+      // 是还没轮到。算进去提示会虚高，用户以为丢了内容
+      return null;
     case 'error':
       return 'other';
   }
