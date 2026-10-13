@@ -129,34 +129,64 @@ export function toast(
   const body = document.createElement('div');
   body.className = 'pt-toast-body';
   body.textContent = msg;
-  el.replaceChildren(body, closeButton(el));
+  // #917：弹出时只记下焦点在哪，不去动它 —— 用户可能正在输入框里打字（#743）
+  el.replaceChildren(body, closeButton(el, focusBeforeToast()));
 
   // 鼠标本来就停在等待态上、译文就地到达：不会再有 mouseenter，直接不开始
   // 计时，等移开再算
   let hovered = isHovered(el);
+  // #917：键盘焦点在这条提示里（Tab 到了关闭按钮）
+  let focused = false;
+  /**
+   * #741：鼠标与焦点都离开后重新开始完整计时，不接着剩余时间 —— 否则快到点时
+   * 才悬停或 Tab 过来，一离开就立刻消失，等于没停过。再回来照样停住。
+   * 已被关掉或替换的那一条不再起计时，免得占住下一条的计时
+   */
+  const restart = () => {
+    if (hovered || focused || !el.isConnected) return;
+    clearTimeout(toastTimer);
+    startTimer();
+  };
   // #740：鼠标悬停在内容类提示上时不计时 —— 想读完、想把译文选中复制走，
   // 把鼠标放上去就行。状态类不挂这条
   el.addEventListener('mouseenter', () => {
     hovered = true;
     clearTimeout(toastTimer);
   });
-  // #741：移开后重新开始完整计时，不接着剩余时间 —— 否则快到点时才悬停，
-  // 一移开就立刻消失，等于没停过。再移回去照样停住
   el.addEventListener('mouseleave', () => {
     hovered = false;
-    // 已被关掉或替换的那一条不再起计时，免得占住下一条的计时
-    if (!el.isConnected) return;
+    restart();
+  });
+  // #917：键盘焦点进来与鼠标悬停同等对待。提示挂在文档末尾，键盘用户要从
+  // 页面某处 Tab 过来，短译文最少只停 5 秒，Tab 到一半它可能已经走了。焦点
+  // 在提示内部挪动（relatedTarget 仍在提示里）不算离开
+  el.addEventListener('focusin', () => {
+    focused = true;
     clearTimeout(toastTimer);
-    startTimer();
+  });
+  el.addEventListener('focusout', (e) => {
+    const next = e.relatedTarget;
+    if (next instanceof Node && el.contains(next)) return;
+    focused = false;
+    restart();
   });
   // #745：滚动期间不消失。鼠标在提示上时已经不计时；触控板惯性滚动、键盘
   // 滚动时鼠标可能不在提示上，每滚一下重新完整计时
-  body.addEventListener('scroll', () => {
-    if (hovered || !el.isConnected) return;
-    clearTimeout(toastTimer);
-    startTimer();
-  });
+  body.addEventListener('scroll', restart);
   if (!hovered) startTimer();
+}
+
+/**
+ * 弹出提示时的深层活动元素（#917）：穿过 shadow root 找到真正有焦点的那个
+ * 元素，经关闭按钮关掉时把焦点还给它。焦点在 body 上（谁都没聚焦）或在提示
+ * 自己里面时没有可还的。
+ */
+function focusBeforeToast(): HTMLElement | null {
+  let active: Element | null = document.activeElement;
+  while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+  if (!active || active === document.body || active === document.documentElement) return null;
+  if (toastShadow && (active === toastShadow.host || toastShadow.contains(active))) return null;
+  return active instanceof HTMLElement ? active : null;
 }
 
 function isHovered(el: Element): boolean {
@@ -171,8 +201,13 @@ function isHovered(el: Element): boolean {
  * 内容类的关闭按钮（#742）：读完了立刻关掉，不必等它自己走。点了摘掉这条
  * 提示并清掉计时。用真正的 button 元素，键盘可用留给 #743；叉号由样式画，
  * 不往提示里加字，选中复制译文时不会带上它。
+ *
+ * #917：关掉时焦点若在这条提示里（Tab 过来按的回车、空格），把焦点还给弹出
+ * 前的元素 —— 否则焦点掉到 body，用户刚才在输入框里，得重新找回去。焦点
+ * 已在别处就不动；弹出前的元素已不在文档里就不还。只在这里还：提示自己计时
+ * 结束消失时焦点本来就不在它里面（在里面不计时），不动用户的焦点。
  */
-function closeButton(el: HTMLElement): HTMLButtonElement {
+function closeButton(el: HTMLElement, returnTo: HTMLElement | null): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'pt-toast-close';
@@ -180,7 +215,10 @@ function closeButton(el: HTMLElement): HTMLButtonElement {
   btn.addEventListener('click', () => {
     // 同一时刻只有一条提示，现有的计时就是这一条的
     clearTimeout(toastTimer);
+    const active = (el.getRootNode() as Document | ShadowRoot).activeElement;
+    const hadFocus = active !== null && el.contains(active);
     el.remove();
+    if (hadFocus && returnTo?.isConnected) returnTo.focus({ preventScroll: true });
   });
   return btn;
 }

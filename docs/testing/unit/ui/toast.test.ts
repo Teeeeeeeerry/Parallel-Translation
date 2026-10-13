@@ -25,6 +25,10 @@
  *
  * #741：鼠标移开后重新开始完整计时，不是接着剩余时间；移回去再次停住。
  *
+ * #917：键盘焦点进入内容类提示时与鼠标悬停同样不计时，焦点离开整条提示后
+ * 重新开始完整计时；经关闭按钮关掉、焦点又在这条提示里时，把焦点还给弹出前
+ * 的活动元素。自己计时结束消失时不动焦点。弹出时仍不抢焦点（#743）。
+ *
  * #745：译文特别长时在提示内部纵向滚动；滚动期间提示不消失 —— 鼠标在提示上
  * 时走悬停不计时，鼠标不在提示上的惯性滚动、键盘滚动每滚一下重新完整计时。
  *
@@ -569,5 +573,140 @@ describe('长译文在提示内部滚动，滚动期间不消失（#745）', () 
     expect(shown()).toEqual(['翻译失败']);
     vi.advanceTimersByTime(1);
     expect(shown()).toEqual([]);
+  });
+});
+
+describe('键盘焦点在内容类提示里时不计时，关掉后还焦点（#917）', () => {
+  const closeBtn = () => toasts()[0]!.querySelector<HTMLButtonElement>('.pt-toast-close')!;
+  const shadowActive = () => document.getElementById('pt-host-toast')?.shadowRoot?.activeElement ?? null;
+  /** 从现在起到提示消失经过的时间（逐步推进假定时器观察，十分钟封顶）。 */
+  function remaining(m: string): number {
+    let elapsed = 0;
+    while (shown().includes(m) && elapsed < 600_000) {
+      vi.advanceTimersByTime(100);
+      elapsed += 100;
+    }
+    return elapsed;
+  }
+  const msg = '这是一句四五十个字的译文，'.repeat(3);
+  let input: HTMLInputElement;
+  let other: HTMLButtonElement;
+
+  beforeEach(() => {
+    input = document.createElement('input');
+    other = document.createElement('button');
+    document.body.append(input, other);
+    input.focus();
+  });
+
+  afterEach(() => {
+    input.remove();
+    other.remove();
+  });
+
+  test('弹出时不抢焦点：焦点没有被移到关闭按钮上（#743 反向保护）', () => {
+    toast(msg, { purpose: 'content' });
+    expect(document.activeElement).toBe(input);
+    expect(shadowActive()).toBeNull();
+    toastPending('翻译中');
+    toast(msg, { purpose: 'content' });
+    expect(document.activeElement).toBe(input);
+    expect(shadowActive()).toBeNull();
+  });
+
+  test('焦点在关闭按钮上时，超过本应消失的时刻仍在', () => {
+    const natural = lifetime(msg, 'content');
+    toast(msg, { purpose: 'content' });
+    vi.advanceTimersByTime(natural - 100);
+    closeBtn().focus();
+    vi.advanceTimersByTime(600_000);
+    expect(shown()).toEqual([msg]);
+  });
+
+  test('焦点离开整条提示后重新开始完整计时', () => {
+    const natural = lifetime(msg, 'content');
+    toast(msg, { purpose: 'content' });
+    vi.advanceTimersByTime(natural - 100);
+    closeBtn().focus();
+    vi.advanceTimersByTime(10_000);
+    other.focus();
+    expect(remaining(msg)).toBe(natural);
+  });
+
+  test('焦点还在提示里时鼠标移开不会把计时开起来；焦点也离开后才开始', () => {
+    const natural = lifetime(msg, 'content');
+    toast(msg, { purpose: 'content' });
+    toasts()[0]!.dispatchEvent(new MouseEvent('mouseenter'));
+    closeBtn().focus();
+    toasts()[0]!.dispatchEvent(new MouseEvent('mouseleave'));
+    vi.advanceTimersByTime(600_000);
+    expect(shown()).toEqual([msg]);
+    other.focus();
+    expect(remaining(msg)).toBe(natural);
+  });
+
+  test('经关闭按钮关掉后，焦点回到弹出前的输入框', () => {
+    toast(msg, { purpose: 'content' });
+    closeBtn().focus();
+    closeBtn().click();
+    expect(shown()).toEqual([]);
+    expect(document.activeElement).toBe(input);
+  });
+
+  test('等待态就地变成译文后同样还焦点：还给发起划词时的输入框', () => {
+    toastPending('翻译中');
+    toast(msg, { purpose: 'content' });
+    closeBtn().focus();
+    closeBtn().click();
+    expect(document.activeElement).toBe(input);
+  });
+
+  test('自己计时结束消失时不动焦点：焦点在别处就留在别处', () => {
+    toast(msg, { purpose: 'content' });
+    other.focus();
+    expect(remaining(msg)).toBeGreaterThan(0);
+    expect(shown()).toEqual([]);
+    expect(document.activeElement).toBe(other);
+  });
+
+  test('焦点不在这条提示里时点关闭，不把焦点拽回输入框', () => {
+    toast(msg, { purpose: 'content' });
+    other.focus();
+    closeBtn().click();
+    expect(shown()).toEqual([]);
+    expect(document.activeElement).toBe(other);
+  });
+
+  test('弹出前的元素已不在文档里就不还', () => {
+    toast(msg, { purpose: 'content' });
+    closeBtn().focus();
+    input.remove();
+    expect(() => closeBtn().click()).not.toThrow();
+    expect(shown()).toEqual([]);
+    expect(document.activeElement).not.toBe(input);
+  });
+
+  test('弹出前焦点在 shadow root 里的输入框：还给那个深层的输入框', () => {
+    input.blur();
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const inner = document.createElement('textarea');
+    host.attachShadow({ mode: 'open' }).appendChild(inner);
+    inner.focus();
+    toast(msg, { purpose: 'content' });
+    closeBtn().focus();
+    closeBtn().click();
+    expect(host.shadowRoot!.activeElement).toBe(inner);
+    host.remove();
+  });
+
+  test('状态类不受影响：焦点事件不改它的 3 秒，不还焦点', () => {
+    toast('翻译失败', { purpose: 'status', kind: 'error' });
+    toasts()[0]!.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    vi.advanceTimersByTime(2999);
+    expect(shown()).toEqual(['翻译失败']);
+    vi.advanceTimersByTime(1);
+    expect(shown()).toEqual([]);
+    expect(document.activeElement).toBe(input);
   });
 });
