@@ -5,8 +5,8 @@
  * 最小阈值。
  *
  * 切入点：采集入口 collect、整页翻译的编排入口 togglePage（真实渲染器）与
- * 汇总 pageNotice，提示经真实的提示组件弹出。页面用端到端的全部夹具：其中
- * 只有两张（维基形态、标记密集）有真正超长的段落。
+ * 汇总 pageNotice，提示经真实的提示组件弹出。页面用端到端的全部夹具，有段落
+ * 进不了采集的几张登记在 WITH_SKIPS 里。
  *
  * 不用“结束时页面上没有提示”这种只看最终状态的断言 —— 它抓不住“弹了一下
  * 又被顶掉”的那一条（#832）。这里从整页翻译开始就记下出现过的每一条提示。
@@ -30,11 +30,21 @@ import { unmountIsolated } from '~/src/ui/mount';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
 
 const FIXTURES = 'docs/testing/e2e/fixtures';
-/** 有真正超长段落的两张夹具（#735 的维基形态与 #733 的标记密集页）。 */
-const WITH_SKIPS = ['wiki-article.html', 'markup-dense.html'];
+/**
+ * 有段落进不了采集的夹具，以及整页翻译后那条提示（文案键与数量）：#735 的
+ * 维基形态与 #733 的标记密集页各有一段真正超长的；#764 的三张专为跳过提示
+ * 而造（多 iframe 的那张在 jsdom 里不加载子框架，只算主文档）。
+ */
+const WITH_SKIPS: Record<string, string> = {
+  'wiki-article.html': 'toastSkippedTooLong:1',
+  'markup-dense.html': 'toastSkippedTooLong:1',
+  'skip-summary.html': 'toastSkippedTooLong:5',
+  'skip-frames.html': 'toastSkippedTooLong:1',
+  'skip-frame-child.html': 'toastSkippedTooLong:1',
+};
 const NORMAL = fs
   .readdirSync(FIXTURES)
-  .filter((f) => f.endsWith('.html') && !WITH_SKIPS.includes(f));
+  .filter((f) => f.endsWith('.html') && !(f in WITH_SKIPS));
 
 /** 跳过提示的几条文案键。 */
 const SKIP_KEYS = ['toastSkipped', 'toastSkippedTooLong', 'toastSkippedTooComplex', 'toastSkippedSiteRule'];
@@ -52,6 +62,9 @@ beforeEach(async () => {
   restore = mockAllBoundingRects();
 });
 afterEach(() => {
+  // 上一张夹具的提示还没到点消失（真实定时器），清掉，免得记到下一张头上。
+  // 要在清空 body 之前：提示的宿主挂在 body 下，被清掉后会由守护重新挂回来
+  document.getElementById('pt-host-toast')?.shadowRoot?.querySelectorAll('.pt-toast').forEach((el) => el.remove());
   restore();
   document.body.innerHTML = '';
 });
@@ -120,8 +133,8 @@ describe('零跳过时不弹跳过提示（#761）', () => {
 });
 
 describe('跳过一段也照常弹，不设最小阈值（#761 反向）', () => {
-  test.each(WITH_SKIPS)('%s：只有一段真正超长，照样弹一条，数量是 1', async (file) => {
+  test.each(Object.entries(WITH_SKIPS))('%s：照样弹一条，就是 %s', async (file, expected) => {
     const seen = await translateFixture(file);
-    expect(seen.filter(isSkipNotice)).toEqual(['toastSkippedTooLong:1']);
+    expect(seen.filter(isSkipNotice)).toEqual([expected]);
   });
 });
