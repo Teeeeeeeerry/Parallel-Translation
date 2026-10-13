@@ -26,6 +26,18 @@ import {
 } from './classify';
 import { lineText, splitIntoChunks, type ChunkShape } from './chunk-split';
 
+/**
+ * 空行：两个 br 之间看不见任何文字 —— 只有空白（含 &nbsp;）与零宽字符这类
+ * 格式控制字符（Unicode 的 Cf 类：零宽空格、零宽连接符、BOM、软连字符等）。
+ *
+ * #709：只用 trim() 判空时，零宽字符不算空白，夹着一个零宽空格的空行被包成
+ * 切块：它不会被采集（没有可翻译的文字），却平白多出一个包装元素。空行原样
+ * 留作裸内容，不成切块、不送翻。
+ */
+function isBlankLine(text: string): boolean {
+  return text.replace(/[\s\p{Cf}]/gu, '') === '';
+}
+
 /** 以 br 分行的形状：br 是换行、留在切块外，其余子节点原样作为行内 token；每行一块。 */
 const BR_SHAPE: ChunkShape = {
   tokenize(child) {
@@ -34,10 +46,10 @@ const BR_SHAPE: ChunkShape = {
     }
     return [{ kind: 'node', node: child }];
   },
-  // 有字的行各自成块；空行（只有空白）留作裸内容，不成单元
+  // 有字的行各自成块；空行留作裸内容，不成单元（#709）
   group(lines) {
     return lines.map((line) => ({
-      kind: lineText(line).trim() === '' ? 'raw' : 'chunk',
+      kind: isBlankLine(lineText(line)) ? 'raw' : 'chunk',
       lines: [line],
     }));
   },
