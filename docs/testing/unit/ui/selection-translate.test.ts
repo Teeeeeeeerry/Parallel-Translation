@@ -7,6 +7,11 @@
  * #750：并发只认最后一次 —— 先发的结果后到时整条丢弃：不替换等待态、不弹
  * 提示、页面不变；被丢弃的那一轮也不能收掉后发那一轮的等待态。
  *
+ * #748：失败到达时等待态就地变成失败提示 —— 同一条提示换掉文字、摘掉转圈，
+ * 中间没有一个两条都不在的瞬间；替换之后按状态类计时。四类失败（key 无效、
+ * 配额、瞬时故障、站点禁用）的文案与改动前一致：前两类展示引擎给的真实
+ * 原因，瞬时故障展示泛化文案（#313），站点禁用是固定文案。
+ *
  * 只看外部可观察的行为：提示里显示了什么、同一时刻页面上有几条提示、
  * 等待态还在不在、一共弹出过哪些提示。
  */
@@ -245,5 +250,132 @@ describe('状态类不受影响（#750）', () => {
     expect(toasts()[0]!.dataset.purpose).toBe('status');
     vi.advanceTimersByTime(3000);
     expect(shown()).toEqual([]);
+  });
+});
+
+describe('失败到达时就地替换等待态（#748）', () => {
+  const longReason = 'DeepL 返回 456：本月配额已用完，请到账户页查看用量与续费。'.repeat(8);
+  const cases: { name: string; result: SingleTextResult; text: () => string }[] = [
+    {
+      name: 'key 无效：展示真实原因',
+      result: {
+        admission: 'allowed',
+        ok: false,
+        category: 'invalid-key',
+        error: 'DeepL 返回 403：key 无效',
+        display: { showRealReason: true, reason: 'DeepL 返回 403：key 无效' },
+      },
+      text: () => 'DeepL 返回 403：key 无效',
+    },
+    {
+      name: '配额：展示真实原因，长原因也按状态类计时',
+      result: {
+        admission: 'allowed',
+        ok: false,
+        category: 'quota',
+        error: longReason,
+        display: { showRealReason: true, reason: longReason },
+      },
+      text: () => longReason,
+    },
+    {
+      name: '瞬时故障：展示泛化文案，不露出引擎原因',
+      result: {
+        admission: 'allowed',
+        ok: false,
+        category: 'transient',
+        error: 'HTTP 503',
+        display: { showRealReason: false },
+      },
+      text: () => chrome.i18n.getMessage('toastTranslateFail'),
+    },
+    {
+      name: '站点禁用：固定文案',
+      result: { admission: 'blocked', ok: false },
+      text: () => chrome.i18n.getMessage('toastSiteBlocked'),
+    },
+  ];
+
+  for (const c of cases) {
+    test(`${c.name}：等待态原地变成失败提示，满 3 秒消失`, async () => {
+      let resolve!: (r: SingleTextResult) => void;
+      const run = translator(() => new Promise((r) => (resolve = r)))('Hello world');
+      const pendingEl = toasts()[0]!;
+      const root = toastRoot()!;
+      let removed = 0;
+      const mo = new MutationObserver((records) => {
+        for (const r of records) {
+          removed += Array.from(r.removedNodes).filter(
+            (n) => n instanceof HTMLElement && n.classList.contains('pt-toast'),
+          ).length;
+        }
+      });
+      mo.observe(root, { childList: true });
+
+      resolve(c.result);
+      await run;
+      for (const r of mo.takeRecords()) {
+        removed += Array.from(r.removedNodes).filter(
+          (n) => n instanceof HTMLElement && n.classList.contains('pt-toast'),
+        ).length;
+      }
+      mo.disconnect();
+
+      // 还是那一条提示，从没被摘下来过
+      expect(removed).toBe(0);
+      expect(toasts()).toHaveLength(1);
+      expect(toasts()[0]).toBe(pendingEl);
+      // 文案与改动前一致
+      expect(shown()).toEqual([c.text()]);
+      // 状态类：错误样式、转圈与关闭按钮都没有
+      expect(isPending(pendingEl)).toBe(false);
+      expect(pendingEl.dataset.kind).toBe('error');
+      expect(pendingEl.dataset.purpose).toBe('status');
+      expect(pendingEl.querySelector('.pt-toast-spinner')).toBeNull();
+      expect(pendingEl.querySelector('.pt-toast-close')).toBeNull();
+      // 按状态类计时，不随文字长短延长
+      vi.advanceTimersByTime(2999);
+      expect(shown()).toEqual([c.text()]);
+      vi.advanceTimersByTime(1);
+      expect(shown()).toEqual([]);
+    });
+  }
+
+  test('等了很久才失败：从失败到达起按状态类计 3 秒，不从发起时算', async () => {
+    let resolve!: (r: SingleTextResult) => void;
+    const run = translator(() => new Promise((r) => (resolve = r)))('Hello world');
+    vi.advanceTimersByTime(10_000);
+    resolve(cases[2]!.result);
+    await run;
+    vi.advanceTimersByTime(2999);
+    expect(shown()).toEqual([chrome.i18n.getMessage('toastTranslateFail')]);
+    vi.advanceTimersByTime(1);
+    expect(shown()).toEqual([]);
+  });
+
+  test('子 frame 的站点禁用不弹提示，等待态照常收掉', async () => {
+    const sub = createSelectionTranslator({
+      translateText: async () => ({ admission: 'blocked', ok: false }),
+      getLangs: () => ({ from: 'auto', to: 'zh-CN' }),
+      isMainFrame: false,
+    });
+    await sub('Hello');
+    expect(shown()).toEqual([]);
+  });
+});
+
+describe('状态类不受影响（#748）', () => {
+  test('不经等待态直接弹出的失败提示：新起一条、错误样式、没有关闭按钮、满 3 秒消失', () => {
+    toast('之前的提示', { purpose: 'status' });
+    const before = toasts()[0];
+    toast(chrome.i18n.getMessage('toastTranslateFail'), { purpose: 'status', kind: 'error' });
+    expect(toasts()).toHaveLength(1);
+    expect(toasts()[0]).not.toBe(before);
+    expect(toasts()[0]!.dataset.kind).toBe('error');
+    expect(toasts()[0]!.querySelector('.pt-toast-close')).toBeNull();
+    vi.advanceTimersByTime(2999);
+    expect(toasts()).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(toasts()).toHaveLength(0);
   });
 });

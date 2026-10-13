@@ -58,10 +58,14 @@ export function createSelectionTranslator(
 
   /** 划词翻译的结果提示。 */
   function showResult(text: string, result: SingleTextResult): void {
+    // #748：失败与站点禁用同样就地替换等待态 —— 不先摘掉转圈再弹一条，
+    // 中间没有两条都不在的瞬间。替换之后仍是状态类：错误样式、固定时长、
+    // 没有关闭按钮，不跟着内容类按长度延长
+    const failure = { purpose: 'status', kind: 'error', replacePending: true } as const;
+
     // 准入拦截：与逐段 / 整页翻译一致的提示
     if (result.admission === 'blocked') {
-      if (deps.isMainFrame)
-        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), { purpose: 'status', kind: 'error' });
+      if (deps.isMainFrame) toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), failure);
       return;
     }
     if (result.admission !== 'allowed') return;
@@ -69,9 +73,9 @@ export function createSelectionTranslator(
     if (!result.ok) {
       // #313: key 无效 / 配额展示真实原因，瞬时故障展示泛化文案
       if (result.display?.showRealReason && result.error) {
-        toast(result.error, { purpose: 'status', kind: 'error' });
+        toast(result.error, failure);
       } else {
-        toast(tf('toastTranslateFail', '翻译失败'), { purpose: 'status', kind: 'error' });
+        toast(tf('toastTranslateFail', '翻译失败'), failure);
       }
       return;
     }
