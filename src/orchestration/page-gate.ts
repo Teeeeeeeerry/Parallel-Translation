@@ -115,7 +115,8 @@ export const CONTENT_SAMPLE_MIN_CHARS = 100;
  *
  * 不沿用 #859 的 100 字符样本下限：那条下限防的是“一句外文让全页占比翻过
  * 阈值”，这里不算占比，只问这一个单元是不是外文；何况 245 本来就在它之上。
- * 短于这个下限的单元成不了外文块，所以也不送去识别。
+ * 短于这个下限的单元成不了外文块，但从 #904 起照样送去识别，给“最长的若干
+ * 个单元”那一级（#903）用。
  */
 export const FOREIGN_BLOCK_MIN_CHARS = 245;
 
@@ -167,10 +168,17 @@ export const LONGEST_UNITS_COUNT = 3;
 const LETTER = /[\p{L}\p{M}]/gu;
 
 /**
- * 取送去单元级识别的单元（#891）：去掉首尾空白，只要到外文块下限的，按文字
- * 长度从长到短（等长的保持页面顺序）取前 UNIT_DETECT_COUNT 个，每个截到
+ * 取送去单元级识别的单元（#891）：去掉首尾空白、丢掉空单元，按文字长度从长
+ * 到短（等长的保持页面顺序）取前 UNIT_DETECT_COUNT 个，每个截到
  * UNIT_DETECT_MAX_CHARS。chars 是全文的字符数；letters 是全文里的字母数
  * （#901，口径见 LETTER）。
+ *
+ * #904：不再先按外文块下限过滤。“最长的若干个单元”那一级（#903）要的就是
+ * 最长的那几个，不管多长：#902 实测阮一峰的网络日志最长的单元只有 49 字，
+ * 先过滤掉就没有数据。外文块那一级照旧只认到下限的单元（hasForeignBlock）。
+ * 识别次数与文字量的上限不变：仍是最多 UNIT_DETECT_COUNT 个、每个最多
+ * UNIT_DETECT_MAX_CHARS 字符，与页面大小无关（#867）；短页面上反而可能多
+ * 识别几个原先被滤掉的短单元，最多也是 UNIT_DETECT_COUNT 个。
  */
 export function longestUnitTexts(
   texts: string[],
@@ -178,7 +186,7 @@ export function longestUnitTexts(
 ): { chars: number; letters: number; text: string }[] {
   return texts
     .map((t) => t.trim())
-    .filter((t) => t.length >= FOREIGN_BLOCK_MIN_CHARS)
+    .filter(Boolean)
     .map((t, i) => ({ t, i }))
     .sort((a, b) => b.t.length - a.t.length || a.i - b.i)
     .slice(0, count)

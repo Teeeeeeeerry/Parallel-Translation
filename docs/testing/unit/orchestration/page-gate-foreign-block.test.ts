@@ -230,15 +230,22 @@ describe('送去单元级识别的单元：按文字长度取最前面的若干�
       UNIT_DETECT_MAX_CHARS * 2,
       FOREIGN_BLOCK_MIN_CHARS + 50,
       FOREIGN_BLOCK_MIN_CHARS,
+      2,
     ]);
     expect(picked[0]!.text).toHaveLength(UNIT_DETECT_MAX_CHARS);
     expect(picked[0]!.text).toBe(long.slice(0, UNIT_DETECT_MAX_CHARS));
   });
 
-  test('不到外文块下限的单元不送去识别：它们成不了外文块', () => {
-    const texts = ['商店', '社区', 'x'.repeat(FOREIGN_BLOCK_MIN_CHARS - 1), 'y'.repeat(FOREIGN_BLOCK_MIN_CHARS)];
-    expect(longestUnitTexts(texts).map((u) => u.chars)).toEqual([FOREIGN_BLOCK_MIN_CHARS]);
-    expect(longestUnitTexts(['商店', '登录'])).toEqual([]);
+  test('不到外文块下限的单元也送去识别（#904，给“最长的若干个单元”那一级用）；空单元不送', () => {
+    const texts = ['商店', '社区', 'x'.repeat(FOREIGN_BLOCK_MIN_CHARS - 1), '  ', 'y'.repeat(FOREIGN_BLOCK_MIN_CHARS)];
+    expect(longestUnitTexts(texts).map((u) => u.chars)).toEqual([
+      FOREIGN_BLOCK_MIN_CHARS,
+      FOREIGN_BLOCK_MIN_CHARS - 1,
+      2,
+      2,
+    ]);
+    expect(longestUnitTexts(['商店', '登录']).map((u) => u.text)).toEqual(['商店', '登录']);
+    expect(longestUnitTexts(['', ' \n '])).toEqual([]);
   });
 
   test('字数按去掉首尾空白之后算', () => {
