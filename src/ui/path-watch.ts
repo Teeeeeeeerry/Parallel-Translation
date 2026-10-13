@@ -12,6 +12,8 @@
 // 眼里点进另一个帖子就是跳页，所以主文档盯住网址：路径变了就通知调用方。
 // 同一路径上只换查询参数或 hash 不算（排序、翻到某条评论还是这一页）。
 //
+// #847：领域的临时选择（#400）是同一套机制，同样由它重置。
+//
 // content script 在隔离环境里运行，拦不到页面自己调用的 pushState。能收到
 // 的是 Navigation API 的 currententrychange（网址更新之后发，pushState、
 // replaceState、后退前进都有）与 popstate（后退前进）。浏览器没有

@@ -4371,6 +4371,107 @@ test.describe('输入翻译：对方语言的判定链', () => {
   });
 });
 
+test.describe('领域的临时选择：单页应用换路径（#847）', () => {
+  test('@core TC-E2E-184: 单页应用用 pushState 换到别的路径，领域的临时选择回到按网址判定，主文档与 iframe 都是；同一路径上只换查询参数或 hash 不算（#847）', async ({
+    page, context, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    test.setTimeout(90_000);
+    await seedSettings({});
+    await mockGoogle();
+    // “手选”不命中任何网址，只能手动切换；它把 paragraph 标成不翻译，请求原文
+    // 里换成占位符，看得出这一段带没带它（同 TC-E2E-77）
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [
+            {
+              id: 'user:e2e-manual', name: '手选', targetLang: 'zh-CN', sites: [],
+              origin: 'user', terms: [{ source: 'paragraph', noTranslate: true }],
+            },
+          ],
+          builtin: {},
+        },
+      }),
+    );
+    /** 这一轮整页翻译发给 Google 的原文里，主文档与跨域 iframe 那一段各是什么样。 */
+    const MAIN_TERM = 'This ⟦TM0⟧ is in the main document';
+    const MAIN_PLAIN = 'This paragraph is in the main document';
+    const FRAME_TERM = 'Every item in this frame ⟦TM0⟧ is translated';
+    const FRAME_PLAIN = 'Every item in this frame paragraph is translated';
+
+    await gotoFixture('iframe-cross');
+    await waitForBall(page);
+    const frame = page.frameLocator('#frame1');
+    await expect(frame.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
+    const extId = new URL(serviceWorker.url()).host;
+    const popup = await context.newPage();
+    const select = popup.locator('#pt-domain-select');
+    const openPopup = async () => {
+      await page.bringToFront();
+      await popup.goto(`chrome-extension://${extId}/popup.html`);
+      await expect(select).toBeEnabled({ timeout: 10_000 });
+    };
+    /** popup 整页翻译一轮再还原，返回这一轮发出的原文。 */
+    const translateRound = async (): Promise<string[]> => {
+      // 增量从取读取器的这一刻算起：每一轮各取一个
+      const requests = await mockRequests();
+      await popup.locator('#pt-translate-page-btn').click();
+      await expect(page.locator('p').first()).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+      await expect(frame.locator('#full')).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+      const { queries } = await requests();
+      await popup.locator('#pt-translate-page-btn').click();
+      await expect(page.locator('p').first()).not.toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+      await expect(frame.locator('#full')).not.toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+      return queries;
+    };
+    const has = (queries: string[], text: string) => queries.some((q) => q.includes(text));
+    /** 单页应用换路由：页面自己调 history，不重新加载 */
+    const pushState = (url: string) => page.evaluate((u) => history.pushState({}, '', u), url);
+
+    await openPopup();
+    await expect(select).toHaveValue('auto');
+    await select.selectOption('user:e2e-manual');
+    await expect(select).toHaveValue('user:e2e-manual');
+
+    // 1. 反向：同一路径上只换查询参数、只换 hash —— 还是这一页，临时领域不重置
+    const path = new URL(page.url()).pathname;
+    await pushState(`${path}?sort=new`);
+    await pushState(`${path}?sort=new#comment-5`);
+    await page.evaluate(() => history.replaceState({}, '', `${location.pathname}?sort=top`));
+    await openPopup();
+    await expect(select).toHaveValue('user:e2e-manual');
+    let queries = await translateRound();
+    expect.soft(has(queries, MAIN_TERM), '只换查询参数与 hash：主文档仍带临时领域').toBe(true);
+    expect.soft(has(queries, FRAME_TERM), '只换查询参数与 hash：iframe 仍带临时领域').toBe(true);
+
+    // 2. pushState 换到别的路径：主文档与 iframe 都回到按网址判定（没有领域命中 localhost）
+    await pushState('/some/other/route');
+    expect(new URL(page.url()).pathname).toBe('/some/other/route');
+    await openPopup();
+    await expect(select).toHaveValue('auto');
+    queries = await translateRound();
+    expect.soft(has(queries, MAIN_PLAIN), '换路径之后：主文档不再带临时领域').toBe(true);
+    expect.soft(has(queries, FRAME_PLAIN), '换路径之后：iframe 不再带临时领域').toBe(true);
+    expect.soft(has(queries, '⟦TM0⟧'), '换路径之后：哪一段都不带').toBe(false);
+
+    // 3. 换路径之后再选一次照常生效：重置的是这一次的选择，不是把功能关掉
+    await select.selectOption('user:e2e-manual');
+    await expect(select).toHaveValue('user:e2e-manual');
+    queries = await translateRound();
+    expect.soft(has(queries, MAIN_TERM), '再选一次：主文档').toBe(true);
+    expect.soft(has(queries, FRAME_TERM), '再选一次：iframe').toBe(true);
+
+    // 后退回原来的路径（popstate）同样算换路径
+    await page.goBack();
+    await expect.poll(() => new URL(page.url()).pathname).toBe(path);
+    await openPopup();
+    await expect(select).toHaveValue('auto');
+    queries = await translateRound();
+    expect.soft(has(queries, MAIN_PLAIN), '后退之后：主文档').toBe(true);
+    expect.soft(has(queries, FRAME_PLAIN), '后退之后：iframe').toBe(true);
+  });
+});
+
 test.describe('输入翻译：与页面级闸门共用识别模块之后（#869）', () => {
   // #852 把浏览器自带的本地语言识别并成一个模块，输入翻译与页面级闸门共用。
   // 两者要的东西不同：闸门判整页内容的各语言占比，输入翻译判用户写的那一段，
