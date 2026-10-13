@@ -34,7 +34,7 @@ const CASES: Record<string, PageGateInput> = {
     detectedLang: null,
     pageLang: 'zh-cn',
     contentLang: reliable(['zh', 70], ['en', 25]),
-    contentUnits: [{ chars: 1455, lang: 'en', reliable: true }],
+    contentUnits: [{ chars: 1455, letters: 1180, lang: 'en', reliable: true }],
   },
   // Rust 程序设计语言中文版：声明 en，zh 95
   'content-share': {
@@ -42,7 +42,7 @@ const CASES: Record<string, PageGateInput> = {
     detectedLang: null,
     pageLang: 'en',
     contentLang: reliable(['zh', 95]),
-    contentUnits: [{ chars: 319, lang: 'zh', reliable: true }],
+    contentUnits: [{ chars: 319, letters: 300, lang: 'zh', reliable: true }],
   },
   // 没注入识别，声明是目标语言
   declaration: { to: 'zh-CN', detectedLang: null, pageLang: 'zh-CN' },
