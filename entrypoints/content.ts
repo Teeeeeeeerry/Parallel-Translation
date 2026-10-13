@@ -14,7 +14,6 @@ import '~/src/styles/tokens.css';
 import '~/src/styles/presets.css';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
-import { normalizeText } from '~/src/dom/normalize';
 import {
   translatableText,
   shallowTranslatableText,
@@ -36,9 +35,10 @@ import { decideInputTarget, parseInputLangChoice, type InputLangChoice } from '~
 import { watchPathChange } from '~/src/ui/path-watch';
 import { decideInputLength } from '~/src/ui/input-length';
 import { inputMaxLength, inputText, type TextInput } from '~/src/ui/input-eligibility';
-import { toast, toastPending } from '~/src/ui/toast';
+import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
+import { createSelectionTranslator } from '~/src/ui/selection-translate';
 import { createLifecycleRegistry } from '~/src/ui/lifecycle-registry';
 import {
   createOrchestrator,
@@ -55,7 +55,7 @@ import {
   resetRenderStats,
 } from '~/src/orchestration/page-summary';
 import { describePageGate } from '~/src/orchestration/page-gate';
-import { paraNotice, selectionNotice } from '~/src/orchestration/text-notice';
+import { paraNotice } from '~/src/orchestration/text-notice';
 import { translateViaBackground } from '~/src/runtime/messaging';
 import { createLangDetector } from '~/src/runtime/lang-detect';
 import { detectOS } from '~/src/hotkeys/platform';
@@ -253,6 +253,16 @@ export default defineContentScript({
       });
       registry.ensure('hotkeys', true);
     }
+
+    // 划词翻译入口：拖选划词与右键菜单都走这里
+    const translateSelection = createSelectionTranslator({
+      translateText: (text, from, to) => orchestrator.translateText(text, from, to),
+      getLangs: () => {
+        const ns = getSettings();
+        return { from: ns.from, to: ns.to };
+      },
+      isMainFrame,
+    });
 
     // ── 划词拖动 ──
     // #244: 划词拖拽经注册表启停（无设置开关，恒启用）
@@ -741,51 +751,6 @@ export default defineContentScript({
         // 交出的译文本属内容类，切过去是 #751 的事；在那之前沿用状态类的行为
         toast(result.translation!, { purpose: 'status' });
       }
-    }
-
-    async function translateSelection(text: string): Promise<void> {
-      // 跨行划词时选区文本天然带 \n，入口归一化
-      text = normalizeText(text);
-
-      // #746：点下去立即显示等待态，它自己不消失，由译文或失败替换。准入
-      // 拦截不提示、出错等没有提示接替它的退出路径，收尾时收掉
-      const pending = toastPending(tf('toastTranslating', '翻译中'));
-      try {
-        await translateSelectionResult(text);
-      } finally {
-        pending.dismiss();
-      }
-    }
-
-    /** 划词翻译的请求与结果提示；等待态由 translateSelection 管。 */
-    async function translateSelectionResult(text: string): Promise<void> {
-      // #315: 划词翻译走编排模块的单文本入口 —— 与逐段翻译共用
-      // 同一份准入判定与失败提示语义，不再直连消息通道
-      const ns = getSettings();
-      const result = await orchestrator.translateText(text, ns.from, ns.to);
-
-      // 准入拦截：与逐段 / 整页翻译一致的提示
-      if (result.admission === 'blocked') {
-        if (isMainFrame)
-          toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), { purpose: 'status', kind: 'error' });
-        return;
-      }
-      if (result.admission !== 'allowed') return;
-
-      if (!result.ok) {
-        // #313: key 无效 / 配额展示真实原因，瞬时故障展示泛化文案
-        if (result.display?.showRealReason && result.error) {
-          toast(result.error, { purpose: 'status', kind: 'error' });
-        } else {
-          toast(tf('toastTranslateFail', '翻译失败'), { purpose: 'status', kind: 'error' });
-        }
-        return;
-      }
-
-      // #787：划中的已经是目标语言时说明是同语言，不把原文当译文弹出来；
-      // 否则译文走内容类（#738）
-      const notice = selectionNotice(text, result.translation!);
-      toast(notice.message, notice);
     }
 
     /**
