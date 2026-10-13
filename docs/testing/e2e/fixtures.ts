@@ -56,6 +56,7 @@ export const FIXTURES = [
   'wiki-article',
   'input-frames',
   'input-blank-frames',
+  'input-opaque-frames',
   'same-language-frames',
   'input-content-zh',
   'content-zh-book-list',
