@@ -48,17 +48,56 @@ import { hasTranslatableText } from './text';
 import { walkShadowTree } from './shadow-walk';
 
 /**
- * 非可见性判定里算作“被跳过”的分支（#753）：这个单元有正文，却没进入待翻
- * 列表。其余分支本来就不是要翻的东西（太短、纯数字、代码、标记了不翻、
- * 可编辑区、切块容器），不算跳过 —— 算进去正常页面上也会报出一大串。
+ * 被跳过的单元按原因分的类（#754）。每一类对应既有跳过判定里的一个或几个
+ * 分支，不另加判定：
+ * - too-long：文字超过长度上限（MAX_TEXT）
+ * - too-complex：标记复杂度超限（子树元素个数兜底，MAX_ELEMENTS）
+ * - non-content：被判为非正文区域（NON_CONTENT）
+ * - site-rule：被站点页面规则挡下（排除、限定范围之外、域名补丁的 skip）
+ * - other：其余算作跳过的分支（已翻译、扩展 UI、不可见、采集时抛异常）
  */
-const COUNTED_NON_VISUAL: ReadonlySet<NonVisualSkip> = new Set<NonVisualSkip>([
-  'too-long',
-  'too-complex',
-  'non-content',
-  'translated',
-  'extension-ui',
-]);
+export type SkipCategory = 'too-long' | 'too-complex' | 'non-content' | 'site-rule' | 'other';
+
+/** 采集遍历里一个候选元素没被采到，是在哪一步被挡下的。 */
+export type SkipSource =
+  | { step: 'non-visual'; reason: NonVisualSkip }
+  | { step: 'site-exclude' }
+  | { step: 'out-of-scope' }
+  | { step: 'compat-skip' }
+  | { step: 'hidden' }
+  | { step: 'error' };
+
+/**
+ * 这一步算不算“被跳过”、算哪一类（#753、#754）。纯函数，算作跳过的口径
+ * 只在这里：这个单元有正文，却没进入待翻列表。返回 null 的本来就不是要翻
+ * 的东西（太短、纯数字、代码、标记了不翻、可编辑区、切块容器），算进去
+ * 正常页面上也会报出一大串。
+ */
+export function skipCategory(source: SkipSource): SkipCategory | null {
+  switch (source.step) {
+    case 'non-visual':
+      switch (source.reason) {
+        case 'too-long':
+          return 'too-long';
+        case 'too-complex':
+          return 'too-complex';
+        case 'non-content':
+          return 'non-content';
+        case 'translated':
+        case 'extension-ui':
+          return 'other';
+        default:
+          return null;
+      }
+    case 'site-exclude':
+    case 'out-of-scope':
+    case 'compat-skip':
+      return 'site-rule';
+    case 'hidden':
+    case 'error':
+      return 'other';
+  }
+}
 
 export interface CollectOptions {
   /**
@@ -66,11 +105,11 @@ export interface CollectOptions {
    */
   readOnly?: boolean;
   /**
-   * 每跳过一个有正文的单元调用一次（#753）。统计在遍历里顺带产生：只用跳过
+   * 每跳过一个有正文的单元调用一次（#753），带上原因的分类（#754）。统计在遍历里顺带产生：只用跳过
    * 判定本来就算出的结果，不额外序列化 DOM、不额外读布局，不改变采集结果。
    * 不传就什么都不发生。
    */
-  onSkip?: (el: Element) => void;
+  onSkip?: (el: Element, category: SkipCategory) => void;
 }
 
 /**
@@ -87,9 +126,18 @@ export function collect(
 ): Element[] {
   const out: Element[] = [];
   const onSkip = opts.onSkip;
-  /** 结构上算不算一个单元：只在要统计时才问，标签查表打头，不读布局。 */
-  const skipUnit = (el: Element) => {
-    if (onSkip && isTranslationUnit(el)) onSkip(el);
+  /** 报一次跳过：这一步算作跳过才报。 */
+  const skipped = (el: Element, source: SkipSource) => {
+    if (!onSkip) return;
+    const category = skipCategory(source);
+    if (category) onSkip(el, category);
+  };
+  /**
+   * 结构判定之前就被挡下的（排除、范围外、补丁 skip、抛异常）：结构上是一个
+   * 单元才报。只在要统计时才问，标签查表打头，不读布局。
+   */
+  const skipUnit = (el: Element, source: SkipSource) => {
+    if (onSkip && isTranslationUnit(el)) skipped(el, source);
   };
 
   // 非 ParentNode（文本节点等）的根直接返回空集，与旧 TreeWalker 行为一致
@@ -119,7 +167,7 @@ export function collect(
     (el) => {
       try {
         if (exclude.some((sel) => el.matches(sel))) {
-          skipUnit(el);
+          skipUnit(el, { step: 'site-exclude' });
           return 'skip-subtree';
         }
 
@@ -132,14 +180,14 @@ export function collect(
 
         // S2 限定范围：范围外不采集，也不做 pre 切块等 DOM 改动
         if (!inScope(el, scope)) {
-          skipUnit(el);
+          skipUnit(el, { step: 'out-of-scope' });
           return 'continue';
         }
 
         // D1 域名补丁（skip 优先于通用判定）：跳过自身继续子树
         const patched = applyCompat(el);
         if (patched && 'skip' in patched) {
-          skipUnit(el);
+          skipUnit(el, { step: 'compat-skip' });
           return 'continue';
         }
         // D2 域名补丁（take）：改指收为单元，继续遍历
@@ -171,14 +219,14 @@ export function collect(
         // 翻）/ 扩展 UI / 非正文区 / 文本长度。跳过自身继续子树
         const skip = nonVisualSkipReason(el);
         if (skip) {
-          if (COUNTED_NON_VISUAL.has(skip)) onSkip?.(el);
+          skipped(el, { step: 'non-visual', reason: skip });
           return 'continue';
         }
 
         // D7 #23：不可见翻译单元记入延迟队列，等 IntersectionObserver 补翻
         if (!isVisible(el)) {
           onHidden?.(el);
-          onSkip?.(el);
+          skipped(el, { step: 'hidden' });
           return 'continue';
         }
 
@@ -192,7 +240,7 @@ export function collect(
         // #54：属性访问抛 DOMException → 跳过自身继续子树，采集不中断。
         // 判不了是不是单元（再抛一次）就不算跳过
         try {
-          skipUnit(el);
+          skipUnit(el, { step: 'error' });
         } catch {
           // 同上
         }
