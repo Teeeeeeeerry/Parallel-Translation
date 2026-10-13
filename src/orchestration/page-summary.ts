@@ -11,6 +11,7 @@
 // 被看到的那条，而不是依次弹出、后一条把前一条顶掉。
 
 import type { RenderResult } from '../dom/renderer';
+import type { SkipCategory } from '../dom/walker';
 import type { FailureDisplay, PageToggleResult } from './orchestrator';
 import { tf } from '../i18n';
 
@@ -51,6 +52,50 @@ export function countRender(stats: RenderStats, result: RenderResult): void {
  */
 export function allRenderBlocked(stats: RenderStats): boolean {
   return stats.succeeded === 0 && stats.failed === 0;
+}
+
+/**
+ * 整页翻译这一次采集里被跳过的单元，按原因分组（#727）。只统计整页翻译那一次
+ * 采集：闸门取样（只读采集）与增量补翻不计。
+ */
+export type SkipStats = Record<SkipCategory, number>;
+
+export function emptySkipStats(): SkipStats {
+  return { 'too-long': 0, 'too-complex': 0, 'site-rule': 0, other: 0 };
+}
+
+/** 清零，就地修改（content script 持有同一个对象）。 */
+export function resetSkipStats(stats: SkipStats): void {
+  Object.assign(stats, emptySkipStats());
+}
+
+/** 计入一个被跳过的单元（采集入口的 onSkip 直接接这里）。 */
+export function countSkip(stats: SkipStats, category: SkipCategory): void {
+  stats[category]++;
+}
+
+export function totalSkipped(stats: SkipStats): number {
+  return Object.values(stats).reduce((a, b) => a + b, 0);
+}
+
+/** 控制台里各类的叫法，按 SkipCategory 的顺序列出。 */
+const SKIP_LABELS: [SkipCategory, string][] = [
+  ['too-long', '文字超长'],
+  ['too-complex', '标记过密'],
+  ['site-rule', '站点页面规则'],
+  ['other', '其他'],
+];
+
+/**
+ * 控制台那一行（#763）：总数与按原因分组的计数，供用户报问题时附上。只输出
+ * 一行分组计数，不逐条打印元素 —— 长页面上逐条会刷屏。零跳过时为 null，
+ * 正常页面上控制台不多出任何东西。没出现的类不列。
+ */
+export function skipConsoleLine(stats: SkipStats): string | null {
+  const total = totalSkipped(stats);
+  if (total === 0) return null;
+  const groups = SKIP_LABELS.filter(([c]) => stats[c] > 0).map(([c, label]) => `${label} ${stats[c]}`);
+  return `[PT] 整页翻译：采集时跳过 ${total} 个单元（${groups.join('，')}）`;
 }
 
 export interface PageNotice {
