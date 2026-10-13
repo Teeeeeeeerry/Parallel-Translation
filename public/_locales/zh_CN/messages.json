@@ -503,5 +503,17 @@
   "toastSkipped": {
     "message": "另有 $count$ 段未被采集，没有翻译",
     "placeholders": { "count": { "content": "$1" } }
+  },
+  "toastSkippedTooLong": {
+    "message": "另有 $count$ 段未被采集，主要是文字过长",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "toastSkippedTooComplex": {
+    "message": "另有 $count$ 段未被采集，主要是标记过于复杂",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "toastSkippedSiteRule": {
+    "message": "另有 $count$ 段未被采集，主要是被站点规则排除",
+    "placeholders": { "count": { "content": "$1" } }
   }
 }
