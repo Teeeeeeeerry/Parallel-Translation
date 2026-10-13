@@ -6017,35 +6017,42 @@ test.describe('页面级闸门的外文块判据：三种形状（#893，父 #88
     expect((await requests()).google).toBe(0);
   });
 
-  test('@core TC-E2E-177: 中文内容夹大量英文书名、网址与版本号，声明 en —— 不被当成外文页面整页送翻（#893）', async ({
+  test('@core TC-E2E-177: 中文内容夹大量英文书名、网址与版本号，声明 en —— 闸门放行（接受的取舍，#898），中文段落由单元级兜底拦下不插译文，还原后逐字节回到原样（#893）', async ({
     page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
-    // 已知失败（#898）：照 #851 实测里 justjavac/free-programming-books-zh_CN 与
-    // 若依文档首页的形状造的夹具，真实识别器对全页样本给出 zh 58、en 20、不可靠，
-    // 单个英文单元都不到外文块下限。识别器拿不准就照常翻译（#889），整页送翻；
-    // 报可靠也不到占比阈值 65。断言照这一侧该有的样子写，不放宽；#898 修好后
-    // 去掉这一行，用例应当直接变绿
-    // #905：#903、#904 加的“最长的三个单元都可靠地识别成目标语言就拦下”也接不住
-    // 它：真实识别器给最长的三个单元 173 zh、115 zh（不可靠）、108 cy（不可靠），
-    // 证据不足就放行。#902 实测的真实页面（justjavac、awesome-python-cn、若依）
-    // 是同一种形状，同样仍被放行；去掉这一行连跑三次都红
-    test.fail(true, '#898：中文内容夹大量英文书名的页面仍被整页送翻');
+    // 接受的取舍（#898，选项 A：闸门判据冻结在 2.1.114，PR #912 的评审）：
+    // 照 #851 实测里 justjavac/free-programming-books-zh_CN 与若依文档首页的形状
+    // 造的夹具，真实识别器对全页样本给出 zh 58、en 20、不可靠；最长的三个单元
+    // 173 zh、115 zh（不可靠）、108 cy（不可靠），证据不足，闸门放行，整页送翻。
+    // #902、#905 实测的真实页面同样如此，换判据救不回来。代价是多花一轮配额：
+    // 中文段落由单元级兜底（#783）接住，不插译文、不标记已翻译，页面不会乱。
+    // 这条用例钉住的就是这个代价的上限
     await seedSettings({ to: 'zh-CN' });
-    await mockGoogle();
+    // 引擎把不含拉丁字母的文字原样还回来，含拉丁字母的加前缀
+    await mockGoogle({ keepCjk: true });
     await gotoFixture('content-zh-book-list');
     const ball = await waitForBall(page);
     const before = await pageHtml(page);
     const requests = await mockRequests();
-    const message = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastPageSameLanguage'));
-    const toast = page.locator(TOAST);
+    const gateMessage = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastPageSameLanguage'));
 
     await ball.click();
 
-    await expect(toast).toHaveText(message, { timeout: 10_000 });
-    await expect(ball).toHaveAttribute('data-state', 'idle');
-    expect(await pageHtml(page)).toBe(before);
-    await expect(page.locator('[data-pt], .pt-chunk, [data-pt-split]')).toHaveCount(0);
-    expect((await requests()).google).toBe(0);
+    // 闸门放行：送翻了，也没弹“本页已经是目标语言”
+    await expect.poll(async () => (await requests()).google, { timeout: 20_000 }).toBeGreaterThan(0);
+    await expectNoToastFor(page.locator(TOAST).filter({ hasText: gateMessage }), '闸门放行，不弹闸门的说明');
+    // 纯中文的单元由单元级兜底拦下：不插译文、不标记已翻译
+    for (const sel of ['#toc', '#lang-list > li:first-child']) {
+      const el = page.locator(sel);
+      await expect(el.locator('.pt-trans')).toHaveCount(0);
+      await expect(el).not.toHaveAttribute('data-pt', 'done');
+    }
+    // 含英文的单元照常出译文
+    await expect(page.locator('#books > li').first()).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+
+    // 还原：整页逐字节回到原样
+    await ball.click();
+    await expect.poll(() => pageHtml(page), { timeout: 10_000 }).toBe(before);
   });
 });
 
