@@ -499,5 +499,9 @@
   "toastSelectionSameAsSource": { "message": "這段文字已經是目標語言" },
   "toastPageSameLanguage": { "message": "本頁已經是你的目標語言" },
   "inputLangPopupLabel": { "message": "輸入翻譯這一次譯成" },
-  "inputLangPopupFollow": { "message": "跟隨設定" }
+  "inputLangPopupFollow": { "message": "跟隨設定" },
+  "toastSkipped": {
+    "message": "另有 $count$ 段未被採集，沒有翻譯",
+    "placeholders": { "count": { "content": "$1" } }
+  }
 }
