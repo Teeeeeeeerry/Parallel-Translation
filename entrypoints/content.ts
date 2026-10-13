@@ -120,7 +120,13 @@ async function requestTopInputLangChoice(): Promise<InputLangChoice | null> {
 export default defineContentScript({
   matches: ['<all_urls>'],
   allFrames: true,
+  // #838：about:blank（含 document.write 写出的）与 srcdoc 的 frame 没有可匹配的
+  // 网址，按创建它的父页面匹配
   matchAboutBlank: true,
+  // #849：sandbox 的 srcdoc（opaque origin）、data: 与 blob: 的 frame 同样按父页面
+  // 的网址匹配。网页邮箱的邮件正文、文件预览常放在这几种 frame 里，以前整页翻译
+  // 翻不到、输入框没有圆点。扩展只在用户点了之后才动作，注入本身不改页面
+  matchOriginAsFallback: true,
   runAt: 'document_end',
   async main(ctx) {
     await settingsReady();

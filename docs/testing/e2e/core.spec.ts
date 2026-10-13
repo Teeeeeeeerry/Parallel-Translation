@@ -4728,6 +4728,83 @@ test.describe('输入翻译：iframe 里的输入框（#672）', () => {
     await expect(srcdoc.locator('[data-pt]')).toHaveCount(0, { timeout: 10_000 });
     expect(await editorHtml()).toBe(draft);
   });
+
+  /**
+   * #849：只开 matchAboutBlank 时仍不注入的三种 frame，打开 matchOriginAsFallback
+   * 之后按父页面的网址匹配。每种各一条：注入了、popup 的整页翻译翻到 frame 里的
+   * 正文并能逐字节还原、文本框里有圆点且点下去完成翻译。
+   */
+  async function checkOpaqueFrame(
+    page: import('@playwright/test').Page,
+    serviceWorker: import('@playwright/test').Worker,
+    id: string,
+  ) {
+    const frame = page.frameLocator(`#${id}`);
+    const para = frame.locator('#para');
+    await expect(para).toBeVisible({ timeout: 10_000 });
+    // 注入了：内容脚本给 frame 的 html 挂上样式类
+    await expect(frame.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
+    const before = await para.evaluate((el) => el.outerHTML);
+
+    // popup 的整页翻译不带 frameId 广播到全部 frame：这个 frame 里的正文跟着翻译、跟着还原
+    const toggleAll = () =>
+      serviceWorker.evaluate(async () => {
+        for (const tab of await chrome.tabs.query({})) {
+          try {
+            const r = await chrome.tabs.sendMessage(tab.id!, { type: 'pt:toggle-translate' });
+            if (r) return (r as { status?: string }).status;
+          } catch {
+            // 没有 content script 的标签页
+          }
+        }
+        return null;
+      });
+    expect(await toggleAll()).toBe('translated');
+    await expect(para).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
+    const source = (await para.locator('.pt-origin').textContent())!.trim();
+    // 替身回显目标语言：整页翻译译成设置里的目标语言
+    await expect(para.locator('.pt-trans')).toHaveText(`【译】${source} [tl=zh-CN]`);
+    expect(await toggleAll()).toBe('restored');
+    await expect(frame.locator('[data-pt]')).toHaveCount(0, { timeout: 10_000 });
+    expect(await para.evaluate((el) => el.outerHTML)).toBe(before);
+
+    // 输入翻译：文本框里有圆点，点下去框里换成译文（对方语言按 frame 的声明 en）
+    const box = frame.locator('#child');
+    await box.click();
+    await page.keyboard.type('谢谢你');
+    await frame.locator(DOT).click();
+    await expect(box).toHaveValue('【译】谢谢你 [tl=en]', { timeout: 10_000 });
+  }
+
+  test('@core TC-E2E-185: sandbox 的 srcdoc iframe（不同源）也注入 —— 整页翻译翻到里面的正文并能还原，文本框有圆点（#849）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle({ echoTargetLang: true });
+    await gotoFixture('input-opaque-frames');
+    await waitForBall(page);
+    await checkOpaqueFrame(page, serviceWorker, 'sandboxed');
+  });
+
+  test('@core TC-E2E-186: data: 网址的 iframe 也注入 —— 整页翻译翻到里面的正文并能还原，文本框有圆点（#849）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle({ echoTargetLang: true });
+    await gotoFixture('input-opaque-frames');
+    await waitForBall(page);
+    await checkOpaqueFrame(page, serviceWorker, 'data');
+  });
+
+  test('@core TC-E2E-187: blob: 网址的 iframe 也注入 —— 整页翻译翻到里面的正文并能还原，文本框有圆点（#849）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle({ echoTargetLang: true });
+    await gotoFixture('input-opaque-frames');
+    await waitForBall(page);
+    await checkOpaqueFrame(page, serviceWorker, 'blob');
+  });
 });
 
 test.describe('输入翻译：站点名单与总开关', () => {
