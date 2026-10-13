@@ -149,17 +149,39 @@ function sameAsSourceNotice(stats: RenderStats): PageNotice | null {
 }
 
 /**
+ * 占比最大的那一类跳过（#759）；零跳过时为 null。数量相同时按 SKIP_LABELS
+ * 的顺序取排在前面的：文字超长、标记过密、站点页面规则、其他 —— 越靠前越
+ * 像是“正文实打实没翻”，越值得被说出来；“其他”只在它独大时才轮到。
+ */
+export function mainSkipCategory(skips: SkipStats): SkipCategory | null {
+  let best: SkipCategory | null = null;
+  for (const [category] of SKIP_LABELS) {
+    if (skips[category] > (best ? skips[best] : 0)) best = category;
+  }
+  return best;
+}
+
+/**
  * #758：采集阶段被跳过的单元按数量汇总一条，沿用 #49 的风格 —— 结束后一条，
  * 不逐段刷屏。用户看到之后知道这一页确实有内容没翻，不是自己的错觉。它是
  * 状态不是内容，走状态类。零跳过时为 null。
+ *
+ * #759：带上占比最大的那一类原因，用户才知道是内容太长、标记太复杂，还是
+ * 被站点规则挡下。一条提示只说一件事：数量是全部跳过的总数，原因只说最主要
+ * 的那一类，详细分组在控制台里（#763）。“其他”没有可说的原因，只说数量。
  */
 function skippedNotice(skips: SkipStats): PageNotice | null {
   const total = totalSkipped(skips);
-  if (total === 0) return null;
-  return {
-    message: tf('toastSkipped', `另有 ${total} 段未被采集，没有翻译`, String(total)),
-    kind: 'info',
-  };
+  const main = mainSkipCategory(skips);
+  if (total === 0 || !main) return null;
+  const n = String(total);
+  const message = {
+    'too-long': () => tf('toastSkippedTooLong', `另有 ${n} 段未被采集，主要是文字过长`, n),
+    'too-complex': () => tf('toastSkippedTooComplex', `另有 ${n} 段未被采集，主要是标记过于复杂`, n),
+    'site-rule': () => tf('toastSkippedSiteRule', `另有 ${n} 段未被采集，主要是被站点规则排除`, n),
+    other: () => tf('toastSkipped', `另有 ${n} 段未被采集，没有翻译`, n),
+  }[main]();
+  return { message, kind: 'info' };
 }
 
 /** 整页开关入口结束后要弹的那一条提示；不需要提示时为 null。 */

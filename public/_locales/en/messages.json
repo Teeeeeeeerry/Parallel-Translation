@@ -503,5 +503,17 @@
   "toastSkipped": {
     "message": "$count$ more paragraphs were skipped and not translated",
     "placeholders": { "count": { "content": "$1" } }
+  },
+  "toastSkippedTooLong": {
+    "message": "$count$ more paragraphs were skipped, mostly because they are too long",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "toastSkippedTooComplex": {
+    "message": "$count$ more paragraphs were skipped, mostly because their markup is too complex",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "toastSkippedSiteRule": {
+    "message": "$count$ more paragraphs were skipped, mostly excluded by site rules",
+    "placeholders": { "count": { "content": "$1" } }
   }
 }
