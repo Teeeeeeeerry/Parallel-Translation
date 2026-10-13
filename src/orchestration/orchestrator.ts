@@ -368,7 +368,7 @@ export function splitBatches<T>(
  * #892：这一秒是整个识别阶段共用的，不是每次识别各一秒。全页样本与单元级
  * 识别（最多 UNIT_DETECT_COUNT 个单元）同时发出，共用同一个截止时刻：到点还
  * 没回来的那几次当拿不到，已经回来的照用。最坏情况仍是一秒，不是单元数
- * 乘一秒。
+ * 乘一秒。#904 让短单元也进来之后仍是这样：个数上限不变，同一个截止时刻。
  */
 export const CONTENT_DETECT_TIMEOUT_MS = 1000;
 
@@ -399,6 +399,9 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   // #892：除了全页样本，再把按文字长度排在最前面的若干个单元各自送去识别
   // （#891 的“够长的外文单元”），走同一个注入的识别函数。单元识别拿不到
   // 结果时这个单元不算外文块，不影响全页样本那一边
+  // #904：不到外文块下限的单元也送去识别，给 #903“最长的若干个单元都是目标
+  // 语言就拦下”那一级用。个数上限不变（UNIT_DETECT_COUNT），拿不到结果的
+  // 单元在那一级算证据不足，不拦
   const detectContent = async (
     items: PageItemsSource,
   ): Promise<{ contentLang: ContentLang | null; contentUnits: UnitLang[] | null }> => {

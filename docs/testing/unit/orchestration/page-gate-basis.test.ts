@@ -171,7 +171,11 @@ describe('整页开关入口：依据随结果带出，并交给调用方记到�
   }
 
   test('拦下：结果里的判定带依据，调用方收到同一个判定，零请求', async () => {
-    const a = setup('en', async () => reliable(['zh', 96]));
+    // 全页样本（含换行）zh 96；单元识别拿不准，不走“最长的几个单元”那一级（#904
+    // 起短单元也送去识别），结论来自全页占比
+    const a = setup('en', async (text) =>
+      text.includes('\n') ? reliable(['zh', 96]) : { ...reliable(['zh', 96]), reliable: false },
+    );
     const ra = await a.orch.togglePage(ZH, 'auto', 'zh-CN');
     expect(ra.status).toBe('same-language');
     expect(ra.gate).toMatchObject({ translate: false, basis: 'content-share' });
