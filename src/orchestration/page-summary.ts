@@ -253,3 +253,26 @@ export function pageNotice(
       return null;
   }
 }
+
+/**
+ * 这个 frame 在整页翻译结束后要弹的那一条提示（#762）。
+ *
+ * popup 的整页翻译广播到标签页的全部 frame，每个 frame 各自采集、各自翻译、
+ * 各自汇总。只有主文档弹，子框架一律不弹（#327）—— 带很多 iframe 的页面
+ * 不会各弹一条。
+ *
+ * 计数不跨 frame 汇总，主文档报的是主文档自己的数，与既有四条汇总（渲染
+ * 被拒、翻译失败、同语言兜底、没采到单元）一致：它们的统计都是每个 frame 一份、
+ * 只在主文档说。跨 frame 汇总要在主文档等所有子框架各自翻完再收齐计数，而
+ * 子框架翻完的时刻各不相同、跨源的还要经后台转发，提示就不再是“翻译结束时
+ * 那一条”了。跳过提示的文案说“另有 N 段”，不说“本页共有”，不暗示是全页总数。
+ */
+export function framePageNotice(
+  result: PageToggleResult,
+  stats: RenderStats,
+  skips: SkipStats,
+  isMainFrame: boolean,
+): PageNotice | null {
+  return isMainFrame ? pageNotice(result, stats, skips) : null;
+}
+
