@@ -303,6 +303,21 @@ export function hasBlockTextChildren(el: Element): boolean {
 const TRANSLATABLE_CHAR_RE = /[^\s\p{P}\p{S}\p{N}]/u;
 
 /**
+ * 元素的直接文本节点里有没有可翻译字符（#821）。只看直接子节点，不读布局、
+ * 不匹配选择器。字面上带占位符括号的文字一律不算：完整判定会先去掉占位符
+ * 样式的片段再看，这里不替它下结论。
+ */
+function ownTextIsTranslatable(el: Element): boolean {
+  for (const child of el.childNodes) {
+    if (child.nodeType !== Node.TEXT_NODE) continue;
+    const text = child.textContent ?? '';
+    if (text.includes(PLACEHOLDER_PREFIX[0]!) || text.includes(PLACEHOLDER_SUFFIX)) return false;
+    if (TRANSLATABLE_CHAR_RE.test(text)) return true;
+  }
+  return false;
+}
+
+/**
  * #454：段落去掉保留原文后是否还有可翻译的文字。按全页翻译的提取方式
  * 取送翻文本（含带文字的块级子元素时走浅层提取），去掉占位符后只剩
  * 空白、标点、符号或数字即没有 —— 送去引擎只会原样回来，对照模式下
@@ -319,6 +334,11 @@ const TRANSLATABLE_CHAR_RE = /[^\s\p{P}\p{S}\p{N}]/u;
  */
 export function hasTranslatableText(el: Element, rules?: TextRules): boolean {
   if (isVisuallyHidden(el)) return false;
+  // #821：段落自己的直接文字里有可翻译字符，结论就是“有” —— 保留原文、排除、
+  // 看不见的后代都只去掉后代元素里的文字，直接文字一定留在送翻文本里。不必
+  // 再把整棵子树走一遍：那一遍对每个后代元素读一次布局、匹配一遍保留原文与
+  // 排除的选择器，是悬停精判与整页采集七成的开销（#737 实测）
+  if (ownTextIsTranslatable(el)) return true;
   const pm = makePreserveMap(rules);
   const text = hasBlockTextChildren(el) ? walkShallow(el, pm) : walkTranslatable(el, pm);
   if (pm.placeholders.size === 0 && !pm.hiddenSkipped) return true;
