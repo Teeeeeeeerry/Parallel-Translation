@@ -5252,6 +5252,92 @@ test.describe('超长段落按 br 切行', () => {
     expect(await post.evaluate((el) => el.outerHTML)).toBe(before);
   });
 
+  test('@core TC-E2E-189: 以 br 分行的超长正文在仅译文模式下逐行只显示译文 —— 每行译文各占一行、行间不多空行；切回对照模式恢复逐行对照；来回切换段落零 DOM 操作；还原后原文完整回来（#713）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('br-post');
+    const post = page.locator('#post');
+    const lines = await readLines(post);
+    const before = await post.evaluate((el) => el.outerHTML);
+    await translateAndWait(page);
+    await expect(post.locator(':scope > .pt-chunk[data-pt="done"]')).toHaveCount(lines.length, { timeout: 30_000 });
+
+    // 段落里的任何改动都记下来：模式切换只该改 html 上的类名
+    await post.evaluate((el) => {
+      const records: string[] = [];
+      new MutationObserver((ms) => ms.forEach((m) => records.push(m.type))).observe(el, {
+        subtree: true, childList: true, attributes: true, characterData: true,
+      });
+      (window as unknown as { __ptPostMutations: string[] }).__ptPostMutations = records;
+    });
+
+    /** 每个切块的原文、译文是否可见，与它们的行盒位置。 */
+    const layout = () =>
+      post.evaluate((el) => {
+        const lh = parseFloat(getComputedStyle(el).lineHeight);
+        const left = el.getBoundingClientRect().left;
+        const rows = [...el.querySelectorAll(':scope > .pt-chunk')].map((c) => {
+          const o = c.querySelector(':scope > .pt-origin')!;
+          const t = c.querySelector(':scope > .pt-trans')!;
+          const tr = [...t.getClientRects()].filter((r) => r.width > 0);
+          const or = [...o.getClientRects()].filter((r) => r.width > 0);
+          return {
+            originShown: getComputedStyle(o).display !== 'none' && or.length > 0,
+            transShown: tr.length > 0,
+            originBottom: or.length ? Math.max(...or.map((r) => r.bottom)) : 0,
+            transTop: tr.length ? Math.min(...tr.map((r) => r.top)) : 0,
+            transBottom: tr.length ? Math.max(...tr.map((r) => r.bottom)) : 0,
+            transLeft: tr.length ? Math.min(...tr.map((r) => r.left)) : 0,
+            trans: (t.textContent ?? '').trim(),
+          };
+        });
+        return { lh, left, rows };
+      });
+
+    const expectTranslationOnly = async () => {
+      await expect(page.locator('html')).toHaveClass(/pt-only-trans-page/, { timeout: 5_000 });
+      const { lh, left, rows } = await layout();
+      expect(rows.map((r) => r.trans)).toEqual(lines.map((l) => `【译】${l}`)); // cjk-ok: 替身回显的译文
+      rows.forEach((r, i) => {
+        expect(r.originShown, `第 ${i} 行：原文隐藏`).toBe(false);
+        expect(r.transShown, `第 ${i} 行：译文显示`).toBe(true);
+        expect(Math.abs(r.transLeft - left), `第 ${i} 行：译文从行首开始`).toBeLessThanOrEqual(1);
+        const next = rows[i + 1];
+        if (next) {
+          expect(next.transTop, `第 ${i + 1} 行译文另起一行`).toBeGreaterThanOrEqual(r.transBottom - 1);
+          expect(next.transTop - r.transBottom, `第 ${i + 1} 行译文紧跟上一行，中间没有空行`).toBeLessThan(lh / 2);
+        }
+      });
+    };
+    const expectBilingual = async () => {
+      await expect(page.locator('html')).not.toHaveClass(/pt-only-trans-page/, { timeout: 5_000 });
+      const { lh, rows } = await layout();
+      rows.forEach((r, i) => {
+        expect(r.originShown && r.transShown, `第 ${i} 行：原文与译文都显示`).toBe(true);
+        expect(r.transTop, `第 ${i} 行：译文在原文下面`).toBeGreaterThanOrEqual(r.originBottom - 1);
+        expect(r.transTop - r.originBottom, `第 ${i} 行：译文紧跟原文`).toBeLessThan(lh / 2);
+      });
+    };
+
+    await expectBilingual();
+    await seedSettings({ displayMode: 'translation-only' });
+    await expectTranslationOnly();
+    await seedSettings({ displayMode: 'bilingual' });
+    await expectBilingual();
+    await seedSettings({ displayMode: 'translation-only' });
+    await expectTranslationOnly();
+
+    // 来回切了三次，段落里没有发生任何改动
+    expect(await page.evaluate(() => (window as unknown as { __ptPostMutations: string[] }).__ptPostMutations)).toEqual([]);
+
+    // 仅译文模式下还原：原文完整回来，HTML 与翻译前一字不差
+    await (await waitForBall(page)).click();
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0, { timeout: 10_000 });
+    expect(await post.evaluate((el) => el.outerHTML)).toBe(before);
+  });
+
   test('@core TC-E2E-165: 整段一个单元的 br 段落，送翻时 br 作为换行带出去，译文在同样的位置换行 —— 4 行短诗与 #768 那种链接多的 30 行段落；还原后逐字节回到原样（#840）', async ({
     page, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
