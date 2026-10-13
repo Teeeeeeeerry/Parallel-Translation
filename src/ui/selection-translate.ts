@@ -1,0 +1,84 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Parallel-Translation contributors
+//
+// 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
+// 不含任何担保。完整条款见仓库根目录的 LICENSE。
+
+// 划词翻译入口（translateSelection）。拖选划词与右键菜单最终都走这里，改
+// 一处两条入口同时生效。单文本翻译与设置由调用方注入，入口本身只管等待态、
+// 结果与失败提示。
+
+import { normalizeText } from '../dom/normalize';
+import type { SingleTextResult } from '../orchestration/orchestrator';
+import { selectionNotice } from '../orchestration/text-notice';
+import { toast, toastPending } from './toast';
+import { tf } from '../i18n';
+
+export interface SelectionTranslatorDeps {
+  /** 编排模块的单文本入口（#315）。 */
+  translateText(text: string, from: string, to: string): Promise<SingleTextResult>;
+  /** 发起时读当前设置的源语言与目标语言。 */
+  getLangs(): { from: string; to: string };
+  /** 子 frame 不弹站点禁用提示。 */
+  isMainFrame: boolean;
+}
+
+export function createSelectionTranslator(
+  deps: SelectionTranslatorDeps,
+): (text: string) => Promise<void> {
+  // #750：并发只认最后一次。每次发起记一个单调递增的序号，记在入口这一层
+  // （每个 frame 一个入口实例，拖选与右键共用）；结果回来时序号已不是最新
+  // 的，说明期间又发起了一轮，这一轮整条丢弃 —— 与编排模块“还原后旧结果
+  // 不落地”同一个思路
+  let latest = 0;
+
+  return async function translateSelection(text: string): Promise<void> {
+    // 跨行划词时选区文本天然带 \n，入口归一化
+    text = normalizeText(text);
+    const seq = ++latest;
+
+    // #746：点下去立即显示等待态，它自己不消失，由译文或失败替换。准入
+    // 拦截不提示、出错等没有提示接替它的退出路径，收尾时收掉
+    const pending = toastPending(tf('toastTranslating', '翻译中'));
+    try {
+      // #315: 划词翻译走编排模块的单文本入口 —— 与逐段翻译共用
+      // 同一份准入判定与失败提示语义，不再直连消息通道
+      const { from, to } = deps.getLangs();
+      const result = await deps.translateText(text, from, to);
+      // 被丢弃的那一轮不替换等待态、不弹提示：此刻页面上的等待态（或译文）
+      // 属于后发那一轮
+      if (seq !== latest) return;
+      showResult(text, result);
+    } finally {
+      // 等待态的句柄跟着作废：被丢弃的那一轮不去收任何东西，后发那一轮的
+      // 转圈由它自己的结果替换或收尾
+      if (seq === latest) pending.dismiss();
+    }
+  };
+
+  /** 划词翻译的结果提示。 */
+  function showResult(text: string, result: SingleTextResult): void {
+    // 准入拦截：与逐段 / 整页翻译一致的提示
+    if (result.admission === 'blocked') {
+      if (deps.isMainFrame)
+        toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), { purpose: 'status', kind: 'error' });
+      return;
+    }
+    if (result.admission !== 'allowed') return;
+
+    if (!result.ok) {
+      // #313: key 无效 / 配额展示真实原因，瞬时故障展示泛化文案
+      if (result.display?.showRealReason && result.error) {
+        toast(result.error, { purpose: 'status', kind: 'error' });
+      } else {
+        toast(tf('toastTranslateFail', '翻译失败'), { purpose: 'status', kind: 'error' });
+      }
+      return;
+    }
+
+    // #787：划中的已经是目标语言时说明是同语言，不把原文当译文弹出来；
+    // 否则译文走内容类（#738）
+    const notice = selectionNotice(text, result.translation!);
+    toast(notice.message, notice);
+  }
+}
