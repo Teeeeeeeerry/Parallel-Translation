@@ -267,8 +267,9 @@ export default defineContentScript({
             'translate-paragraph': () => {
               const sel = window.getSelection();
               if (sel?.rangeCount) {
-                const el = sel.getRangeAt(0).startContainer?.parentElement;
-                if (el) translateOne(el);
+                const start = sel.getRangeAt(0).startContainer;
+                const el = start?.parentElement;
+                if (el) translateOne(el, start);
               }
             },
             'toggle-extension': () => {
@@ -654,12 +655,18 @@ export default defineContentScript({
     }
 
     // ── 翻译单段 ──
-    async function translateOne(el: Element): Promise<void> {
+    async function translateOne(el: Element, start?: Node): Promise<void> {
       // 提级到最近的可翻单元：按钮路径传来的已是精判通过的单元（原样返回）；
       // 快捷键路径拿的是选区起点的 parentElement，可能是 span 等内联元素，
       // 由这里统一向上找整段。找不到（超长 / .notranslate / 非正文区 /
       // 已翻译）则 shouldSkip 已拦下，不翻。
-      const unit = closestUnit(el);
+      let unit = closestUnit(el);
+      // #712：选区起点是以 br 分行的超长段落里直接挂在段落上的文字时，精判
+      // 刚把段落按行切开，这段文字已经移进它那一行的切块 —— 从它现在的父
+      // 元素再找一次，翻这一行
+      if (!unit && start?.parentElement && start.parentElement !== el) {
+        unit = closestUnit(start.parentElement);
+      }
       if (!unit) {
         console.debug('[PT] translateOne 跳过：closestUnit 返回 null', el);
         toast(tf('toastNotTranslatable', '该区域无法单独翻译'), { purpose: 'status', kind: 'error' });

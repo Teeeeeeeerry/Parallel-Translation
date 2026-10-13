@@ -16,6 +16,8 @@ import { getSiteRules } from '~/src/storage/specialization';
 // text.ts 也从本模块取 INLINE_SET：循环引用只在函数调用时解析，模块
 // 求值时双方都不使用对方的导出
 import { hasTranslatableText } from './text';
+// br-split 反过来用本模块的标签表与上限：只在函数体里用，模块初始化时互不依赖
+import { splitBrParagraph } from './br-split';
 import type { TextRules } from './text';
 
 /**
@@ -442,6 +444,11 @@ function directTextLength(el: Element): number {
  * #454：与采集入口共用“去掉保留原文后是否还有可翻译文字”的判定。
  * #468：站点页面规则只在开头读取一次，向上、向下找单元时都用它。
  */
+/** 已按行切过的段落（pre 的切块另走自己的路，不在此列）。 */
+function isBrSplit(el: Element): boolean {
+  return el.tagName !== 'PRE' && el.getAttribute('data-pt-split') === '1';
+}
+
 export function closestUnit(el: Element): Element | null {
   const rules = getSiteRules(location.hostname);
   const { scope, exclude } = rules;
@@ -450,6 +457,18 @@ export function closestUnit(el: Element): Element | null {
   let cur: Element | null = el;
   while (cur) {
     if (!inScope(cur, scope)) return null;
+    // #712：以 br 分行的超长段落整段当不了单元。走到它这里（起点在它里面，
+    // 还没找到单元）就按行切开，返回起点所在那一行的切块：逐段翻译只翻悬停
+    // 的那一行，不是整段几千字。起点落在段落自身（行间空白，或切开之前段落
+    // 的直接文字）就没有单元，直接返回：外层容器的文字只会更长，往上找也是
+    // 白找。
+    // 切分只在这里发生：本函数只在悬停意图计时器、按钮点击、快捷键这些低频
+    // 路径上调用，mouseover 处理只做 closest() 初筛（paragraph-btn.ts）
+    if (splitBrParagraph(cur) || isBrSplit(cur)) {
+      const line = el.closest('.pt-chunk');
+      if (!line || line.parentElement !== cur) return null;
+      return !shouldSkip(line) && hasTranslatableText(line, rules) ? line : null;
+    }
     // #454：去掉保留原文后没有可翻译文字的段落不算单元，继续向上找
     if (isTranslationUnit(cur) && !shouldSkip(cur) && hasTranslatableText(cur, rules)) {
       // #50：容器含媒体 / 交互控件时，向下降级到纯文本后代。

@@ -5184,6 +5184,74 @@ test.describe('超长段落按 br 切行', () => {
     await restoreRound('第二次还原'); // cjk-ok: 失败时打印的说明
   });
 
+  test('@core TC-E2E-188: 逐段翻译在以 br 分行的超长正文里只翻悬停的那一行 —— 快捷键只翻选区所在那一行；停在行尾空白处不出按钮；停在一行没有行内元素的文字上浮出按钮，点下去只送这一行、只这一行出译文；整页还原后逐字节回原样（#712）', async ({
+    page, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ showParagraphBtn: true });
+    await mockGoogle();
+    await gotoFixture('br-post');
+    const post = page.locator('#post');
+    const paraBtn = page.locator('.pt-para-btn');
+    const done = post.locator(':scope > .pt-chunk[data-pt="done"]');
+    const lines = await readLines(post);
+    expect(lines.join('\n').length, '正文超过长度上限，整段当不了单元').toBeGreaterThan(3072);
+    const before = await post.evaluate((el) => el.outerHTML);
+
+    /** 段落里以 prefix 开头的那一行文字所在的文本节点（切开之前是段落的直接子节点）。 */
+    const lineBox = (i: number) =>
+      post.evaluate((el, prefix) => {
+        const node = [...el.childNodes].find((n) => (n.textContent ?? '').trim().startsWith(prefix))!;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const r = range.getBoundingClientRect();
+        const p = el.getBoundingClientRect();
+        return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, blankX: (r.right + p.right) / 2 };
+      }, lines[i]!.slice(0, 8));
+
+    // 1. 快捷键（刚打开的页面，段落还没切开）：选区落在第 30 行的文字里，这一行
+    // 没有行内元素，文字直接挂在段落上
+    let requests = await mockRequests();
+    await waitForBall(page);
+    await post.evaluate((el, prefix) => {
+      const node = [...el.childNodes].find((n) => (n.textContent ?? '').trim().startsWith(prefix))!;
+      const range = document.createRange();
+      range.setStart(node, 5);
+      range.setEnd(node, 5);
+      getSelection()!.removeAllRanges();
+      getSelection()!.addRange(range);
+    }, lines[30]!.slice(0, 8));
+    await page.keyboard.press('ControlOrMeta+Shift+d');
+    await expect(done).toHaveCount(1, { timeout: 10_000 });
+    await expect(done.locator(':scope > .pt-origin')).toHaveText(lines[30]!);
+    expect((await requests()).queries.map((q) => q.trim()), '快捷键只送选区所在那一行').toEqual([lines[30]]);
+
+    // 2. 重新打开，悬停：先停在第 1 行行尾的空白处（段落自身）—— 段落被精判
+    // 切开，但不出按钮
+    await gotoFixture('br-post');
+    requests = await mockRequests();
+    const ball = await waitForBall(page);
+    const l1 = await lineBox(1);
+    const l12 = await lineBox(12);
+    await page.mouse.move(l1.blankX, l1.cy);
+    await expectNoToastFor(paraBtn, '行尾空白处不浮出逐段翻译按钮', 2_000); // cjk-ok: 失败时打印的说明
+
+    // 3. 停在第 12 行的文字上（这一行同样没有行内元素）：按钮浮出，点下去只翻这一行
+    await page.mouse.move(l12.cx, l12.cy);
+    await expect(paraBtn).toBeVisible({ timeout: 5_000 });
+    await paraBtn.click();
+    await expect(done).toHaveCount(1, { timeout: 10_000 });
+    await expect(done.locator(':scope > .pt-origin')).toHaveText(lines[12]!);
+    await expect(done.locator(':scope > .pt-trans')).toHaveText(`【译】${lines[12]}`); // cjk-ok: 替身回显的译文
+    expect((await requests()).queries.map((q) => q.trim()), '只送了这一行').toEqual([lines[12]]);
+    // 其余各行都按行切开了，但没有译文
+    expect(await post.locator(':scope > .pt-chunk').count()).toBe(lines.length);
+
+    // 4. 整页还原：切块、译文包装与切分标记都移除，正文回到翻译前
+    await ball.click();
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0, { timeout: 10_000 });
+    expect(await post.evaluate((el) => el.outerHTML)).toBe(before);
+  });
+
   test('@core TC-E2E-165: 整段一个单元的 br 段落，送翻时 br 作为换行带出去，译文在同样的位置换行 —— 4 行短诗与 #768 那种链接多的 30 行段落；还原后逐字节回到原样（#840）', async ({
     page, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
