@@ -213,13 +213,19 @@ export function createParaBtn(handlers: ParaBtnHandlers): () => void {
  * 对每层做 closest(CANDIDATE) 再 closestUnit() 精判，即可捞到覆盖层
  * 下方可翻的 h2/p/div 型正文。
  *
+ * #712：也是以 br 分行的超长段落里“行内没有元素的那一行”的落点 —— 见下。
+ *
  * 只取前 8 层：覆盖层 → 卡片容器 → 标题包裹层 → 段落的典型结构在
  * 3~5 层内，更深处在深层嵌套页面上会捞到远处无关元素。
  */
 function findUnderOverlay(x: number, y: number): Element | null {
   const stack = document.elementsFromPoint(x, y);
   for (const n of stack.slice(0, 8)) {
-    const el = n.closest?.(CANDIDATE);
+    // #712：以 br 分行的超长段落在精判里刚被按行切开时，指针下面已经是某一
+    // 行的切块，而初筛时的命中目标还是整个段落（行内没有元素的那一行，文字
+    // 直接挂在段落上）。切块不在候选选择器里，先认它，否则 closest() 又回到
+    // 那个整段当不了单元的段落
+    const el = n.closest?.('.pt-chunk') ?? n.closest?.(CANDIDATE);
     if (!el || el.closest('[data-pt-ui="1"]')) continue;
     const unit = closestUnit(el);
     if (unit) return unit;
