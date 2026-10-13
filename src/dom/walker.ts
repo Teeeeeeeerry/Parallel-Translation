@@ -32,7 +32,8 @@
 
 import {
   SKIP_SET,
-  shouldSkipNonVisual,
+  nonVisualSkipReason,
+  type NonVisualSkip,
   isVisible,
   isTranslationUnit,
   hasNonTextContent,
@@ -47,15 +48,49 @@ import { hasTranslatableText } from './text';
 import { walkShadowTree } from './shadow-walk';
 
 /**
+ * 非可见性判定里算作“被跳过”的分支（#753）：这个单元有正文，却没进入待翻
+ * 列表。其余分支本来就不是要翻的东西（太短、纯数字、代码、标记了不翻、
+ * 可编辑区、切块容器），不算跳过 —— 算进去正常页面上也会报出一大串。
+ */
+const COUNTED_NON_VISUAL: ReadonlySet<NonVisualSkip> = new Set<NonVisualSkip>([
+  'too-long',
+  'too-complex',
+  'non-content',
+  'translated',
+  'extension-ui',
+]);
+
+export interface CollectOptions {
+  /**
+   * 只读采集（#843）：页面级闸门取样用，不切块、不改动页面。
+   */
+  readOnly?: boolean;
+  /**
+   * 每跳过一个有正文的单元调用一次（#753）。统计在遍历里顺带产生：只用跳过
+   * 判定本来就算出的结果，不额外序列化 DOM、不额外读布局，不改变采集结果。
+   * 不传就什么都不发生。
+   */
+  onSkip?: (el: Element) => void;
+}
+
+/**
  * 采集可翻译节点。
  * TreeWalker 不会自动进入 shadowRoot，必须显式递归。
+ *
+ * #753：被跳过的单元经 opts.onSkip 报出，返回值仍是采到的单元 —— 不改返回
+ * 类型，整页翻译、增量补翻、闸门取样这几处调用方不必跟着改。
  */
 export function collect(
   root: Node = document.body,
   onHidden?: (el: Element) => void,
-  opts: { readOnly?: boolean } = {},
+  opts: CollectOptions = {},
 ): Element[] {
   const out: Element[] = [];
+  const onSkip = opts.onSkip;
+  /** 结构上算不算一个单元：只在要统计时才问，标签查表打头，不读布局。 */
+  const skipUnit = (el: Element) => {
+    if (onSkip && isTranslationUnit(el)) onSkip(el);
+  };
 
   // 非 ParentNode（文本节点等）的根直接返回空集，与旧 TreeWalker 行为一致
   if (
@@ -83,7 +118,10 @@ export function collect(
     root as ParentNode,
     (el) => {
       try {
-        if (exclude.some((sel) => el.matches(sel))) return 'skip-subtree';
+        if (exclude.some((sel) => el.matches(sel))) {
+          skipUnit(el);
+          return 'skip-subtree';
+        }
 
         // R2 整棵子树拒绝：SKIP_SET（button/code/script 等）。
         // 根元素除外 —— 根是 body 时旧语义仍遍历其子树（acceptNode
@@ -93,11 +131,17 @@ export function collect(
         }
 
         // S2 限定范围：范围外不采集，也不做 pre 切块等 DOM 改动
-        if (!inScope(el, scope)) return 'continue';
+        if (!inScope(el, scope)) {
+          skipUnit(el);
+          return 'continue';
+        }
 
         // D1 域名补丁（skip 优先于通用判定）：跳过自身继续子树
         const patched = applyCompat(el);
-        if (patched && 'skip' in patched) return 'continue';
+        if (patched && 'skip' in patched) {
+          skipUnit(el);
+          return 'continue';
+        }
         // D2 域名补丁（take）：改指收为单元，继续遍历
         if (patched && 'take' in patched) {
           out.push(patched.take);
@@ -125,11 +169,16 @@ export function collect(
 
         // D6 非视觉跳过：notranslate / 已翻译单元自身（.pt-origin 内不重复
         // 翻）/ 扩展 UI / 非正文区 / 文本长度。跳过自身继续子树
-        if (shouldSkipNonVisual(el)) return 'continue';
+        const skip = nonVisualSkipReason(el);
+        if (skip) {
+          if (COUNTED_NON_VISUAL.has(skip)) onSkip?.(el);
+          return 'continue';
+        }
 
         // D7 #23：不可见翻译单元记入延迟队列，等 IntersectionObserver 补翻
         if (!isVisible(el)) {
           onHidden?.(el);
+          onSkip?.(el);
           return 'continue';
         }
 
@@ -140,7 +189,13 @@ export function collect(
 
         out.push(el);
       } catch {
-        // #54：属性访问抛 DOMException → 跳过自身继续子树，采集不中断
+        // #54：属性访问抛 DOMException → 跳过自身继续子树，采集不中断。
+        // 判不了是不是单元（再抛一次）就不算跳过
+        try {
+          skipUnit(el);
+        } catch {
+          // 同上
+        }
       }
       return 'continue';
     },

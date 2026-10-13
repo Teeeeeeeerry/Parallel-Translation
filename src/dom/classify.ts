@@ -154,32 +154,59 @@ function inForeignObject(el: Element): boolean {
   return false;
 }
 
+/**
+ * 非可见性相关的跳过判定给出的原因（#753）。每个值对应下面判定里的一个
+ * 既有分支，不另加判定。
+ */
+export type NonVisualSkip =
+  | 'skip-tag'
+  | 'code-block'
+  | 'notranslate'
+  | 'editable'
+  | 'foreign-object'
+  | 'translated'
+  | 'split-container'
+  | 'extension-ui'
+  | 'non-content'
+  | 'too-short'
+  | 'too-long'
+  | 'too-complex'
+  | 'numeric';
+
 /** 非可见性相关的所有跳过判定。元素即便变为可见，这些条件也不会改变。 */
 export function shouldSkipNonVisual(el: Element): boolean {
+  return nonVisualSkipReason(el) !== null;
+}
+
+/**
+ * 同一套判定，返回命中的是哪个分支；不跳过时返回 null。判定顺序与改动前
+ * 完全一致，先命中的分支说了算（#753）。
+ */
+export function nonVisualSkipReason(el: Element): NonVisualSkip | null {
   const tag = el.tagName.toLowerCase();
-  if (SKIP_SET.has(tag)) return true;
+  if (SKIP_SET.has(tag)) return 'skip-tag';
 
   // pre 在代码上下文（.highlight / .notranslate 祖先）→ 跳过；
   // 纯文本文档型 pre（如 .plain > pre）则放行（#64）
-  if (tag === 'pre' && isCodeBlockPre(el)) return true;
+  if (tag === 'pre' && isCodeBlockPre(el)) return 'code-block';
 
-  if (el.classList.contains('notranslate')) return true;
-  if ((el as HTMLElement).isContentEditable) return true;
-  if (inForeignObject(el)) return true;
+  if (el.classList.contains('notranslate')) return 'notranslate';
+  if ((el as HTMLElement).isContentEditable) return 'editable';
+  if (inForeignObject(el)) return 'foreign-object';
   // #179: 已翻译单元自身与其原文内容（.pt-origin 内）不重复翻译；
   // 但页面在已翻译容器内**新增**的段落（.pt-origin 之外）仍需采集补翻
   // —— 旧的 closest('[data-pt="done"]') 会把新内容一并拦掉，永久漏翻
-  if (el.getAttribute('data-pt') === 'done') return true;
-  if (el.closest('.pt-origin')) return true;
+  if (el.getAttribute('data-pt') === 'done') return 'translated';
+  if (el.closest('.pt-origin')) return 'translated';
   // #731：切成切块的容器本身不是单元，它的切块才是。这里明说，不靠哪条
   // 长度上限恰好把容器挡住 —— 否则容器整段与切块各翻一遍
-  if (el.getAttribute('data-pt-split') === '1') return true;
+  if (el.getAttribute('data-pt-split') === '1') return 'split-container';
 
   // 扩展自身注入的 UI —— 绝不能翻译自己的按钮文字
-  if (el.closest('[data-pt-ui="1"]')) return true;
+  if (el.closest('[data-pt-ui="1"]')) return 'extension-ui';
 
   // 非正文区域：导航、页脚、侧栏、参考文献等
-  if (el.closest(NON_CONTENT)) return true;
+  if (el.closest(NON_CONTENT)) return 'non-content';
 
   // #731：只按文字长度设上限，不按序列化后的 outerHTML 长度拒绝。送给引擎
   // 的是提取出来的文字，由文字上限把着；outerHTML 量的是属性负载 —— 维基
@@ -187,12 +214,13 @@ export function shouldSkipNonVisual(el: Element): boolean {
   // 字的正常段落就超过 MAX_HTML，被整段静默丢掉（#724）。#174 当年只给
   // pre 切块放宽了这一条，现在普通元素一并对齐
   const text = el.textContent?.trim() ?? '';
-  if (text.length < MIN_TEXT || text.length > MAX_TEXT) return true;
+  if (text.length < MIN_TEXT) return 'too-short';
+  if (text.length > MAX_TEXT) return 'too-long';
   // #733：数元素个数，不序列化 DOM
-  if (el.getElementsByTagName('*').length > MAX_ELEMENTS) return true;
-  if (isMainlyNumeric(text)) return true;
+  if (el.getElementsByTagName('*').length > MAX_ELEMENTS) return 'too-complex';
+  if (isMainlyNumeric(text)) return 'numeric';
 
-  return false;
+  return null;
 }
 
 /** 元素是否可见（非 display:none 且祖先均可见）。 */
