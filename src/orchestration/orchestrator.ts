@@ -437,6 +437,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
           const top = result?.languages[0];
           return {
             chars: u.chars,
+            letters: u.letters,
             lang: top?.lang ?? null,
             reliable: Boolean(result?.reliable && top),
           };

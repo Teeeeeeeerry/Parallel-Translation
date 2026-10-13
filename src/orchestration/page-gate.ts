@@ -134,21 +134,34 @@ export const UNIT_DETECT_COUNT = 10;
 export const UNIT_DETECT_MAX_CHARS = 1000;
 
 /**
+ * 字母的口径（#901）：Unicode 的字母属性 \p{L}，任何文字的字母都算（拉丁、
+ * 西里尔、汉字、假名、谚文……），连同附在字母上的组合记号 \p{M} —— 天城文、
+ * 泰文的元音符号是记号不是字母，不算进来一段印地语正文就凑不够多数。数字
+ * \p{N}、标点 \p{P}、符号 \p{S} 与空白都不算。
+ */
+const LETTER = /[\p{L}\p{M}]/gu;
+
+/**
  * 取送去单元级识别的单元（#891）：去掉首尾空白，只要到外文块下限的，按文字
  * 长度从长到短（等长的保持页面顺序）取前 UNIT_DETECT_COUNT 个，每个截到
- * UNIT_DETECT_MAX_CHARS。chars 是全文的字符数。
+ * UNIT_DETECT_MAX_CHARS。chars 是全文的字符数；letters 是全文里的字母数
+ * （#901，口径见 LETTER）。
  */
 export function longestUnitTexts(
   texts: string[],
   count = UNIT_DETECT_COUNT,
-): { chars: number; text: string }[] {
+): { chars: number; letters: number; text: string }[] {
   return texts
     .map((t) => t.trim())
     .filter((t) => t.length >= FOREIGN_BLOCK_MIN_CHARS)
     .map((t, i) => ({ t, i }))
     .sort((a, b) => b.t.length - a.t.length || a.i - b.i)
     .slice(0, count)
-    .map(({ t }) => ({ chars: t.length, text: t.slice(0, UNIT_DETECT_MAX_CHARS) }));
+    .map(({ t }) => ({
+      chars: t.length,
+      letters: t.match(LETTER)?.length ?? 0,
+      text: t.slice(0, UNIT_DETECT_MAX_CHARS),
+    }));
 }
 
 /**
@@ -193,6 +206,8 @@ export const CONTENT_UNDETERMINED: ContentLang = Object.freeze({
 export interface UnitLang {
   /** 单元全文的字符数（不是送去识别的那一段的长度） */
   chars: number;
+  /** 单元全文里的字母数（#901，口径见 longestUnitTexts） */
+  letters: number;
   /** 识别器给出的排第一的语言；拿不到时为 null */
   lang: string | null;
   /** 识别器自己说结果可靠 */
@@ -291,13 +306,21 @@ const primaryOf = (lang: string): string => lang.split('-')[0]!;
 /**
  * 翻译单元里有没有一块够长的外文正文（#891）：识别器报可靠、排第一的语言
  * 不是目标语言所在的那种语言（主段不同；识别器对繁简都只报 zh，同一种
- * 中文不算外文，繁简另由 #790 的链条判）、字数到下限。
+ * 中文不算外文，繁简另由 #790 的链条判）、字数到下限、字母占多数。
+ *
+ * 字母占多数（#901）：字母数超过单元全文字符数的一半，口径见 longestUnitTexts
+ * 的 LETTER。识别器只回答“像哪种语言”，不回答“是不是正文”：#890 实测若依
+ * 文档首页一串 448 字符的 QQ 群号（“1389287（1群） 、 1679294（2群） ……”）
+ * 被报成可靠的 ht，算成外文块，整页放行（#892 重算两遍都如此）。数字串、
+ * 标点串、符号串不是外文正文。分母取全文字符数（含空白），英文正文的字母约占
+ * 八成，中英混排带版本号与网址的也在六成以上，差得远的只有数字与符号堆。
  */
 function hasForeignBlock(units: UnitLang[] | null | undefined, to: string | null): boolean {
   if (!units || !to) return false;
   const family = primaryOf(to);
   return units.some((u) => {
     if (!u.reliable || u.chars < FOREIGN_BLOCK_MIN_CHARS || !u.lang) return false;
+    if (u.letters * 2 <= u.chars) return false;
     const code = normalizeLangCode(u.lang);
     return code !== null && primaryOf(code) !== family;
   });

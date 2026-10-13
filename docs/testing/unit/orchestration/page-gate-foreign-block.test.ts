@@ -26,6 +26,7 @@ const reliable = (...languages: [string, number][]): ContentLang => ({
 });
 const unit = (chars: number, lang: string | null, isReliable = true): UnitLang => ({
   chars,
+  letters: chars,
   lang,
   reliable: isReliable,
 });
@@ -243,7 +244,11 @@ describe('送去单元级识别的单元：按文字长度取最前面的若干�
   test('字数按去掉首尾空白之后算', () => {
     const picked = longestUnitTexts(['   ' + 'z'.repeat(FOREIGN_BLOCK_MIN_CHARS) + '\n\n']);
     expect(picked).toEqual([
-      { chars: FOREIGN_BLOCK_MIN_CHARS, text: 'z'.repeat(FOREIGN_BLOCK_MIN_CHARS) },
+      {
+        chars: FOREIGN_BLOCK_MIN_CHARS,
+        letters: FOREIGN_BLOCK_MIN_CHARS,
+        text: 'z'.repeat(FOREIGN_BLOCK_MIN_CHARS),
+      },
     ]);
   });
 
