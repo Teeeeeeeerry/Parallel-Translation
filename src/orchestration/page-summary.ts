@@ -200,22 +200,35 @@ export function pageNotice(
         skippedNotice(skips) ?? { message: tf('hintNoElements', '本页没有可翻译的内容'), kind: 'info' }
       );
     case 'error':
+      // 没有一段插入译文：全部引擎失败 > 已经是目标语言 > 采集时跳过 >
+      // 所有段落含图片/按钮（#760，与下面翻译完成时同一个顺序）
       if (result.summary?.allFailed) return allFailedNotice(result.summary.display);
-      // #783：被拦下的单元里有译文与原文相同的，就不是“所有段落均含
-      // 图片/按钮” —— 对一个同语言页面说这句话比什么都不说更糟
-      if (stats.sameAsSource > 0) return sameAsSourceNotice(stats);
-      // #49: 引擎返回了结果但全被拒绝渲染（纵深防御命中）
-      return { message: tf('toastAllRejected', '所有段落均含图片/按钮，无法翻译'), kind: 'error' };
+      return (
+        // #783：被拦下的单元里有译文与原文相同的，就不是“所有段落均含
+        // 图片/按钮” —— 对一个同语言页面说这句话比什么都不说更糟
+        sameAsSourceNotice(stats) ??
+        // #760：有段落根本没进采集，“所有段落均含图片/按钮”同样不对
+        skippedNotice(skips) ?? {
+          // #49: 引擎返回了结果但全被拒绝渲染（纵深防御命中）
+          message: tf('toastAllRejected', '所有段落均含图片/按钮，无法翻译'),
+          kind: 'error',
+        }
+      );
     case 'translated':
-      // 几条并存时只给一条，排序是 失败 > 已经是目标语言 > 含图片/按钮：
-      // - 失败压在最上面：只有它意味着用户想看的内容没有到，要去处理
-      //   （换引擎、查 key），其余两条都是“没插，也不用插”
-      // - 已经是目标语言排在含图片/按钮之上：同语言页面整页都命中时它
-      //   的数量往往占了大半，不说的话用户只看到页面没变，会以为没点中
-      //   而再点一次、再花一次配额；含图片/按钮的段落原文本就看得见
+      // 几条并存时只给一条（#760 定下四条的先后）：
+      //   失败 > 已经是目标语言 > 采集时跳过 > 含图片/按钮
+      // - 失败压在最上面：只有它意味着用户想看的内容没有到、而且用户能去
+      //   处理（换引擎、查 key）
+      // - 已经是目标语言排在第二：同语言页面整页都命中时它的数量往往占了
+      //   大半，不说的话用户只看到页面没变，会以为没点中而再点一次、再花
+      //   一次配额（#785）
+      // - 采集时跳过排在含图片/按钮之上：两者都是正文没翻，但跳过的那些
+      //   从来没进过待翻列表，不说用户永远不知道（#727）；含图片/按钮的
+      //   段落进过列表、原文就在眼前，用户看得见它没翻
       return (
         partialFailNotice(stats, result.summary?.display) ??
         sameAsSourceNotice(stats) ??
+        skippedNotice(skips) ??
         // #49：整页翻译结束后用一条提示汇总被拒数量，而不是逐条刷屏
         (stats.rejected > 0
           ? {
@@ -226,9 +239,7 @@ export function pageNotice(
               ),
               kind: 'info',
             }
-          : null) ??
-        // #758：采集阶段被跳过的单元
-        skippedNotice(skips)
+          : null)
       );
     // #793：页面级闸门命中，说明原因；它是状态不是内容，与“本页没有可翻译
     // 的内容”同一风格
