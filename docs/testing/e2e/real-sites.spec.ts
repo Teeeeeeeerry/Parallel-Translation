@@ -61,7 +61,7 @@ test.describe('GitHub @real', () => {
     await expect(readmeDone.first()).toBeVisible({ timeout: 15_000 });
 
     // 译文带 mock 前缀，原文保留在 .pt-origin 里
-    await expect(readmeDone.first().locator('.pt-trans')).toContainText('【译】');
+    await expect(readmeDone.first().locator('.pt-trans')).toContainText('【译】'); // cjk-ok: 替身回显的译文
   });
 
   test('Issue 页面：@username 原样保留', async ({

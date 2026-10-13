@@ -892,7 +892,7 @@ test.describe('还原 vs 在飞翻译（#157）', () => {
     // 等所有在飞批次结算，确认无“所有引擎均失败”错误 toast（持续采样：提示
     // 3 秒后自己消失，会重试的 toHaveCount(0) 等得到 0，#832）
     await waitDrained(page, served);
-    await expectNoToastFor(errorToast, '还原后不弹“所有引擎均失败”');
+    await expectNoToastFor(errorToast, '还原后不弹“所有引擎均失败”'); // cjk-ok: 失败时打印的说明
 
     // 还原后不启动 observer：新增段落不被自动补翻（无新请求、无译文）
     const before = await served();
@@ -945,7 +945,7 @@ test.describe('还原 vs 在飞翻译（#157）', () => {
     // 等在飞/排队批次结算（#157 前：全批中止 → 结算瞬间弹「所有引擎均失败」
     // 并停留 3s —— toHaveCount(0) 会等 toast 自动过期而漏检，须持续采样）
     await waitDrained(page, served);
-    await expectNoToastFor(errorToast, '增量补翻在飞时还原，不误报“所有引擎均失败”');
+    await expectNoToastFor(errorToast, '增量补翻在飞时还原，不误报“所有引擎均失败”'); // cjk-ok: 失败时打印的说明
 
     // observer 已停：追加内容不再触发新请求
     const settled = await served();
@@ -1055,7 +1055,7 @@ test.describe('Fixture: iframe', () => {
     expect(await toggleAll()).toBe('translated');
     await expect(inner).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
     const source = (await inner.locator('.pt-origin').textContent())!.trim();
-    await expect(inner.locator('.pt-trans')).toHaveText(`【译】${source}`);
+    await expect(inner.locator('.pt-trans')).toHaveText(`【译】${source}`); // cjk-ok: 替身回显的译文
     await expect(page.locator('[data-pt="done"]').first()).toBeVisible();
 
     // 再点一次还原：iframe 里的段落逐字节回到原样
@@ -1093,7 +1093,7 @@ test.describe('Fixture: iframe', () => {
           // 无 content script 的标签页
         }
       }
-      return { error: '所有标签页均无 content script 响应' };
+      return { error: '所有标签页均无 content script 响应' }; // cjk-ok: 用例自己的报错信息
     });
 
     expect(resp.error).toBeUndefined();
@@ -1150,7 +1150,7 @@ test.describe('引擎', () => {
       delete (self as any).__ptLiveTokens;
     });
     // 替身层的记录随实例清零，读取以“不可信”报错，而不是给出清零后的数
-    await expect(requests()).rejects.toThrow('不可信');
+    await expect(requests()).rejects.toThrow('不可信'); // cjk-ok: 替身层自己的报错信息，不是界面文案
 
     // 还原后再整页翻译一次：路由前从描述符自愈，译文仍来自替身
     const ball = page.locator('#pt-host-ball .pt-ball');
@@ -1409,7 +1409,7 @@ test.describe('站点页面规则', () => {
     await ball.click();
     await expect(page.locator('p').last()).toHaveAttribute('data-pt', 'done', { timeout: 30_000 });
     await expect(page.locator('li[data-pt]')).toHaveCount(0);
-    await expect(page.locator('li').first()).not.toContainText('【译】');
+    await expect(page.locator('li').first()).not.toContainText('【译】'); // cjk-ok: 替身回显的译文
   });
 
   test('@core TC-E2E-61: 设置页填写限定范围 → 刷新 → 只翻译范围内（#374）', async ({
@@ -1436,7 +1436,7 @@ test.describe('站点页面规则', () => {
     await ball.click();
     await expect(page.locator('li').last()).toHaveAttribute('data-pt', 'done', { timeout: 30_000 });
     await expect(page.locator('p[data-pt], h1[data-pt]')).toHaveCount(0);
-    await expect(page.locator('p').first()).not.toContainText('【译】');
+    await expect(page.locator('p').first()).not.toContainText('【译】'); // cjk-ok: 替身回显的译文
   });
 
   test('@core TC-E2E-62: 设置页填写保留原文 → 刷新 → 行内元素原文留在译文里（#373）', async ({
@@ -1487,7 +1487,7 @@ test.describe('站点页面规则', () => {
     await expect(error).toContainText('3');
     await expect(error).toContainText('.promo,');
     // 不弹“已保存”：设置页的提示 2 秒后自己隐藏，持续采样（#832）
-    await expectNoToastFor(page.locator('#pt-toast'), '无效选择器不弹保存提示');
+    await expectNoToastFor(page.locator('#pt-toast'), '无效选择器不弹保存提示'); // cjk-ok: 失败时打印的说明
     const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('pt-site-rules'));
     expect(JSON.stringify(stored)).not.toContain('promo');
 
@@ -2074,7 +2074,7 @@ test.describe('站点页面规则', () => {
       { site: 'new.com', exclude: ['.n'] },
     ]);
     const notRefreshed = await page.evaluate(() =>
-      chrome.i18n.getMessage('siteRulesListNotRefreshed', ['渲染出错']),
+      chrome.i18n.getMessage('siteRulesListNotRefreshed', ['渲染出错']), // cjk-ok: getMessage 的替换参数，模拟的出错原因
     );
     await expect(page.locator('#pt-toast')).toHaveText(notRefreshed);
     await expect(cards).toHaveCount(2);
@@ -2179,7 +2179,7 @@ test.describe('站点页面规则', () => {
       { site: 'example.com', scope: ['a['], exclude: ['.b'] },
     ]);
     const notRefreshed = await page.evaluate(() =>
-      chrome.i18n.getMessage('siteRulesListNotRefreshed', ['格式化出错']),
+      chrome.i18n.getMessage('siteRulesListNotRefreshed', ['格式化出错']), // cjk-ok: getMessage 的替换参数，模拟的出错原因
     );
     await expect(page.locator('#pt-toast')).toHaveText(notRefreshed);
     await expect(cards).toHaveCount(2);
@@ -2226,7 +2226,7 @@ test.describe('站点页面规则', () => {
     const stale = await page.evaluate(() =>
       chrome.i18n.getMessage('siteRulesListStale', [
         chrome.i18n.getMessage('siteRulesImported', ['2']),
-        '渲染出错',
+        '渲染出错', // cjk-ok: getMessage 的替换参数，模拟的出错原因
       ]),
     );
     await expect(page.locator('#pt-toast')).toHaveText(stale);
@@ -2917,7 +2917,7 @@ test.describe('输入翻译：圆点', () => {
     const ringY = hn.top + 1 < dn.y ? hn.top + 1 : hn.bottom - 1;
     expect(ringX < dn.x || ringX > dn.x + dn.width || ringY < dn.y || ringY > dn.y + dn.height).toBe(true);
     await page.mouse.click(ringX, ringY);
-    await expect(box).toHaveValue(`【译】${text}`, { timeout: 10_000 });
+    await expect(box).toHaveValue(`【译】${text}`, { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     await expect(box).toBeFocused();
   });
 
@@ -2974,7 +2974,7 @@ test.describe('输入翻译：圆点', () => {
     await box.click();
     await page.keyboard.type('hello');
     let g = await geom('hello');
-    await expectDot(g.contentLeft + g.width + 4, g.cy, '短文本贴末尾');
+    await expectDot(g.contentLeft + g.width + 4, g.cy, '短文本贴末尾'); // cjk-ok: 失败时打印的说明
 
     // 长文本：框横向滚到末尾，右侧放不下圆点 → 圆点在光标左侧 4px，不压住光标
     const long = ' the quick brown fox jumps over the lazy dog again and again';
@@ -2982,17 +2982,17 @@ test.describe('输入翻译：圆点', () => {
     g = await geom(`hello${long}`);
     expect(g.scrollLeft, '框确实横向滚动了').toBeGreaterThan(50);
     const caret = g.contentLeft + g.width - g.scrollLeft;
-    await expectDot(caret - 4 - 14, g.cy, '长文本光标左侧');
+    await expectDot(caret - 4 - 14, g.cy, '长文本光标左侧'); // cjk-ok: 失败时打印的说明
 
     // 光标回到行首：框滚回开头，末尾在框外右侧 → 圆点钳在右边缘（#669），不消失
     await page.keyboard.press('Home');
     expect((await geom('')).scrollLeft).toBe(0);
-    await expectDot(g.right - 14, g.cy, '末尾滚出框外');
+    await expectDot(g.right - 14, g.cy, '末尾滚出框外'); // cjk-ok: 失败时打印的说明
     await expect(dot).toBeVisible();
 
     // 回到行尾：重新贴到光标旁
     await page.keyboard.press('End');
-    await expectDot(caret - 4 - 14, g.cy, '回到行尾');
+    await expectDot(caret - 4 - 14, g.cy, '回到行尾'); // cjk-ok: 失败时打印的说明
 
     // RTL：末尾在左侧，圆点贴在文字左边、留 4px
     await box.evaluate((el) => {
@@ -3003,7 +3003,7 @@ test.describe('输入翻译：圆点', () => {
     const hebrew = 'שלום עולם';
     await page.keyboard.type(hebrew);
     g = await geom(hebrew);
-    await expectDot(g.contentRight - g.width - 4 - 14, g.cy, 'RTL 贴左侧');
+    await expectDot(g.contentRight - g.width - 4 - 14, g.cy, 'RTL 贴左侧'); // cjk-ok: 失败时打印的说明
   });
 
   test('@core TC-E2E-139: 祖先带 transform 缩放时测不准 → 圆点回落到框内侧右下角，照常显示、点下去照常翻译（#668）', async ({
@@ -3025,7 +3025,7 @@ test.describe('输入翻译：圆点', () => {
       wrap.append(el);
     });
     await box.click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     await expect(dot).toBeVisible();
 
     // 回落位置：屏幕上框的内侧右下角，离内边缘 6px（框按 0.5 缩放，圆点本身不缩放）
@@ -3052,7 +3052,7 @@ test.describe('输入翻译：圆点', () => {
       ),
     ).toBe('pt-host-input-dot');
     await dot.click();
-    await expect(box).toHaveValue('【译】你好世界 [tl=en]', { timeout: 10_000 });
+    await expect(box).toHaveValue('【译】你好世界 [tl=en]', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
   });
 
   test('@core TC-E2E-140: 停手之后字体才加载完、或站点改了框的样式与尺寸 → 圆点重新对齐到新的末尾（#668）', async ({
@@ -3110,19 +3110,19 @@ test.describe('输入翻译：圆点', () => {
     // 字体还在下载：先按后备字体排版，圆点贴在后备字体的末尾
     await box.click();
     await page.keyboard.type('hello');
-    await expectAt('hello', '后备字体');
+    await expectAt('hello', '后备字体'); // cjk-ok: 失败时打印的说明
     const before = (await dot.boundingBox())!;
 
     // 停手之后字体才下载完：没有输入、没有滚动、框也没变大，圆点照样重新对齐
     release();
     await page.evaluate(() => document.fonts.ready);
     expect(await page.evaluate(() => document.fonts.check('16px PTWide'))).toBe(true);
-    await expectAt('hello', '字体加载完成');
+    await expectAt('hello', '字体加载完成'); // cjk-ok: 失败时打印的说明
     expect((await dot.boundingBox())!.x - before.x, '换成 1em 宽的字形后末尾右移').toBeGreaterThan(20);
 
     // 站点改了框的样式（行内样式）：重新对齐
     await box.evaluate((el) => (el.style.fontSize = '24px'));
-    await expectAt('hello', '站点改了字号');
+    await expectAt('hello', '站点改了字号'); // cjk-ok: 失败时打印的说明
 
     // 站点经样式表把框改窄（不碰框的属性）：换行变了，重新对齐到第二行
     await page.evaluate(() => {
@@ -3178,22 +3178,22 @@ test.describe('输入翻译：圆点', () => {
     // 单行
     await box.click();
     await page.keyboard.type('hello');
-    await expectAtEnd('单行');
+    await expectAtEnd('单行'); // cjk-ok: 失败时打印的说明
 
     // 多行：换行后末尾在第二行
     await page.keyboard.press('Enter');
     await page.keyboard.type('world');
-    await expectAtEnd('多行');
+    await expectAtEnd('多行'); // cjk-ok: 失败时打印的说明
 
     // 行内混排：末尾是加粗
     await setHtml('see <a href="#x">the docs</a> and <b>bold text</b>');
-    await expectAtEnd('末尾是加粗');
+    await expectAtEnd('末尾是加粗'); // cjk-ok: 失败时打印的说明
     // 末尾是链接
     await setHtml('read <b>this</b> first, then <a href="#y">the link</a>');
-    await expectAtEnd('末尾是链接');
+    await expectAtEnd('末尾是链接'); // cjk-ok: 失败时打印的说明
     // 多行加行内混排
     await setHtml('<div>first <i>line</i></div><div>second <b>bold</b> and <a href="#z">a link</a></div>');
-    await expectAtEnd('多行混排');
+    await expectAtEnd('多行混排'); // cjk-ok: 失败时打印的说明
 
     // 钳边（#669）：框限高可滚动，滚到顶时末尾在框下方，圆点钳在可见区里，不消失
     await box.evaluate((el) => {
@@ -3203,7 +3203,7 @@ test.describe('输入翻译：圆点', () => {
     });
     await setHtml(Array.from({ length: 10 }, (_, i) => `<div>line ${i + 1}</div>`).join(''));
     await box.evaluate((el) => (el.scrollTop = el.scrollHeight));
-    await expectAtEnd('滚到底');
+    await expectAtEnd('滚到底'); // cjk-ok: 失败时打印的说明
     await box.evaluate((el) => (el.scrollTop = 0));
     const v = await box.evaluate((el) => {
       const r = el.getBoundingClientRect();
@@ -3225,7 +3225,7 @@ test.describe('输入翻译：圆点', () => {
 
     // 滚回底：重新贴末尾
     await box.evaluate((el) => (el.scrollTop = el.scrollHeight));
-    await expectAtEnd('滚回底');
+    await expectAtEnd('滚回底'); // cjk-ok: 失败时打印的说明
   });
 
   test('@core TC-E2E-128: contenteditable 富文本框获得焦点且有文字时浮出圆点，在框内（#671 起贴文字末尾）；非编辑态元素与可编辑区里的 contenteditable=false 子块不出现（#655）', async ({
@@ -3248,7 +3248,7 @@ test.describe('输入翻译：圆点', () => {
 
     // 换行后的文字同样算数，整颗圆点在框里（#671 起贴文字末尾，位置的真值见 TC-E2E-141）
     await page.keyboard.press('Enter');
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     await expect(dot).toBeVisible();
     const b = (await box.boundingBox())!;
     const d = (await dot.boundingBox())!;
@@ -3333,14 +3333,14 @@ test.describe('输入翻译：点圆点翻译', () => {
     await waitForBall(page);
     const box = page.locator('#reply');
     await box.click();
-    await page.keyboard.type('我在 GitHub 上写回复');
+    await page.keyboard.type('我在 GitHub 上写回复'); // cjk-ok: 用例输入的文字
     await page.locator(DOT).click();
 
     // #644：译文写回输入框，不再弹提示条
-    await expect(box).toHaveValue('【译】我在 GitHub 上写回复 [tl=en]', { timeout: 10_000 });
+    await expect(box).toHaveValue('【译】我在 GitHub 上写回复 [tl=en]', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     // “不翻译”术语以占位符发出，回来换回原词
-    expect(await queries()).toEqual(['我在 ⟦TM0⟧ 上写回复']);
-    await expectNoToastFor(page.locator(TOAST), '写回之后不再弹提示条');
+    expect(await queries()).toEqual(['我在 ⟦TM0⟧ 上写回复']); // cjk-ok: 替身收到的原文
+    await expectNoToastFor(page.locator(TOAST), '写回之后不再弹提示条'); // cjk-ok: 失败时打印的说明
     await expect(box).toBeFocused();
     // #642：译文不进翻译缓存
     expect(await cacheEntries()).toBe(entriesBefore);
@@ -3358,7 +3358,7 @@ test.describe('输入翻译：点圆点翻译', () => {
     const dot = page.locator(DOT);
 
     // 换行、前导与末尾空格、全角标点都要原样留着
-    const original = '第一行，原文。\n  第二行带前导空格与末尾空格  ';
+    const original = '第一行，原文。\n  第二行带前导空格与末尾空格  '; // cjk-ok: 用例输入的原文
     await box.click();
     await page.keyboard.type(original);
     await expect(box).toHaveValue(original);
@@ -3383,7 +3383,7 @@ test.describe('输入翻译：点圆点翻译', () => {
     // 引擎恢复之后再点一次：照常整段替换 —— 失败没有留下卡住的状态
     await mockGoogle();
     await dot.click();
-    await expect(box).toHaveValue(`【译】${original}`, { timeout: 10_000 });
+    await expect(box).toHaveValue(`【译】${original}`, { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     expect((await requests()).google).toBe(2);
   });
 
@@ -3405,7 +3405,7 @@ test.describe('输入翻译：点圆点翻译', () => {
 
     await gotoFixture('input');
     await waitForBall(page);
-    for (const [id, text] of [['#reply', '第一行\n第二行 hello world'], ['#title', 'hello world 你好']] as const) {
+    for (const [id, text] of [['#reply', '第一行\n第二行 hello world'], ['#title', 'hello world 你好']] as const) { // cjk-ok: 用例输入的原文
       const box = page.locator(id);
       await box.click();
       await page.keyboard.type(text);
@@ -3423,7 +3423,7 @@ test.describe('输入翻译：点圆点翻译', () => {
       await expect(dot).toHaveAttribute('data-state', 'busy');
       await expect(box).toHaveValue(text);
 
-      await expect(box).toHaveValue(`【译】${text}`, { timeout: 10_000 });
+      await expect(box).toHaveValue(`【译】${text}`, { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     }
 
     // 富文本编辑器：编辑区失焦就收起工具条
@@ -3460,7 +3460,7 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect(await editorSelection(), '点圆点之后编辑区里的选区变了').toEqual(before);
     await expect(dot).toHaveAttribute('data-state', 'busy');
 
-    await expect(compose).toHaveText('【译】hello brave world', { timeout: 10_000 });
+    await expect(compose).toHaveText('【译】hello brave world', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     await expect(toolbar).toBeVisible();
   });
 
@@ -3484,21 +3484,21 @@ test.describe('输入翻译：点圆点翻译', () => {
 
     // 没有选区：光标停在末尾
     await box.click();
-    await page.keyboard.type('第一段');
+    await page.keyboard.type('第一段'); // cjk-ok: 用例输入的文字
     await page.keyboard.press('Enter');
-    await page.keyboard.type('第二段');
+    await page.keyboard.type('第二段'); // cjk-ok: 用例输入的文字
     await page.locator(DOT).click();
-    await expect(box).toHaveValue('【译】第一段\n第二段', { timeout: 10_000 });
+    await expect(box).toHaveValue('【译】第一段\n第二段', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     await expect(box).toBeFocused();
     expect((await inputTypes()).at(-1)).toBe('insertText');
 
     // 有选区：只选中末尾 2 个字，替换的仍是全部文字
     await box.fill('');
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     await page.keyboard.press('Shift+ArrowLeft');
     await page.keyboard.press('Shift+ArrowLeft');
     await page.locator(DOT).click();
-    await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 });
+    await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     await expect(box).toBeFocused();
     expect((await inputTypes()).at(-1)).toBe('insertText');
   });
@@ -3513,17 +3513,17 @@ test.describe('输入翻译：点圆点翻译', () => {
 
     const box = page.locator('#reply');
     await box.click();
-    await page.keyboard.type('这是我自己写的话');
+    await page.keyboard.type('这是我自己写的话'); // cjk-ok: 用例输入的文字
     await page.locator(DOT).click();
-    await expect(box).toHaveValue('【译】这是我自己写的话', { timeout: 10_000 });
+    await expect(box).toHaveValue('【译】这是我自己写的话', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
 
     // 撤销：Ctrl+Z（macOS 上是 Cmd+Z），框里回到原文
     await page.keyboard.press('ControlOrMeta+z');
-    await expect(box).toHaveValue('这是我自己写的话');
+    await expect(box).toHaveValue('这是我自己写的话'); // cjk-ok: 用例输入的原文，断言它没被改动
 
     // 重做：Ctrl+Shift+Z（macOS 上是 Cmd+Shift+Z），回到译文
     await page.keyboard.press('ControlOrMeta+Shift+z');
-    await expect(box).toHaveValue('【译】这是我自己写的话');
+    await expect(box).toHaveValue('【译】这是我自己写的话'); // cjk-ok: 替身回显的译文
   });
 
   test('@core TC-E2E-117: 翻译进行中连点圆点只发一次请求，框里文字一个字不动；完成后恢复可点（#647）', async ({
@@ -3539,7 +3539,7 @@ test.describe('输入翻译：点圆点翻译', () => {
     const box = page.locator('#reply');
     const dot = page.locator(DOT);
     await box.click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
 
     // 双击再补一下：三次点击都落在第一次翻译回来之前。#648 起进行中的
     // 圆点在转圈，Playwright 会等元素静止才点 —— force 跳过这条等待，
@@ -3547,16 +3547,16 @@ test.describe('输入翻译：点圆点翻译', () => {
     await dot.dblclick({ force: true });
     await dot.click({ force: true });
     // 进行中框里不插入任何占位或提示文字
-    await expect(box).toHaveValue('你好世界');
-    expect(await queries()).toEqual(['你好世界']);
+    await expect(box).toHaveValue('你好世界'); // cjk-ok: 用例输入的原文，断言它没被改动
+    expect(await queries()).toEqual(['你好世界']); // cjk-ok: 替身收到的原文
 
-    await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 });
-    expect(await queries()).toEqual(['你好世界']);
+    await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
+    expect(await queries()).toEqual(['你好世界']); // cjk-ok: 替身收到的原文
 
     // 完成后恢复可点：再点一次照常发请求
     await dot.click();
-    await expect(box).toHaveValue('【译】【译】你好世界', { timeout: 10_000 });
-    expect(await queries()).toEqual(['你好世界', '【译】你好世界']);
+    await expect(box).toHaveValue('【译】【译】你好世界', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
+    expect(await queries()).toEqual(['你好世界', '【译】你好世界']); // cjk-ok: 替身收到的原文
   });
 
   test('@core TC-E2E-118: 源语言是 auto（默认）且页面没有语言声明时点圆点 → 不发请求，提示去设置里指定源语言，框里文字不动（#640；#658 起有声明时按声明翻译）', async ({
@@ -3576,11 +3576,11 @@ test.describe('输入翻译：点圆点翻译', () => {
     await page.evaluate(() => document.documentElement.removeAttribute('lang'));
     const box = page.locator('#reply');
     await box.click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     await page.locator(DOT).click();
 
     await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(hint);
-    await expect(box).toHaveValue('你好世界');
+    await expect(box).toHaveValue('你好世界'); // cjk-ok: 用例输入的原文，断言它没被改动
     expect(await queries()).toEqual([]);
   });
 
@@ -3601,25 +3601,25 @@ test.describe('输入翻译：点圆点翻译', () => {
 
     // 夹具声明 lang="en"：译成英文
     await box.click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     await dot.click();
-    await expect(box).toHaveValue('【译】你好世界 [tl=en]', { timeout: 10_000 });
+    await expect(box).toHaveValue('【译】你好世界 [tl=en]', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
 
     // 声明带地区后缀：取主段
     await page.evaluate(() => document.documentElement.setAttribute('lang', 'ja-JP'));
     await box.fill('');
-    await page.keyboard.type('早上好');
+    await page.keyboard.type('早上好'); // cjk-ok: 用例输入的文字
     await dot.click();
-    await expect(box).toHaveValue('【译】早上好 [tl=ja]', { timeout: 10_000 });
+    await expect(box).toHaveValue('【译】早上好 [tl=ja]', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
 
     // 声明畸形：不猜，提示去指定源语言，零请求
     await page.evaluate(() => document.documentElement.setAttribute('lang', 'english'));
     await box.fill('');
-    await page.keyboard.type('晚安');
+    await page.keyboard.type('晚安'); // cjk-ok: 用例输入的文字
     await dot.click();
     await expect(page.locator(`${TOAST}[data-kind="error"]`)).toHaveText(hint);
-    await expect(box).toHaveValue('晚安');
-    expect(await queries()).toEqual(['你好世界', '早上好']);
+    await expect(box).toHaveValue('晚安'); // cjk-ok: 用例输入的原文，断言它没被改动
+    expect(await queries()).toEqual(['你好世界', '早上好']); // cjk-ok: 替身收到的原文
   });
 
   test('@core TC-E2E-127: 写的已经是对方的语言 → 不替换、不发请求并提示；zh-CN 与 zh-TW 不算同语言（#661）', async ({
@@ -3647,15 +3647,15 @@ test.describe('输入翻译：点圆点翻译', () => {
     await box.click();
 
     // 简体页面上写简体：不替换、零请求，提示（不是报错）
-    await write('zh-CN', '这个问题我们明天再讨论');
+    await write('zh-CN', '这个问题我们明天再讨论'); // cjk-ok: 用例输入的文字
     await expect(toast).toHaveText(hint);
     await expect(toast).toHaveAttribute('data-kind', 'info');
-    await expect(box).toHaveValue('这个问题我们明天再讨论');
+    await expect(box).toHaveValue('这个问题我们明天再讨论'); // cjk-ok: 用例输入的原文，断言它没被改动
 
     // 繁体页面上写繁体：同上
-    await write('zh-TW', '這個問題我們明天再討論');
+    await write('zh-TW', '這個問題我們明天再討論'); // cjk-ok: 用例输入的文字
     await expect(toast).toHaveText(hint);
-    await expect(box).toHaveValue('這個問題我們明天再討論');
+    await expect(box).toHaveValue('這個問題我們明天再討論'); // cjk-ok: 用例输入的原文，断言它没被改动
 
     // 英文页面上写一句英文：浏览器检测器给出可靠结果，同样不替换
     await write('en', 'I think we should discuss this issue tomorrow morning.');
@@ -3664,9 +3664,9 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect(await queries()).toEqual([]);
 
     // 繁体页面上写简体：不算同语言，照常译成繁体
-    await write('zh-Hant', '这个问题我们明天再讨论');
-    await expect(box).toHaveValue('【译】这个问题我们明天再讨论 [tl=zh-TW]', { timeout: 10_000 });
-    expect(await queries()).toEqual(['这个问题我们明天再讨论']);
+    await write('zh-Hant', '这个问题我们明天再讨论'); // cjk-ok: 用例输入的文字
+    await expect(box).toHaveValue('【译】这个问题我们明天再讨论 [tl=zh-TW]', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
+    expect(await queries()).toEqual(['这个问题我们明天再讨论']); // cjk-ok: 替身收到的原文
   });
 
   test('@core TC-E2E-129: contenteditable 里点圆点整段替换 —— 受控编辑器收到 insertText 输入事件，内部模型与界面一致、光标在末尾；普通 contenteditable 走原生插入（#656）', async ({
@@ -3698,36 +3698,36 @@ test.describe('输入翻译：点圆点翻译', () => {
     // 受控编辑器：自己拦下 beforeinput、改模型、重新渲染，不发 input 事件
     const editor = page.locator('#editor');
     await editor.click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     await expect(dot).toBeVisible();
     // 有选区也整段替换
     await page.keyboard.press('Shift+ArrowLeft');
     await dot.click();
-    await expect(editor).toHaveText('【译】你好世界', { timeout: 10_000 });
+    await expect(editor).toHaveText('【译】你好世界', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     const after = await editorState();
-    expect(after.model).toBe('【译】你好世界');
+    expect(after.model).toBe('【译】你好世界'); // cjk-ok: 替身回显的译文
     expect(after.text).toBe(after.model);
-    expect(after.last).toEqual({ inputType: 'insertText', data: '【译】你好世界' });
+    expect(after.last).toEqual({ inputType: 'insertText', data: '【译】你好世界' }); // cjk-ok: 替身回显的译文
     expect(after.foreign).toBe(0);
     expect(after.sel).toEqual({ start: after.model.length, end: after.model.length });
     await expect(editor).toBeFocused();
     // 接着打字落在末尾，模型照常跟着走
     await page.keyboard.type('!');
-    expect((await editorState()).model).toBe('【译】你好世界!');
+    expect((await editorState()).model).toBe('【译】你好世界!'); // cjk-ok: 替身回显的译文
 
     // 普通 contenteditable：没人拦 beforeinput，走浏览器原生插入，页面收到真实的 input
     const rich = page.locator('#rich');
     await rich.click();
-    await page.keyboard.type('早上好');
+    await page.keyboard.type('早上好'); // cjk-ok: 用例输入的文字
     await rich.evaluate((el) => {
       const log: Array<{ inputType: string; data: string | null }> = [];
       el.addEventListener('input', (e) => log.push({ inputType: (e as InputEvent).inputType, data: (e as InputEvent).data }));
       (window as unknown as { __richInputs: typeof log }).__richInputs = log;
     });
     await dot.click();
-    await expect(rich).toHaveText('【译】早上好', { timeout: 10_000 });
+    await expect(rich).toHaveText('【译】早上好', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     expect(await page.evaluate(() => (window as unknown as { __richInputs: unknown }).__richInputs)).toEqual([
-      { inputType: 'insertText', data: '【译】早上好' },
+      { inputType: 'insertText', data: '【译】早上好' }, // cjk-ok: 替身回显的译文
     ]);
     await expect(rich).toBeFocused();
   });
@@ -3745,21 +3745,21 @@ test.describe('输入翻译：点圆点翻译', () => {
     const model = () => page.evaluate(() => (window as unknown as { __editor: { model: string } }).__editor.model);
 
     await editor.click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     await dot.click();
     // #648：进行中变灰转圈
     await expect(dot).toHaveAttribute('data-state', 'busy');
     // #647：进行中再点不发第二次请求，编辑器里一个字不动（转圈中的元素不等它静止）
     await dot.click({ force: true });
-    expect(await model()).toBe('你好世界');
+    expect(await model()).toBe('你好世界'); // cjk-ok: 用例输入的原文，断言它没被改动
 
     // #646：送翻后又打了字 → 不覆盖，译文出现在提示条里
     await page.keyboard.type('!');
-    await expect(page.locator(TOAST)).toHaveText('【译】你好世界', { timeout: 10_000 });
-    expect(await model()).toBe('你好世界!');
-    await expect(editor).toHaveText('你好世界!');
+    await expect(page.locator(TOAST)).toHaveText('【译】你好世界', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
+    expect(await model()).toBe('你好世界!'); // cjk-ok: 用例输入的原文，断言它没被改动
+    await expect(editor).toHaveText('你好世界!'); // cjk-ok: 用例输入的原文，断言它没被改动
     await expect(dot).not.toHaveAttribute('data-state', 'busy');
-    expect(await queries()).toEqual(['你好世界']);
+    expect(await queries()).toEqual(['你好世界']); // cjk-ok: 替身收到的原文
   });
 
   test('@core TC-E2E-131: contenteditable 替换后按撤销键回到原文、重做回到译文 —— 普通 contenteditable 走原生撤销栈，受控编辑器走它自己的撤销栈，都用真实按键（#657）', async ({
@@ -3774,30 +3774,30 @@ test.describe('输入翻译：点圆点翻译', () => {
     // 普通 contenteditable：替换进了浏览器的原生撤销栈
     const rich = page.locator('#rich');
     await rich.click();
-    await page.keyboard.type('这是我自己写的话');
+    await page.keyboard.type('这是我自己写的话'); // cjk-ok: 用例输入的文字
     await dot.click();
-    await expect(rich).toHaveText('【译】这是我自己写的话', { timeout: 10_000 });
+    await expect(rich).toHaveText('【译】这是我自己写的话', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     // 撤销：Ctrl+Z（macOS 上是 Cmd+Z），一步回到原文
     await page.keyboard.press('ControlOrMeta+z');
-    await expect(rich).toHaveText('这是我自己写的话');
+    await expect(rich).toHaveText('这是我自己写的话'); // cjk-ok: 用例输入的原文，断言它没被改动
     // 重做：Ctrl+Shift+Z（macOS 上是 Cmd+Shift+Z），回到译文
     await page.keyboard.press('ControlOrMeta+Shift+z');
-    await expect(rich).toHaveText('【译】这是我自己写的话');
+    await expect(rich).toHaveText('【译】这是我自己写的话'); // cjk-ok: 替身回显的译文
 
     // 受控编辑器：撤销栈由编辑器自己管，替换是它模型里的一步
     const editor = page.locator('#editor');
     const model = () => page.evaluate(() => (window as unknown as { __editor: { model: string } }).__editor.model);
     await editor.click();
-    await page.keyboard.type('早上好');
+    await page.keyboard.type('早上好'); // cjk-ok: 用例输入的文字
     await dot.click();
-    await expect(editor).toHaveText('【译】早上好', { timeout: 10_000 });
-    expect(await model()).toBe('【译】早上好');
+    await expect(editor).toHaveText('【译】早上好', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
+    expect(await model()).toBe('【译】早上好'); // cjk-ok: 替身回显的译文
     await page.keyboard.press('ControlOrMeta+z');
-    await expect(editor).toHaveText('早上好');
-    expect(await model()).toBe('早上好');
+    await expect(editor).toHaveText('早上好'); // cjk-ok: 用例输入的原文，断言它没被改动
+    expect(await model()).toBe('早上好'); // cjk-ok: 用例输入的原文，断言它没被改动
     await page.keyboard.press('ControlOrMeta+Shift+z');
-    await expect(editor).toHaveText('【译】早上好');
-    expect(await model()).toBe('【译】早上好');
+    await expect(editor).toHaveText('【译】早上好'); // cjk-ok: 替身回显的译文
+    expect(await model()).toBe('【译】早上好'); // cjk-ok: 替身回显的译文
   });
 
   test('@core TC-E2E-132: 译文比框的长度上限长时不写回 —— 框里还是原文，译文出现在提示条里；刚好装得下照常替换（#654）', async ({
@@ -3810,8 +3810,8 @@ test.describe('输入翻译：点圆点翻译', () => {
     const dot = page.locator(DOT);
     const toast = page.locator(TOAST);
     // 原文 4 个字符，译文“【译】你好世界”7 个字符
-    const original = '你好世界';
-    const translated = '【译】你好世界';
+    const original = '你好世界'; // cjk-ok: 用例输入的原文
+    const translated = '【译】你好世界'; // cjk-ok: 替身回显的译文
 
     for (const sel of ['#reply', '#title']) {
       const box = page.locator(sel);
@@ -3847,7 +3847,7 @@ test.describe('输入翻译：点圆点翻译', () => {
     const dot = page.locator(DOT);
 
     // 上限加一：不发请求，框里不动，提示删减
-    const tooLong = '字'.repeat(3073);
+    const tooLong = '字'.repeat(3073); // cjk-ok: 用例输入的原文
     await box.click();
     await box.fill(tooLong);
     await dot.click();
@@ -3856,10 +3856,10 @@ test.describe('输入翻译：点圆点翻译', () => {
     expect(await queries()).toEqual([]);
 
     // 刚好等于上限：照常翻译，整段一次送出
-    const atLimit = '字'.repeat(3072);
+    const atLimit = '字'.repeat(3072); // cjk-ok: 用例输入的原文
     await box.fill(atLimit);
     await dot.click();
-    await expect(box).toHaveValue(`【译】${atLimit}`, { timeout: 10_000 });
+    await expect(box).toHaveValue(`【译】${atLimit}`, { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     expect(await queries()).toEqual([atLimit]);
   });
 
@@ -3868,7 +3868,7 @@ test.describe('输入翻译：点圆点翻译', () => {
   }) => {
     await seedSettings({ from: 'en' });
     // 译文晚 1.5 秒回来；“坏掉的话”这一段请求立即失败
-    await mockGoogle({ delayMs: 1_500, failTexts: ['坏掉的话'] });
+    await mockGoogle({ delayMs: 1_500, failTexts: ['坏掉的话'] }); // cjk-ok: 替身按原文判定失败的那一句
     await gotoFixture('input');
     await waitForBall(page);
     const box = page.locator('#reply');
@@ -3886,7 +3886,7 @@ test.describe('输入翻译：点圆点翻译', () => {
       });
 
     await box.click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     await expect(dot).toBeVisible();
     const idle = await look();
     expect(idle).toMatchObject({ state: null, animation: 'none' });
@@ -3896,16 +3896,16 @@ test.describe('输入翻译：点圆点翻译', () => {
     const busy = await look();
     expect(busy).toMatchObject({ state: 'busy', animation: 'pt-spin' });
     expect(busy.background).not.toBe(idle.background);
-    await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 });
+    await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     await expect.poll(look).toEqual(idle);
 
     // 放弃写回：进行中继续打字，译文进提示条，圆点回到常态
     await box.fill('');
-    await page.keyboard.type('早上好');
+    await page.keyboard.type('早上好'); // cjk-ok: 用例输入的文字
     await dot.click();
     await expect.poll(look).toMatchObject({ state: 'busy' });
-    await page.keyboard.type('呀');
-    await expect(page.locator(`${TOAST}[data-kind="info"]`)).toHaveText('【译】早上好', {
+    await page.keyboard.type('呀'); // cjk-ok: 用例输入的文字
+    await expect(page.locator(`${TOAST}[data-kind="info"]`)).toHaveText('【译】早上好', { // cjk-ok: 替身回显的译文
       timeout: 10_000,
     });
     await expect.poll(look).toEqual(idle);
@@ -3913,11 +3913,11 @@ test.describe('输入翻译：点圆点翻译', () => {
     // 失败：提示条报错，圆点回到常态（mock 的失败响应不走延迟，
     // 进行中的样子在上面两段已经断言过）
     await box.fill('');
-    await page.keyboard.type('坏掉的话');
+    await page.keyboard.type('坏掉的话'); // cjk-ok: 用例输入的文字
     await dot.click();
     await expect(page.locator(`${TOAST}[data-kind="error"]`)).toBeVisible({ timeout: 15_000 });
     await expect.poll(look).toEqual(idle);
-    await expect(box).toHaveValue('坏掉的话');
+    await expect(box).toHaveValue('坏掉的话'); // cjk-ok: 用例输入的原文，断言它没被改动
   });
 
   test('@core TC-E2E-113: 站点被拉黑时圆点不出现，打字、聚焦都零请求（#639；#649 起圆点不注册）', async ({
@@ -3931,12 +3931,12 @@ test.describe('输入翻译：点圆点翻译', () => {
     await waitForBall(page);
     const box = page.locator('#reply');
     await box.click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
 
     // #649：未获准入的站点上圆点根本不注册，而不是浮出来、点下去才提示
     await expect(page.locator('#pt-host-input-dot')).toHaveCount(0);
     expect(await queries()).toEqual([]);
-    await expect(box).toHaveValue('你好世界');
+    await expect(box).toHaveValue('你好世界'); // cjk-ok: 用例输入的原文，断言它没被改动
   });
 });
 
@@ -3956,10 +3956,10 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
     for (const id of ['#title', '#query']) {
       const box = page.locator(id);
       await box.click();
-      await page.keyboard.type('你好世界');
+      await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
       await expect(dot).toBeVisible();
       await dot.click();
-      await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 });
+      await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
       await expect(box).toBeFocused();
     }
 
@@ -3973,7 +3973,7 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
 
     // 多行文本框的行为不变
     await page.locator('#reply').click();
-    await page.keyboard.type('你好');
+    await page.keyboard.type('你好'); // cjk-ok: 用例输入的文字
     await expect(dot).toBeVisible();
   });
 
@@ -3990,7 +3990,7 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
 
     const secret = page.locator('#secret');
     await secret.click();
-    await page.keyboard.type('hunter22 我的密码');
+    await page.keyboard.type('hunter22 我的密码'); // cjk-ok: 用例输入的文字
     // 停手对齐（140ms）与提示的出现都早已过去
     await page.waitForTimeout(500);
     await expect(dot).toBeHidden();
@@ -4007,16 +4007,16 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
 
     await expect(dot).toBeHidden();
     expect((await requests()).google, '密码框不发任何翻译请求').toBe(0);
-    await expectNoToastFor(toasts, '密码框不弹任何提示');
-    await expect(secret).toHaveValue('hunter22 我的密码');
+    await expectNoToastFor(toasts, '密码框不弹任何提示'); // cjk-ok: 失败时打印的说明
+    await expect(secret).toHaveValue('hunter22 我的密码'); // cjk-ok: 用例输入的原文，断言它没被改动
 
     // 对照：同一页的普通文本框照常浮出圆点、点下去发一次请求 —— 上面的“没有”不是因为功能没起来
     const title = page.locator('#title');
     await title.click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     await expect(dot).toBeVisible();
     await dot.click();
-    await expect(title).toHaveValue('【译】你好世界', { timeout: 10_000 });
+    await expect(title).toHaveValue('【译】你好世界', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     expect((await requests()).google).toBe(1);
   });
 
@@ -4035,7 +4035,7 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
     const pass = page.locator('#login-pass');
 
     await pass.click();
-    await page.keyboard.type('hunter22 我的密码');
+    await page.keyboard.type('hunter22 我的密码'); // cjk-ok: 用例输入的文字
 
     // 点眼睛按钮：同一个框切成明文，焦点跟着到了按钮上
     await page.locator('#show-pass').click();
@@ -4044,7 +4044,7 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
     // 回到框里接着打字、点击、全选、按逐段翻译快捷键，都不该有任何反应
     await pass.click();
     await page.keyboard.press('End');
-    await page.keyboard.type(' 再加几个字');
+    await page.keyboard.type(' 再加几个字'); // cjk-ok: 用例输入的文字
     await pass.dblclick();
     await page.keyboard.press('ControlOrMeta+a');
     await page.keyboard.press('ControlOrMeta+Shift+d');
@@ -4078,16 +4078,16 @@ test.describe('输入翻译：单行文本框与搜索框', () => {
     expect.soft((await requests()).google, '切成明文的密码框不发任何翻译请求').toBe(0);
     // 取当下的条数，不用会重试的 toHaveCount(0)：状态提示 3 秒后自己消失，重试等得到 0
     expect.soft(await toasts.count(), '切成明文的密码框不弹任何提示').toBe(0);
-    await expect(pass).toHaveValue('hunter22 我的密码 再加几个字!!');
+    await expect(pass).toHaveValue('hunter22 我的密码 再加几个字!!'); // cjk-ok: 用例输入的原文，断言它没被改动
 
     // 对照：引擎恢复，同一页的普通文本框照常浮出圆点、点下去发一次请求 —— 上面的“没有”不是因为功能没起来
     await mockGoogle();
     const title = page.locator('#title');
     await title.click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     await expect(dot).toBeVisible();
     await dot.click();
-    await expect(title).toHaveValue('【译】你好世界', { timeout: 10_000 });
+    await expect(title).toHaveValue('【译】你好世界', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     expect((await requests()).google).toBe(1);
   });
 
@@ -4136,7 +4136,7 @@ test.describe('输入翻译：对方语言的判定链', () => {
     // #723：先认替身的译文前缀，没经过替身时报错直接指向替身或种子设置，
     // 而不是“译文不符”
     const viaStub = /^\[DL:/;
-    const stubLost = '没有经过 DeepL 替身：替身失效，或种子设置被改写';
+    const stubLost = '没有经过 DeepL 替身：替身失效，或种子设置被改写'; // cjk-ok: 失败时打印的说明
 
     await gotoFixture('input');
     // 整页翻译一次，引擎报告检测语言 JA
@@ -4146,10 +4146,10 @@ test.describe('输入翻译：对方语言的判定链', () => {
     // 夹具声明 lang="en"，但检测语言优先：译成日文
     const box = page.locator('#reply');
     await box.click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     await page.locator(DOT).click();
     await expect(box, `输入翻译${stubLost}`).toHaveValue(viaStub, { timeout: 10_000 });
-    await expect(box).toHaveValue('[DL:JA] 你好世界');
+    await expect(box).toHaveValue('[DL:JA] 你好世界'); // cjk-ok: 替身回显的译文
   });
 
   test('@core TC-E2E-161: popup 里临时选这一次的对方语言 → 主文档、已有的 iframe、之后才加载的 iframe 都按它翻译；选回“跟随设置”回到自动判定（#663）', async ({
@@ -4175,11 +4175,11 @@ test.describe('输入翻译：对方语言的判定链', () => {
       await box.fill('');
       await page.keyboard.type(text);
       await frame.locator(DOT).click();
-      await expect(box, `${boxSel} 译成 ${lang}`).toHaveValue(`【译】${text} [tl=${lang}]`, { timeout: 10_000 });
+      await expect(box, `${boxSel} 译成 ${lang}`).toHaveValue(`【译】${text} [tl=${lang}]`, { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     };
 
     // 选之前：自动判定，译成页面声明的英文
-    await translateIn(page, '#reply', '你好世界', 'en');
+    await translateIn(page, '#reply', '你好世界', 'en'); // cjk-ok: 用例输入的原文
 
     // popup 开在后台标签页里：它操作的“当前标签页”是前台的测试页
     const extId = new URL(serviceWorker.url()).host;
@@ -4192,8 +4192,8 @@ test.describe('输入翻译：对方语言的判定链', () => {
     await expect(select).toHaveValue('ja');
 
     // 主文档与已有的同域 iframe 都按日文翻译
-    await translateIn(page, '#reply', '早上好', 'ja');
-    await translateIn(same, '#child', '谢谢你', 'ja');
+    await translateIn(page, '#reply', '早上好', 'ja'); // cjk-ok: 用例输入的原文
+    await translateIn(same, '#child', '谢谢你', 'ja'); // cjk-ok: 用例输入的原文
 
     // 选完之后才加载的 iframe：启动时问主文档，同样按日文翻译
     await page.evaluate(() => {
@@ -4204,14 +4204,14 @@ test.describe('输入翻译：对方语言的判定链', () => {
     });
     const late = page.frameLocator('#late');
     await expect(late.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
-    await translateIn(late, '#child', '明天见', 'ja');
+    await translateIn(late, '#child', '明天见', 'ja'); // cjk-ok: 用例输入的原文
 
     // 选回“跟随设置”：三处都回到自动判定链，按页面声明译成英文
     await select.selectOption('auto');
     await expect(select).toHaveValue('auto');
-    await translateIn(page, '#reply', '晚安', 'en');
-    await translateIn(same, '#child', '再见', 'en');
-    await translateIn(late, '#child', '回头见', 'en');
+    await translateIn(page, '#reply', '晚安', 'en'); // cjk-ok: 用例输入的原文
+    await translateIn(same, '#child', '再见', 'en'); // cjk-ok: 用例输入的原文
+    await translateIn(late, '#child', '回头见', 'en'); // cjk-ok: 用例输入的原文
   });
 
   test('@core TC-E2E-162: 这一次的对方语言只管当前标签页当前打开的页面 —— 刷新、同标签页跳到别的页面、关闭标签页后都回到自动判定；别的标签页不受影响（#664）', async ({
@@ -4245,7 +4245,7 @@ test.describe('输入翻译：对方语言的判定链', () => {
       await select.selectOption('ja');
       await expect(select).toHaveValue('ja');
       // 选择确实生效了：之后几条“回到自动判定”才有意义
-      expect(await translateIn(p, '#reply', '早上好')).toBe('【译】早上好 [tl=ja]');
+      expect(await translateIn(p, '#reply', '早上好')).toBe('【译】早上好 [tl=ja]'); // cjk-ok: 替身回显的译文
     };
 
     // 另一个标签页先开着
@@ -4258,22 +4258,22 @@ test.describe('输入翻译：对方语言的判定链', () => {
     await chooseJa(page);
 
     // 1. 别的标签页不受影响：仍按自动判定译成英文，它的 popup 显示“跟随设置”
-    expect.soft(await translateIn(other, '#reply', '你好'), '别的标签页').toBe('【译】你好 [tl=en]');
+    expect.soft(await translateIn(other, '#reply', '你好'), '别的标签页').toBe('【译】你好 [tl=en]'); // cjk-ok: 替身回显的译文
     await openPopupFor(other);
     await expect.soft(select, '别的标签页的 popup').toHaveValue('auto');
     // 选完之后才新开的标签页同样不受影响
     const fresh = await context.newPage();
     await fresh.goto(fixtureUrl('input'), { waitUntil: 'domcontentloaded' });
     await waitForBall(fresh);
-    expect.soft(await translateIn(fresh, '#reply', '你好'), '之后新开的标签页').toBe('【译】你好 [tl=en]');
+    expect.soft(await translateIn(fresh, '#reply', '你好'), '之后新开的标签页').toBe('【译】你好 [tl=en]'); // cjk-ok: 替身回显的译文
     await fresh.close();
     // 本标签页的选择还在：别的标签页没有把它冲掉
-    expect(await translateIn(page, '#reply', '早上好')).toBe('【译】早上好 [tl=ja]');
+    expect(await translateIn(page, '#reply', '早上好')).toBe('【译】早上好 [tl=ja]'); // cjk-ok: 替身回显的译文
 
     // 2. 刷新：回到自动判定
     await page.reload();
     await waitForBall(page);
-    expect.soft(await translateIn(page, '#reply', '晚安'), '刷新之后').toBe('【译】晚安 [tl=en]');
+    expect.soft(await translateIn(page, '#reply', '晚安'), '刷新之后').toBe('【译】晚安 [tl=en]'); // cjk-ok: 替身回显的译文
     await openPopupFor(page);
     await expect.soft(select, '刷新之后的 popup').toHaveValue('auto');
 
@@ -4281,7 +4281,7 @@ test.describe('输入翻译：对方语言的判定链', () => {
     await chooseJa(page);
     await page.goto(fixtureUrl('input-frames'), { waitUntil: 'domcontentloaded' });
     await waitForBall(page);
-    expect.soft(await translateIn(page, '#reply', '谢谢'), '跳到别的页面之后').toBe('【译】谢谢 [tl=en]');
+    expect.soft(await translateIn(page, '#reply', '谢谢'), '跳到别的页面之后').toBe('【译】谢谢 [tl=en]'); // cjk-ok: 替身回显的译文
     await openPopupFor(page);
     await expect.soft(select, '跳到别的页面之后的 popup').toHaveValue('auto');
 
@@ -4292,12 +4292,12 @@ test.describe('输入翻译：对方语言的判定链', () => {
     const reopened = await context.newPage();
     await reopened.goto(url, { waitUntil: 'domcontentloaded' });
     await waitForBall(reopened);
-    expect.soft(await translateIn(reopened, '#reply', '再见'), '关闭标签页再打开之后').toBe('【译】再见 [tl=en]');
+    expect.soft(await translateIn(reopened, '#reply', '再见'), '关闭标签页再打开之后').toBe('【译】再见 [tl=en]'); // cjk-ok: 替身回显的译文
     await openPopupFor(reopened);
     await expect.soft(select, '关闭标签页再打开之后的 popup').toHaveValue('auto');
 
     // 别的标签页从头到尾没被动过
-    expect(await translateIn(other, '#reply', '回头见')).toBe('【译】回头见 [tl=en]');
+    expect(await translateIn(other, '#reply', '回头见')).toBe('【译】回头见 [tl=en]'); // cjk-ok: 替身回显的译文
   });
 
   test('@core TC-E2E-166: 单页应用用 pushState 换到别的路径，这一次的对方语言回到自动判定，主文档与 iframe 都是；同一路径上只换查询参数或 hash 不算（#836）', async ({
@@ -4339,22 +4339,22 @@ test.describe('输入翻译：对方语言的判定链', () => {
     await openPopup();
     await select.selectOption('ja');
     await expect(select).toHaveValue('ja');
-    expect(await translateIn(page, '#reply', '早上好')).toBe('【译】早上好 [tl=ja]');
-    expect(await translateIn(same, '#child', '谢谢你')).toBe('【译】谢谢你 [tl=ja]');
+    expect(await translateIn(page, '#reply', '早上好')).toBe('【译】早上好 [tl=ja]'); // cjk-ok: 替身回显的译文
+    expect(await translateIn(same, '#child', '谢谢你')).toBe('【译】谢谢你 [tl=ja]'); // cjk-ok: 替身回显的译文
 
     // 1. 反向：同一路径上只换查询参数、只换 hash —— 还是这一页，选择不重置
     const path = new URL(page.url()).pathname;
     await pushState(`${path}?sort=new`);
     await pushState(`${path}?sort=new#comment-5`);
     await page.evaluate(() => history.replaceState({}, '', `${location.pathname}?sort=top`));
-    expect.soft(await translateIn(page, '#reply', '你好'), '只换查询参数与 hash：主文档').toBe('【译】你好 [tl=ja]');
-    expect.soft(await translateIn(same, '#child', '你好'), '只换查询参数与 hash：iframe').toBe('【译】你好 [tl=ja]');
+    expect.soft(await translateIn(page, '#reply', '你好'), '只换查询参数与 hash：主文档').toBe('【译】你好 [tl=ja]'); // cjk-ok: 替身回显的译文
+    expect.soft(await translateIn(same, '#child', '你好'), '只换查询参数与 hash：iframe').toBe('【译】你好 [tl=ja]'); // cjk-ok: 替身回显的译文
 
     // 2. pushState 换到别的路径：主文档与 iframe 都回到自动判定，按页面声明译成英文
     await pushState('/some/other/route');
     expect(new URL(page.url()).pathname).toBe('/some/other/route');
-    expect.soft(await translateIn(page, '#reply', '晚安'), '换路径之后：主文档').toBe('【译】晚安 [tl=en]');
-    expect.soft(await translateIn(same, '#child', '再见'), '换路径之后：iframe').toBe('【译】再见 [tl=en]');
+    expect.soft(await translateIn(page, '#reply', '晚安'), '换路径之后：主文档').toBe('【译】晚安 [tl=en]'); // cjk-ok: 替身回显的译文
+    expect.soft(await translateIn(same, '#child', '再见'), '换路径之后：iframe').toBe('【译】再见 [tl=en]'); // cjk-ok: 替身回显的译文
     // popup 也显示“跟随设置”
     await openPopup();
     await expect.soft(select, '换路径之后：popup').toHaveValue('auto');
@@ -4362,12 +4362,12 @@ test.describe('输入翻译：对方语言的判定链', () => {
     // 3. 换路径之后再选一次照常生效：重置的是这一次的选择，不是把功能关掉
     await select.selectOption('ja');
     await expect(select).toHaveValue('ja');
-    expect(await translateIn(same, '#child', '明天见')).toBe('【译】明天见 [tl=ja]');
+    expect(await translateIn(same, '#child', '明天见')).toBe('【译】明天见 [tl=ja]'); // cjk-ok: 替身回显的译文
     // 后退回原来的路径（popstate）同样算换路径
     await page.goBack();
     await expect.poll(() => new URL(page.url()).pathname).toBe(path);
-    expect.soft(await translateIn(page, '#reply', '回头见'), '后退之后：主文档').toBe('【译】回头见 [tl=en]');
-    expect.soft(await translateIn(same, '#child', '回头见'), '后退之后：iframe').toBe('【译】回头见 [tl=en]');
+    expect.soft(await translateIn(page, '#reply', '回头见'), '后退之后：主文档').toBe('【译】回头见 [tl=en]'); // cjk-ok: 替身回显的译文
+    expect.soft(await translateIn(same, '#child', '回头见'), '后退之后：iframe').toBe('【译】回头见 [tl=en]'); // cjk-ok: 替身回显的译文
   });
 });
 
@@ -4385,7 +4385,7 @@ test.describe('领域的临时选择：单页应用换路径（#847）', () => {
         'pt-domains': {
           user: [
             {
-              id: 'user:e2e-manual', name: '手选', targetLang: 'zh-CN', sites: [],
+              id: 'user:e2e-manual', name: '手选', targetLang: 'zh-CN', sites: [], // cjk-ok: 种子数据：领域名
               origin: 'user', terms: [{ source: 'paragraph', noTranslate: true }],
             },
           ],
@@ -4522,14 +4522,14 @@ test.describe('输入翻译：与页面级闸门共用识别模块之后（#869�
     const box = page.locator('#reply');
 
     // 页面内容是中文。若把它当成对方的语言，对方就是 zh，写中文会被判成同语言
-    await write(page, '这个问题我们明天再讨论');
-    await expect(box).toHaveValue('【译】这个问题我们明天再讨论 [tl=en]', { timeout: 10_000 });
+    await write(page, '这个问题我们明天再讨论'); // cjk-ok: 用例输入的文字
+    await expect(box).toHaveValue('【译】这个问题我们明天再讨论 [tl=en]', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
 
     // 判定链跟着声明走
     await page.evaluate(() => document.documentElement.setAttribute('lang', 'ja'));
-    await write(page, '早上好');
-    await expect(box).toHaveValue('【译】早上好 [tl=ja]', { timeout: 10_000 });
-    expect((await requests()).queries).toEqual(['这个问题我们明天再讨论', '早上好']);
+    await write(page, '早上好'); // cjk-ok: 用例输入的文字
+    await expect(box).toHaveValue('【译】早上好 [tl=ja]', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
+    expect((await requests()).queries).toEqual(['这个问题我们明天再讨论', '早上好']); // cjk-ok: 替身收到的原文
   });
 
   test('@core TC-E2E-173: 写的已经是对方的语言 → 按写的那段文字判，不按页面内容：正文中文、声明 en 的页面上写英文，不替换、零请求并提示（#869）', async ({
@@ -4610,23 +4610,23 @@ test.describe('输入翻译：iframe 里的输入框（#672）', () => {
       await box.fill('');
       await typeIn(name, boxSel, text);
       await dots[name].click();
-      await expect(box, `${name} 译成 ${lang}`).toHaveValue(`【译】${text} [tl=${lang}]`, { timeout: 10_000 });
+      await expect(box, `${name} 译成 ${lang}`).toHaveValue(`【译】${text} [tl=${lang}]`, { timeout: 10_000 }); // cjk-ok: 替身回显的译文
       // 点完焦点还在这个框里，别的 frame 的圆点仍不可见
       await expect(box).toBeFocused();
       expect(await visibleDots(), `${name} 翻译之后`).toEqual([name]);
     };
 
     // 主文档先写半句，圆点浮出
-    await typeIn('main', '#reply', '主文档里写了一半');
+    await typeIn('main', '#reply', '主文档里写了一半'); // cjk-ok: 用例输入的文字
     // 焦点换到同域 iframe：主文档的圆点不再显示；翻译完成
-    await translateIn('same', '#child', '你好世界', 'en');
+    await translateIn('same', '#child', '你好世界', 'en'); // cjk-ok: 用例输入的原文
     // 焦点换到跨域 iframe：同域 iframe 与主文档的圆点都不显示；翻译完成
-    await translateIn('cross', '#child', '谢谢你', 'en');
+    await translateIn('cross', '#child', '谢谢你', 'en'); // cjk-ok: 用例输入的原文
     // 回到主文档：只有主文档的圆点，主文档那半句没被动过
     await page.locator('#reply').click();
     await expect(dots.main).toBeVisible();
     expect(await visibleDots(), '回到主文档').toEqual(['main']);
-    await expect(page.locator('#reply')).toHaveValue('主文档里写了一半');
+    await expect(page.locator('#reply')).toHaveValue('主文档里写了一半'); // cjk-ok: 用例输入的原文，断言它没被改动
     // 焦点离开所有输入框：一个圆点都没有
     await page.locator('h1').click();
     await expect(dots.main).toBeHidden();
@@ -4642,8 +4642,8 @@ test.describe('输入翻译：iframe 里的输入框（#672）', () => {
     await expect(select).toBeEnabled({ timeout: 10_000 });
     await select.selectOption('ja');
     await expect(select).toHaveValue('ja');
-    await translateIn('cross', '#child', '明天见', 'ja');
-    await translateIn('same', '#child', '早上好', 'ja');
+    await translateIn('cross', '#child', '明天见', 'ja'); // cjk-ok: 用例输入的原文
+    await translateIn('same', '#child', '早上好', 'ja'); // cjk-ok: 用例输入的原文
   });
 
   test('@core TC-E2E-167: 没有网址的 iframe 里也有圆点 —— about:blank 写出的 <body contenteditable> 编辑区（TinyMCE 的形状）圆点贴文字末尾、点下去完成翻译，扩展的节点不进编辑内容；srcdoc 里的文本框同样可用；整页翻译不动编辑区（#838）', async ({
@@ -4662,7 +4662,7 @@ test.describe('输入翻译：iframe 里的输入框（#672）', () => {
     await expect(blank.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
     await editor.click();
     await page.keyboard.press('ControlOrMeta+a');
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     const dot = blank.locator(DOT);
     await expect(dot).toBeVisible();
 
@@ -4691,10 +4691,10 @@ test.describe('输入翻译：iframe 里的输入框（#672）', () => {
     // 扩展的节点挂在 <html> 下、body 之外：编辑器按 body 取稿，取到的只有用户的文字
     const editorHtml = () => editor.evaluate((b) => b.innerHTML);
     expect(await editorHtml()).not.toMatch(/pt-host|data-pt/);
-    expect(await editor.evaluate((b) => b.textContent)).toBe('你好世界');
+    expect(await editor.evaluate((b) => b.textContent)).toBe('你好世界'); // cjk-ok: 用例输入的原文，断言它没被改动
 
     await dot.click();
-    await expect(editor).toHaveText('【译】你好世界 [tl=en]', { timeout: 10_000 });
+    await expect(editor).toHaveText('【译】你好世界 [tl=en]', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
     expect(await editorHtml()).not.toMatch(/pt-host|data-pt/);
 
     // ── srcdoc 的 iframe 里的文本框 ──
@@ -4702,9 +4702,9 @@ test.describe('输入翻译：iframe 里的输入框（#672）', () => {
     await expect(srcdoc.locator('html')).toHaveClass(/pt-style-/, { timeout: 30_000 });
     const box = srcdoc.locator('#child');
     await box.click();
-    await page.keyboard.type('谢谢你');
+    await page.keyboard.type('谢谢你'); // cjk-ok: 用例输入的文字
     await srcdoc.locator(DOT).click();
-    await expect(box).toHaveValue('【译】谢谢你 [tl=en]', { timeout: 10_000 });
+    await expect(box).toHaveValue('【译】谢谢你 [tl=en]', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
 
     // ── 整页翻译（popup 广播到全部 frame）：srcdoc 里的段落出译文，编辑区一个字不动 ──
     const draft = await editorHtml();
@@ -4763,7 +4763,7 @@ test.describe('输入翻译：iframe 里的输入框（#672）', () => {
     await expect(para).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
     const source = (await para.locator('.pt-origin').textContent())!.trim();
     // 替身回显目标语言：整页翻译译成设置里的目标语言
-    await expect(para.locator('.pt-trans')).toHaveText(`【译】${source} [tl=zh-CN]`);
+    await expect(para.locator('.pt-trans')).toHaveText(`【译】${source} [tl=zh-CN]`); // cjk-ok: 替身回显的译文
     expect(await toggleAll()).toBe('restored');
     await expect(frame.locator('[data-pt]')).toHaveCount(0, { timeout: 10_000 });
     expect(await para.evaluate((el) => el.outerHTML)).toBe(before);
@@ -4771,9 +4771,9 @@ test.describe('输入翻译：iframe 里的输入框（#672）', () => {
     // 输入翻译：文本框里有圆点，点下去框里换成译文（对方语言按 frame 的声明 en）
     const box = frame.locator('#child');
     await box.click();
-    await page.keyboard.type('谢谢你');
+    await page.keyboard.type('谢谢你'); // cjk-ok: 用例输入的文字
     await frame.locator(DOT).click();
-    await expect(box).toHaveValue('【译】谢谢你 [tl=en]', { timeout: 10_000 });
+    await expect(box).toHaveValue('【译】谢谢你 [tl=en]', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
   }
 
   test('@core TC-E2E-185: sandbox 的 srcdoc iframe（不同源）也注入 —— 整页翻译翻到里面的正文并能还原，文本框有圆点（#849）', async ({
@@ -4824,7 +4824,7 @@ test.describe('输入翻译：站点名单与总开关', () => {
   /** 在输入框里打字，断言圆点没注册。 */
   async function expectNoDot(page: import('@playwright/test').Page) {
     await page.locator('#reply').click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     // 留出内容脚本响应 focusin / input 的时间
     await page.waitForTimeout(300);
     await expect(page.locator('#pt-host-input-dot')).toHaveCount(0);
@@ -4848,7 +4848,7 @@ test.describe('输入翻译：站点名单与总开关', () => {
     await gotoFixture('input');
     await waitForBall(page);
     await page.locator('#reply').click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     await expect(page.locator(DOT)).toBeVisible();
   });
 
@@ -4866,7 +4866,7 @@ test.describe('输入翻译：站点名单与总开关', () => {
     await patchStored(serviceWorker, { siteList: { mode: 'blacklist', list: [] } });
     await expect(page.locator(DOT)).toBeVisible();
     await page.locator(DOT).click();
-    await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 });
+    await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
 
     // 再拉黑：即刻消失
     await patchStored(serviceWorker, { siteList: { mode: 'blacklist', list: ['localhost'] } });
@@ -4900,32 +4900,32 @@ test.describe('输入翻译：送翻后内容变动不写回', () => {
 
     // 点圆点后接着打字：刚打的字不被吞掉，译文进提示条
     await box.click();
-    await page.keyboard.type('你好世界');
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
     await page.locator(DOT).click();
-    await page.keyboard.type('，再见');
-    await expect(page.locator(`${TOAST}[data-kind="info"]`)).toHaveText('【译】你好世界', {
+    await page.keyboard.type('，再见'); // cjk-ok: 用例输入的文字
+    await expect(page.locator(`${TOAST}[data-kind="info"]`)).toHaveText('【译】你好世界', { // cjk-ok: 替身回显的译文
       timeout: 10_000,
     });
-    await expect(box).toHaveValue('你好世界，再见');
+    await expect(box).toHaveValue('你好世界，再见'); // cjk-ok: 用例输入的原文，断言它没被改动
     await expect(box).toBeFocused();
 
     // 点圆点后焦点换到另一个框：两个框都不动，译文进提示条
     await box.fill('');
-    await page.keyboard.type('早上好');
+    await page.keyboard.type('早上好'); // cjk-ok: 用例输入的文字
     await page.locator(DOT).click();
     await note.click();
-    await page.keyboard.type('另一段');
-    await expect(page.locator(`${TOAST}[data-kind="info"]`)).toHaveText('【译】早上好', {
+    await page.keyboard.type('另一段'); // cjk-ok: 用例输入的文字
+    await expect(page.locator(`${TOAST}[data-kind="info"]`)).toHaveText('【译】早上好', { // cjk-ok: 替身回显的译文
       timeout: 10_000,
     });
-    await expect(box).toHaveValue('早上好');
-    await expect(note).toHaveValue('另一段');
+    await expect(box).toHaveValue('早上好'); // cjk-ok: 用例输入的原文，断言它没被改动
+    await expect(note).toHaveValue('另一段'); // cjk-ok: 用例输入的原文，断言它没被改动
     await expect(note).toBeFocused();
 
     // 内容与焦点都没动：照常写回
     await box.click();
     await page.locator(DOT).click();
-    await expect(box).toHaveValue('【译】早上好', { timeout: 10_000 });
+    await expect(box).toHaveValue('【译】早上好', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
   });
 });
 
@@ -5092,7 +5092,7 @@ test.describe('超长段落按 br 切行', () => {
       })),
     );
     expect(pairs.map((p) => p.origin)).toEqual(lines);
-    expect(pairs.map((p) => p.trans)).toEqual(lines.map((l) => `【译】${l}`));
+    expect(pairs.map((p) => p.trans)).toEqual(lines.map((l) => `【译】${l}`)); // cjk-ok: 替身回显的译文
 
     // 排版：译文另起一行、紧跟在它那行原文下面；下一行原文紧跟在上一行译文下面，
     // 中间不多出空行
@@ -5176,12 +5176,12 @@ test.describe('超长段落按 br 切行', () => {
 
     const first = await translateRound();
     expect(first).toHaveLength(48);
-    await restoreRound('第一次还原');
+    await restoreRound('第一次还原'); // cjk-ok: 失败时打印的说明
 
     // 再翻一次：切分与译文与第一次完全相同
     const second = await translateRound();
     expect(second).toEqual(first);
-    await restoreRound('第二次还原');
+    await restoreRound('第二次还原'); // cjk-ok: 失败时打印的说明
   });
 
   test('@core TC-E2E-165: 整段一个单元的 br 段落，送翻时 br 作为换行带出去，译文在同样的位置换行 —— 4 行短诗与 #768 那种链接多的 30 行段落；还原后逐字节回到原样（#840）', async ({
@@ -5223,7 +5223,7 @@ test.describe('超长段落按 br 切行', () => {
         }
         return { lines, brs: el.querySelectorAll('br').length };
       });
-    const withPrefix = (lines: string[]) => lines.map((l, i) => (i === 0 ? `【译】${l}` : l));
+    const withPrefix = (lines: string[]) => lines.map((l, i) => (i === 0 ? `【译】${l}` : l)); // cjk-ok: 替身回显的译文
     expect(await translated(poem)).toEqual({ lines: withPrefix(poemLines), brs: 3 });
     expect(await translated(threads)).toEqual({ lines: withPrefix(threadLines), brs: 29 });
 
@@ -5261,7 +5261,7 @@ test.describe('标记密集的段落（#724）', () => {
     await translateAndWait(page);
     await expect(page.locator('#after')).toHaveAttribute('data-pt', 'done');
     await expect(dense).toHaveAttribute('data-pt', 'done');
-    await expect(dense.locator('.pt-trans')).toHaveText(/^【译】In this period she worked with/);
+    await expect(dense.locator('.pt-trans')).toHaveText(/^【译】In this period she worked with/); // cjk-ok: 替身回显的译文
     // 链接与引用角标都还在原文里
     await expect(dense.locator('.pt-origin a[rel="mw:WikiLink"]')).toHaveCount(26);
     await expect(dense.locator('.pt-origin sup.reference')).toHaveCount(8);
@@ -5290,7 +5290,7 @@ test.describe('标记密集的段落（#724）', () => {
     await expect(paraBtn).toBeVisible({ timeout: 5_000 });
     await paraBtn.click();
     await expect(dense).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
-    await expect(dense.locator('.pt-trans')).toHaveText(/^【译】In this period she worked with/);
+    await expect(dense.locator('.pt-trans')).toHaveText(/^【译】In this period she worked with/); // cjk-ok: 替身回显的译文
 
     // 只翻这一段
     for (const id of ['#title', '#intro', '#long', '#after']) {
@@ -5340,12 +5340,12 @@ test.describe('标记密集的段落（#724）', () => {
     }
     // 标记密集的段落：译文是整段正文，链接与引用角标都还在原文里
     const career = page.locator('#dense-career');
-    await expect(career.locator('.pt-trans')).toHaveText(/^【译】Valcourt began her career with small parts in French cinema/);
+    await expect(career.locator('.pt-trans')).toHaveText(/^【译】Valcourt began her career with small parts in French cinema/); // cjk-ok: 替身回显的译文
     await expect(career.locator('.pt-origin a[rel="mw:WikiLink"]')).toHaveCount(26);
     await expect(career.locator('.pt-origin sup.reference')).toHaveCount(9);
-    await expect(page.locator('#dense-early .pt-trans')).toHaveText(/^【译】Valcourt was born in Lyon/);
-    await expect(page.locator('#dense-recognition .pt-trans')).toHaveText(/^【译】By the middle of the decade/);
-    await expect(page.locator('#plain .pt-trans')).toHaveText(/^【译】Valcourt has spoken only rarely/);
+    await expect(page.locator('#dense-early .pt-trans')).toHaveText(/^【译】Valcourt was born in Lyon/); // cjk-ok: 替身回显的译文
+    await expect(page.locator('#dense-recognition .pt-trans')).toHaveText(/^【译】By the middle of the decade/); // cjk-ok: 替身回显的译文
+    await expect(page.locator('#plain .pt-trans')).toHaveText(/^【译】Valcourt has spoken only rarely/); // cjk-ok: 替身回显的译文
 
     // 文字真正超长的段落仍然不翻
     await expect(page.locator('#long')).not.toHaveAttribute('data-pt', /./);
@@ -5398,7 +5398,7 @@ test.describe('标记密集的段落（#724）', () => {
     await expect(paraBtn).toBeVisible({ timeout: 5_000 });
     await paraBtn.click();
     await expect(career).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
-    await expect(career.locator('.pt-trans')).toHaveText(/^【译】Valcourt began her career with small parts in French cinema/);
+    await expect(career.locator('.pt-trans')).toHaveText(/^【译】Valcourt began her career with small parts in French cinema/); // cjk-ok: 替身回显的译文
     for (const id of paragraphs.filter((x) => x !== '#dense-career')) {
       await expect(page.locator(id), id).not.toHaveAttribute('data-pt', /./);
     }
@@ -5471,7 +5471,7 @@ test.describe('划词翻译的提示（#726）', () => {
 
     await dragSelect(page, 'p:nth-of-type(2)');
     const toast = page.locator(TOAST);
-    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     const text = await toast.textContent();
 
     // 改动前固定 3 秒就消失；现在一句话的译文停留得更久
@@ -5505,7 +5505,7 @@ test.describe('划词翻译的提示（#726）', () => {
     await expect(toast).toHaveText(translating);
 
     // 译文到达后它不再挂着
-    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     await expect(toast.locator('.pt-toast-spinner')).toHaveCount(0);
   });
 
@@ -5541,7 +5541,7 @@ test.describe('划词翻译的提示（#726）', () => {
 
     await dragSelect(page, 'p:nth-of-type(2)');
     const toast = page.locator(TOAST);
-    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
 
     const seq = (await page.evaluate(() => (window as unknown as { __ptSeq: string[] }).__ptSeq))
       .map((e) => e.split('|'))
@@ -5552,7 +5552,7 @@ test.describe('划词翻译的提示（#726）', () => {
     expect(seq[0]).toEqual(['1', 'same', 'spin', translating]);
     const last = seq[seq.length - 1]!;
     expect(last[2]).toBe('');
-    expect(last[3]).toContain('【译】Another paragraph');
+    expect(last[3]).toContain('【译】Another paragraph'); // cjk-ok: 替身回显的译文
     // 中间没有别的状态：只有等待态与译文两种
     expect(seq.every(([, , spin, text]) => (spin === 'spin' && text === translating) || text === last[3])).toBe(true);
   });
@@ -5568,7 +5568,7 @@ test.describe('划词翻译的提示（#726）', () => {
     const toast = page.locator(TOAST);
 
     await translateSelectionText(serviceWorker, long);
-    await expect(toast).toContainText('【译】The quick brown fox', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】The quick brown fox', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     const wide = await measureToast(page);
     // 不横着铺开：宽度不到视口的一半，文字折成多行
     expect(wide.width).toBeLessThan(wide.viewport / 2);
@@ -5579,7 +5579,7 @@ test.describe('划词翻译的提示（#726）', () => {
     // 窄窗口：左右都不出视口
     await page.setViewportSize({ width: 320, height: 640 });
     await translateSelectionText(serviceWorker, long);
-    await expect(toast).toContainText('【译】The quick brown fox', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】The quick brown fox', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     const narrow = await measureToast(page);
     expect(narrow.left).toBeGreaterThanOrEqual(0);
     expect(narrow.right).toBeLessThanOrEqual(narrow.viewport);
@@ -5608,7 +5608,7 @@ test.describe('划词翻译的提示（#726）', () => {
     const closeLabel = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastClose'));
 
     await dragSelect(page, 'p:nth-of-type(2)');
-    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     const close = toast.getByRole('button', { name: closeLabel });
     await expect(close).toBeVisible();
     // 内容类最短也要停 5 秒；点了之后 1 秒内就没了
@@ -5635,7 +5635,7 @@ test.describe('划词翻译的提示（#726）', () => {
 
     // 一句话的译文，按内容类的下限停留（短于 6 秒）
     await translateSelectionText(serviceWorker, 'Hello world');
-    await expect(toast).toContainText('【译】Hello world', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】Hello world', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     await toast.hover();
     // 悬停期间过了它本应消失的时刻仍在
     await page.waitForTimeout(6_500);
@@ -5675,7 +5675,7 @@ test.describe('划词翻译的提示（#726）', () => {
     // 特别长的译文：提示不从屏幕下方长到上方
     const long = 'The quick brown fox jumps over the lazy dog while the translation keeps going. '.repeat(40);
     await translateSelectionText(serviceWorker, long);
-    await expect(toast).toContainText('【译】The quick brown fox', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】The quick brown fox', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     // 等弹出动画（pt-pop 从 0.8 倍缩放起）放完再量，否则量到的是缩放中的尺寸
     await toast.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
     const size = await toast.evaluate((el) => {
@@ -5701,7 +5701,7 @@ test.describe('划词翻译的提示（#726）', () => {
     // 没超过上限：没有滚动条
     await page.mouse.move(5, 5);
     await translateSelectionText(serviceWorker, 'Hello world');
-    await expect(toast).toContainText('【译】Hello world', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】Hello world', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     const short = await box();
     expect(short.scrollHeight).toBeLessThanOrEqual(short.clientHeight);
 
@@ -5804,14 +5804,14 @@ test.describe('划词翻译的提示（#726）', () => {
     await dragSelect(page, 'p:nth-of-type(2)');
     const selected = await page.evaluate(() => window.getSelection()!.toString());
     await page.mouse.move(5, 5);
-    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     await expect(toast).toHaveCount(0, { timeout: 70_000 });
     const drag = await summarize();
 
     // 右键菜单，同一段文字
     await resetSeq();
     await contextMenuClick(serviceWorker, selected);
-    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     await expect(toast).toHaveCount(0, { timeout: 70_000 });
     const ctx = await summarize();
 
@@ -5824,7 +5824,7 @@ test.describe('划词翻译的提示（#726）', () => {
 
     // 右键入口的译文：悬停不计时，移开后重新停满一整轮
     await contextMenuClick(serviceWorker, selected);
-    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     await toast.hover();
     await page.waitForTimeout(ctx.lifetime + 1_000);
     await expect(toast).toBeVisible();
@@ -5835,13 +5835,13 @@ test.describe('划词翻译的提示（#726）', () => {
 
     // 右键入口的译文：点关闭立即消失
     await contextMenuClick(serviceWorker, selected);
-    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     await toast.getByRole('button', { name: closeLabel }).click();
     await expect(toast).toHaveCount(0, { timeout: 1_000 });
 
     // 键盘也能关（#743）：Tab 到关闭按钮，回车
     await contextMenuClick(serviceWorker, selected);
-    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     const onClose = () =>
       page.evaluate(
         () => document.getElementById('pt-host-toast')?.shadowRoot?.activeElement?.classList.contains('pt-toast-close') === true,
@@ -5887,7 +5887,7 @@ test.describe('划词翻译的提示（#726）', () => {
     // 右键菜单入口不动页面焦点：译文弹出时焦点仍在输入框里（#743）
     const text = 'Another paragraph with some words to translate.';
     await contextMenuClick(serviceWorker, text);
-    await expect(toast).toContainText('【译】', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     await expect.poll(() => toast.evaluate((el) => el.querySelector('.pt-toast-spinner') === null)).toBe(true);
     expect(await inputFocused()).toBe(true);
     expect(await onClose()).toBe(false);
@@ -5900,7 +5900,7 @@ test.describe('划词翻译的提示（#726）', () => {
 
     // 再来一次，Tab 到关闭按钮：过了本应消失的时刻仍在
     await contextMenuClick(serviceWorker, text);
-    await expect(toast).toContainText('【译】', { timeout: 20_000 });
+    await expect(toast).toContainText('【译】', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     for (let i = 0; i < 20 && !(await onClose()); i++) await page.keyboard.press('Tab');
     expect(await onClose()).toBe(true);
     await page.waitForTimeout(lifetime + 1_500);
@@ -5970,7 +5970,7 @@ test.describe('页面级闸门（#777）', () => {
         }
       }
     }, quote);
-    await expect(page.locator(`${TOAST}[data-purpose="content"]`)).toContainText(`【译】${quote}`, {
+    await expect(page.locator(`${TOAST}[data-purpose="content"]`)).toContainText(`【译】${quote}`, { // cjk-ok: 替身回显的译文
       timeout: 20_000,
     });
     expect((await requests()).google).toBe(1);
@@ -5999,7 +5999,7 @@ test.describe('页面级闸门（#777）', () => {
       const el = page.locator(id);
       await expect(el).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
       const source = await el.locator('.pt-origin').textContent();
-      await expect(el.locator('.pt-trans')).toHaveText(`【译】${source!.trim()}`);
+      await expect(el.locator('.pt-trans')).toHaveText(`【译】${source!.trim()}`); // cjk-ok: 替身回显的译文
     }
     await expect(ball).toHaveAttribute('data-state', 'done');
     // 中文段落不插译文、不被标记为已翻译，一个字不动
@@ -6043,7 +6043,7 @@ test.describe('页面级闸门（#777）', () => {
       const el = page.locator(id);
       await expect(el).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
       const source = await el.locator('.pt-origin').textContent();
-      await expect(el.locator('.pt-trans')).toHaveText(`【译】${source!.trim()}`);
+      await expect(el.locator('.pt-trans')).toHaveText(`【译】${source!.trim()}`); // cjk-ok: 替身回显的译文
     }
     await expect(ball).toHaveAttribute('data-state', 'done');
     expect((await requests()).google).toBeGreaterThan(0);
@@ -6205,7 +6205,7 @@ test.describe('页面级闸门（#777）', () => {
       await expect(el).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
       const source = (await el.locator('.pt-origin').textContent())!.trim();
       expect(source).toMatch(/^[A-Z]/);
-      await expect(el.locator('.pt-trans')).toHaveText(`【译】${source}`);
+      await expect(el.locator('.pt-trans')).toHaveText(`【译】${source}`); // cjk-ok: 替身回显的译文
     }
     await expect(ball).toHaveAttribute('data-state', 'done');
     // 闸门放行了：请求确实发出去，没有弹“本页已经是你的目标语言”
@@ -6322,7 +6322,7 @@ test.describe('页面级闸门（#777）', () => {
         }
       }
     }, quote);
-    await expect(page.locator(`${TOAST}[data-purpose="content"]`)).toContainText(`【译】${quote}`, {
+    await expect(page.locator(`${TOAST}[data-purpose="content"]`)).toContainText(`【译】${quote}`, { // cjk-ok: 替身回显的译文
       timeout: 20_000,
     });
     expect((await requests()).google).toBe(1);
@@ -6360,12 +6360,12 @@ test.describe('页面级闸门的外文块判据：三种形状（#893，父 #88
     await ball.click();
 
     // 闸门没有拦：那条说明在这段时间里一次都没出现过（#832）
-    await expectNoToastFor(page.locator(TOAST).filter({ hasText: message }), '不弹“已经是目标语言”');
+    await expectNoToastFor(page.locator(TOAST).filter({ hasText: message }), '不弹“已经是目标语言”'); // cjk-ok: 失败时打印的说明
     for (const id of ['#en1', '#en2', '#en3', '#en4']) {
       const el = page.locator(id);
       await expect(el).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
       const source = await el.locator('.pt-origin').textContent();
-      await expect(el.locator('.pt-trans')).toHaveText(`【译】${source!.trim()}`);
+      await expect(el.locator('.pt-trans')).toHaveText(`【译】${source!.trim()}`); // cjk-ok: 替身回显的译文
     }
     await expect(ball).toHaveAttribute('data-state', 'done');
     expect((await requests()).google).toBeGreaterThan(0);
@@ -6419,7 +6419,7 @@ test.describe('页面级闸门的外文块判据：三种形状（#893，父 #88
 
     // 闸门放行：送翻了，也没弹“本页已经是目标语言”
     await expect.poll(async () => (await requests()).google, { timeout: 20_000 }).toBeGreaterThan(0);
-    await expectNoToastFor(page.locator(TOAST).filter({ hasText: gateMessage }), '闸门放行，不弹闸门的说明');
+    await expectNoToastFor(page.locator(TOAST).filter({ hasText: gateMessage }), '闸门放行，不弹闸门的说明'); // cjk-ok: 失败时打印的说明
     // 纯中文的单元由单元级兜底拦下：不插译文、不标记已翻译
     for (const sel of ['#toc', '#lang-list > li:first-child']) {
       const el = page.locator(sel);
@@ -6489,7 +6489,7 @@ test.describe('闸门只管整页翻译：判据换了三轮之后，逐段与�
     await paraBtn.click();
 
     await expect(quote).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
-    await expect(quote.locator('.pt-trans')).toHaveText(`【译】${source}`);
+    await expect(quote.locator('.pt-trans')).toHaveText(`【译】${source}`); // cjk-ok: 替身回显的译文
     expect((await requests()).google).toBe(1);
     // 只翻了这一段：其余部分一个字不动
     expect(await others.evaluateAll((els) => els.map((el) => el.outerHTML))).toEqual(othersBefore);
@@ -6510,7 +6510,7 @@ test.describe('闸门只管整页翻译：判据换了三轮之后，逐段与�
     await translateSelection(serviceWorker, quote);
 
     const contentToast = page.locator(`${TOAST}[data-purpose="content"]`);
-    await expect(contentToast).toHaveText(`【译】${quote}`, { timeout: 20_000 });
+    await expect(contentToast).toHaveText(`【译】${quote}`, { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     await expect(contentToast).not.toContainText(pageMessage);
     expect((await requests()).google).toBe(1);
     expect(await content()).toBe(before);
@@ -6539,9 +6539,9 @@ test.describe('闸门只管整页翻译：判据换了三轮之后，逐段与�
     const toast = page.locator(TOAST);
     await expect(toast).toHaveText(selectionMessage, { timeout: 20_000 });
     await expect(toast).toHaveAttribute('data-purpose', 'status');
-    await expectNoToastFor(toast.filter({ hasText: pageMessage }), '不弹闸门的“本页已经是目标语言”');
+    await expectNoToastFor(toast.filter({ hasText: pageMessage }), '不弹闸门的“本页已经是目标语言”'); // cjk-ok: 失败时打印的说明
     // 原文没有被当成译文弹出来
-    await expectNoToastFor(page.locator(`${TOAST}[data-purpose="content"]`), '不把原文当译文弹出');
+    await expectNoToastFor(page.locator(`${TOAST}[data-purpose="content"]`), '不把原文当译文弹出'); // cjk-ok: 失败时打印的说明
     expect((await requests()).google).toBe(1);
     expect(await content()).toBe(before);
   });
@@ -6583,7 +6583,7 @@ test.describe('整页翻译结束后告知采集时跳过的段落（#727）', (
     // 正常页面：从整页翻译完成起持续采样，任何提示都没出现过（#761）
     await gotoFixture('basic');
     await translateAndWait(page);
-    await expectNoToastFor(toast, '正常页面上不该有跳过提示');
+    await expectNoToastFor(toast, '正常页面上不该有跳过提示'); // cjk-ok: 失败时打印的说明
 
     // 带三个 iframe、每个 frame 各有一段超长段落：popup 的整页翻译广播到全部
     // frame，只有主文档弹一条，数字是主文档自己的 1，不跨 frame 汇总（#762）
