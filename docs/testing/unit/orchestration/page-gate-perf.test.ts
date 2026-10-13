@@ -6,16 +6,23 @@
  * DOM 加只读采集，识别是替身（记下喂给它的文字与被调用的时刻），假消息层
  * 记下第一个请求发出的时刻。
  *
- * 只断言相对关系与量级，不写死毫秒数（#818：写死数字的性能用例迟早偶发）：
+ * 只断言量级，不量毫秒（#818、#924）：
  * - 喂给识别器的文字量不随页面变大：取样有 CONTENT_SAMPLE_MAX_CHARS 上限，
  *   段落数翻 16 倍，识别器拿到的字符数一个不多。识别是纯 CPU 操作，开销跟着
  *   输入长度走，输入不变它就不随页面线性增长（Chromium 151 实测：4000 字符
  *   约 3.7ms，整页十几万字符约 8.7ms，识别器内部自己也截断）
  * - 取样那一段（点下去到识别被调用）与随后整页采集到第一个请求那一段同一
- *   量级：两段都要把页面走一遍，取样不该比翻译本身的准备慢出几倍
- * - 页面放大 16 倍，取样那一段的耗时增长不超过翻译本身准备那一段增长的两倍
- *   （两段都随页面线性增长；比增长倍数而不比绝对值，机器忙闲两边一起受影响）
- * 耗时打出来看趋势。
+ *   量级：两段都要把页面走一遍，取样走过的元素与读布局的次数不比翻译本身的
+ *   准备多
+ * - 页面放大 16 倍，取样那一段走过的元素与读布局的次数至多跟着放大 16 倍，
+ *   不超过线性
+ * 走过的元素数的是遍历回调被调用的次数，读布局数的是 getBoundingClientRect
+ * 与 getComputedStyle —— 与 #737 的 countSerializations 同一做法：只记次数、
+ * 不拦截，行为不变。
+ *
+ * #924：原先这两条是毫秒比值。全量 pnpm test 时 vitest 并行跑一百多个文件，
+ * 几毫秒量级的基准被别的 worker 抢走 CPU，比值就放大几倍，偶发失败。次数
+ * 与机器忙闲无关。毫秒数仍打出来看趋势，不进断言。
  *
  * #892 之后，取样阶段除了全页样本，还把按文字长度排在最前面的若干个单元
  * 各自送去识别。全页样本仍是第一次调用；单元那几次的个数与每次的文字量
@@ -31,6 +38,45 @@ import {
 } from '~/src/orchestration/page-gate';
 import { collect } from '~/src/dom/walker';
 import { mockAllBoundingRects } from '../../setup';
+
+/** 走过的元素与读布局的累计次数（只记次数，不改行为）。 */
+const counts = { visits: 0, layout: 0 };
+
+// 遍历回调：采集入口经它访问每一个元素，包一层计数
+vi.mock('~/src/dom/shadow-walk', async (importOriginal) => {
+  const real = await importOriginal<typeof import('~/src/dom/shadow-walk')>();
+  return {
+    ...real,
+    walkShadowTree: ((root, visit, opts) =>
+      real.walkShadowTree(
+        root,
+        (el) => {
+          counts.visits++;
+          return visit(el);
+        },
+        opts,
+      )) as typeof real.walkShadowTree,
+  };
+});
+
+/** 读布局计数：getBoundingClientRect 与 getComputedStyle，在 mockAllBoundingRects 之后包上。 */
+function countLayoutReads(): () => void {
+  const proto = HTMLElement.prototype as unknown as { getBoundingClientRect: () => DOMRect };
+  const rect = proto.getBoundingClientRect;
+  proto.getBoundingClientRect = function (this: HTMLElement) {
+    counts.layout++;
+    return rect.call(this);
+  };
+  const style = window.getComputedStyle;
+  window.getComputedStyle = function (this: Window, ...args: Parameters<typeof style>) {
+    counts.layout++;
+    return style.apply(this, args);
+  } as typeof style;
+  return () => {
+    proto.getBoundingClientRect = rect;
+    window.getComputedStyle = style;
+  };
+}
 
 const SIZES = [200, 800, 3200] as const;
 
@@ -56,6 +102,14 @@ interface Measure {
   gateMs: number;
   /** 识别返回到第一个请求发出：整页采集、判定、分批 */
   prepMs: number;
+  /** 取样那一段走过的元素数（遍历回调被调用的次数） */
+  gateVisits: number;
+  /** 取样那一段读布局的次数 */
+  gateLayout: number;
+  /** 准备那一段走过的元素数 */
+  prepVisits: number;
+  /** 准备那一段读布局的次数 */
+  prepLayout: number;
 }
 
 async function measure(n: number): Promise<Measure> {
@@ -64,13 +118,17 @@ async function measure(n: number): Promise<Measure> {
     collect(document.body, undefined, mode).map((el, i) => ({ text: el.textContent!, ctx: i }));
   let detectAt = 0;
   let sentAt = 0;
+  let atDetect = { ...counts };
+  let atSend = { ...counts };
   const inputs: string[] = [];
   const send = vi.fn(async (req: { texts: string[] }) => {
+    if (!sentAt) atSend = { ...counts };
     sentAt ||= performance.now();
     return { ok: true, data: { translations: req.texts.map((t) => `[译] ${t}`) } };
   });
   const detect = vi.fn(async (sample: string): Promise<ContentLang> => {
     // 第一次调用是全页样本：取样那一段到这里为止
+    if (!detectAt) atDetect = { ...counts };
     detectAt ||= performance.now();
     inputs.push(sample);
     return { reliable: true, languages: [{ lang: 'en', percentage: 100 }] };
@@ -83,6 +141,8 @@ async function measure(n: number): Promise<Measure> {
     detectContentLang: detect,
   } as Parameters<typeof createOrchestrator>[0]);
   orch.start();
+  counts.visits = 0;
+  counts.layout = 0;
   const start = performance.now();
   const result = await orch.togglePage(collectItems, 'auto', 'zh-CN');
   orch.stop();
@@ -94,10 +154,14 @@ async function measure(n: number): Promise<Measure> {
     unitMaxChars: Math.max(0, ...units.map((t) => t.length)),
     gateMs: detectAt - start,
     prepMs: sentAt - detectAt,
+    gateVisits: atDetect.visits,
+    gateLayout: atDetect.layout,
+    prepVisits: atSend.visits - atDetect.visits,
+    prepLayout: atSend.layout - atDetect.layout,
   };
 }
 
-/** 同一页量三次取中位，压一压 jsdom 的抖动。 */
+/** 同一页量三次取中位：毫秒数压一压 jsdom 的抖动（只打印）；次数三次本来就一样。 */
 async function median(n: number): Promise<Measure> {
   const runs = [await measure(n), await measure(n), await measure(n)];
   const mid = <K extends keyof Measure>(k: K) => runs.map((r) => r[k]).sort((a, b) => a - b)[1]!;
@@ -107,11 +171,18 @@ async function median(n: number): Promise<Measure> {
     unitMaxChars: mid('unitMaxChars'),
     gateMs: mid('gateMs'),
     prepMs: mid('prepMs'),
+    gateVisits: mid('gateVisits'),
+    gateLayout: mid('gateLayout'),
+    prepVisits: mid('prepVisits'),
+    prepLayout: mid('prepLayout'),
   };
 }
 
 let restoreRects: (() => void) | undefined;
+let restoreLayout: (() => void) | undefined;
 afterEach(() => {
+  restoreLayout?.();
+  restoreLayout = undefined;
   restoreRects?.();
   restoreRects = undefined;
   document.body.innerHTML = '';
@@ -120,14 +191,15 @@ afterEach(() => {
 describe('取样与识别的开销不随页面变大而失控（#867）', () => {
   test('段落数翻 16 倍：喂给识别器的文字量不变，取样那一段与翻译本身的准备同一量级、增长不超过线性', async () => {
     restoreRects = mockAllBoundingRects();
+    restoreLayout = countLayoutReads();
     await measure(SIZES[0]); // 预热，第一次跑含 JIT 编译
     const results: Measure[] = [];
     for (const n of SIZES) results.push(await median(n));
     results.forEach((r, i) =>
       console.log(
         `#867 ${SIZES[i]} 段：识别输入 ${r.sampleChars} 字符，单元识别 ${r.unitCalls} 次，` +
-          `取样 ${r.gateMs.toFixed(1)}ms，` +
-          `之后到第一个请求 ${r.prepMs.toFixed(1)}ms`,
+          `取样 ${r.gateMs.toFixed(1)}ms（走过 ${r.gateVisits} 个元素、读布局 ${r.gateLayout} 次），` +
+          `之后到第一个请求 ${r.prepMs.toFixed(1)}ms（走过 ${r.prepVisits} 个元素、读布局 ${r.prepLayout} 次）`,
       ),
     );
 
@@ -141,12 +213,20 @@ describe('取样与识别的开销不随页面变大而失控（#867）', () => 
     }
     expect(new Set(results.map((r) => r.unitCalls)).size).toBe(1);
 
-    // 取样那一段与随后的准备同一量级（实测约 1 比 1）
-    const big = results.at(-1)!;
-    expect(big.gateMs).toBeLessThan(big.prepMs * 3);
-
-    // 页面放大 16 倍，取样那一段的增长不超过准备那一段增长的两倍（实测约 1 比 1）
+    // 取样那一段与随后的准备同一量级：走过的元素、读布局的次数都不比准备多。
+    // 两段都确实把页面走了一遍，不是空转
     const small = results[0]!;
-    expect(big.gateMs / small.gateMs).toBeLessThan((big.prepMs / small.prepMs) * 2);
+    const big = results.at(-1)!;
+    for (const r of results) {
+      expect(r.gateVisits).toBeGreaterThan(0);
+      expect(r.gateLayout).toBeGreaterThan(0);
+      expect(r.gateVisits).toBeLessThanOrEqual(r.prepVisits);
+      expect(r.gateLayout).toBeLessThanOrEqual(r.prepLayout);
+    }
+
+    // 页面放大 16 倍，取样那一段走过的元素与读布局的次数至多放大 16 倍
+    const scale = SIZES.at(-1)! / SIZES[0];
+    expect(big.gateVisits).toBeLessThanOrEqual(small.gateVisits * scale);
+    expect(big.gateLayout).toBeLessThanOrEqual(small.gateLayout * scale);
   }, 120_000);
 });
