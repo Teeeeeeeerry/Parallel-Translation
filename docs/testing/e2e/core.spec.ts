@@ -6048,3 +6048,115 @@ test.describe('页面级闸门的外文块判据：三种形状（#893，父 #88
     expect((await requests()).google).toBe(0);
   });
 });
+
+test.describe('闸门只管整页翻译：判据换了三轮之后，逐段与划词照旧（#868，父 #831）', () => {
+  // 页面级闸门只管整页翻译（#794）。判据从语言声明换成本地内容识别（#843），
+  // 又加了外文块（#891）与“最长的几个单元”（#903）两级，这条分工没在新判据下
+  // 验过。三条都在同一种页面上：先点整页翻译，确认闸门在真实识别器下命中
+  // （零请求、弹说明），再走逐段或划词。引擎把中文原样还回来、外文加前缀，
+  // 单元级兜底（#783）才有东西可拦
+  const TOAST = '#pt-host-toast .pt-toast';
+
+  /** 点整页翻译，确认闸门命中：弹出“已经是目标语言”、零请求、悬浮球是未翻译态。 */
+  async function gateHits(
+    page: import('@playwright/test').Page,
+    serviceWorker: import('@playwright/test').Worker,
+    requests: () => Promise<{ google: number }>,
+  ): Promise<string> {
+    const ball = await waitForBall(page);
+    const message = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastPageSameLanguage'));
+    await ball.click();
+    await expect(page.locator(TOAST)).toHaveText(message, { timeout: 10_000 });
+    await expect(ball).toHaveAttribute('data-state', 'idle');
+    expect((await requests()).google).toBe(0);
+    return message;
+  }
+
+  /** 让各标签页的 content script 划词翻译这段文字（与右键菜单同一条消息）。 */
+  const translateSelection = (serviceWorker: import('@playwright/test').Worker, text: string) =>
+    serviceWorker.evaluate(async (t: string) => {
+      for (const tab of await chrome.tabs.query({})) {
+        try {
+          await chrome.tabs.sendMessage(tab.id!, { type: 'pt:translate-selection', text: t });
+        } catch {
+          // 扩展页等没有 content script 的标签页
+        }
+      }
+    }, text);
+
+  test('@core TC-E2E-178: 闸门命中的页面上，逐段翻译对外文段落照常翻译，只翻这一段（#868）', async ({
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ to: 'zh-CN', showParagraphBtn: true });
+    await mockGoogle({ keepCjk: true });
+    await gotoFixture('same-language');
+    const requests = await mockRequests();
+    await gateHits(page, serviceWorker, requests);
+    const others = page.locator('#content > :not(#quote)');
+    const othersBefore = await others.evaluateAll((els) => els.map((el) => el.outerHTML));
+
+    const quote = page.locator('#quote');
+    const source = (await quote.textContent())!.trim();
+    await quote.hover();
+    const paraBtn = page.locator('.pt-para-btn');
+    await expect(paraBtn).toBeVisible({ timeout: 5_000 });
+    await paraBtn.click();
+
+    await expect(quote).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
+    await expect(quote.locator('.pt-trans')).toHaveText(`【译】${source}`);
+    expect((await requests()).google).toBe(1);
+    // 只翻了这一段：其余部分一个字不动
+    expect(await others.evaluateAll((els) => els.map((el) => el.outerHTML))).toEqual(othersBefore);
+  });
+
+  test('@core TC-E2E-179: 闸门命中的页面上，划词对选中的外文照常翻译，弹出译文（#868）', async ({
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ to: 'zh-CN' });
+    await mockGoogle({ keepCjk: true });
+    await gotoFixture('same-language');
+    const requests = await mockRequests();
+    const pageMessage = await gateHits(page, serviceWorker, requests);
+    const content = () => page.locator('#content').evaluate((el) => el.outerHTML);
+    const before = await content();
+
+    const quote = (await page.locator('#quote').textContent())!.trim();
+    await translateSelection(serviceWorker, quote);
+
+    const contentToast = page.locator(`${TOAST}[data-purpose="content"]`);
+    await expect(contentToast).toHaveText(`【译】${quote}`, { timeout: 20_000 });
+    await expect(contentToast).not.toContainText(pageMessage);
+    expect((await requests()).google).toBe(1);
+    expect(await content()).toBe(before);
+  });
+
+  test('@core TC-E2E-180: 闸门命中的页面上，划词选中目标语言的文字 —— 走单元级兜底那条说明（#787），不是闸门的提示（#868）', async ({
+    page, serviceWorker, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ to: 'zh-CN' });
+    await mockGoogle({ keepCjk: true });
+    await gotoFixture('same-language');
+    const requests = await mockRequests();
+    const pageMessage = await gateHits(page, serviceWorker, requests);
+    const selectionMessage = await serviceWorker.evaluate(() =>
+      chrome.i18n.getMessage('toastSelectionSameAsSource'),
+    );
+    expect(selectionMessage).not.toBe(pageMessage);
+    const content = () => page.locator('#content').evaluate((el) => el.outerHTML);
+    const before = await content();
+
+    const tip = (await page.locator('#tip').textContent())!.trim();
+    await translateSelection(serviceWorker, tip);
+
+    // 划词照常送翻（闸门不管划词），译文与原文相同，单元级兜底换成说明：
+    // 状态类，同一时刻只有这一条，闸门那条说明被它替换掉
+    const toast = page.locator(TOAST);
+    await expect(toast).toHaveText(selectionMessage, { timeout: 20_000 });
+    await expect(toast).toHaveAttribute('data-purpose', 'status');
+    await expectNoToastFor(toast.filter({ hasText: pageMessage }), '不弹闸门的“本页已经是目标语言”');
+    // 原文没有被当成译文弹出来
+    await expectNoToastFor(page.locator(`${TOAST}[data-purpose="content"]`), '不把原文当译文弹出');
+    expect((await requests()).google).toBe(1);
+    expect(await content()).toBe(before);
+  });
+});
