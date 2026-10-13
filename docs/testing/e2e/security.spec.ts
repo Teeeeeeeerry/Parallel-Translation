@@ -16,9 +16,9 @@ test.describe('安全验证 @security', () => {
     // 验证非法 CSS 注入被阻止（模拟 validateCustomCss 逻辑）
     const results = await page.evaluate(() => {
       const FORBIDDEN = [
-        { pattern: /[{}]/, msg: '花括号' },
+        { pattern: /[{}]/, msg: '花括号' }, // cjk-ok: 用例自己的失败说明
         { pattern: /@import/i, msg: '@import' },
-        { pattern: /<\/?style/i, msg: 'style 标签' },
+        { pattern: /<\/?style/i, msg: 'style 标签' }, // cjk-ok: 用例自己的失败说明
         { pattern: /javascript:/i, msg: 'javascript:' },
         { pattern: /expression\s*\(/i, msg: 'expression()' },
       ];

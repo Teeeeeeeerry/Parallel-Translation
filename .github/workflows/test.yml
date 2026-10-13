@@ -36,6 +36,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec wxt prepare
       - run: pnpm typecheck
+      # #814：端到端 spec 里写死的中日韩字面量要有放行注释。完整端到端只在定时
+      # 与手动触发时跑，界面文案写死成中文要到那时才红，所以在 PR 这一级就拦
+      - run: pnpm check:e2e-cjk
       - run: pnpm test
       # #134：Level 1 强制执行覆盖率门槛（test 不带 --coverage，门槛不会生效）
       - run: pnpm test:coverage

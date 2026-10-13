@@ -135,6 +135,18 @@ export async function setSettings(context: BrowserContext, patch: object) {
 }
 ```
 
+### 界面文案断言不写死中文（#814）
+
+端到端在 CI 跑的是英文界面。界面文案的期望值一律在页面里用 `chrome.i18n.getMessage` 算，不要写死。`pnpm check:e2e-cjk`（`scripts/check-e2e-cjk.ts`，接在 PR 的 CI 上）扫描 `docs/testing/e2e` 下的每个 `*.spec.ts`：含中日韩字符的字符串、模板与正则字面量，要在字面量结束的那一行末尾写放行注释与理由：
+
+```typescript
+await expect(box).toHaveValue('【译】你好世界'); // cjk-ok: 替身回显的译文
+```
+
+- 放行只对这一行生效，没有整文件豁免；冒号后面空着不算放行。
+- 不用放行的只有注释，以及按语法位置就不和界面比较的参数：测试标题、`test.skip` 等的原因、`expect(值, 说明)` 的说明、`console` 与 `new Error` 的消息。
+- 常见理由：替身回显的译文、用例输入的文字、种子数据（领域名、术语）、夹具正文、失败时打印的说明。
+
 ## 二、fixture 页面
 
 `e2e/fixtures/` 下的静态页面，每个针对一类 DOM 特征：

@@ -37,7 +37,7 @@ test.describe('性能基准 @perf', () => {
         while (p.firstChild) origin.appendChild(p.firstChild);
         const trans = document.createElement('span');
         trans.className = 'pt-trans';
-        trans.textContent = '译';
+        trans.textContent = '译'; // cjk-ok: 模拟译文节点的内容
         p.appendChild(origin);
         p.appendChild(trans);
 

@@ -82,7 +82,7 @@ test.describe('故障切换 @extended', () => {
     // 批次重试（~4s）后出现 error toast（文案随扩展语言环境，只断言语义）
     const toast = page.locator('#pt-host-toast .pt-toast[data-kind="error"]');
     await expect(toast).toBeVisible({ timeout: 40_000 });
-    await expect(toast).toHaveText(/失败|failed/i);
+    await expect(toast).toHaveText(/失败|failed/i); // cjk-ok: 中英两种界面都认的语义断言
     const stats = await serviceWorker.evaluate(() => (self as any).getE2EMockStats());
     expect(stats.failServed).toBeGreaterThan(0);
   });
@@ -403,7 +403,7 @@ test.describe('边界情况 @extended', () => {
     await paraBtn.click();
     await expect(lastP).toHaveAttribute('data-pt', 'done', { timeout: 20_000 });
     expect(await queries()).toContain('A final ⟦TM0⟧ to round out the basic test fixture.');
-    await expect(lastP.locator('.pt-trans')).toContainText('【译】A final paragraph');
+    await expect(lastP.locator('.pt-trans')).toContainText('【译】A final paragraph'); // cjk-ok: 替身回显的译文
 
     // 划词翻译：选中排除区域（列表）里的文字，照样翻译，术语生效
     const text = 'Second item that should also be translated';
@@ -416,7 +416,7 @@ test.describe('边界情况 @extended', () => {
         }
       }
     }, text);
-    await expect(page.locator('#pt-host-toast .pt-toast')).toContainText(`【译】${text}`, {
+    await expect(page.locator('#pt-host-toast .pt-toast')).toContainText(`【译】${text}`, { // cjk-ok: 替身回显的译文
       timeout: 20_000,
     });
     expect(await queries()).toContain('Second ⟦TM0⟧ that should also be translated');
@@ -467,7 +467,7 @@ test.describe('边界情况 @extended', () => {
     await page.mouse.move(box.x + box.width - 2, y, { steps: 5 });
     await page.mouse.up();
     await page.keyboard.up('Alt');
-    await expect(frame.locator('#pt-host-toast .pt-toast')).toContainText('【译】', { timeout: 20_000 });
+    await expect(frame.locator('#pt-host-toast .pt-toast')).toContainText('【译】', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
     expect(await queries()).toEqual(['One more ⟦TM0⟧ selected inside the frame.']);
 
     // 全页翻译：与 popup 同路径，广播到全部 frame，iframe 也翻译。
@@ -494,10 +494,10 @@ test.describe('设置页：翻译领域 @extended', () => {
       chrome.storage.local.set({
         'pt-domains': {
           user: [{
-            id: 'user:e2e', name: '法律/合同', targetLang: 'zh-CN', sites: [], origin: 'user',
+            id: 'user:e2e', name: '法律/合同', targetLang: 'zh-CN', sites: [], origin: 'user', // cjk-ok: 用户数据：领域名或术语，不随界面语言变
             terms: [
-              { source: 'terms, conditions', target: '条款，条件' },
-              { source: 'the "Act"', target: '“该法”' },
+              { source: 'terms, conditions', target: '条款，条件' }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
+              { source: 'the "Act"', target: '“该法”' }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
               { source: 'Esq.', noTranslate: true },
             ],
           }],
@@ -511,7 +511,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     // 提示文案随浏览器界面语言（CI 是英文）
     const msg = (key: string, subs: string[] = []) =>
       page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
-    const terms = page.locator('.pt-domain-item', { hasText: '法律/合同' }).locator('.pt-domain-terms');
+    const terms = page.locator('.pt-domain-item', { hasText: '法律/合同' }).locator('.pt-domain-terms'); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     await terms.locator('summary').click();
     // #527：记下被释放的临时链接。Firefox 的下载异步开始，触发下载时就释放会下载失败
     await page.evaluate(() => {
@@ -530,11 +530,11 @@ test.describe('设置页：翻译领域 @extended', () => {
     ]);
     expect(await page.evaluate(() => (window as unknown as { __ptRevoked: string[] }).__ptRevoked)).toEqual([]);
     // 文件名里不能出现路径分隔符
-    expect(download.suggestedFilename()).toBe('parallel-translation-terms-法律_合同.csv');
+    expect(download.suggestedFilename()).toBe('parallel-translation-terms-法律_合同.csv'); // cjk-ok: 导出文件名里的用户领域名
     expect(fs.readFileSync(await download.path(), 'utf-8')).toBe(
       '\uFEFFsource,target,noTranslate\r\n' +
-        '"terms, conditions",条款，条件,false\r\n' +
-        '"the ""Act""",“该法”,false\r\n' +
+        '"terms, conditions",条款，条件,false\r\n' + // cjk-ok: 导出 CSV 里的种子术语
+        '"the ""Act""",“该法”,false\r\n' + // cjk-ok: 导出 CSV 里的种子术语
         'Esq.,,true\r\n',
     );
     await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsExported'));
@@ -547,9 +547,9 @@ test.describe('设置页：翻译领域 @extended', () => {
       chrome.storage.local.set({
         'pt-domains': {
           user: [{
-            id: 'user:e2e', name: '法律', targetLang: 'zh-CN', sites: [], origin: 'user',
+            id: 'user:e2e', name: '法律', targetLang: 'zh-CN', sites: [], origin: 'user', // cjk-ok: 用户数据：领域名或术语，不随界面语言变
             terms: [
-              { source: 'tort', target: '侵权' },
+              { source: 'tort', target: '侵权' }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
               { source: 'Esq.', noTranslate: true },
             ],
           }],
@@ -571,17 +571,17 @@ test.describe('设置页：翻译领域 @extended', () => {
     // 提示文案随浏览器界面语言（CI 是英文）
     const msg = (key: string, subs: string[] = []) =>
       page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
-    const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms');
+    const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms'); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     await terms.locator('summary').click();
 
     await terms.locator('input[type="file"]').setInputFiles(
-      csv('TORT,侵权行为,false\r\n"terms, conditions",条款，条件,false\r\n'),
+      csv('TORT,侵权行为,false\r\n"terms, conditions",条款，条件,false\r\n'), // cjk-ok: 导入的 CSV 内容
     );
     await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsImported', ['2']));
     expect((await stored()).user[0].terms).toEqual([
-      { source: 'TORT', target: '侵权行为' },
+      { source: 'TORT', target: '侵权行为' }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
       { source: 'Esq.', noTranslate: true },
-      { source: 'terms, conditions', target: '条款，条件' },
+      { source: 'terms, conditions', target: '条款，条件' }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     ]);
     // 编辑区随之刷新
     const sources = terms.locator('.pt-term-source');
@@ -591,16 +591,16 @@ test.describe('设置页：翻译领域 @extended', () => {
     ]);
 
     // 内置领域：写入叠加层
-    const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' }).locator('.pt-domain-terms');
+    const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' }).locator('.pt-domain-terms'); // cjk-ok: 内置领域的名字，数据不随界面语言变
     await builtin.locator('summary').click();
-    await builtin.locator('input[type="file"]').setInputFiles(csv('monorepo,单仓库,false\r\n'));
+    await builtin.locator('input[type="file"]').setInputFiles(csv('monorepo,单仓库,false\r\n')); // cjk-ok: 导入的 CSV 内容
     await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsImported', ['1']));
     expect((await stored()).builtin['builtin:software-zh-CN'].terms).toEqual([
-      { source: 'monorepo', target: '单仓库' },
+      { source: 'monorepo', target: '单仓库' }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     ]);
 
     // 表格里有未保存的修改时，导入前先确认；取消则不导入
-    await terms.locator('.pt-term-target').first().fill('改了没保存');
+    await terms.locator('.pt-term-target').first().fill('改了没保存'); // cjk-ok: 用例输入的文字
     let message = '';
     page.once('dialog', (d) => {
       message = d.message();
@@ -608,7 +608,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     });
     await terms.locator('.pt-domain-terms-import').click();
     expect(message).toBe(await msg('domainTermsImportDiscard'));
-    await expect(terms.locator('.pt-term-target').first()).toHaveValue('改了没保存');
+    await expect(terms.locator('.pt-term-target').first()).toHaveValue('改了没保存'); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
   });
 
   test('TC-E2E-81: 导入带错误行的术语 CSV → 列出行号与原因、其他行照常导入；5000 条术语导入后可保存，通用设置照常保存（#404）', async ({
@@ -617,7 +617,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     await serviceWorker.evaluate(() =>
       chrome.storage.local.set({
         'pt-domains': {
-          user: [{ id: 'user:e2e', name: '法律', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }],
+          user: [{ id: 'user:e2e', name: '法律', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }], // cjk-ok: 用户数据：领域名或术语，不随界面语言变
           builtin: {},
         },
       }),
@@ -636,26 +636,26 @@ test.describe('设置页：翻译领域 @extended', () => {
     // 提示文案随浏览器界面语言（CI 是英文）
     const msg = (key: string, subs: string[] = []) =>
       page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
-    const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms');
+    const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms'); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     await terms.locator('summary').click();
 
     // 错误行跳过，行号按文件里的物理行（表头是第 1 行）
     await terms.locator('input[type="file"]').setInputFiles(
-      csv('tort,侵权,false\r\nonly-two,列\r\n,被告,false\r\nEsq.,,true\r\n'),
+      csv('tort,侵权,false\r\nonly-two,列\r\n,被告,false\r\nEsq.,,true\r\n'), // cjk-ok: 导入的 CSV 内容
     );
     await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsImportedSkipped', ['2', '2']));
     await expect(terms.locator('.pt-domain-terms-error')).toHaveText(
       `${await msg('domainTermsSkipColumnsHeader', ['3', '3'])}\n${await msg('domainTermsSkipMissingSource', ['4'])}`,
     );
     expect((await stored()).user[0].terms).toEqual([
-      { source: 'tort', target: '侵权' },
+      { source: 'tort', target: '侵权' }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
       { source: 'Esq.', noTranslate: true },
     ]);
 
     // 5000 条：导入、再整表保存
     const N = 5000;
     await terms.locator('input[type="file"]').setInputFiles(
-      csv(Array.from({ length: N }, (_, i) => `term-${i},译法 ${i},false\r\n`).join('')),
+      csv(Array.from({ length: N }, (_, i) => `term-${i},译法 ${i},false\r\n`).join('')), // cjk-ok: 导入的 CSV 内容
     );
     await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsImported', [String(N)]), { timeout: 30_000 });
     await expect(terms.locator('.pt-domain-terms-error')).toBeHidden();
@@ -678,7 +678,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     await serviceWorker.evaluate(() =>
       chrome.storage.local.set({
         'pt-domains': {
-          user: [{ id: 'user:e2e', name: '我的术语表', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }],
+          user: [{ id: 'user:e2e', name: '我的术语表', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }], // cjk-ok: 用户数据：领域名或术语，不随界面语言变
           builtin: {},
         },
       }),
@@ -695,7 +695,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="domains"]');
-    const terms = page.locator('.pt-domain-item', { hasText: '我的术语表' }).locator('.pt-domain-terms');
+    const terms = page.locator('.pt-domain-item', { hasText: '我的术语表' }).locator('.pt-domain-terms'); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     await terms.locator('summary').click();
 
     // 提示文案随浏览器界面语言（CI 是英文）
@@ -712,14 +712,14 @@ test.describe('设置页：翻译领域 @extended', () => {
       await msg('domainTermsSkipColumnsHeader', ['4', '2']),
     );
     expect((await stored()).user[0].terms).toEqual([
-      { source: 'API', target: '接口' },
-      { source: 'timeout', target: '超时' },
+      { source: 'API', target: '接口' }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
+      { source: 'timeout', target: '超时' }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     ]);
     // 编辑区显示正确的中文
     const targets = terms.locator('.pt-term-target');
     await expect(targets).toHaveCount(2);
     expect(await targets.evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual([
-      '接口', '超时',
+      '接口', '超时', // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     ]);
   });
 
@@ -755,44 +755,44 @@ test.describe('设置页：翻译领域 @extended', () => {
 
     // 名称框留空：用文件名命名，目标语言用卡片里选的
     const lang = await page.locator('#pt-domain-lang-select').inputValue();
-    await file.setInputFiles({ name: '法律术语.csv', mimeType: 'text/csv', buffer: gbk });
-    await expect(toast).toHaveText(await msg('domainImportedNewSkipped', ['法律术语', '2', '1']));
+    await file.setInputFiles({ name: '法律术语.csv', mimeType: 'text/csv', buffer: gbk }); // cjk-ok: 导入的文件名
+    await expect(toast).toHaveText(await msg('domainImportedNewSkipped', ['法律术语', '2', '1'])); // cjk-ok: getMessage 的替换参数，用户数据
     await expect(items).toHaveCount(2);
     const created = items.last();
-    await expect(created.locator('.pt-domain-name')).toHaveText('法律术语');
+    await expect(created.locator('.pt-domain-name')).toHaveText('法律术语'); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     // 新领域的术语编辑区已展开，显示导入的术语与跳过的行
     const terms = created.locator('.pt-domain-terms');
     await expect(terms).toHaveJSProperty('open', true);
     const targets = terms.locator('.pt-term-target');
     await expect(targets).toHaveCount(2);
-    expect(await targets.evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual(['原告', '侵权']);
+    expect(await targets.evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual(['原告', '侵权']); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     await expect(terms.locator('.pt-domain-terms-error')).toHaveText(await msg('domainTermsSkipColumnsHeader', ['4', '2']));
     const user = (await stored()).user;
     expect(user).toHaveLength(1);
     expect(user[0]).toMatchObject({
-      name: '法律术语',
+      name: '法律术语', // cjk-ok: 用户数据：领域名或术语，不随界面语言变
       targetLang: lang,
       sites: [],
       terms: [
-        { source: 'plaintiff', target: '原告' },
-        { source: 'tort', target: '侵权' },
+        { source: 'plaintiff', target: '原告' }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
+        { source: 'tort', target: '侵权' }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
       ],
     });
 
     // 名称框填了名字：用名称框里的名字，成功后清空名称框
-    await nameInput.fill('合同');
-    await file.setInputFiles({ name: 'contract.csv', mimeType: 'text/csv', buffer: Buffer.from('consideration,对价\r\n', 'utf-8') });
-    await expect(toast).toHaveText(await msg('domainImportedNew', ['合同', '1']));
+    await nameInput.fill('合同'); // cjk-ok: 用例输入的文字
+    await file.setInputFiles({ name: 'contract.csv', mimeType: 'text/csv', buffer: Buffer.from('consideration,对价\r\n', 'utf-8') }); // cjk-ok: 导入的 CSV 内容
+    await expect(toast).toHaveText(await msg('domainImportedNew', ['合同', '1'])); // cjk-ok: getMessage 的替换参数，用户数据
     await expect(items).toHaveCount(3);
-    await expect(items.last().locator('.pt-domain-name')).toHaveText('合同');
+    await expect(items.last().locator('.pt-domain-name')).toHaveText('合同'); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     await expect(nameInput).toHaveValue('');
 
     // 没有可导入的术语：不新建，跳过的原因列在卡片里，名称留在输入框
-    await nameInput.fill('空的');
+    await nameInput.fill('空的'); // cjk-ok: 用例输入的文字
     await file.setInputFiles({ name: 'bad.csv', mimeType: 'text/csv', buffer: Buffer.from('a,b,c,d\r\n', 'utf-8') });
     await expect(toast).toHaveText(await msg('domainImportNewNone'));
     await expect(page.locator('#pt-domain-import-new-error')).toHaveText(await msg('domainTermsSkipColumnsTwoOrThree', ['1']));
-    await expect(nameInput).toHaveValue('空的');
+    await expect(nameInput).toHaveValue('空的'); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     await expect(items).toHaveCount(3);
     expect((await stored()).user).toHaveLength(2);
   });
@@ -803,7 +803,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     await serviceWorker.evaluate(() =>
       chrome.storage.local.set({
         'pt-domains': {
-          user: [{ id: 'user:e2e', name: '待删除', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }],
+          user: [{ id: 'user:e2e', name: '待删除', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }], // cjk-ok: 用户数据：领域名或术语，不随界面语言变
           builtin: {},
         },
       }),
@@ -814,7 +814,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     // 提示文案随浏览器界面语言（CI 是英文）
     const msg = (key: string, subs: string[] = []) =>
       page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
-    const item = page.locator('.pt-domain-item', { hasText: '待删除' });
+    const item = page.locator('.pt-domain-item', { hasText: '待删除' }); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     await expect(item).toBeVisible();
 
     // 设置页里的存储写入被拒绝（同 #430 的手动验证做法）
@@ -824,23 +824,23 @@ test.describe('设置页：翻译领域 @extended', () => {
     const toast = page.locator('#pt-toast');
 
     // 新建失败：提示原因（不带“[PT] ”前缀），名称留在输入框，列表里没有新领域
-    await page.fill('#pt-domain-name-input', '法律');
+    await page.fill('#pt-domain-name-input', '法律'); // cjk-ok: 用例输入的文字
     await page.click('#pt-domain-create-btn');
-    await expect(toast).toHaveText(await msg('domainCreateFailed', ['存储配额已满']));
-    await expect(page.locator('#pt-domain-name-input')).toHaveValue('法律');
-    await expect(page.locator('.pt-domain-item', { hasText: '法律' })).toHaveCount(0);
+    await expect(toast).toHaveText(await msg('domainCreateFailed', ['存储配额已满'])); // cjk-ok: getMessage 的替换参数，用户数据
+    await expect(page.locator('#pt-domain-name-input')).toHaveValue('法律'); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
+    await expect(page.locator('.pt-domain-item', { hasText: '法律' })).toHaveCount(0); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
 
     // 删除失败：提示原因，领域仍在列表里
     page.once('dialog', (d) => void d.accept());
     // 只取领域行自己的删除按钮，术语行里也有同名按钮
     await item.locator(':scope > .pt-site-remove').click();
-    await expect(toast).toHaveText(await msg('domainDeleteFailed', ['存储配额已满']));
+    await expect(toast).toHaveText(await msg('domainDeleteFailed', ['存储配额已满'])); // cjk-ok: getMessage 的替换参数，用户数据
     await expect(item).toBeVisible();
 
     // 调整顺序失败（#394）：提示原因，顺序不变
     await item.locator(':scope > .pt-domain-move[data-direction="up"]').click();
-    await expect(toast).toHaveText(await msg('domainMoveFailed', ['存储配额已满']));
-    await expect(page.locator('.pt-domain-item .pt-domain-name')).toHaveText(['软件开发(简体中文)', '待删除']);
+    await expect(toast).toHaveText(await msg('domainMoveFailed', ['存储配额已满'])); // cjk-ok: getMessage 的替换参数，用户数据
+    await expect(page.locator('.pt-domain-item .pt-domain-name')).toHaveText(['软件开发(简体中文)', '待删除']); // cjk-ok: 内置领域的名字，数据不随界面语言变
   });
 
   test('TC-E2E-72: 领域列表上移、下移，顺序保存后重新打开设置页不变（#394）', async ({
@@ -849,7 +849,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     await serviceWorker.evaluate(() =>
       chrome.storage.local.set({
         'pt-domains': {
-          user: [{ id: 'user:e2e', name: '我的开发', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }],
+          user: [{ id: 'user:e2e', name: '我的开发', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }], // cjk-ok: 用户数据：领域名或术语，不随界面语言变
           builtin: {},
         },
       }),
@@ -858,7 +858,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="domains"]');
     const names = page.locator('.pt-domain-item .pt-domain-name');
-    await expect(names).toHaveText(['软件开发(简体中文)', '我的开发']);
+    await expect(names).toHaveText(['软件开发(简体中文)', '我的开发']); // cjk-ok: 内置领域的名字，数据不随界面语言变
 
     // 两端的按钮不可用：第一个不能上移，最后一个不能下移
     const first = page.locator('.pt-domain-item').first();
@@ -867,7 +867,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     await expect(last.locator(':scope > .pt-domain-move[data-direction="down"]')).toBeDisabled();
 
     await last.locator(':scope > .pt-domain-move[data-direction="up"]').click();
-    await expect(names).toHaveText(['我的开发', '软件开发(简体中文)']);
+    await expect(names).toHaveText(['我的开发', '软件开发(简体中文)']); // cjk-ok: 内置领域的名字，数据不随界面语言变
     // 焦点交还给同一领域：它已在最前，上移不可用，焦点落在下移按钮上
     await expect(
       page.locator('.pt-domain-item').first().locator(':scope > .pt-domain-move[data-direction="down"]'),
@@ -875,10 +875,10 @@ test.describe('设置页：翻译领域 @extended', () => {
 
     await page.reload();
     await page.click('.pt-nav-btn[data-section="domains"]');
-    await expect(names).toHaveText(['我的开发', '软件开发(简体中文)']);
+    await expect(names).toHaveText(['我的开发', '软件开发(简体中文)']); // cjk-ok: 内置领域的名字，数据不随界面语言变
 
     await page.locator('.pt-domain-item').first().locator(':scope > .pt-domain-move[data-direction="down"]').click();
-    await expect(names).toHaveText(['软件开发(简体中文)', '我的开发']);
+    await expect(names).toHaveText(['软件开发(简体中文)', '我的开发']); // cjk-ok: 内置领域的名字，数据不随界面语言变
   });
 
   test('TC-E2E-73: 删除内置领域的术语，保存后重新打开设置页仍不在（#396）', async ({
@@ -890,7 +890,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     // 提示文案随浏览器界面语言（CI 是英文）
     const msg = (key: string, subs: string[] = []) =>
       page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
-    const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' });
+    const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' }); // cjk-ok: 内置领域的名字，数据不随界面语言变
     const terms = builtin.locator('.pt-domain-terms');
     await terms.locator('summary').click();
     const sources = terms.locator('.pt-term-source');
@@ -921,7 +921,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     // 提示文案随浏览器界面语言（CI 是英文）
     const msg = (key: string, subs: string[] = []) =>
       page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
-    const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' });
+    const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' }); // cjk-ok: 内置领域的名字，数据不随界面语言变
     const sites = builtin.locator('.pt-domain-sites');
     await sites.locator('summary').click();
     const textarea = sites.locator('.pt-domain-sites-input');
@@ -946,7 +946,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     await serviceWorker.evaluate(() =>
       chrome.storage.local.set({
         'pt-domains': {
-          user: [{ id: 'user:e2e', name: '我的开发', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }],
+          user: [{ id: 'user:e2e', name: '我的开发', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }], // cjk-ok: 用户数据：领域名或术语，不随界面语言变
           builtin: {},
         },
       }),
@@ -957,8 +957,8 @@ test.describe('设置页：翻译领域 @extended', () => {
     // 提示文案随浏览器界面语言（CI 是英文）
     const msg = (key: string, subs: string[] = []) =>
       page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
-    const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' });
-    const mine = page.locator('.pt-domain-item', { hasText: '我的开发' });
+    const builtin = page.locator('.pt-domain-item', { hasText: '软件开发(简体中文)' }); // cjk-ok: 内置领域的名字，数据不随界面语言变
+    const mine = page.locator('.pt-domain-item', { hasText: '我的开发' }); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     const reset = builtin.locator(':scope > .pt-domain-reset');
 
     // 没有修改：不显示；自建领域始终不显示
@@ -1007,10 +1007,10 @@ test.describe('设置页：翻译领域 @extended', () => {
         'pt-domains': {
           user: [
             {
-              id: 'user:big', name: '大术语表', targetLang: 'zh-CN', sites: [], origin: 'user',
-              terms: Array.from({ length: n }, (_, i) => ({ source: `term-${i}`, target: `译法 ${i}` })),
+              id: 'user:big', name: '大术语表', targetLang: 'zh-CN', sites: [], origin: 'user', // cjk-ok: 用户数据：领域名或术语，不随界面语言变
+              terms: Array.from({ length: n }, (_, i) => ({ source: `term-${i}`, target: `译法 ${i}` })), // cjk-ok: 种子数据：术语
             },
-            { id: 'user:small', name: '小领域', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] },
+            { id: 'user:small', name: '小领域', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
           ],
           builtin: {},
         },
@@ -1022,22 +1022,22 @@ test.describe('设置页：翻译领域 @extended', () => {
     const msg = (key: string, subs: string[] = []) =>
       page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
     const names = page.locator('.pt-domain-item .pt-domain-name');
-    await expect(names).toHaveText(['软件开发(简体中文)', '大术语表', '小领域']);
-    const big = page.locator('.pt-domain-item', { hasText: '大术语表' }).locator('.pt-domain-terms');
+    await expect(names).toHaveText(['软件开发(简体中文)', '大术语表', '小领域']); // cjk-ok: 内置领域的名字，数据不随界面语言变
+    const big = page.locator('.pt-domain-item', { hasText: '大术语表' }).locator('.pt-domain-terms'); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     await expect(big.locator('summary')).toHaveText(await msg('domainTermsSummary', [String(N)]));
 
     // 收起状态下调整另一个领域的顺序：每次都整表重绘。#509 修的是重绘时不为
     // 收起的术语编辑区生成表格 —— 直接数 DOM 里的术语行，与机器快慢无关
     // （#818：原先断言四次调整的墙钟耗时 < 1200ms，机器一忙就越线）
-    const small = () => page.locator('.pt-domain-item', { hasText: '小领域' });
+    const small = () => page.locator('.pt-domain-item', { hasText: '小领域' }); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     const termRows = page.locator('.pt-domain-terms tr');
     // 取当下的行数，不用会重试的 toHaveCount(0)；软断言，每次重绘各自报出来
     expect.soft(await termRows.count(), '初次渲染：收起的术语编辑区不生成术语行').toBe(0);
     const moves = [
-      ['up', ['软件开发(简体中文)', '小领域', '大术语表']],
-      ['up', ['小领域', '软件开发(简体中文)', '大术语表']],
-      ['down', ['软件开发(简体中文)', '小领域', '大术语表']],
-      ['down', ['软件开发(简体中文)', '大术语表', '小领域']],
+      ['up', ['软件开发(简体中文)', '小领域', '大术语表']], // cjk-ok: 内置领域的名字，数据不随界面语言变
+      ['up', ['小领域', '软件开发(简体中文)', '大术语表']], // cjk-ok: 内置领域的名字，数据不随界面语言变
+      ['down', ['软件开发(简体中文)', '小领域', '大术语表']], // cjk-ok: 内置领域的名字，数据不随界面语言变
+      ['down', ['软件开发(简体中文)', '大术语表', '小领域']], // cjk-ok: 内置领域的名字，数据不随界面语言变
     ] as const;
     const start = Date.now();
     for (const [direction, order] of moves) {
@@ -1052,13 +1052,13 @@ test.describe('设置页：翻译领域 @extended', () => {
     await big.locator('summary').click();
     const rows = big.locator('tbody tr');
     await expect(rows).toHaveCount(N);
-    await rows.nth(N - 1).locator('input').nth(1).fill('新译法');
+    await rows.nth(N - 1).locator('input').nth(1).fill('新译法'); // cjk-ok: 用例输入的文字
     await big.locator('.pt-domain-terms-actions .pt-btn:not(.pt-btn-secondary)').click();
     await expect(page.locator('#pt-toast')).toHaveText(await msg('domainTermsSaved'));
     const stored = await serviceWorker.evaluate(
       async () => (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any,
     );
-    expect(stored.user[0].terms[N - 1]).toEqual({ source: `term-${N - 1}`, target: '新译法' });
+    expect(stored.user[0].terms[N - 1]).toEqual({ source: `term-${N - 1}`, target: '新译法' }); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     await expect(big.locator('summary')).toHaveText(await msg('domainTermsSummary', [String(N)]));
   });
 
@@ -1069,8 +1069,8 @@ test.describe('设置页：翻译领域 @extended', () => {
       chrome.storage.local.set({
         'pt-domains': {
           user: [{
-            id: 'user:e2e', name: '法律', targetLang: 'zh-CN', sites: [], origin: 'user',
-            terms: [{ source: 'tort', target: '侵权' }],
+            id: 'user:e2e', name: '法律', targetLang: 'zh-CN', sites: [], origin: 'user', // cjk-ok: 用户数据：领域名或术语，不随界面语言变
+            terms: [{ source: 'tort', target: '侵权' }], // cjk-ok: 用户数据：领域名或术语，不随界面语言变
           }],
           builtin: {},
         },
@@ -1079,9 +1079,9 @@ test.describe('设置页：翻译领域 @extended', () => {
     const extId = new URL(serviceWorker.url()).host;
     await page.goto(`chrome-extension://${extId}/options.html`);
     await page.click('.pt-nav-btn[data-section="domains"]');
-    const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms');
+    const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms'); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     await terms.locator('summary').click();
-    await terms.locator('.pt-term-target').first().fill('侵权行为');
+    await terms.locator('.pt-term-target').first().fill('侵权行为'); // cjk-ok: 用例输入的文字
     // 提示文案随浏览器界面语言（CI 是英文）
     const msg = (key: string, subs: string[] = []) =>
       page.evaluate(([k, s]) => chrome.i18n.getMessage(k, s), [key, subs] as const);
@@ -1097,7 +1097,7 @@ test.describe('设置页：翻译领域 @extended', () => {
     const stored = await serviceWorker.evaluate(
       async () => (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any,
     );
-    expect(stored.user[0].terms).toEqual([{ source: 'tort', target: '侵权' }]);
+    expect(stored.user[0].terms).toEqual([{ source: 'tort', target: '侵权' }]); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
   });
 
   test('TC-E2E-88: 设置页读取领域失败 → 刷新列表提示原因，已显示的领域与未保存的术语不变；首次打开就失败时不显示只剩内置领域的列表（#535）', async ({
@@ -1107,8 +1107,8 @@ test.describe('设置页：翻译领域 @extended', () => {
       chrome.storage.local.set({
         'pt-domains': {
           user: [{
-            id: 'user:e2e', name: '法律', targetLang: 'zh-CN', sites: [], origin: 'user',
-            terms: [{ source: 'tort', target: '侵权' }],
+            id: 'user:e2e', name: '法律', targetLang: 'zh-CN', sites: [], origin: 'user', // cjk-ok: 用户数据：领域名或术语，不随界面语言变
+            terms: [{ source: 'tort', target: '侵权' }], // cjk-ok: 用户数据：领域名或术语，不随界面语言变
           }],
           builtin: {},
         },
@@ -1119,10 +1119,10 @@ test.describe('设置页：翻译领域 @extended', () => {
     await page.click('.pt-nav-btn[data-section="domains"]');
     const items = page.locator('.pt-domain-item');
     await expect(items).toHaveCount(2);
-    const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms');
+    const terms = page.locator('.pt-domain-item', { hasText: '法律' }).locator('.pt-domain-terms'); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     await terms.locator('summary').click();
     const target = terms.locator('.pt-term-target').first();
-    await target.fill('侵权行为');
+    await target.fill('侵权行为'); // cjk-ok: 用例输入的文字
 
     // 提示文案与原因都随浏览器界面语言（CI 是英文，#588）
     const toast = page.locator('#pt-toast');
@@ -1135,15 +1135,15 @@ test.describe('设置页：翻译领域 @extended', () => {
     });
     await serviceWorker.evaluate(async () => {
       const stored = (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any;
-      stored.user.push({ id: 'user:e2e-2', name: '医学', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] });
+      stored.user.push({ id: 'user:e2e-2', name: '医学', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
       await chrome.storage.local.set({ 'pt-domains': stored });
     });
     // 已显示过列表：提示列表没有刷新（#549）
     await expect(toast).toHaveText(await listFailed('domainListNotRefreshed'));
     await expect(items).toHaveCount(2);
-    await expect(page.locator('.pt-domain-item', { hasText: '医学' })).toHaveCount(0);
+    await expect(page.locator('.pt-domain-item', { hasText: '医学' })).toHaveCount(0); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     await expect(terms).toHaveAttribute('open', '');
-    await expect(target).toHaveValue('侵权行为');
+    await expect(target).toHaveValue('侵权行为'); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
 
     // 首次打开就读取失败：列表留空并提示，不显示只剩内置领域的列表
     await page.addInitScript(() => {
@@ -1171,11 +1171,11 @@ test.describe('popup：翻译领域 @extended', () => {
         'pt-domains': {
           user: [
             {
-              id: 'user:e2e-site', name: '站内', targetLang: 'zh-CN', sites: ['localhost'],
+              id: 'user:e2e-site', name: '站内', targetLang: 'zh-CN', sites: ['localhost'], // cjk-ok: 用户数据：领域名或术语，不随界面语言变
               origin: 'user', terms: [{ source: 'fox', noTranslate: true }],
             },
             {
-              id: 'user:e2e-manual', name: '手选', targetLang: 'zh-CN', sites: [],
+              id: 'user:e2e-manual', name: '手选', targetLang: 'zh-CN', sites: [], // cjk-ok: 用户数据：领域名或术语，不随界面语言变
               origin: 'user', terms: [{ source: 'paragraph', noTranslate: true }],
             },
           ],
@@ -1205,7 +1205,7 @@ test.describe('popup：翻译领域 @extended', () => {
     await expect(select).toBeEnabled({ timeout: 10_000 });
     await expect(select).toHaveValue('auto');
     await expect(select.locator('option')).toHaveText([
-      await msg('domainPopupAuto', ['站内']), '软件开发(简体中文)', '站内', '手选', await msg('domainPopupNone'),
+      await msg('domainPopupAuto', ['站内']), '软件开发(简体中文)', '站内', '手选', await msg('domainPopupNone'), // cjk-ok: 内置领域的名字，数据不随界面语言变
     ]);
 
     // 切换到“手选”后翻译本页：请求带它的术语
@@ -1258,8 +1258,8 @@ test.describe('popup：翻译领域 @extended', () => {
       chrome.storage.local.set({
         'pt-domains': {
           user: [
-            { id: 'user:e2e-site', name: '站内', targetLang: 'zh-CN', sites: ['localhost'], origin: 'user', terms: [] },
-            { id: 'user:e2e-manual', name: '手选', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] },
+            { id: 'user:e2e-site', name: '站内', targetLang: 'zh-CN', sites: ['localhost'], origin: 'user', terms: [] }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
+            { id: 'user:e2e-manual', name: '手选', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }, // cjk-ok: 用户数据：领域名或术语，不随界面语言变
           ],
           builtin: {},
           // “手选”排在最前，“站内”在内置领域之前
@@ -1290,7 +1290,7 @@ test.describe('popup：翻译领域 @extended', () => {
     await select.selectOption('user:e2e-manual');
     await expect(remember).toBeEnabled();
     await remember.check();
-    await expect(hint).toHaveText(await msg('domainPopupRemembered', ['手选']));
+    await expect(hint).toHaveText(await msg('domainPopupRemembered', ['手选'])); // cjk-ok: getMessage 的替换参数，用户数据
     let data = await stored();
     expect(data.user.find((d: any) => d.id === 'user:e2e-manual').sites).toEqual(['localhost']);
     // 原先命中这个站点的领域不改
@@ -1304,7 +1304,7 @@ test.describe('popup：翻译领域 @extended', () => {
 
     // 内置领域排在后面：写入叠加层，并提示调整顺序
     await remember.check();
-    await expect(hint).toHaveText(await msg('domainPopupRememberShadowed', ['手选']));
+    await expect(hint).toHaveText(await msg('domainPopupRememberShadowed', ['手选'])); // cjk-ok: getMessage 的替换参数，用户数据
     data = await stored();
     expect(data.builtin['builtin:software-zh-CN'].addedSites).toEqual(['localhost']);
   });
