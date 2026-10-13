@@ -187,6 +187,17 @@ export default defineBackground(() => {
       .catch(() => {});
   });
 
+  // #847：领域的临时选择（#400）同理 —— 回到按网址判定，与 popup 临时切换
+  // 走同一条 pt:set-domain，同样不带 frameId、只认主文档发来的
+  chrome.runtime.onMessage.addListener((msg, sender) => {
+    if (msg?.type !== 'pt:domain-path-changed') return;
+    const tabId = sender.tab?.id;
+    if (tabId == null || sender.frameId !== 0) return;
+    chrome.tabs
+      .sendMessage(tabId, { type: 'pt:set-domain', choice: { kind: 'auto' } })
+      .catch(() => {});
+  });
+
   // 健康检查（E2E 测试用于验证消息通道就绪）
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'pt:ping') {

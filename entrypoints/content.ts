@@ -159,7 +159,8 @@ export default defineContentScript({
     const topHostname = isMainFrame ? location.hostname : await requestTopHostname();
 
     // #400: 用户在 popup 里为本标签页临时选的领域。只存在本页内存里：
-    // 刷新或关闭标签页后回到自动，其他标签页不受影响
+    // 刷新、跳页或关闭标签页后回到自动，其他标签页不受影响。#847：单页应用
+    // 换了路径也算跳页，见下面的 pathWatch
     let domainChoice: DomainChoice = { kind: 'auto' };
     /** 本 frame 是否已收到过切换广播 —— 收到过就不再采用启动时问来的选择。 */
     let choiceBroadcast = false;
@@ -180,16 +181,23 @@ export default defineContentScript({
     // 全部意义就是不悄悄变成长期设置。两种错的代价也不对称：多重置一次只是
     // 回到自动判定，那本来就是默认行为；不重置的话，用户在国际站点上选了
     // 英文，点进一个日文帖子回复时仍被译成英文。
-    // 只管输入翻译这一次的对方语言，领域的临时选择不在这里改
+    // #847：领域的临时选择（#400）用的是同一套机制，同一个理由，一并重置为
+    // 按网址判定，经 background 的 pt:domain-path-changed 广播给各 frame。
+    // 两样各自只在不是自动时才重置、才广播
     const pathWatch = isMainFrame
       ? watchPathChange({
           getHref: () => location.href,
           navigation: (window as { navigation?: EventTarget }).navigation,
           win: window,
           onChange: () => {
-            if (inputLangChoice.kind === 'auto') return;
-            inputLangChoice = { kind: 'auto' };
-            chrome.runtime.sendMessage({ type: 'pt:input-lang-path-changed' }).catch(() => {});
+            if (inputLangChoice.kind !== 'auto') {
+              inputLangChoice = { kind: 'auto' };
+              chrome.runtime.sendMessage({ type: 'pt:input-lang-path-changed' }).catch(() => {});
+            }
+            if (domainChoice.kind !== 'auto') {
+              domainChoice = { kind: 'auto' };
+              chrome.runtime.sendMessage({ type: 'pt:domain-path-changed' }).catch(() => {});
+            }
           },
         })
       : null;
@@ -453,7 +461,11 @@ export default defineContentScript({
       // #471: 当前领域按顶层页面判定；准入判定仍按本 frame 的主机名
       getTopHostname: () => topHostname,
       getDomains: () => domains,
-      getDomainChoice: () => domainChoice,
+      // #847：浏览器没有 Navigation API 时收不到 pushState，用之前补判一次
+      getDomainChoice: () => {
+        pathWatch?.check();
+        return domainChoice;
+      },
       // #325: 翻译态查询与还原动作经注入 —— 模块不直接访问 DOM
       hasTranslated,
       restore: doRestore,
@@ -731,6 +743,8 @@ export default defineContentScript({
         // （本页读到的领域列表 + 顶层页面主机名，#471）；目标语言用 popup
         // 当前所选，避免设置刚改、本页还没收到变更时显示旧结果
         if (!isMainFrame) return;
+        // #847：答之前补判一次路径
+        pathWatch?.check();
         const to = typeof msg.to === 'string' ? msg.to : getSettings().to;
         sendResponse(domainState(to));
         return;
@@ -750,8 +764,10 @@ export default defineContentScript({
       }
 
       if (msg?.type === 'pt:get-domain-choice') {
-        // #400: 子 frame 启动时经 background 来问（见 requestTopDomainChoice）
+        // #400: 子 frame 启动时经 background 来问（见 requestTopDomainChoice）。
+        // #847：答之前补判一次路径
         if (!isMainFrame) return;
+        pathWatch?.check();
         sendResponse({ choice: domainChoice });
         return;
       }
