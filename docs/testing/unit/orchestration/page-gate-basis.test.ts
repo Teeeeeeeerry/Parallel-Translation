@@ -2,8 +2,9 @@
  * orchestration/page-gate.ts — 判定带上依据：结论来自哪一级（#857，规格 #831）
  *
  * 判定链改过几次（#843 内容识别、#889 拿不准就放行、#891 外文块），排查时要
- * 看得出这一次走的是哪一级。判定的返回值带上依据，四种依据各自能区分：
+ * 看得出这一次走的是哪一级。判定的返回值带上依据，五种依据各自能区分：
  * - foreign-block：翻译单元里有够长的外文单元（#891）
+ * - longest-units：最长的若干个单元都可靠地识别成目标语言（#903）
  * - content-share：全页样本里目标语言的占比（#843）
  * - declaration：检测语言 → 语言声明的链条（#791）
  * - pass：判不出，放行（识别器拿不准 #889，或链条判不出 #789）
@@ -26,7 +27,7 @@ const reliable = (...languages: [string, number][]): ContentLang => ({
   languages: languages.map(([lang, percentage]) => ({ lang, percentage })),
 });
 
-/** 四种依据各一个典型输入（取自 #851、#890 的实测形状）。 */
+/** 五种依据各一个典型输入（取自 #851、#890 的实测形状）。 */
 const CASES: Record<string, PageGateInput> = {
   // Steam ULTRAKILL：1455 字符的英文介绍
   'foreign-block': {
@@ -35,6 +36,18 @@ const CASES: Record<string, PageGateInput> = {
     pageLang: 'zh-cn',
     contentLang: reliable(['zh', 70], ['en', 25]),
     contentUnits: [{ chars: 1455, letters: 1180, lang: 'en', reliable: true }],
+  },
+  // 维基“长城”：全页识别不可靠，最长的单元全是可靠的 zh（#902）
+  'longest-units': {
+    to: 'zh-CN',
+    detectedLang: null,
+    pageLang: 'zh-Hans-CN',
+    contentLang: { ...reliable(['zh', 99]), reliable: false },
+    contentUnits: [
+      { chars: 711, letters: 680, lang: 'zh', reliable: true },
+      { chars: 542, letters: 520, lang: 'zh', reliable: true },
+      { chars: 472, letters: 450, lang: 'zh', reliable: true },
+    ],
   },
   // Rust 程序设计语言中文版：声明 en，zh 95
   'content-share': {
@@ -56,12 +69,18 @@ const CASES: Record<string, PageGateInput> = {
   },
 };
 
-describe('判定带上依据，四种依据各自能区分出来', () => {
-  test('四个典型输入各自给出不同的依据，结论与改动前相同', () => {
+describe('判定带上依据，五种依据各自能区分出来', () => {
+  test('五个典型输入各自给出不同的依据，结论与改动前相同', () => {
     const got = Object.fromEntries(
       Object.entries(CASES).map(([name, input]) => [name, decidePageGate(input)]),
     );
     expect(got['foreign-block']).toEqual({ translate: true, basis: 'foreign-block' });
+    expect(got['longest-units']).toEqual({
+      translate: false,
+      reason: 'same-language',
+      lang: 'zh-CN',
+      basis: 'longest-units',
+    });
     expect(got['content-share']).toEqual({
       translate: false,
       reason: 'same-language',
@@ -75,12 +94,12 @@ describe('判定带上依据，四种依据各自能区分出来', () => {
       basis: 'declaration',
     });
     expect(got.pass).toEqual({ translate: true, basis: 'pass' });
-    expect(new Set(Object.values(got).map((d) => d.basis)).size).toBe(4);
+    expect(new Set(Object.values(got).map((d) => d.basis)).size).toBe(5);
   });
 
-  test('可读的说明：四种依据的文字各不相同，拦下时带出判出的语言', () => {
+  test('可读的说明：五种依据的文字各不相同，拦下时带出判出的语言', () => {
     const texts = Object.values(CASES).map((input) => describePageGate(decidePageGate(input)));
-    expect(new Set(texts).size).toBe(4);
+    expect(new Set(texts).size).toBe(5);
     for (const text of texts) expect(text).not.toBe('');
     expect(describePageGate(decidePageGate(CASES['content-share']!))).toContain('zh-CN');
     expect(describePageGate(decidePageGate(CASES.declaration!))).toContain('zh-CN');
