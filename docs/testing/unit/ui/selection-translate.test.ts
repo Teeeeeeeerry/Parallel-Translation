@@ -12,6 +12,11 @@
  * 配额、瞬时故障、站点禁用）的文案与改动前一致：前两类展示引擎给的真实
  * 原因，瞬时故障展示泛化文案（#313），站点禁用是固定文案。
  *
+ * #749：等待态有最短显示时间 —— 引擎在它之前返回就等满再替换，慢的引擎到了
+ * 就替换。译文与失败两条替换路径都管。断言的是“快返回时替换的时刻与引擎
+ * 多快无关”“慢返回时到了就替换”这类关系，不写死毫秒数。等满期间又发起
+ * 了一轮的，等满的那次已不是最新，丢弃（与 #750 的序号共存）。
+ *
  * 只看外部可观察的行为：提示里显示了什么、同一时刻页面上有几条提示、
  * 等待态还在不在、一共弹出过哪些提示。
  */
@@ -39,6 +44,17 @@ function isPending(el: HTMLElement | undefined): boolean {
 }
 
 const translating = () => chrome.i18n.getMessage('toastTranslating');
+
+/** 引擎慢到超过等待态最短显示时间的一个时长（只要求“够慢”，不依赖具体数值）。 */
+const SLOW = 2000;
+
+/** 逐步推进假定时器直到这一轮划词收尾（十秒封顶）。 */
+async function settle(run: Promise<void>): Promise<void> {
+  let done = false;
+  void run.finally(() => (done = true));
+  for (let i = 0; i < 1000 && !done; i++) await vi.advanceTimersByTimeAsync(10);
+  await run;
+}
 
 /** 让微任务（承诺兑现后的续体）跑完。 */
 async function flush(): Promise<void> {
@@ -110,6 +126,7 @@ describe('单次划词：行为不变', () => {
     const e = engine();
     const run = translator(e.translateText)('Hello world');
     expect(shown()).toEqual([translating()]);
+    vi.advanceTimersByTime(SLOW); // 引擎慢：过了最短显示时间才返回
     e.calls[0]!.resolve(e.ok('你好世界'));
     await run;
     expect(shown()).toEqual(['你好世界']);
@@ -126,6 +143,7 @@ describe('并发只认最后一次（#750）', () => {
     const rec = recordShown();
 
     // 后发的先回来
+    vi.advanceTimersByTime(SLOW); // 引擎慢：过了最短显示时间才返回
     e.calls[1]!.resolve(e.ok('第二句'));
     await second;
     expect(shown()).toEqual(['第二句']);
@@ -150,6 +168,7 @@ describe('并发只认最后一次（#750）', () => {
     const pendingEl = toasts()[0];
     const rec = recordShown();
 
+    vi.advanceTimersByTime(SLOW); // 引擎慢：过了最短显示时间才返回
     e.calls[0]!.resolve(e.ok('第一句'));
     await first;
     await flush();
@@ -232,7 +251,7 @@ describe('状态类不受影响（#750）', () => {
 
   test('经划词入口弹出的失败与站点禁用仍是状态类', async () => {
     const blocked = translator(async () => ({ admission: 'blocked', ok: false }));
-    await blocked('Hello');
+    await settle(blocked('Hello'));
     expect(shown()).toEqual([chrome.i18n.getMessage('toastSiteBlocked')]);
     expect(toasts()[0]!.dataset.purpose).toBe('status');
     expect(toasts()[0]!.querySelector('.pt-toast-close')).toBeNull();
@@ -245,7 +264,7 @@ describe('状态类不受影响（#750）', () => {
       error: 'DeepL 返回 456：本月配额已用完。',
       display: { showRealReason: true },
     }) as SingleTextResult);
-    await quota('Hello');
+    await settle(quota('Hello'));
     expect(shown()).toEqual(['DeepL 返回 456：本月配额已用完。']);
     expect(toasts()[0]!.dataset.purpose).toBe('status');
     vi.advanceTimersByTime(3000);
@@ -312,6 +331,7 @@ describe('失败到达时就地替换等待态（#748）', () => {
       });
       mo.observe(root, { childList: true });
 
+      vi.advanceTimersByTime(SLOW); // 引擎慢：过了最短显示时间才返回
       resolve(c.result);
       await run;
       for (const r of mo.takeRecords()) {
@@ -359,7 +379,7 @@ describe('失败到达时就地替换等待态（#748）', () => {
       getLangs: () => ({ from: 'auto', to: 'zh-CN' }),
       isMainFrame: false,
     });
-    await sub('Hello');
+    await settle(sub('Hello'));
     expect(shown()).toEqual([]);
   });
 });
@@ -372,6 +392,112 @@ describe('状态类不受影响（#748）', () => {
     expect(toasts()).toHaveLength(1);
     expect(toasts()[0]).not.toBe(before);
     expect(toasts()[0]!.dataset.kind).toBe('error');
+    expect(toasts()[0]!.querySelector('.pt-toast-close')).toBeNull();
+    vi.advanceTimersByTime(2999);
+    expect(toasts()).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(toasts()).toHaveLength(0);
+  });
+});
+
+describe('等待态的最短显示时间（#749）', () => {
+  const ok: SingleTextResult = { admission: 'allowed', ok: true, translation: '你好世界' };
+  const fail: SingleTextResult = {
+    admission: 'allowed',
+    ok: false,
+    category: 'transient',
+    error: 'HTTP 503',
+    display: { showRealReason: false },
+  };
+
+  /** 引擎在 after 毫秒时返回 result；返回从发起到等待态被替换经过了多久（10 毫秒一步）。 */
+  async function replacedAt(after: number, result: SingleTextResult): Promise<number> {
+    let resolve!: (r: SingleTextResult) => void;
+    const run = translator(() => new Promise((r) => (resolve = r)))('Hello world');
+    const el = toasts()[0]!;
+    vi.advanceTimersByTime(after);
+    resolve(result);
+    await flush();
+    let elapsed = after;
+    while (isPending(el) && el.isConnected && elapsed < 60_000) {
+      await vi.advanceTimersByTimeAsync(10);
+      elapsed += 10;
+    }
+    await run;
+    return elapsed;
+  }
+
+  for (const [name, result] of [
+    ['译文', ok],
+    ['失败', fail],
+  ] as const) {
+    test(`${name}：引擎很快返回时等满再替换 —— 替换时刻与引擎多快无关`, async () => {
+      const at0 = await replacedAt(0, result);
+      const at30 = await replacedAt(30, result);
+      expect(at0).toBeGreaterThan(30);
+      expect(at30).toBe(at0);
+    });
+
+    test(`${name}：引擎很快返回时，返回那一刻等待态仍在、还在转圈`, async () => {
+      let resolve!: (r: SingleTextResult) => void;
+      const run = translator(() => new Promise((r) => (resolve = r)))('Hello world');
+      vi.advanceTimersByTime(10);
+      resolve(result);
+      await flush();
+      expect(shown()).toEqual([translating()]);
+      expect(toasts()[0]!.querySelector('.pt-toast-spinner')).not.toBeNull();
+      await settle(run);
+      expect(isPending(toasts()[0])).toBe(false);
+    });
+
+    test(`${name}：引擎慢时不受影响，到了就替换`, async () => {
+      expect(await replacedAt(SLOW, result)).toBe(SLOW);
+      // 快返回要等的那段时间比慢引擎短得多：最短显示时间只是不闪，不是拖慢
+      expect(await replacedAt(0, result)).toBeLessThan(SLOW);
+    });
+  }
+
+  test('替换之后照常计时：快返回的译文从替换那一刻起算，与慢返回停留一样久', async () => {
+    /** 等待态被替换之后，提示还能停留多久。 */
+    async function lingers(after: number): Promise<number> {
+      const at = await replacedAt(after, ok);
+      void at;
+      let elapsed = 0;
+      while (shown().length > 0 && elapsed < 600_000) {
+        vi.advanceTimersByTime(100);
+        elapsed += 100;
+      }
+      return elapsed;
+    }
+    expect(await lingers(0)).toBe(await lingers(SLOW));
+  });
+
+  test('等满期间又发起了一轮：等满的那次已不是最新，丢弃而不是替换（与 #750 共存）', async () => {
+    const e = engine();
+    const translate = translator(e.translateText);
+    const first = translate('First sentence');
+    vi.advanceTimersByTime(10);
+    e.calls[0]!.resolve(e.ok('第一句'));
+    await flush();
+    // 第一轮已拿到结果、正在等满；这时发起第二轮
+    const rec = recordShown();
+    void translate('Second sentence');
+    const secondPending = toasts()[0];
+    await settle(first);
+    rec.stop();
+
+    expect(rec.seen.some((s) => s.includes('第一句'))).toBe(false);
+    expect(toasts()).toHaveLength(1);
+    expect(toasts()[0]).toBe(secondPending);
+    expect(isPending(secondPending)).toBe(true);
+  });
+});
+
+describe('状态类不受影响（#749）', () => {
+  test('不经等待态的状态类提示立即出现，满 3 秒消失，不等最短显示时间', () => {
+    toast(chrome.i18n.getMessage('toastTranslateFail'), { purpose: 'status', kind: 'error' });
+    expect(shown()).toEqual([chrome.i18n.getMessage('toastTranslateFail')]);
+    expect(toasts()[0]!.dataset.purpose).toBe('status');
     expect(toasts()[0]!.querySelector('.pt-toast-close')).toBeNull();
     vi.advanceTimersByTime(2999);
     expect(toasts()).toHaveLength(1);

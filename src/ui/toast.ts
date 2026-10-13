@@ -184,10 +184,28 @@ function closeButton(el: HTMLElement): HTMLButtonElement {
   return btn;
 }
 
+/**
+ * 等待态的最短显示时间（#749）：引擎在此之前返回，发起方等满再替换，免得
+ * “翻译中”闪一下、界面发抖。
+ *
+ * 取 500 毫秒，依据是人眼看清一次状态变化要多久：注意力被屏幕角落新出现的
+ * 东西吸引过去约 200 毫秒（外源性注意的捕获时间），视线落定、认出“翻译中”
+ * 这两三个字再要一次注视，约 250 毫秒（阅读时单次注视的典型时长）。合起来
+ * 约 450 毫秒，取整到 500。短于它，用户只看到“有东西闪了一下”，不知道是
+ * 什么；比它长就是在白白拖慢快引擎 —— 等待态在点下去时立即出现（#746），
+ * 这里只管它最少待多久，不推迟它出现。
+ */
+const PENDING_MIN_SHOWN = 500;
+
 /** 等待态的句柄：发起方收尾时调用 dismiss。 */
 export interface PendingToast {
   /** 这条等待态若仍在页面上（没被结果、失败或另一次发起替换）就收掉。 */
   dismiss(): void;
+  /**
+   * 等待态显示满最短时间（#749）时兑现；已经满了就立即兑现。发起方拿到
+   * 结果后先等它，再替换。
+   */
+  shownLongEnough(): Promise<void>;
 }
 
 /**
@@ -208,8 +226,13 @@ export function toastPending(msg: string): PendingToast {
   spinner.setAttribute('aria-hidden', 'true');
   el.append(spinner, msg);
   root.appendChild(el);
+  const shownAt = Date.now();
 
   return {
+    shownLongEnough() {
+      const left = PENDING_MIN_SHOWN - (Date.now() - shownAt);
+      return left > 0 ? new Promise((resolve) => self.setTimeout(resolve, left)) : Promise.resolve();
+    },
     dismiss() {
       // 已就地变成译文的不算等待态（#747）
       if (el.isConnected && el.dataset.state === 'pending') el.remove();

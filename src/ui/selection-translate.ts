@@ -48,6 +48,14 @@ export function createSelectionTranslator(
       // 被丢弃的那一轮不替换等待态、不弹提示：此刻页面上的等待态（或译文）
       // 属于后发那一轮
       if (seq !== latest) return;
+      // #749：引擎很快返回时等待态等满最短显示时间再替换，译文与失败两条
+      // 路径都在这之后，失败快速返回时同样不闪。
+      //
+      // 与 #750 的序号共存：等满要过一段时间，这期间若又发起了一轮，等满的
+      // 这次结果已经不是最新的 —— 等满之后必须再比一次序号，丢弃而不是替换。
+      // 只在拿到结果时比一次的话，旧结果会在等满那一刻换掉新一轮的转圈
+      await pending.shownLongEnough();
+      if (seq !== latest) return;
       showResult(text, result);
     } finally {
       // 等待态的句柄跟着作废：被丢弃的那一轮不去收任何东西，后发那一轮的
