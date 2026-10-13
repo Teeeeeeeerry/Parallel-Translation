@@ -50,6 +50,10 @@ import {
   pageNotice,
   partialFailNotice,
   resetRenderStats,
+  emptySkipStats,
+  resetSkipStats,
+  countSkip,
+  skipConsoleLine,
 } from '~/src/orchestration/page-summary';
 import { describePageGate } from '~/src/orchestration/page-gate';
 import { paraNotice } from '~/src/orchestration/text-notice';
@@ -426,6 +430,8 @@ export default defineContentScript({
 
     /** 渲染统计（每次整页翻译与增量补翻开始时清零），各项含义见 RenderStats。 */
     const renderStats = emptyRenderStats();
+    // #727：整页翻译那一次采集里被跳过的单元，按原因分组
+    const skipStats = emptySkipStats();
 
     // #852：浏览器自带的本地语言识别，不发网络请求。页面级闸门取各语言占比
     // （#843），输入翻译取单一可靠结果（#661）
@@ -533,7 +539,13 @@ export default defineContentScript({
           if (mode?.readOnly) {
             return buildPageItems(collect(document.body, undefined, { readOnly: true }));
           }
-          return buildPageItems(collect(document.body, registerHiddenForObserver));
+          // #727：整页翻译这一次采集顺带记下被跳过的单元。闸门取样（上面的
+          // 只读采集）不计，否则同一页算两遍
+          return buildPageItems(
+            collect(document.body, registerHiddenForObserver, {
+              onSkip: (_el, category) => countSkip(skipStats, category),
+            }),
+          );
         } catch (e) {
           throw new Error(
             `[collect] ${e instanceof Error ? e.message : String(e)}`,
@@ -541,8 +553,13 @@ export default defineContentScript({
         }
       };
       resetRenderStats(renderStats);
+      resetSkipStats(skipStats);
 
       const result = await orchestrator.togglePage(collectItems, ns.from, ns.to);
+
+      // #763：控制台按原因分组输出一行，零跳过时不输出
+      const skipLine = skipConsoleLine(skipStats);
+      if (skipLine) console.info(skipLine);
 
       // ── 提示渲染（DOM 职责；视觉状态已由模块推送）──
       // 同一时刻只显示一条提示，几种情况并存时给哪一条由汇总决定
