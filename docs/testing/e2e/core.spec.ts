@@ -6313,3 +6313,83 @@ test.describe('闸门只管整页翻译：判据换了三轮之后，逐段与�
     expect(await content()).toBe(before);
   });
 });
+
+// ================================================================
+// 整页翻译结束后告知采集时跳过的段落（#727）
+// ================================================================
+
+test.describe('整页翻译结束后告知采集时跳过的段落（#727）', () => {
+  const TOAST = '#pt-host-toast .pt-toast';
+
+  test('@core TC-E2E-182: 有段落进不了采集的页面整页翻译后出现带数量与主要原因的提示，数字与夹具一致；正常页面上这条提示一次都没出现过；带多个 iframe 的页面只在主文档弹一条、数字是主文档自己的（#764、#761、#762）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    test.setTimeout(90_000);
+    await seedSettings({});
+    await mockGoogle();
+    const skipped = (n: number) =>
+      serviceWorker.evaluate((count: string) => chrome.i18n.getMessage('toastSkippedTooLong', [count]), String(n));
+    const toast = page.locator(TOAST);
+
+    // 夹具：三段文字超长、两段标记过密，共 5 段进不了采集，主要是文字超长；
+    // 导航里的超长段落（非正文区）与还没显示的标签页里的段落（不可见）不算
+    await gotoFixture('skip-summary');
+    await translateAndWait(page);
+    await expect(toast).toHaveText(await skipped(5), { timeout: 10_000 });
+    // 提示不改变翻译行为：正常段落照常有译文，被跳过的段落没有
+    for (const id of ['p1', 'p2', 'p3']) await expect(page.locator(`#${id}`)).toHaveAttribute('data-pt', 'done');
+    for (const id of ['long1', 'long2', 'long3', 'dense1', 'dense2']) {
+      await expect(page.locator(`#${id} .pt-trans`)).toHaveCount(0);
+    }
+
+    // 724 那条线留下的维基形态夹具：文字真正超长、不该被翻的那一段，报 1
+    await gotoFixture('wiki-article');
+    await translateAndWait(page);
+    await expect(toast).toHaveText(await skipped(1), { timeout: 10_000 });
+
+    // 正常页面：从整页翻译完成起持续采样，任何提示都没出现过（#761）
+    await gotoFixture('basic');
+    await translateAndWait(page);
+    await expectNoToastFor(toast, '正常页面上不该有跳过提示');
+
+    // 带三个 iframe、每个 frame 各有一段超长段落：popup 的整页翻译广播到全部
+    // frame，只有主文档弹一条，数字是主文档自己的 1，不跨 frame 汇总（#762）
+    await gotoFixture('skip-frames');
+    await waitForBall(page);
+    const frames = ['#f1', '#f2', '#f3'].map((id) => page.frameLocator(id));
+    for (const frame of frames) await expect(frame.locator('#clong')).toHaveCount(1, { timeout: 10_000 });
+    // 子框架的 content script 在 document_idle 注入：等各 frame 加载完再留一点余量
+    await page.waitForLoadState('load');
+    await page.waitForTimeout(500);
+    await serviceWorker.evaluate(async () => {
+      for (const tab of await chrome.tabs.query({})) {
+        try {
+          await chrome.tabs.sendMessage(tab.id!, { type: 'pt:toggle-translate' });
+        } catch {
+          // 扩展页等没有 content script 的标签页
+        }
+      }
+    });
+    // 持续采样（会重试的断言抓不住一闪而过的东西，#832）：主文档任何时刻至多
+    // 一条、只出现过那一条；子框架任何时刻都没有提示
+    const seen = new Set<string>();
+    let maxMain = 0;
+    let inFrames = 0;
+    const end = Date.now() + 4_000;
+    while (Date.now() < end) {
+      const visible: string[] = [];
+      for (const t of await toast.all()) {
+        if (await t.isVisible().catch(() => false)) visible.push(((await t.textContent()) ?? '').trim());
+      }
+      visible.forEach((v) => seen.add(v));
+      maxMain = Math.max(maxMain, visible.length);
+      for (const frame of frames) inFrames += await frame.locator(TOAST).count();
+      await page.waitForTimeout(150);
+    }
+    expect([...seen]).toEqual([await skipped(1)]);
+    expect(maxMain).toBe(1);
+    expect(inFrames).toBe(0);
+    // 子框架照常翻译
+    for (const frame of frames) await expect(frame.locator('#c1')).toHaveAttribute('data-pt', 'done');
+  });
+});
