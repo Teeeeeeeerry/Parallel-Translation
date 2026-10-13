@@ -44,7 +44,7 @@ import { applyCompat } from './compat';
 import { getSiteRules } from '~/src/storage/specialization';
 import type { EffectiveSiteRules, RuleSource } from '~/src/storage/specialization';
 import { splitPre } from './pre-split';
-import { splitBrParagraph } from './br-split';
+import { oversizedLineCount, splitBrParagraph } from './br-split';
 import { hasTranslatableText } from './text';
 import { walkShadowTree } from './shadow-walk';
 
@@ -241,6 +241,14 @@ export function collect(
         if (!opts.readOnly) {
           if (el.tagName === 'PRE') splitPre(el as HTMLPreElement);
           else splitBrParagraph(el);
+        }
+        // #710：按行切过的段落里，自己就超过长度上限的那几行留作裸内容不翻，
+        // 每行按“文字过长”报一次跳过。数的是 DOM 现状，不管这次采集有没有
+        // 重新切分 —— 段落可能早被增量补翻或上一次采集切过
+        if (onSkip) {
+          for (let n = oversizedLineCount(el); n > 0; n--) {
+            skipped(el, { step: 'non-visual', reason: 'too-long' });
+          }
         }
 
         // D4 翻译单元查表（首步只是一次标签查表）：非单元跳过自身继续子树

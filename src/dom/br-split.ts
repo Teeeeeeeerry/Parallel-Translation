@@ -106,3 +106,42 @@ export function splitBrParagraph(el: Element): HTMLSpanElement[] | null {
 
   return splitIntoChunks(el, BR_SHAPE);
 }
+
+/**
+ * 已按行切过的段落里，有几行因为自己就超过长度上限而留作裸内容（#710）。
+ *
+ * 切成行之后仍比上限长的一行（整段一句话不断行）不往下切 —— 断句错乱的
+ * 译文比不翻更糟 —— 也不把整段退回不翻：它留在段落里不成切块，其余行照常。
+ * 这一行没进待翻列表，要和别的被跳过的单元一样进整页翻译的跳过汇总（#727），
+ * 否则用户只看到正文中间有一大段没翻，没有任何提示。
+ *
+ * 只读 DOM：按段落的直接子节点里的 br 分行，含切块的行是已切出的行，其余行
+ * 的文字超过上限就算一行。与切分时同一口径（chunk-split 的超长块判定）。
+ * 段落是谁切的、什么时候切的都不影响结果，所以采集每次经过都能如实报出。
+ * pre 的切块按空行成块、超长块另有口径，不在此列。
+ */
+export function oversizedLineCount(container: Element): number {
+  if (container.tagName === 'PRE' || container.getAttribute('data-pt-split') !== '1') return 0;
+  let count = 0;
+  let text = '';
+  let chunked = false;
+  const endLine = () => {
+    if (!chunked && text.trim().length > MAX_TEXT) count++;
+    text = '';
+    chunked = false;
+  };
+  for (const child of container.childNodes) {
+    if (child.nodeType === Node.ELEMENT_NODE) {
+      const el = child as Element;
+      if (el.tagName === 'BR') {
+        endLine();
+        continue;
+      }
+      if (el.classList.contains('pt-chunk')) chunked = true;
+    }
+    text += child.textContent ?? '';
+  }
+  endLine();
+  return count;
+}
+
