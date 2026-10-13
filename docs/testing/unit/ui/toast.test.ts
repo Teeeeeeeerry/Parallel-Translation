@@ -17,6 +17,10 @@
  *
  * #742：内容类带关闭按钮，点了立即消失、计时一并清掉；状态类与等待态没有。
  *
+ * #743：关闭按钮能被 Tab 到，无障碍标签走界面文案；提示弹出时不抢焦点 ——
+ * 用户可能正在输入框里打字。回车与空格触发关闭是原生按钮的行为，jsdom 不
+ * 合成，由真实浏览器验证。
+ *
  * #740：鼠标悬停在内容类提示上时不计时；状态类不受影响。
  *
  * #741：鼠标移开后重新开始完整计时，不是接着剩余时间；移回去再次停住。
@@ -324,6 +328,71 @@ describe('内容类的关闭按钮（#742）', () => {
     toast('翻译失败', { purpose: 'status', kind: 'error' });
     expect(closeBtn()).toBeNull();
     expect(toasts()[0]?.querySelector('button')).toBeNull();
+    vi.advanceTimersByTime(2999);
+    expect(shown()).toEqual(['翻译失败']);
+    vi.advanceTimersByTime(1);
+    expect(shown()).toEqual([]);
+  });
+});
+
+describe('关闭按钮的键盘可用（#743）', () => {
+  const closeBtn = () => toasts()[0]?.querySelector<HTMLButtonElement>('.pt-toast-close') ?? null;
+  const shadowActive = () => document.getElementById('pt-host-toast')?.shadowRoot?.activeElement ?? null;
+  let input: HTMLInputElement;
+
+  beforeEach(() => {
+    input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+  });
+
+  afterEach(() => {
+    input.remove();
+  });
+
+  test('提示弹出时不抢焦点：焦点还在用户正在打字的输入框里', () => {
+    toast('你好世界', { purpose: 'content' });
+    expect(document.activeElement).toBe(input);
+    expect(shadowActive()).toBeNull();
+  });
+
+  test('等待态就地变成译文时同样不抢焦点', () => {
+    toastPending('翻译中');
+    toast('你好世界', { purpose: 'content' });
+    expect(document.activeElement).toBe(input);
+    expect(shadowActive()).toBeNull();
+  });
+
+  test('能被 Tab 到：在 Tab 顺序里，没有禁用，聚焦得上', () => {
+    toast('你好世界', { purpose: 'content' });
+    const btn = closeBtn()!;
+    expect(btn.tabIndex).toBeGreaterThanOrEqual(0);
+    expect(btn.disabled).toBe(false);
+    expect(btn.closest('[inert],[aria-hidden="true"]')).toBeNull();
+    btn.focus();
+    expect(shadowActive()).toBe(btn);
+  });
+
+  test('无障碍标签走界面文案', () => {
+    toast('你好世界', { purpose: 'content' });
+    expect(closeBtn()!.getAttribute('aria-label')).toBe(chrome.i18n.getMessage('toastClose'));
+  });
+
+  test('聚焦后按下（回车与空格最终都是按钮的 click）立即消失，这条提示的计时清掉', () => {
+    // 聚焦输入框时 jsdom 自己会排一个定时器，只比这条提示前后的差
+    const baseline = vi.getTimerCount();
+    toast('你好世界', { purpose: 'content' });
+    const btn = closeBtn()!;
+    btn.focus();
+    btn.click();
+    expect(shown()).toEqual([]);
+    expect(vi.getTimerCount()).toBe(baseline);
+  });
+
+  test('状态类不受影响：没有可聚焦的东西，不抢焦点，3 秒消失', () => {
+    toast('翻译失败', { purpose: 'status', kind: 'error' });
+    expect(toasts()[0]!.querySelector('button,[tabindex]')).toBeNull();
+    expect(document.activeElement).toBe(input);
     vi.advanceTimersByTime(2999);
     expect(shown()).toEqual(['翻译失败']);
     vi.advanceTimersByTime(1);

@@ -189,6 +189,15 @@
   background: rgba(255, 255, 255, 0.15);
 }
 
+/* 键盘聚焦（#743）：浏览器默认的焦点环是蓝色，压在森林绿与危险红的底色上
+   几乎看不出来。改用文字色（纸色）描一圈实线，与底色的对比度和文字本身
+   一样；只在键盘聚焦时出现（:focus-visible），鼠标点击不出现 */
+.pt-toast-close:focus-visible {
+  opacity: 1;
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
 .pt-toast-close::before,
 .pt-toast-close::after {
   content: '';
