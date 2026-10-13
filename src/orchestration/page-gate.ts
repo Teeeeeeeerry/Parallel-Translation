@@ -36,6 +36,10 @@
 // 里。单元级识别的结果由调用方算好传进来（contentUnits），本模块仍不碰浏览器
 // 接口。没有这样的外文块，才轮到全页占比与后面的链条。
 //
+// #903（父 #898）：没有外文块时，再看最长的 LONGEST_UNITS_COUNT 个单元，全部
+// 可靠地识别成目标语言就拦下，不再只靠全页样本：全页识别报不可靠时只能
+// 放行（#889），全页占比两类交叉（#851）。证据不足就交给后面的链条。
+//
 // 返回原因而非裸 boolean，与 changelog/decide.ts、input-target-lang.ts 同一
 // 风格：调用方拿到原因直接渲染提示。
 
@@ -132,6 +136,27 @@ export const UNIT_DETECT_COUNT = 10;
  * 喂给识别器的文字量最多 UNIT_DETECT_COUNT 乘这个数，与页面大小无关。
  */
 export const UNIT_DETECT_MAX_CHARS = 1000;
+
+/**
+ * 没有外文块时，取最长的这么多个单元看是不是全部可靠地识别成目标语言，是就
+ * 拦下（#903，父 #898）。
+ *
+ * 依据是 #902 在 #851 那 31 张真实页面上的实测（2026-10-13，Chromium 151，
+ * 记录见 docs/research/page-gate-top-units-target.md），连同 #890 的两遍数据
+ * 共四遍：
+ * - 13 张中文界面、外文内容的页面，最长的单元没有一个是可靠的 zh（从第 1 个
+ *   起连续可靠 zh 的个数全是 0），取 1 到 10 个都零误拦
+ * - 7 张声明外文、内容中文的页面，取 1 到 7 个都只拦得下 Rust 所有权（它
+ *   本来就因为全页 zh 95 被拦）；仍被放行的 justjavac、awesome-python-cn、
+ *   若依首页与环境部署，最长的几个单元里都有识别器报不可靠的中英混排
+ * - 11 张对照页，取 3 与取 5 都是两遍拦下 3 张（维基长城、少数派、阮一峰），
+ *   取 10 只剩 2 张
+ * 取 3：取 3 与取 5 的两个数一样，取 3 要的单元少，单元少的页面（阮一峰的
+ * 网络日志、若依文档只有二三十个单元）也用得上。不取 1 或 2：一两个单元的
+ * 证据太薄，中文界面上一段较长的中文公告或 cookie 说明排到第一，就足以把
+ * 外文页拦下 —— 实测里没出现，不代表没有，而误拦是用户想翻的页面翻不了。
+ */
+export const LONGEST_UNITS_COUNT = 3;
 
 /**
  * 字母的口径（#901）：Unicode 的字母属性 \p{L}，任何文字的字母都算（拉丁、
@@ -237,11 +262,17 @@ export interface PageGateInput {
  * 结论来自判定链的哪一级（#857）。判定链改过几次（#843、#889、#891），排查
  * 时要看得出这一次走的是哪一级：
  * - foreign-block：翻译单元里有够长的外文单元，照常翻译（#891）
+ * - longest-units：最长的若干个单元都可靠地识别成目标语言，拦下（#903）
  * - content-share：全页样本里目标语言的占比，到阈值拦下、不到照常翻译（#843）
  * - declaration：没有做内容识别，按检测语言 → 语言声明的链条（#791）
  * - pass：判不出就放行 —— 识别器拿不准（#889），或链条也判不出（#789）
  */
-export type PageGateBasis = 'foreign-block' | 'content-share' | 'declaration' | 'pass';
+export type PageGateBasis =
+  | 'foreign-block'
+  | 'longest-units'
+  | 'content-share'
+  | 'declaration'
+  | 'pass';
 
 export type PageGateDecision =
   | { translate: true; basis: PageGateBasis }
@@ -251,13 +282,19 @@ export type PageGateDecision =
       reason: 'same-language';
       /** 判出的页面语言（归一化后） */
       lang: string;
-      /** 拦下只可能来自这两级 */
-      basis: 'content-share' | 'declaration';
+      /** 拦下只可能来自这三级 */
+      basis: 'longest-units' | 'content-share' | 'declaration';
     };
 
 export function decidePageGate(input: PageGateInput): PageGateDecision {
   const to = normalizeLangCode(input.to);
   if (hasForeignBlock(input.contentUnits, to)) return { translate: true, basis: 'foreign-block' };
+  const longest = longestUnitsLanguage(input, to);
+  if (longest) {
+    return longest === to
+      ? { translate: false, reason: 'same-language', lang: longest, basis: 'longest-units' }
+      : { translate: true, basis: 'longest-units' };
+  }
   const content = contentLanguage(input, to);
   if (content === 'undetermined') return { translate: true, basis: 'pass' };
   if (content === 'foreign') return { translate: true, basis: 'content-share' };
@@ -286,6 +323,7 @@ export function decidePageGate(input: PageGateInput): PageGateDecision {
 
 const BASIS_TEXT: Record<PageGateBasis, string> = {
   'foreign-block': '翻译单元里有够长的外文单元',
+  'longest-units': '最长的几个单元都是目标语言',
   'content-share': '全页样本里目标语言的占比',
   declaration: '检测语言与语言声明',
   pass: '判不出页面语言，放行',
@@ -327,6 +365,61 @@ function hasForeignBlock(units: UnitLang[] | null | undefined, to: string | null
 }
 
 /**
+ * 最长的若干个单元这一级（#903，父 #898）：按字数取最长的 LONGEST_UNITS_COUNT
+ * 个单元，全部是识别器报可靠、排第一的语言是目标语言所在的那种语言（主段
+ * 相同），给出归一化后的语言码；否则 null，交给后面的全页占比与链条。
+ *
+ * 放在外文块之后、全页占比之前。全页样本混着界面文字与正文，识别器在长样本
+ * 上的可靠标记靠不住（#851：31 张页面两遍各 14 与 12 张报不可靠），报不可靠
+ * 时只能放行（#889）；单元级的证据更直接：最长的几个单元就是页面的正文。
+ *
+ * 证据不足就不拦：单元数不到取数、任何一个报不可靠或拿不到语言、任何一个
+ * 不是目标语言，都返回 null。宁可少拦：拦错的代价是用户想翻的页面翻不了，
+ * 放过的代价只是多翻一遍，由单元级兜底（#783）接住。
+ *
+ * 不沿用 #859 的 100 字符样本下限：那条防的是“一句外文让全页占比翻过阈值”，
+ * 这里不算占比，每个单元都要识别器自己报可靠；太短的单元识别器本来就报不
+ * 可靠（#859 实测单一语言的中文 16 字以内、英文 46 字符以内），让这一级不拦，
+ * 错也错在放行那一侧。#902 实测里阮一峰的网络日志最长的单元只有 45 到 49
+ * 字，都报可靠的 zh，是有效的证据。
+ *
+ * 繁简（#790）与全页识别同一条：识别器只报 zh，取现有链条里的中文变体。
+ */
+function longestUnitsLanguage(input: PageGateInput, to: string | null): string | null {
+  const units = input.contentUnits;
+  if (!units || !to || units.length < LONGEST_UNITS_COUNT) return null;
+  const family = primaryOf(to);
+  const top = units
+    .map((u, i) => ({ u, i }))
+    .sort((a, b) => b.u.chars - a.u.chars || a.i - b.i)
+    .slice(0, LONGEST_UNITS_COUNT)
+    .map(({ u }) => u);
+  const codes: string[] = [];
+  for (const u of top) {
+    if (!u.reliable || !u.lang) return null;
+    const code = normalizeLangCode(u.lang);
+    if (code === null || primaryOf(code) !== family) return null;
+    codes.push(u.lang);
+  }
+  if (family !== 'zh') return to;
+  return chineseVariant(input, codes);
+}
+
+/**
+ * 识别器判出是中文时取哪一种中文（#790）：繁简不算同语言，Chrome 的识别器
+ * 对简体、繁体都只报裸 zh。识别器自己带了子段就以它为准（raw 按可信程度从高
+ * 到低排好传进来）；否则取现有链条（检测语言 → 声明）里的中文变体；链条里
+ * 也没有中文，才按裸 zh 归一化（简体）。
+ */
+function chineseVariant(input: PageGateInput, raw: string[]): string | null {
+  const explicit = raw.find((l) => /[-_]/.test(l));
+  if (explicit) return normalizeLangCode(explicit);
+  const chain = pageLanguage(input);
+  if (chain.ok && primaryOf(chain.lang) === 'zh') return chain.lang;
+  return normalizeLangCode('zh');
+}
+
+/**
  * 内容识别这一级的结论（#843）：
  * - null：没有做识别，交给下一级
  * - 'undetermined'：识别器拿不准（报不可靠、一个语言都没给、被调用却没给出
@@ -360,14 +453,9 @@ function contentLanguage(
   const share = same.reduce((sum, l) => sum + l.percentage, 0);
   if (share < CONTENT_SHARE_THRESHOLD) return 'foreign';
   if (family !== 'zh') return to;
-  // #790：繁简不算同语言。Chrome 的识别器对简体、繁体都只报裸 zh，分不出
-  // 繁简：识别器自己带了子段就以它为准；否则取现有链条（检测语言 → 声明）
-  // 里的中文变体；链条里也没有中文，才按裸 zh 归一化（简体）
-  const explicit = same
-    .filter((l) => /[-_]/.test(l.raw))
-    .sort((a, b) => b.percentage - a.percentage)[0];
-  if (explicit) return explicit.code;
-  const chain = pageLanguage(input);
-  if (chain.ok && primaryOf(chain.lang) === 'zh') return chain.lang;
-  return normalizeLangCode('zh');
+  // #790：繁简不算同语言，见 chineseVariant。占比高的子段优先
+  return chineseVariant(
+    input,
+    [...same].sort((a, b) => b.percentage - a.percentage).map((l) => l.raw),
+  );
 }
