@@ -52,13 +52,14 @@ import { walkShadowTree } from './shadow-walk';
  * 分支，不另加判定：
  * - too-long：文字超过长度上限（MAX_TEXT）
  * - too-complex：标记复杂度超限（子树元素个数兜底，MAX_ELEMENTS）
- * - non-content：被判为非正文区域（NON_CONTENT）
  * - site-rule：被站点页面规则挡下（排除、限定范围之外、域名补丁的 skip）
- * - other：其余算作跳过的分支（已翻译、扩展 UI、采集时抛异常）
+ * - other：采集时属性访问抛异常（#54）
  *
- * 不可见的单元不算跳过（#755），见 skipCategory。
+ * #754 定的第五类“被判为非正文区域”（NON_CONTENT）在 #756 起不计入跳过，
+ * 与扩展自己的 UI、已翻译的单元一样；不可见的单元也不计入（#755）。见
+ * skipCategory。
  */
-export type SkipCategory = 'too-long' | 'too-complex' | 'non-content' | 'site-rule' | 'other';
+export type SkipCategory = 'too-long' | 'too-complex' | 'site-rule' | 'other';
 
 /** 采集遍历里一个候选元素没被采到，是在哪一步被挡下的。 */
 export type SkipSource =
@@ -83,11 +84,13 @@ export function skipCategory(source: SkipSource): SkipCategory | null {
           return 'too-long';
         case 'too-complex':
           return 'too-complex';
+        // #756：非正文区域（导航、页脚、侧栏、参考文献）本来就不该翻；扩展
+        // 自己插的译文与界面本来就不该被翻；已翻译的单元不是漏翻，增量补翻
+        // 时还会反复经过采集。都不算跳过，算进去等于自己制造噪声
         case 'non-content':
-          return 'non-content';
-        case 'translated':
         case 'extension-ui':
-          return 'other';
+        case 'translated':
+          return null;
         default:
           return null;
       }
