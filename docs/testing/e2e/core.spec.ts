@@ -5681,6 +5681,61 @@ test.describe('划词翻译的提示（#726）', () => {
     await expect(toast.getByRole('button')).toHaveCount(0);
     await expect(fail).toHaveCount(0, { timeout: 4_000 });
   });
+
+  test('@core TC-E2E-183: 键盘用户 —— 输入框里打字时弹出译文不抢焦点；Tab 到关闭按钮后提示不再计时，回车关掉后焦点回到那个输入框（#917）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    test.setTimeout(60_000);
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+    const toast = page.locator(TOAST);
+    // 页面末尾一个输入框，用户正在里面打字
+    await page.evaluate(() => {
+      const input = document.createElement('input');
+      input.id = 'pt-917-input';
+      document.body.appendChild(input);
+    });
+    const input = page.locator('#pt-917-input');
+    await input.click();
+    await page.keyboard.type('hello');
+    const inputFocused = () => page.evaluate(() => document.activeElement?.id === 'pt-917-input');
+    const onClose = () =>
+      page.evaluate(
+        () => document.getElementById('pt-host-toast')?.shadowRoot?.activeElement?.classList.contains('pt-toast-close') === true,
+      );
+
+    // 右键菜单入口不动页面焦点：译文弹出时焦点仍在输入框里（#743）
+    const text = 'Another paragraph with some words to translate.';
+    await contextMenuClick(serviceWorker, text);
+    await expect(toast).toContainText('【译】', { timeout: 20_000 });
+    await expect.poll(() => toast.evaluate((el) => el.querySelector('.pt-toast-spinner') === null)).toBe(true);
+    expect(await inputFocused()).toBe(true);
+    expect(await onClose()).toBe(false);
+
+    // 量这条译文自己计时要停多久：焦点不在提示里时它会自己走
+    const shownAt = Date.now();
+    await expect(toast).toHaveCount(0, { timeout: 70_000 });
+    const lifetime = Date.now() - shownAt;
+    expect(await inputFocused()).toBe(true);
+
+    // 再来一次，Tab 到关闭按钮：过了本应消失的时刻仍在
+    await contextMenuClick(serviceWorker, text);
+    await expect(toast).toContainText('【译】', { timeout: 20_000 });
+    for (let i = 0; i < 20 && !(await onClose()); i++) await page.keyboard.press('Tab');
+    expect(await onClose()).toBe(true);
+    await page.waitForTimeout(lifetime + 1_500);
+    await expect(toast).toBeVisible();
+
+    // 回车关掉：焦点回到弹出前的输入框，输入框里的字还在
+    await page.keyboard.press('Enter');
+    await expect(toast).toHaveCount(0, { timeout: 1_000 });
+    expect(await inputFocused()).toBe(true);
+    await expect(input).toHaveValue('hello');
+    await page.keyboard.type(' world');
+    await expect(input).toHaveValue('hello world');
+  });
 });
 
 
