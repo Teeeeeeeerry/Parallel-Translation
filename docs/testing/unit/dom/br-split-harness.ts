@@ -1,0 +1,93 @@
+/**
+ * 以 br 分行的超长段落（#694）几张票共用的测试脚手架。
+ *
+ * 只经外部入口：采集入口 collect、整页翻译的编排入口 translatePage（真实
+ * 渲染器），以及还原。还原照 content script 的 doRestore 同一顺序：先
+ * unrender 所有已翻译单元，再拆回所有被切分的容器（entrypoints/content.ts）。
+ *
+ * 夹具一律用文字真正超过长度上限的段落：#768 之后按 br 切行只看文字长度，
+ * 文字不长、只是链接多的段落整段作为一个单元，根本不走切行。
+ */
+import { vi } from 'vitest';
+import { mockAllBoundingRects } from '../../setup';
+import { collect, type CollectOptions } from '~/src/dom/walker';
+import { render, unrender } from '~/src/dom/renderer';
+import { unsplitChunks } from '~/src/dom/chunk-split';
+import { hasBlockTextChildren, unitTextEx } from '~/src/dom/text';
+import { walkShadowTree } from '~/src/dom/shadow-walk';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { MAX_TEXT } from '~/src/dom/classify';
+
+/** 对话体的一行，约 70 字符。 */
+export const line = (i: number) => `Line ${i}: "I never thought we would meet again," she said quietly.`;
+
+/** n 行对话，行与行之间用 sep 隔开；行数足够让整段文字超过长度上限。 */
+export function brLines(n: number, sep = '<br>\n', render: (i: number) => string = line): string {
+  return Array.from({ length: n }, (_, i) => render(i)).join(sep);
+}
+
+/** 文字是否超过长度上限：夹具自检，免得写出不走切行的用例。 */
+export function isOverLimit(el: Element): boolean {
+  return (el.textContent ?? '').trim().length > MAX_TEXT;
+}
+
+/** 采集一次（与 content script 同一口径取送翻文本），返回单元与送翻文本。 */
+export function collectUnits(opts: CollectOptions = {}): { units: Element[]; texts: string[] } {
+  const restore = mockAllBoundingRects();
+  try {
+    const units = collect(document.body, undefined, opts);
+    const texts = units.map((u) => unitTextEx(u, { shallow: hasBlockTextChildren(u) }).text);
+    return { units, texts };
+  } finally {
+    restore();
+  }
+}
+
+/** 替身引擎的译文：原文前加前缀。 */
+export const fakeTranslate = (t: string) => `【译】${t}`;
+
+/**
+ * 整页翻译一遍：采集、经编排入口分批送翻（替身引擎）、真实渲染器渲染。
+ * 返回每一批送出去的文本（按请求分组）。
+ */
+export async function translatePage(opts: CollectOptions = {}): Promise<{ requests: string[][] }> {
+  const { units, texts } = collectUnits(opts);
+  const requests: string[][] = [];
+  const orch = createOrchestrator({
+    send: vi.fn(async (req: { texts: string[] }) => {
+      requests.push([...req.texts]);
+      return { ok: true, data: { translations: req.texts.map(fakeTranslate) } };
+    }),
+    hasTranslated: () => document.querySelector('[data-pt="done"]') !== null,
+    onBatchResult: (_i, batch, res) => {
+      if (!res.ok || !res.data) return;
+      batch.forEach((item, j) => {
+        render(item.ctx as Element, res.data!.translations[j]!, 'page', item.text);
+      });
+    },
+  } as Parameters<typeof createOrchestrator>[0]);
+  orch.start();
+  await orch.translatePage(
+    units.map((el, i) => ({ text: texts[i]!, ctx: el })),
+    'auto',
+    'zh-CN',
+  );
+  orch.stop();
+  return { requests };
+}
+
+/** 还原：与 content script 的 doRestore 同一顺序。 */
+export function restorePage(): void {
+  const done: Element[] = [];
+  const split: Element[] = [];
+  walkShadowTree(
+    document,
+    (el) => {
+      if (el.getAttribute('data-pt') === 'done') done.push(el);
+      if (el.getAttribute('data-pt-split') === '1') split.push(el);
+    },
+    { skipTranslated: false },
+  );
+  for (const el of done) unrender(el);
+  for (const el of split) unsplitChunks(el);
+}
