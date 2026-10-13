@@ -52,12 +52,12 @@ import { walkShadowTree } from './shadow-walk';
  * 分支，不另加判定：
  * - too-long：文字超过长度上限（MAX_TEXT）
  * - too-complex：标记复杂度超限（子树元素个数兜底，MAX_ELEMENTS）
- * - site-rule：被站点页面规则挡下（排除、限定范围之外、域名补丁的 skip）
+ * - site-rule：被站点页面规则的排除或域名补丁的 skip 挡下
  * - other：采集时属性访问抛异常（#54）
  *
  * #754 定的第五类“被判为非正文区域”（NON_CONTENT）在 #756 起不计入跳过，
- * 与扩展自己的 UI、已翻译的单元一样；不可见的单元也不计入（#755）。见
- * skipCategory。
+ * 与扩展自己的 UI、已翻译的单元一样；不可见的单元（#755）与限定范围之外的
+ * 内容（#757）也不计入。见 skipCategory。
  */
 export type SkipCategory = 'too-long' | 'too-complex' | 'site-rule' | 'other';
 
@@ -65,7 +65,6 @@ export type SkipCategory = 'too-long' | 'too-complex' | 'site-rule' | 'other';
 export type SkipSource =
   | { step: 'non-visual'; reason: NonVisualSkip }
   | { step: 'site-exclude' }
-  | { step: 'out-of-scope' }
   | { step: 'compat-skip' }
   | { step: 'hidden' }
   | { step: 'error' };
@@ -95,7 +94,6 @@ export function skipCategory(source: SkipSource): SkipCategory | null {
           return null;
       }
     case 'site-exclude':
-    case 'out-of-scope':
     case 'compat-skip':
       return 'site-rule';
     case 'hidden':
@@ -187,10 +185,9 @@ export function collect(
         }
 
         // S2 限定范围：范围外不采集，也不做 pre 切块等 DOM 改动
-        if (!inScope(el, scope)) {
-          skipUnit(el, { step: 'out-of-scope' });
-          return 'continue';
-        }
+        // #757：范围外不算跳过 —— 限定范围是用户自己设的，范围外不翻是预期，
+        // 不是漏翻。也就不必为了统计去问它是不是单元
+        if (!inScope(el, scope)) return 'continue';
 
         // D1 域名补丁（skip 优先于通用判定）：跳过自身继续子树
         const patched = applyCompat(el);
