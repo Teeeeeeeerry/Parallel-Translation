@@ -637,49 +637,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         return { status: 'restored', admission };
       }
 
-      // #792：页面级闸门 —— 本页已经是目标语言就一个请求都不发，页面一个
-      // 字不动（连采集都不做：采集会把超长段落切成切块）。排在准入与还原
-      // 之后：站点被禁用照旧是准入拦截，已翻译的页面照旧能还原。
-      // 只接在整页开关入口上，不进 admissionFrom —— 它被单文本入口共用，
-      // 放进去会把逐段与划词一起拦下；那两条靠渲染层的单元级兜底（#783）。
-      // 增量补翻（translatePage）也不判：观察器只在整页翻译成功后启动，
-      // 命中闸门时它不启动，后来的新节点不会被补翻。
-      // 检测语言不随还原清掉：换了目标语言再点，闸门可能按检测语言命中，
-      // 这一页确实就是新目标语言
-      // #843：第一级是本地内容识别。样本取自同一个采集函数的只读模式 ——
-      // 照常翻译的那次采集会切块，闸门命中时页面就不是一个字不动了。识别是
-      // 异步的：等它的这段时间已经算在飞，否则连点两下会各自开一轮翻译
-      // （#326）；没注入识别就不等，时序与改动前一致
-      let contentLang: ContentLang | null = null;
-      let contentUnits: UnitLang[] | null = null;
-      if (opts.detectContentLang) {
-        // #862：等识别的这段时间里用户可以还原（逐段翻译过一段之后再点，
-        // 还原分支不受在飞互斥拦）或被 abort 中止，两者都递增纪元（#262、
-        // #328）。识别回来时纪元变了，这次判定已经作废：不判闸门、不翻译、
-        // 不推送状态 —— 还原那一下已经推过未翻译态。中止不算失败，不提示
-        const epochAtToggle = epoch;
-        toggleInFlight = true;
-        try {
-          ({ contentLang, contentUnits } = await detectContent(items));
-        } finally {
-          toggleInFlight = false;
-        }
-        if (epoch !== epochAtToggle) return { status: 'aborted', admission };
-      }
-      const gate = decidePageGate({
-        to,
-        detectedLang,
-        pageLang: opts.getPageLang?.() ?? null,
-        contentLang,
-        contentUnits,
-      });
-      opts.onGateDecision?.(gate);
-      if (!gate.translate) {
-        // #793：悬浮球推到未翻译态 —— 推成完成态是在骗人，用户再点一次
-        // 也会困惑。子框架不推（pushVisual 已按 #327 拦下）
-        pushVisual('idle');
-        return { status: 'same-language', admission, gate };
-      }
+      // 提案：去掉页面级闸门（#792），同语言页面全靠渲染层的单元级兜底（#783）
 
       // 采集可以按需进行（传函数）：闸门命中、准入拦截、还原时不采集
       const list = typeof items === 'function' ? items() : items;
