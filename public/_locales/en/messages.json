@@ -499,5 +499,9 @@
   "toastSelectionSameAsSource": { "message": "This text is already in the target language" },
   "toastPageSameLanguage": { "message": "This page is already in your target language" },
   "inputLangPopupLabel": { "message": "Translate input into (this page)" },
-  "inputLangPopupFollow": { "message": "Follow settings" }
+  "inputLangPopupFollow": { "message": "Follow settings" },
+  "toastSkipped": {
+    "message": "$count$ more paragraphs were skipped and not translated",
+    "placeholders": { "count": { "content": "$1" } }
+  }
 }

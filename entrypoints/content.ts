@@ -563,7 +563,7 @@ export default defineContentScript({
 
       // ── 提示渲染（DOM 职责；视觉状态已由模块推送）──
       // 同一时刻只显示一条提示，几种情况并存时给哪一条由汇总决定
-      const notice = pageNotice(result, renderStats);
+      const notice = pageNotice(result, renderStats, skipStats);
       if (notice && isMainFrame) toast(notice.message, { purpose: 'status', kind: notice.kind });
       return result;
     }

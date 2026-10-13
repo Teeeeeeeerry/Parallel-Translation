@@ -148,13 +148,35 @@ function sameAsSourceNotice(stats: RenderStats): PageNotice | null {
   };
 }
 
+/**
+ * #758：采集阶段被跳过的单元按数量汇总一条，沿用 #49 的风格 —— 结束后一条，
+ * 不逐段刷屏。用户看到之后知道这一页确实有内容没翻，不是自己的错觉。它是
+ * 状态不是内容，走状态类。零跳过时为 null。
+ */
+function skippedNotice(skips: SkipStats): PageNotice | null {
+  const total = totalSkipped(skips);
+  if (total === 0) return null;
+  return {
+    message: tf('toastSkipped', `另有 ${total} 段未被采集，没有翻译`, String(total)),
+    kind: 'info',
+  };
+}
+
 /** 整页开关入口结束后要弹的那一条提示；不需要提示时为 null。 */
-export function pageNotice(result: PageToggleResult, stats: RenderStats): PageNotice | null {
+export function pageNotice(
+  result: PageToggleResult,
+  stats: RenderStats,
+  skips: SkipStats = emptySkipStats(),
+): PageNotice | null {
   switch (result.status) {
     case 'blocked':
       return { message: tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), kind: 'error' };
     case 'no-elements':
-      return { message: tf('hintNoElements', '本页没有可翻译的内容'), kind: 'info' };
+      // #758：一个单元都没采到，却有被跳过的（整篇正文是一个超长段落，#694）：
+      // 说跳过了几段，而不是“本页没有可翻译的内容” —— 页面上明明有字
+      return (
+        skippedNotice(skips) ?? { message: tf('hintNoElements', '本页没有可翻译的内容'), kind: 'info' }
+      );
     case 'error':
       if (result.summary?.allFailed) return allFailedNotice(result.summary.display);
       // #783：被拦下的单元里有译文与原文相同的，就不是“所有段落均含
@@ -182,7 +204,9 @@ export function pageNotice(result: PageToggleResult, stats: RenderStats): PageNo
               ),
               kind: 'info',
             }
-          : null)
+          : null) ??
+        // #758：采集阶段被跳过的单元
+        skippedNotice(skips)
       );
     // #793：页面级闸门命中，说明原因；它是状态不是内容，与“本页没有可翻译
     // 的内容”同一风格
