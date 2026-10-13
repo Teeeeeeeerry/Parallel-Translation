@@ -121,7 +121,9 @@ describe('采集结果逐字节不变（#821）', () => {
     expect(location.hostname).toBe('localhost');
     for (const [name, body] of Object.entries(PAGES)) results[name] = snapshot(body());
     if (process.env.UPDATE_GOLDEN) fs.writeFileSync(GOLDEN, JSON.stringify(results, null, 1) + '\n');
-  });
+    // 42 份页面，每份对每个元素做一次悬停精判：本机单跑约 3 秒，全量并行跑时被别的
+    // worker 抢走 CPU，CI 上超过了默认的 10 秒钩子时限（只放宽时限，断言不动）
+  }, 120_000);
   afterAll(() => {
     document.body.innerHTML = '';
   });
