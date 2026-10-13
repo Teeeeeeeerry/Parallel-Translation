@@ -5535,6 +5535,152 @@ test.describe('划词翻译的提示（#726）', () => {
     await expect(fail.locator('.pt-toast-body')).toHaveCount(0);
     expect(await fail.evaluate((el) => getComputedStyle(el).maxHeight)).toBe('none');
   });
+
+  /**
+   * 走右键菜单“翻译所选文本”：在 service worker 里派发菜单点击事件，经后台
+   * 真实的点击处理（取 selectionText、发给标签页）进入页面 —— 原生右键菜单
+   * Playwright 点不到，这是离用户最近的一步。
+   */
+  async function contextMenuClick(sw: import('@playwright/test').Worker, text: string) {
+    await sw.evaluate(async (t: string) => {
+      const clicked = chrome.contextMenus.onClicked as unknown as {
+        dispatch(info: chrome.contextMenus.OnClickData, tab?: chrome.tabs.Tab): void;
+      };
+      for (const tab of await chrome.tabs.query({})) {
+        clicked.dispatch(
+          { menuItemId: 'pt-translate-selection', selectionText: t, editable: false, pageUrl: tab.url ?? '' },
+          tab,
+        );
+      }
+    }, text);
+  }
+
+  test('@core TC-E2E-181: 右键菜单“翻译所选文本”与拖选划词表现一致 —— 同样先出等待态再就地变成译文，停留时长、悬停不计时、关闭按钮（鼠标与键盘）都一样；状态提示不变（#752）', async ({
+    page, serviceWorker, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    test.setTimeout(120_000);
+    await seedSettings({});
+    await mockGoogle({ delayMs: 1_500 });
+    const [translating, closeLabel, failText] = await serviceWorker.evaluate(() => [
+      chrome.i18n.getMessage('toastTranslating'),
+      chrome.i18n.getMessage('toastClose'),
+      chrome.i18n.getMessage('toastTranslateFail'),
+    ]);
+    await gotoFixture('basic');
+    await waitForBall(page);
+    const toast = page.locator(TOAST);
+
+    // 每 10ms 采样一次提示：条数、是不是这一轮最先出现的那一条、有没有转圈、
+    // 有没有关闭按钮、文字；只记变化，带上时刻
+    await page.evaluate(() => {
+      const w = window as unknown as { __ptSeq: [number, string][]; __ptFirst: Element | null };
+      w.__ptSeq = [];
+      w.__ptFirst = null;
+      setInterval(() => {
+        const root = document.getElementById('pt-host-toast')?.shadowRoot;
+        const els = root ? Array.from(root.querySelectorAll('.pt-toast')) : [];
+        const el = els[0];
+        if (el && !w.__ptFirst) w.__ptFirst = el;
+        const entry = [
+          els.length,
+          el ? (el === w.__ptFirst ? 'same' : 'other') : '-',
+          el?.querySelector('.pt-toast-spinner') ? 'spin' : '',
+          el?.querySelector('.pt-toast-close') ? 'close' : '',
+          el?.textContent ?? '',
+        ].join('|');
+        const last = w.__ptSeq[w.__ptSeq.length - 1];
+        if (!last || last[1] !== entry) w.__ptSeq.push([performance.now(), entry]);
+      }, 10);
+    });
+    const resetSeq = () =>
+      page.evaluate(() => {
+        const w = window as unknown as { __ptSeq: [number, string][]; __ptFirst: Element | null };
+        w.__ptSeq = [];
+        w.__ptFirst = null;
+      });
+    /** 一轮划词从发起到提示消失的经过：状态序列与译文停留了多久。 */
+    const summarize = async () => {
+      const raw = await page.evaluate(
+        () => (window as unknown as { __ptSeq: [number, string][] }).__ptSeq,
+      );
+      const seq = raw.map(([t, e]) => [t, ...e.split('|')] as [number, string, string, string, string, string]);
+      const shownSeq = seq.filter(([, count]) => count !== '0');
+      const first = shownSeq[0]!;
+      const result = shownSeq[shownSeq.length - 1]!;
+      const appeared = shownSeq.find(([, , , spin]) => spin === '')![0];
+      const gone = seq.find(([t, count]) => count === '0' && t > appeared)![0];
+      return {
+        // 同一时刻至多一条，而且自始至终是同一条
+        oneAndSame: shownSeq.every(([, count, which]) => count === '1' && which === 'same'),
+        // 先是“翻译中”带转圈、没有关闭按钮
+        pendingFirst: first[3] === 'spin' && first[4] === '' && first[5] === translating,
+        // 中间只有等待态与译文两种状态
+        twoStates: shownSeq.every(([, , , spin, , text]) => (spin === 'spin' && text === translating) || text === result[5]),
+        close: result[4] === 'close',
+        text: result[5],
+        lifetime: gone - appeared,
+      };
+    };
+
+    // 拖选划词
+    await dragSelect(page, 'p:nth-of-type(2)');
+    const selected = await page.evaluate(() => window.getSelection()!.toString());
+    await page.mouse.move(5, 5);
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await expect(toast).toHaveCount(0, { timeout: 70_000 });
+    const drag = await summarize();
+
+    // 右键菜单，同一段文字
+    await resetSeq();
+    await contextMenuClick(serviceWorker, selected);
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await expect(toast).toHaveCount(0, { timeout: 70_000 });
+    const ctx = await summarize();
+
+    expect(drag).toMatchObject({ oneAndSame: true, pendingFirst: true, twoStates: true, close: true });
+    expect(ctx).toMatchObject({ oneAndSame: true, pendingFirst: true, twoStates: true, close: true });
+    expect(ctx.text).toBe(drag.text);
+    // 同一段译文停留一样久（采样与调度的误差在半秒内），而且都比状态类的 3 秒久
+    expect(drag.lifetime).toBeGreaterThan(3_500);
+    expect(Math.abs(ctx.lifetime - drag.lifetime)).toBeLessThan(500);
+
+    // 右键入口的译文：悬停不计时，移开后重新停满一整轮
+    await contextMenuClick(serviceWorker, selected);
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await toast.hover();
+    await page.waitForTimeout(ctx.lifetime + 1_000);
+    await expect(toast).toBeVisible();
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(3_000);
+    await expect(toast).toBeVisible();
+    await expect(toast).toHaveCount(0, { timeout: ctx.lifetime + 2_000 });
+
+    // 右键入口的译文：点关闭立即消失
+    await contextMenuClick(serviceWorker, selected);
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    await toast.getByRole('button', { name: closeLabel }).click();
+    await expect(toast).toHaveCount(0, { timeout: 1_000 });
+
+    // 键盘也能关（#743）：Tab 到关闭按钮，回车
+    await contextMenuClick(serviceWorker, selected);
+    await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 });
+    const onClose = () =>
+      page.evaluate(
+        () => document.getElementById('pt-host-toast')?.shadowRoot?.activeElement?.classList.contains('pt-toast-close') === true,
+      );
+    for (let i = 0; i < 20 && !(await onClose()); i++) await page.keyboard.press('Tab');
+    expect(await onClose()).toBe(true);
+    await page.keyboard.press('Enter');
+    await expect(toast).toHaveCount(0, { timeout: 1_000 });
+
+    // 状态类不受影响：右键入口的失败提示没有关闭按钮，照常 3 秒消失
+    await mockGoogle({ fail: true });
+    await contextMenuClick(serviceWorker, selected);
+    const fail = page.locator(`${TOAST}[data-kind="error"]`);
+    await expect(fail).toHaveText(failText, { timeout: 20_000 });
+    await expect(toast.getByRole('button')).toHaveCount(0);
+    await expect(fail).toHaveCount(0, { timeout: 4_000 });
+  });
 });
 
 
