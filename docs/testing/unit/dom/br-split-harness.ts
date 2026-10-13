@@ -13,7 +13,7 @@ import { mockAllBoundingRects } from '../../setup';
 import { collect, type CollectOptions } from '~/src/dom/walker';
 import { render, unrender } from '~/src/dom/renderer';
 import { unsplitChunks } from '~/src/dom/chunk-split';
-import { hasBlockTextChildren, unitTextEx } from '~/src/dom/text';
+import { hasBlockTextChildren, restorePreserves, unitTextEx } from '~/src/dom/text';
 import { walkShadowTree } from '~/src/dom/shadow-walk';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import { MAX_TEXT } from '~/src/dom/classify';
@@ -31,13 +31,17 @@ export function isOverLimit(el: Element): boolean {
   return (el.textContent ?? '').trim().length > MAX_TEXT;
 }
 
-/** 采集一次（与 content script 同一口径取送翻文本），返回单元与送翻文本。 */
-export function collectUnits(opts: CollectOptions = {}): { units: Element[]; texts: string[] } {
+/** 采集一次（与 content script 同一口径取送翻文本），返回单元、送翻文本与占位符表。 */
+export function collectUnits(opts: CollectOptions = {}): {
+  units: Element[];
+  texts: string[];
+  preserves: Map<string, string>[];
+} {
   const restore = mockAllBoundingRects();
   try {
     const units = collect(document.body, undefined, opts);
-    const texts = units.map((u) => unitTextEx(u, { shallow: hasBlockTextChildren(u) }).text);
-    return { units, texts };
+    const extracted = units.map((u) => unitTextEx(u, { shallow: hasBlockTextChildren(u) }));
+    return { units, texts: extracted.map((e) => e.text), preserves: extracted.map((e) => e.preserves) };
   } finally {
     restore();
   }
@@ -48,10 +52,11 @@ export const fakeTranslate = (t: string) => `【译】${t}`;
 
 /**
  * 整页翻译一遍：采集、经编排入口分批送翻（替身引擎）、真实渲染器渲染。
- * 返回每一批送出去的文本（按请求分组）。
+ * 渲染前与 content script 一样把占位符换回原文（排除与保留原文命中的行内
+ * 元素，#58、#441）。返回每一批送出去的文本（按请求分组）。
  */
 export async function translatePage(opts: CollectOptions = {}): Promise<{ requests: string[][] }> {
-  const { units, texts } = collectUnits(opts);
+  const { units, texts, preserves } = collectUnits(opts);
   const requests: string[][] = [];
   const orch = createOrchestrator({
     send: vi.fn(async (req: { texts: string[] }) => {
@@ -62,7 +67,10 @@ export async function translatePage(opts: CollectOptions = {}): Promise<{ reques
     onBatchResult: (_i, batch, res) => {
       if (!res.ok || !res.data) return;
       batch.forEach((item, j) => {
-        render(item.ctx as Element, res.data!.translations[j]!, 'page', item.text);
+        const i = units.indexOf(item.ctx as Element);
+        const map = preserves[i]!;
+        const restored = restorePreserves(res.data!.translations[j]!, map, item.text);
+        render(item.ctx as Element, restored, 'page', restorePreserves(item.text, map, item.text));
       });
     },
   } as Parameters<typeof createOrchestrator>[0]);
