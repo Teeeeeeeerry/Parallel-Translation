@@ -31,6 +31,19 @@ export interface SiteRules {
   preserve: string[];
 }
 
+/** 一条生效规则来自哪里：随扩展打包的内置规则，或用户在设置页写的规则。 */
+export type RuleSource = 'builtin' | 'user';
+
+/**
+ * 带来源的生效站点规则（#922）：三个字段与合并口径一字不变，另带排除的每一
+ * 条来自哪个来源 —— excludeSources[i] 是 exclude[i] 的来源。规则怎么生效只看
+ * 三个字段；来源只给跳过计数用：内置规则排除的不计入跳过，用户规则排除的
+ * 计入。
+ */
+export interface EffectiveSiteRules extends SiteRules {
+  excludeSources: RuleSource[];
+}
+
 /** 站点页面规则的字段，按判定顺序。存储校验、保存与合并都按它逐字段处理。 */
 export const SITE_RULE_FIELDS = ['scope', 'exclude', 'preserve'] as const;
 
@@ -79,7 +92,11 @@ const allScopeInvalidWarned = new Set<string>();
 
 /**
  * 按当前站点读取生效站点规则：内置规则在前，用户规则逐字段追加在后，
- * 已剔除无法解析的选择器。一张站点卡片的用户规则只作用于卡片站点本身
+ * 已剔除无法解析的选择器。
+ *
+ * #922：传 withSources 时另带排除的每一条来自哪个来源（excludeSources），
+ * 给采集的跳过计数用；三个字段与不传时一字不变。不传就是原来的形状 ——
+ * 设置页、逐段翻译这些只关心规则怎么生效的读取方不必跟着改。一张站点卡片的用户规则只作用于卡片站点本身
  * 及其子域（#491）。当前站点是某张停用了内置规则的站点卡片的
  * 站点本身或其子域时（#375、#467），只剩用户规则。同步返回 —— walker
  * 的采集入口是同步的，每次采集调用一次。用户规则须先 await
@@ -89,26 +106,32 @@ const allScopeInvalidWarned = new Set<string>();
  * ADR-0003 的容错语义，不能退回整页不翻译（重演 #93）。这种退回用户
  * 看不见，额外记一条专门的警告。
  */
-export function getSiteRules(host: string): SiteRules {
-  const out: SiteRules = { scope: [], exclude: [], preserve: [] };
+export function getSiteRules(host: string): SiteRules;
+export function getSiteRules(host: string, opts: { withSources: true }): EffectiveSiteRules;
+export function getSiteRules(host: string, opts?: { withSources: true }): SiteRules {
+  const out: EffectiveSiteRules = { scope: [], exclude: [], preserve: [], excludeSources: [] };
   const builtinDisabled = userSnapshot.some(
     (u) => u.disableBuiltin && siteCovers(host, u.site),
   );
   // 内置规则按站点黑白名单语义匹配；用户规则只作用于卡片站点本身及其
   // 子域（#491），与停用开关的范围相同
-  const sources: Array<[string, Partial<SiteRules>]> = [
-    ...(builtinDisabled ? [] : Object.entries(BUILTIN_SITE_RULES)).filter(([site]) =>
-      siteMatches(host, site),
-    ),
+  const sources: Array<[string, Partial<SiteRules>, RuleSource]> = [
+    ...(builtinDisabled ? [] : Object.entries(BUILTIN_SITE_RULES))
+      .filter(([site]) => siteMatches(host, site))
+      .map(([site, r]): [string, Partial<SiteRules>, RuleSource] => [site, r, 'builtin']),
     ...userSnapshot
       .filter((u) => siteCovers(host, u.site))
-      .map((u): [string, Partial<SiteRules>] => [u.site, u]),
+      .map((u): [string, Partial<SiteRules>, RuleSource] => [u.site, u, 'user']),
   ];
   const scopeSites: string[] = [];
-  for (const [site, rules] of sources) {
+  for (const [site, rules, from] of sources) {
     const valid = (sels: string[] = []) =>
       sels.filter((sel) => isValidSelector(site, sel));
-    for (const field of SITE_RULE_FIELDS) out[field].push(...valid(rules[field]));
+    for (const field of SITE_RULE_FIELDS) {
+      const kept = valid(rules[field]);
+      out[field].push(...kept);
+      if (field === 'exclude') out.excludeSources.push(...kept.map(() => from));
+    }
     // 只有空白行不算声明了限定范围 —— 与设置页校验（findInvalidSelectors）一致
     if (rules.scope?.some((sel) => sel.trim())) scopeSites.push(site);
   }
@@ -121,7 +144,9 @@ export function getSiteRules(host: string): SiteRules {
       );
     }
   }
-  return out;
+  if (opts?.withSources) return out;
+  const { scope, exclude, preserve } = out;
+  return { scope, exclude, preserve };
 }
 
 // ---- 用户规则（#370） ----
