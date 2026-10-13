@@ -47,7 +47,7 @@ import {
   allRenderBlocked,
   countRender,
   emptyRenderStats,
-  pageNotice,
+  framePageNotice,
   partialFailNotice,
   resetRenderStats,
   emptySkipStats,
@@ -563,8 +563,9 @@ export default defineContentScript({
 
       // ── 提示渲染（DOM 职责；视觉状态已由模块推送）──
       // 同一时刻只显示一条提示，几种情况并存时给哪一条由汇总决定
-      const notice = pageNotice(result, renderStats, skipStats);
-      if (notice && isMainFrame) toast(notice.message, { purpose: 'status', kind: notice.kind });
+      // #762：只有主文档弹，计数不跨 frame 汇总
+      const notice = framePageNotice(result, renderStats, skipStats, isMainFrame);
+      if (notice) toast(notice.message, { purpose: 'status', kind: notice.kind });
       return result;
     }
 
