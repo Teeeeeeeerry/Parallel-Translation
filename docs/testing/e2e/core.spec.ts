@@ -5338,6 +5338,79 @@ test.describe('超长段落按 br 切行', () => {
     expect(await post.evaluate((el) => el.outerHTML)).toBe(before);
   });
 
+  test('@core TC-E2E-190: 增量补翻 —— 滚动后追加的超长 br 段落逐行切开翻译；之后多轮加载新内容，切块不被重复送翻、译文数不随轮数增长；出现时不可见的超长段落可见后补翻；还原后逐字节回原样（#716）', async ({
+    page, mockGoogle, mockRequests, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    // 每个请求晚 1 秒回来：切块的请求还在飞时，切分产生的变更已经过了防抖窗口，
+    // 观察器若把切块当成新内容，第二轮就会把它们再送一遍
+    await mockGoogle({ delayMs: 1_000 });
+    await gotoFixture('infinite');
+    const ball = await waitForBall(page);
+    await translateAndWait(page);
+    const N = 60;
+    const lines = Array.from({ length: N }, (_, i) => `Line ${i}: "I never thought we would meet again," she said quietly.`);
+    /** 追加一篇以 br 分行的超长帖子（模拟滚动加载），返回追加时的 HTML。 */
+    const appendPost = (id: string, hidden: boolean) =>
+      page.evaluate(
+        ({ id, hidden, lines }) => {
+          const html = `<p id="${id}">${lines.join('<br>\n')}</p>`;
+          const holder = document.createElement('div');
+          holder.id = `${id}-holder`;
+          if (hidden) holder.style.display = 'none';
+          holder.innerHTML = html;
+          document.getElementById('content')!.appendChild(holder);
+          return document.getElementById(id)!.outerHTML;
+        },
+        { id, hidden, lines },
+      );
+
+    // 1. 滚动后追加的超长段落：逐行切开、逐行翻译，一行一条请求
+    let requests = await mockRequests();
+    const html = await appendPost('post', false);
+    expect(html.length).toBeGreaterThan(3072);
+    const post = page.locator('#post');
+    await expect(post.locator(':scope > .pt-chunk[data-pt="done"]')).toHaveCount(N, { timeout: 20_000 });
+    expect((await requests()).queries.map((q) => q.trim()).sort()).toEqual([...lines].sort());
+
+    // 2. 之后四轮加载新内容：每轮只送新追加的三段，切块一行都不再送，切块上的译文数不变
+    const done = page.locator('#content [data-pt="done"]');
+    for (let round = 1; round <= 4; round++) {
+      requests = await mockRequests();
+      const before = await done.count();
+      await page.click('#load-more');
+      await expect(done).toHaveCount(before + 3, { timeout: 15_000 });
+      // 再等过两个防抖窗口，晚到的重复请求也算进来
+      await page.waitForTimeout(800);
+      const sent = (await requests()).queries.map((q) => q.trim());
+      expect(sent, `第 ${round} 轮只送新追加的三段`).toHaveLength(3);
+      expect(sent.filter((q) => q.startsWith('Line ')), `第 ${round} 轮没有重复送切块`).toEqual([]);
+      expect(await post.locator('.pt-trans').count(), `第 ${round} 轮之后切块上的译文数不变`).toBe(N);
+    }
+
+    // 3. 出现时不可见的超长段落：不可见时不送；显示之后，延迟队列按行观察可见性
+    // （提前 300px，#23），滚到哪一行附近就补翻哪一行，滚完全篇每行一次
+    requests = await mockRequests();
+    await appendPost('later', true);
+    await page.waitForTimeout(1_000);
+    expect((await requests()).queries.filter((q) => q.trim().startsWith('Line ')), '不可见时不送').toEqual([]);
+    await page.evaluate(() => document.getElementById('later-holder')!.style.removeProperty('display'));
+    const later = page.locator('#later');
+    await expect(later.locator(':scope > .pt-chunk[data-pt="done"]').first()).toBeAttached({ timeout: 10_000 });
+    for (let y = 0; y < 20; y++) {
+      await page.mouse.wheel(0, 400);
+      await page.waitForTimeout(100);
+    }
+    await expect(later.locator(':scope > .pt-chunk[data-pt="done"]')).toHaveCount(N, { timeout: 20_000 });
+    await page.waitForTimeout(800);
+    expect((await requests()).queries.map((q) => q.trim()).sort()).toEqual([...lines].sort());
+
+    // 4. 还原：追加的超长段落回到追加时的样子
+    await ball.click();
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0, { timeout: 10_000 });
+    expect(await post.evaluate((el) => el.outerHTML)).toBe(html);
+  });
+
   test('@core TC-E2E-165: 整段一个单元的 br 段落，送翻时 br 作为换行带出去，译文在同样的位置换行 —— 4 行短诗与 #768 那种链接多的 30 行段落；还原后逐字节回到原样（#840）', async ({
     page, mockGoogle, mockRequests, seedSettings, gotoFixture,
   }) => {
