@@ -4,7 +4,7 @@
  * 分类沿用既有跳过判定本来就有的分支，不发明新说法、不新增判定：
  * - 文字超过长度上限（MAX_TEXT）
  * - 标记复杂度超限（子树元素个数兜底，MAX_ELEMENTS）
- * - 被判为非正文区域（NON_CONTENT）
+ * - 被判为非正文区域（NON_CONTENT）—— #756 起不计入跳过，用例改为钉住这一点
  * - 被站点页面规则排除（排除选择器）
  * - 其他（采集时属性访问抛异常，#54）
  *
@@ -55,9 +55,9 @@ describe('按原因分组（#754）', () => {
     expect(tally()).toEqual({ units: ['a', 'b'], by: { 'too-complex': ['dense'] } });
   });
 
-  test('被判为非正文区域', () => {
+  test('被判为非正文区域：#756 起不计入跳过', () => {
     document.body.innerHTML = NORMAL + NON_CONTENT;
-    expect(tally()).toEqual({ units: ['a', 'b'], by: { 'non-content': ['foot'] } });
+    expect(tally()).toEqual({ units: ['a', 'b'], by: {} });
   });
 
   test('被站点页面规则排除', async () => {
@@ -84,9 +84,9 @@ describe('按原因分组（#754）', () => {
     expect(by).toEqual({ 'too-long': ['long', 'long2'], 'too-complex': ['dense'] });
   });
 
-  test('先命中的分支说了算：既在非正文区又超长的，算非正文区', () => {
+  test('先命中的分支说了算：既在非正文区又超长的，按非正文区处理，不算超长（#756 起不计入）', () => {
     document.body.innerHTML = NORMAL + `<nav>${TOO_LONG}</nav>`;
-    expect(tally().by).toEqual({ 'non-content': ['long'] });
+    expect(tally().by).toEqual({});
   });
 
   test('没有任何跳过时一类都没有', () => {
