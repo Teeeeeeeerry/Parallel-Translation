@@ -69,6 +69,12 @@ export function lineText(line: Line): string {
   return s;
 }
 
+/** 纯符号分隔行：不含正文，保留为裸内容而不包成不可采集的切块。 */
+export function isDecorationLine(line: string): boolean {
+  const text = line.trim();
+  return text.length > 0 && /^[=\-*_~#]+$/.test(text);
+}
+
 /** 文本是否超过单块上限 —— 超长块不参与翻译 */
 function isOversized(text: string): boolean {
   return text.trim().length > MAX_TEXT;
