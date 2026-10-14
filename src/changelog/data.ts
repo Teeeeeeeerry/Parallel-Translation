@@ -47,6 +47,134 @@ export const GROUP_ORDER: readonly ChangeType[] = ['feature', 'improve', 'fix'];
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: '2.1.153',
+    groups: [
+      {
+        type: 'feature',
+        items: [
+          {
+            title: {
+              zh_CN: '输入翻译',
+              zh_TW: '輸入翻譯',
+              en: 'Translate input',
+            },
+            desc: {
+              zh_CN: '在输入框里写好一段话，点文字末尾的圆点，就整段换成对方的语言，按撤销可以回到原文；工具栏面板里可以临时指定这一次译成什么，密码框不参与。',
+              zh_TW: '在輸入框裡寫好一段話，點文字末尾的圓點，就整段換成對方的語言，按復原可以回到原文；工具列面板裡可以暫時指定這一次譯成什麼，密碼框不參與。',
+              en: "Write a paragraph in a text box and click the dot at the end of your text to replace it with the other person's language; undo brings it back. Pick a language for this page from the toolbar panel. Password fields never take part.",
+            },
+          },
+          {
+            title: {
+              zh_CN: '已是目标语言的页面不再整页送翻',
+              zh_TW: '已是目標語言的頁面不再整頁送翻',
+              en: 'Pages already in your language stay as they are',
+            },
+            desc: {
+              zh_CN: '点全页翻译时先在本机识别正文，正文已经是目标语言就一个请求都不发；中文界面、外文正文的商店页、视频页与论坛照常翻译。',
+              zh_TW: '按全頁翻譯時先在本機辨識內文，內文已經是目標語言就一個請求都不送出；中文介面、外文內文的商店頁、影片頁與論壇照常翻譯。',
+              en: 'Translate page now checks the content on your device first and sends nothing if it is already in your target language. Store pages, video pages and forums with a localized interface but foreign content still translate.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '没翻到的段落会告诉你',
+              zh_TW: '沒翻到的段落會告訴你',
+              en: 'Untranslated paragraphs are reported',
+            },
+            desc: {
+              zh_CN: '全页翻译结束后，若有段落因为太长、结构太复杂或被站点规则排除而没翻，会提示有几段、主要原因是什么。',
+              zh_TW: '全頁翻譯結束後，若有段落因為太長、結構太複雜或被網站規則排除而沒翻，會提示有幾段、主要原因是什麼。',
+              en: 'After a full-page translation, a notice tells you how many paragraphs were left out and the main reason: too long, too complex, or excluded by site rules.',
+            },
+          },
+        ],
+      },
+      {
+        type: 'improve',
+        items: [
+          {
+            title: {
+              zh_CN: '划词译文停得住',
+              zh_TW: '劃詞譯文停得住',
+              en: 'Selection translations stay up',
+            },
+            desc: {
+              zh_CN: '划词与右键翻译的译文按长短停留 5 到 60 秒，鼠标或键盘焦点停在上面时不计时，可以关闭，等待时显示“翻译中”。',
+              zh_TW: '劃詞與右鍵翻譯的譯文依長短停留 5 到 60 秒，滑鼠或鍵盤焦點停在上面時不計時，可以關閉，等待時顯示「翻譯中」。',
+              en: 'Translations from a selection or the right-click menu stay 5 to 60 seconds depending on length, pause while your mouse or keyboard focus is on them, can be closed, and show "Translating" while you wait.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '长帖逐行对照',
+              zh_TW: '長文逐行對照',
+              en: 'Line-by-line long posts',
+            },
+            desc: {
+              zh_CN: '用换行分行的超长正文改为逐行翻译，一行原文跟一行译文，逐段翻译只翻鼠标停的那一行。',
+              zh_TW: '用換行分行的超長內文改為逐行翻譯，一行原文接一行譯文，逐段翻譯只翻滑鼠停留的那一行。',
+              en: 'Very long text split by line breaks is translated line by line, each translation under its original, and Translate on hover handles just the line under your mouse.',
+            },
+          },
+          {
+            title: {
+              zh_CN: 'iframe 里的内容也能翻',
+              zh_TW: 'iframe 裡的內容也能翻',
+              en: 'Content inside iframes',
+            },
+            desc: {
+              zh_CN: '网页邮箱的邮件正文、文件预览这类 iframe 里的内容，全页翻译能翻到，输入框也有圆点。',
+              zh_TW: '網頁信箱的郵件內文、檔案預覽這類 iframe 裡的內容，全頁翻譯翻得到，輸入框也有圓點。',
+              en: 'Mail bodies in webmail, file previews and similar iframe content are now reached by full-page translation, and their text boxes get the Translate input dot.',
+            },
+          },
+        ],
+      },
+      {
+        type: 'fix',
+        items: [
+          {
+            title: {
+              zh_CN: '维基长条目不再整段漏翻',
+              zh_TW: '維基長條目不再整段漏翻',
+              en: 'Long wiki articles fully translated',
+            },
+            desc: {
+              zh_CN: '链接与注释密集的长条目上，原来被整段跳过的段落现在照常翻译。',
+              zh_TW: '連結與註腳密集的長條目上，原本被整段略過的段落現在照常翻譯。',
+              en: 'On link- and footnote-heavy articles, paragraphs that used to be skipped now translate.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '译文不再原样重复原文',
+              zh_TW: '譯文不再原樣重複原文',
+              en: 'No more translations that repeat the original',
+            },
+            desc: {
+              zh_CN: '引擎原样还回来的文字不再当译文插入，中文页面上不会每行再出现一遍。',
+              zh_TW: '引擎原樣傳回的文字不再當成譯文插入，中文頁面上不會每行再出現一次。',
+              en: "Text the engine returns unchanged is no longer inserted as a translation, so Chinese pages don't show every line twice.",
+            },
+          },
+          {
+            title: {
+              zh_CN: '一些站点上的误翻与漏翻',
+              zh_TW: '部分網站的誤翻與漏翻',
+              en: 'Site-specific fixes',
+            },
+            desc: {
+              zh_CN: 'draw.io 的面板标题不再被翻，SVG 图里的文字不再出按钮，带自定义标签的段落不再丢字。',
+              zh_TW: 'draw.io 的面板標題不再被翻，SVG 圖裡的文字不再出現按鈕，含自訂標籤的段落不再漏字。',
+              en: 'draw.io panel titles stay untranslated, text inside SVG diagrams no longer gets a button, and paragraphs with custom tags keep all their text.',
+            },
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '2.1.1',
     groups: [
       {
