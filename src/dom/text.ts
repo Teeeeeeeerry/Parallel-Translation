@@ -15,7 +15,7 @@
 //   代码层判定
 
 import { shouldOmitText, shouldPreserveText } from './compat';
-import { INLINE_SET, isVisible, isVisuallyHidden } from './classify';
+import { isInlineTag, isVisible, isVisuallyHidden } from './classify';
 import { getSiteRules } from '~/src/storage/specialization';
 import { normalizeLines, normalizePreText } from './normalize';
 import type { SiteRules } from '~/src/storage/specialization';
@@ -65,14 +65,12 @@ function makePlaceholder(idx: number): string {
 }
 
 /**
- * 排除与保留原文在提取送翻文本时的行内元素判定：INLINE_SET 的标签，
- * 加上自定义元素（#455，标签名含连字符）—— 浏览器默认按行内渲染
- * 自定义元素，Web Component 渲染的用户名、频道名常写在句子中间。
- * 翻译单元判定（哪些子元素阻断段落）仍只看 INLINE_SET。
+ * 排除与保留原文在提取送翻文本时的行内元素判定与采集一致：白名单标签与
+ * 自定义元素（标签名含连字符）。浏览器默认把后者按行内渲染，Web Component
+ * 渲染的用户名、频道名常写在句子中间。
  */
 function isInline(el: Element): boolean {
-  const tag = el.tagName.toLowerCase();
-  return INLINE_SET.has(tag) || tag.includes('-');
+  return isInlineTag(el.tagName.toLowerCase());
 }
 
 /**
@@ -253,7 +251,7 @@ function walkShallow(el: Element, pm: PreserveMap | null): string {
       }
 
       // 跳过块级子元素 —— 它们的文本由各自翻译单元覆盖
-      if (!INLINE_SET.has(tag)) continue;
+      if (!isInlineTag(tag)) continue;
 
       // #595 / #600：看不见的文字不送翻，同完整提取
       if (skipHidden(c, unitVisible)) {
@@ -293,7 +291,7 @@ function walkShallow(el: Element, pm: PreserveMap | null): string {
 export function hasBlockTextChildren(el: Element): boolean {
   for (const child of el.children) {
     const tag = child.tagName.toLowerCase();
-    if (INLINE_SET.has(tag)) continue;
+    if (isInlineTag(tag)) continue;
     if (child.textContent?.trim()) return true;
   }
   return false;

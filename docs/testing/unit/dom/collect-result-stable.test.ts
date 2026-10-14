@@ -42,6 +42,9 @@ const EDGE = `
   <div id="e10"><span>Only inline content in a div container.</span></div>
   <p id="e11">​<em>emphasis after a zero width space</em></p>
   <p id="e12">3 <span class="notranslate">do not translate</span></p>
+  <!-- #946：默认行内的自定义元素与 label 不能触发浅层提取。 -->
+  <p id="e13">Before <x-tracker><a href="#">tracked link text</a></x-tracker> after.</p>
+  <div id="e14"><label><a href="#">label wrapped link text</a></label></div>
 `;
 
 /** 元素在文档里的位置：从 body 起每一层的标签与序号。 */
