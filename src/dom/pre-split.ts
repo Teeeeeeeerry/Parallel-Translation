@@ -15,7 +15,7 @@
 // MAX_TEXT / MAX_HTML，采集 0 单元（翻译静默失败）。改为仅当存在
 // 块级子元素才拒切，内联子元素随文本流切分保留。
 
-import { INLINE_SET, MAX_TEXT, CODE_SEMANTIC_SET, isCodeBlockPre } from './classify';
+import { isInlineTag, MAX_TEXT, CODE_SEMANTIC_SET, isCodeBlockPre } from './classify';
 import { lineText, splitIntoChunks, type ChunkShape, type Part, type Tok } from './chunk-split';
 
 // #705：token 化、行聚合、包切块、打标记与还原都在切块内核里（chunk-split），
@@ -98,7 +98,7 @@ export function splitPre(pre: HTMLPreElement): HTMLSpanElement[] | null {
   // #136：CODE_SEMANTIC_SET 与 classify 共享，不再局部重定义。
   for (const child of pre.children) {
     const tag = child.tagName.toLowerCase();
-    if (!INLINE_SET.has(tag) || CODE_SEMANTIC_SET.has(tag)) return null;
+    if (!isInlineTag(tag) || CODE_SEMANTIC_SET.has(tag)) return null;
   }
 
   const text = pre.textContent ?? '';

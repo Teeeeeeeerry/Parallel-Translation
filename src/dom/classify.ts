@@ -90,8 +90,19 @@ export const INLINE_SET = new Set([
   'font', 'mark', 'cite', 'q', 'abbr', 'time', 'ruby', 'img', 'br', 'svg',
   'code', 'kbd', 'samp', 'var', 'dfn',
   'del', 'ins', 's', 'bdi', 'bdo', 'wbr',
-  'tt', 'big',
+  'tt', 'big', 'label',
 ]);
+
+/**
+ * 子元素是否按行内内容处理。
+ *
+ * 自定义元素在未被站点样式覆盖时是 inline；采集不读取计算样式，以免把布局
+ * 读取带进遍历与悬停精判的热路径。带连字符的标签因此与 INLINE_SET 一样属于
+ * 父段的内容（#946）。
+ */
+export function isInlineTag(tag: string): boolean {
+  return INLINE_SET.has(tag) || tag.includes('-');
+}
 
 /**
  * 代码语义内联标签 —— #136：pre-split 等模块的共享标签词汇。
@@ -276,7 +287,7 @@ export const NON_TEXT_SELECTOR =
  *
  * 判定从“存在性”改为“位置性”：#55 —— 只有当非文本节点不在本段的
  * 内联文本流中时才阻断。从匹配到的非文本节点沿祖先链上溯到目标元素，
- * 若路径上每一层都是 INLINE_SET 标签，说明是行内装饰（favicon 角标、
+ * 若路径上每一层都是行内标签，说明是行内装饰（favicon 角标、
  * badge 等），不应阻止翻译；否则视为独立媒体块，仍然拒绝。
  */
 export function hasNonTextContent(el: Element): boolean {
@@ -288,7 +299,7 @@ export function hasNonTextContent(el: Element): boolean {
   for (const match of matches) {
     let cur: Element | null = match;
     while (cur && cur !== el) {
-      if (!INLINE_SET.has(cur.tagName.toLowerCase())) {
+      if (!isInlineTag(cur.tagName.toLowerCase())) {
         return true;
       }
       cur = cur.parentElement;
@@ -373,7 +384,7 @@ export function isTranslationUnit(el: Element): boolean {
   for (const child of el.children) {
     const childTag = child.tagName.toLowerCase();
     // 内联子元素属于本段的一部分，不影响判定
-    if (INLINE_SET.has(childTag)) continue;
+    if (isInlineTag(childTag)) continue;
     // 非内联且有文本 → 若当前元素有直接文本则接受（仅翻直接文本），否则拒收
     if (child.textContent?.trim()) {
       if (hasDirect) continue;
@@ -393,7 +404,7 @@ export function isTranslationUnit(el: Element): boolean {
 function hasInlineOnlyText(el: Element, tag: string): boolean {
   if (tag === 'pre') return false;
   for (const child of el.children) {
-    if (!INLINE_SET.has(child.tagName.toLowerCase())) return false;
+    if (!isInlineTag(child.tagName.toLowerCase())) return false;
   }
   return textOutsideCode(el);
 }

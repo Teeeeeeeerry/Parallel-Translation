@@ -3742,9 +3742,19 @@
     "path": "p[11]",
     "text": "3",
     "preserves": []
+   },
+   {
+    "path": "p[12]",
+    "text": "Before tracked link text after.",
+    "preserves": []
+   },
+   {
+    "path": "div[13]",
+    "text": "label wrapped link text",
+    "preserves": []
    }
   ],
-  "html": "\n  <p id=\"e1\">1. <a class=\"keep\">@octocat</a></p>\n  <p id=\"e2\">— <span class=\"drop\">hidden by exclude</span> —</p>\n  <p id=\"e3\">2024 <b>bold words only here</b></p>\n  <p id=\"e4\"><span class=\"sr-only\">screen reader text</span> 42</p>\n  <p id=\"e5\">( <span style=\"display:none\">invisible words</span> )</p>\n  <p id=\"e6\">Plain text with <a class=\"keep\">@alice</a> and <span class=\"drop\">noise</span> inside.</p>\n  <p id=\"e7\">!!! ??? ...</p>\n  <p id=\"e8\"><a class=\"keep\">@bob</a>, <a class=\"keep\">@carol</a></p>\n  <li id=\"e9\">Item label <ul><li>Nested child item text</li></ul></li>\n  <div id=\"e10\"><span>Only inline content in a div container.</span></div>\n  <p id=\"e11\">​<em>emphasis after a zero width space</em></p>\n  <p id=\"e12\">3 <span class=\"notranslate\">do not translate</span></p>\n",
+  "html": "\n  <p id=\"e1\">1. <a class=\"keep\">@octocat</a></p>\n  <p id=\"e2\">— <span class=\"drop\">hidden by exclude</span> —</p>\n  <p id=\"e3\">2024 <b>bold words only here</b></p>\n  <p id=\"e4\"><span class=\"sr-only\">screen reader text</span> 42</p>\n  <p id=\"e5\">( <span style=\"display:none\">invisible words</span> )</p>\n  <p id=\"e6\">Plain text with <a class=\"keep\">@alice</a> and <span class=\"drop\">noise</span> inside.</p>\n  <p id=\"e7\">!!! ??? ...</p>\n  <p id=\"e8\"><a class=\"keep\">@bob</a>, <a class=\"keep\">@carol</a></p>\n  <li id=\"e9\">Item label <ul><li>Nested child item text</li></ul></li>\n  <div id=\"e10\"><span>Only inline content in a div container.</span></div>\n  <p id=\"e11\">​<em>emphasis after a zero width space</em></p>\n  <p id=\"e12\">3 <span class=\"notranslate\">do not translate</span></p>\n  <!-- #946：默认行内的自定义元素与 label 不能触发浅层提取。 -->\n  <p id=\"e13\">Before <x-tracker><a href=\"#\">tracked link text</a></x-tracker> after.</p>\n  <div id=\"e14\"><label><a href=\"#\">label wrapped link text</a></label></div>\n",
   "hover": [
    null,
    null,
@@ -3771,7 +3781,13 @@
    "p[10]",
    "p[10]",
    "p[11]",
-   "p[11]"
+   "p[11]",
+   "p[12]",
+   "p[12]",
+   "p[12]",
+   "div[13]",
+   "div[13]",
+   "div[13]"
   ]
  }
 }

@@ -20,7 +20,7 @@ import {
   CODE_SEMANTIC_SET,
   CONTAINER_SET,
   DIRECT_SET,
-  INLINE_SET,
+  isInlineTag,
   MAX_TEXT,
   inCodeBlockContext,
 } from './classify';
@@ -92,7 +92,7 @@ export function splitBrParagraph(el: Element): HTMLSpanElement[] | null {
   let hasBr = false;
   for (const child of el.children) {
     const tag = child.tagName.toLowerCase();
-    if (!INLINE_SET.has(tag) || CODE_SEMANTIC_SET.has(tag)) return null;
+    if (!isInlineTag(tag) || CODE_SEMANTIC_SET.has(tag)) return null;
     if (tag === 'br') hasBr = true;
   }
   if (!hasBr) return null;
@@ -144,4 +144,3 @@ export function oversizedLineCount(container: Element): number {
   endLine();
   return count;
 }
-
