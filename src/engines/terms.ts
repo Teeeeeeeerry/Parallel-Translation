@@ -70,7 +70,10 @@ function termFinder(source: string): TermFinder {
   const chars = [...source];
   const checkBefore = !CJK_CHAR.test(chars[0]!);
   const checkAfter = !CJK_CHAR.test(chars[chars.length - 1]!);
-  const re = new RegExp(escapeRegExp(source), 'giu');
+  // #952：整段单元里的 br 会作为换行送翻；原词里的空格在这里可匹配该换行。
+  // 只放宽空白，不改变大小写、全半角或其他字符的匹配规则。按行切开的两个
+  // 单元仍各自没有完整原词，不能也不应在这里跨单元命中。
+  const re = new RegExp(escapeRegExp(source).replace(/ /g, '\\s+'), 'giu');
   return (text, from) => {
     re.lastIndex = from;
     for (let m = re.exec(text); m; m = re.exec(text)) {

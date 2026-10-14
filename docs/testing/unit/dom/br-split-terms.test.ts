@@ -155,13 +155,13 @@ describe('每一行照常带上当前领域、应用术语（#715）', () => {
   });
 });
 
-describe('原词横跨两行：照常失配（#715 的结论）', () => {
+describe('原词横跨两行：整段单元把换行当空白，切块仍是已知限制（#715、#952）', () => {
   /**
    * 结论：原词正好被 br 断在两行时，术语不命中 —— 这一行送出去的只有前半个
    * 词，下一行只有后半个词，两条送翻文本里都没有完整的原词。这不是切行带来
    * 的新问题：长度没超上限、整段一个单元的 br 段落里，br 作为换行带出去
-   * （#840），原词中间是换行而不是空格，同样不命中。两种情况下术语都按普通
-   * 文字交给引擎翻译。
+   * （#840），原词中间是换行而不是空格，术语匹配把该换行视作空白而命中。
+   * 按行切块没有完整原词，仍是已知限制；不能让切块内核依赖领域术语。
    */
   test('超长段落按行切开：前一行以 pull 结尾、后一行以 request 开头，两行都不替换', async () => {
     document.body.innerHTML = post({
@@ -175,19 +175,26 @@ describe('原词横跨两行：照常失配（#715 的结论）', () => {
     expect(lineTranslations()[41]).not.toContain('拉取请求');
   });
 
-  test('对照：没超上限、整段一个单元的 br 段落，原词中间是换行，同样不替换', async () => {
+  test('没超上限、整段一个单元的 br 段落：原词中间换行按空白命中', async () => {
     document.body.innerHTML = '<p id="short">She opened a pull<br>request and closed the laptop.</p>';
     const { texts } = collectUnits();
     expect(texts).toEqual(['She opened a pull\nrequest and closed the laptop.']);
     const resp = await route({ texts, from: 'en', to: 'zh-CN', domainId: 'user:dev' });
-    expect(queries()).toEqual(['She opened a pull\nrequest and closed the laptop.']);
-    expect(resp.translations[0]).not.toContain('拉取请求');
+    expect(queries()).toEqual(['She opened a ⟦TM0⟧ and closed the laptop.']);
+    expect(resp.translations[0]).toContain('拉取请求');
   });
 
   test('对照：同一句不断行时照常替换（失配只因为 br，不是这句话本身）', async () => {
     document.body.innerHTML = post({ 40: 'Line 40: before leaving she opened a pull request and closed the laptop.' });
     await translatePage();
     expect(queries()[40]!.trim()).toBe('Line 40: before leaving she opened a ⟦TM0⟧ and closed the laptop.');
+  });
+
+  test('单词与跨三行的原词保持原有行为', async () => {
+    terms = [{ source: 'monorepo', noTranslate: true }];
+    const resp = await route({ texts: ['A monorepo.', 'mono\nrepo\nnow'], from: 'en', to: 'zh-CN', domainId: 'user:dev' });
+    expect(resp.translations[0]).toContain('monorepo');
+    expect(resp.translations[1]).toBe('译:mono\nrepo\nnow');
   });
 });
 
