@@ -25,9 +25,12 @@ export default defineConfig({
 
   // ── Fixture 静态服务器（绕开 file:// content script 限制）──
   webServer: {
-    command: `node ${FIXTURES_SERVER}`,
-    port: 4173,
-    reuseExistingServer: !process.env.CI,
+    // 报告之外另存服务进程输出，便于将健康检查失败与具体 PID/退出事件对应。
+    command: `mkdir -p ${LOGS_DIR} && node ${FIXTURES_SERVER} > ${LOGS_DIR}/fixtures-server.stdout.log 2> ${LOGS_DIR}/fixtures-server.stderr.log`,
+    // 每轮由 Playwright 启动和回收自己的进程。复用上一次运行留下的
+    // 4173 会把已退出进程的生命周期混进当前运行，最终表现为中途拒绝连接。
+    url: 'http://127.0.0.1:4173/__fixture-health',
+    reuseExistingServer: false,
     timeout: 30_000,
   },
 
