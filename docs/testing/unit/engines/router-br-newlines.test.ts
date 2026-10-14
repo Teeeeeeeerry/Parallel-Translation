@@ -120,9 +120,9 @@ describe('术语占位符不被换行切坏（#840）', () => {
     expect(resp.translations).toEqual(['译:issue opened\nsee the pull request\nissue']);
   });
 
-  test('多词术语被 br 隔在两行：不算命中，原样送出（两行本就不是同一个词组）', async () => {
+  test('多词术语被 br 隔在两行：换行当作空白命中（#952）', async () => {
     await translate(['open a pull\nrequest here']);
 
-    expect(queries()[0]).toBe('open a pull\nrequest here');
+    expect(queries()[0]).toBe('open a ⟦TM0⟧ here');
   });
 });
