@@ -16,6 +16,13 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = resolve(__dirname, 'fixtures');
 const PORT = Number(process.env.PORT) || 4173;
+const STARTED_AT = new Date().toISOString();
+
+function lifecycle(event, details = {}) {
+  console.error(`fixture-server event=${event} pid=${process.pid} ${Object.entries(details)
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+    .join(' ')}`);
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -27,6 +34,13 @@ const MIME = {
 };
 
 function serve(req, res) {
+  if (req.url?.split('?')[0] === '/__fixture-health') {
+    const body = JSON.stringify({ status: 'ok', pid: process.pid, startedAt: STARTED_AT });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body) });
+    res.end(body);
+    return;
+  }
+
   // 仅允许 GET
   if (req.method !== 'GET') {
     res.writeHead(405);
@@ -53,22 +67,49 @@ function serve(req, res) {
 
   const ext = extname(filePath).toLowerCase();
   const contentType = MIME[ext] || 'application/octet-stream';
-  const body = readFileSync(filePath);
-
-  res.writeHead(200, { 'Content-Type': contentType, 'Content-Length': body.length });
-  res.end(body);
+  try {
+    const body = readFileSync(filePath);
+    res.writeHead(200, { 'Content-Type': contentType, 'Content-Length': body.length });
+    res.end(body);
+  } catch (error) {
+    lifecycle('request-error', { method: req.method, url: req.url, error: String(error) });
+    res.writeHead(500);
+    res.end('Internal Server Error');
+  }
 }
 
 const server = createServer(serve);
+server.on('error', (error) => {
+  lifecycle('listen-error', { port: PORT, error: String(error) });
+  // 尚未成功 listen 时，close 回调不会执行；直接以失败码退出，避免
+  // Playwright 把端口冲突误看成一直在等待就绪。
+  process.exit(1);
+});
 server.listen(PORT, () => {
   // Playwright webServer 通过此输出来验证服务器已就绪
   console.log(`Fixture server listening on http://localhost:${PORT}`);
+  lifecycle('listening', { port: PORT });
 });
 
 // 优雅关闭
-function shutdown() {
-  server.close();
-  process.exit(0);
+function shutdown(signal) {
+  lifecycle('shutdown', { signal, exitCode: 0 });
+  server.close((error) => {
+    if (error) {
+      lifecycle('close-error', { signal, error: String(error), exitCode: 1 });
+      process.exit(1);
+    }
+    process.exit(0);
+  });
 }
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('exit', (code) => lifecycle('exit', { code }));
+process.on('uncaughtException', (error) => {
+  lifecycle('uncaught-exception', { error: error.stack || String(error) });
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  lifecycle('unhandled-rejection', { reason: String(reason) });
+  process.exit(1);
+});
