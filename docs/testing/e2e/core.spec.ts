@@ -6368,7 +6368,10 @@ test.describe('页面级闸门（#777）', () => {
     for (;;) {
       const visible: string[] = [];
       for (const t of await mainToasts.all()) {
-        if (await t.isVisible().catch(() => false)) visible.push(((await t.textContent()) ?? '').trim());
+        if (await t.isVisible().catch(() => false)) {
+          const text = await t.textContent({ timeout: 500 }).catch(() => null);
+          if (text !== null) visible.push(text.trim());
+        }
       }
       maxMain = Math.max(maxMain, visible.length);
       visible.forEach((v) => seen.add(v));
@@ -6839,7 +6842,10 @@ test.describe('整页翻译结束后告知采集时跳过的段落（#727）', (
     while (Date.now() < end) {
       const visible: string[] = [];
       for (const t of await toast.all()) {
-        if (await t.isVisible().catch(() => false)) visible.push(((await t.textContent()) ?? '').trim());
+        if (await t.isVisible().catch(() => false)) {
+          const text = await t.textContent({ timeout: 500 }).catch(() => null);
+          if (text !== null) visible.push(text.trim());
+        }
       }
       visible.forEach((v) => seen.add(v));
       maxMain = Math.max(maxMain, visible.length);
