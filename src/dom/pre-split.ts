@@ -16,21 +16,11 @@
 // 块级子元素才拒切，内联子元素随文本流切分保留。
 
 import { isInlineTag, MAX_TEXT, CODE_SEMANTIC_SET, isCodeBlockPre } from './classify';
-import { lineText, splitIntoChunks, type ChunkShape, type Part, type Tok } from './chunk-split';
+import { isDecorationLine, lineText, splitIntoChunks, type ChunkShape, type Part, type Tok } from './chunk-split';
 
 // #705：token 化、行聚合、包切块、打标记与还原都在切块内核里（chunk-split），
 // 这里只留 pre 的形状 —— 换行来自文本里的 '\n'，行按空行聚成段落块 —— 与
 // pre 专属的拒切条件。
-
-/**
- * 装饰行：=====、-----、***** 等纯符号行 —— plain-text 文档的分节装饰。
- * 这些行不是正文，不应独立构成翻译单元。
- */
-function isDecorationLine(line: string): boolean {
-  const t = line.trim();
-  if (t.length === 0) return false;
-  return /^[=\-*_~#]+$/.test(t);
-}
 
 /**
  * 列表条目行：行首（允许缩进）为项目符号或编号标记。

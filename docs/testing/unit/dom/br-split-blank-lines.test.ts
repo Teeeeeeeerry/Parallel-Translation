@@ -35,6 +35,21 @@ const BLANKS: Record<string, string> = {
 const withBlanks = (blank: string) => `<p id="post">${brLines(N, `<br>${blank}<br>\n`)}</p>`;
 
 describe('空行不成切块、不送翻（#709）', () => {
+  test('纯符号分隔行复用 pre 的装饰行判定：不包切块，采集结果不变', () => {
+    const separators = Array.from({ length: N - 1 }, (_, i) => (i % 2 ? '---' : '***'));
+    document.body.innerHTML = `<p id="post">${LINES.flatMap((text, i) => [text, i < N - 1 ? `<br>${separators[i]}<br>` : '']).join('')}</p>`;
+    const post = document.getElementById('post')!;
+    const before = document.body.innerHTML;
+
+    const { texts } = collectUnits();
+    expect(texts.map((text) => text.trim())).toEqual(LINES);
+    expect(post.querySelectorAll(':scope > .pt-chunk')).toHaveLength(N);
+    expect(post.querySelectorAll(':scope > br')).toHaveLength(2 * (N - 1));
+
+    restorePage();
+    expect(document.body.innerHTML).toBe(before);
+  });
+
   test.each(Object.entries(BLANKS))('%s：只有带文字的行成为切块，空行留作裸内容', (_name, blank) => {
     document.body.innerHTML = withBlanks(blank);
     const post = document.getElementById('post')!;

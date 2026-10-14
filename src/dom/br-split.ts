@@ -24,7 +24,7 @@ import {
   MAX_TEXT,
   inCodeBlockContext,
 } from './classify';
-import { lineText, splitIntoChunks, type ChunkShape } from './chunk-split';
+import { isDecorationLine, lineText, splitIntoChunks, type ChunkShape } from './chunk-split';
 
 /**
  * 空行：两个 br 之间看不见任何文字 —— 只有空白（含 &nbsp;）与零宽字符这类
@@ -49,7 +49,7 @@ const BR_SHAPE: ChunkShape = {
   // 有字的行各自成块；空行留作裸内容，不成单元（#709）
   group(lines) {
     return lines.map((line) => ({
-      kind: isBlankLine(lineText(line)) ? 'raw' : 'chunk',
+      kind: isBlankLine(lineText(line)) || isDecorationLine(lineText(line)) ? 'raw' : 'chunk',
       lines: [line],
     }));
   },
