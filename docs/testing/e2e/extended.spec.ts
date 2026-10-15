@@ -1435,7 +1435,7 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await options.goto(`chrome-extension://${extId}/options.html`);
     const label = await options.evaluate(() => chrome.i18n.getMessage('rowBallSize'));
     const slider = options.getByRole('slider', { name: label });
-    const readout = options.locator('#pt-floating-ui-sliders output');
+    const readout = options.locator('output[for="pt-slider-ball-size"]');
     await expect(slider).toHaveValue('44');
     await expect(readout).toHaveText('44 px');
 
@@ -1464,7 +1464,7 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
 
     await options.reload();
     await expect(options.getByRole('slider', { name: label })).toHaveValue('72');
-    await expect(options.locator('#pt-floating-ui-sliders output')).toHaveText('72 px');
+    await expect(options.locator('output[for="pt-slider-ball-size"]')).toHaveText('72 px');
   });
 
   test('TC-E2E-194: 设置页的悬浮 UI 预览 —— 拖动中预览里的球就按滑块值变、不等写盘；别处改了尺寸预览跟着变（#968）', async ({
@@ -1656,7 +1656,7 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await options.goto(`chrome-extension://${extId}/options.html`);
     const label = await options.evaluate(() => chrome.i18n.getMessage('rowParaBtnSize'));
     const slider = options.getByRole('slider', { name: label });
-    const readout = options.locator('#pt-floating-ui-sliders output').nth(1);
+    const readout = options.locator('output[for="pt-slider-para-btn-size"]');
     const previewBtn = () =>
       options.evaluate(() => {
         const b = document.getElementById('pt-floating-preview')!.shadowRoot!.querySelector('.pt-para-btn')!;
