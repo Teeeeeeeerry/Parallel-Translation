@@ -11,7 +11,12 @@
 // UI 分叉。变量名与 injected.css 里的 var() 一一对应，回落值也在那里。
 
 import type { Settings } from '../storage/schema';
-import { clampBallSize, clampParaBtnSize } from '../storage/schema';
+import {
+  PARA_BTN_SIZE_MIN,
+  clampBallSize,
+  clampInputDotSize,
+  clampParaBtnSize,
+} from '../storage/schema';
 
 export type FloatingUiVars = Record<`--pt-${string}`, string>;
 
@@ -27,17 +32,31 @@ const PARA_BTN_FONT_RATIO = 12 / 24;
  */
 const BALL_FONT_RATIO = 11 / 44;
 
+/**
+ * 输入翻译圆点的可点区边长（#987）：随可见直径等比放大（原来 14px 的点配 24px
+ * 可点区），但永远不低于逐段翻译按钮的点击下限 —— 两个下限同源，都是实测定的
+ * 24px。CSS 读 floatingUiVars 给出的变量，input-dot.ts 摆放可点区时调同一个
+ * 函数，换算只有这一处。
+ */
+const INPUT_DOT_HIT_RATIO = 24 / 14;
+export function inputDotHitSize(dotSize: number): number {
+  return Math.max(PARA_BTN_SIZE_MIN, Math.round(dotSize * INPUT_DOT_HIT_RATIO));
+}
+
 export function floatingUiVars(
-  s: Pick<Settings, 'floatingBallSize' | 'paraBtnSize'>,
+  s: Pick<Settings, 'floatingBallSize' | 'paraBtnSize' | 'inputDotSize'>,
 ): FloatingUiVars {
   // 存储读出来的值不经写入口（直接写 storage 的旧数据），再钳一次：
   // 脏值写成 'NaNpx' 会让 var() 在计算值时刻失效，球的宽高变成 auto 塌掉
   const ball = clampBallSize(s.floatingBallSize);
   const btn = clampParaBtnSize(s.paraBtnSize);
+  const dot = clampInputDotSize(s.inputDotSize);
   return {
     '--pt-ball-size': `${ball}px`,
     '--pt-ball-font': `${ball * BALL_FONT_RATIO}px`,
     '--pt-para-btn-size': `${btn}px`,
     '--pt-para-btn-font': `${btn * PARA_BTN_FONT_RATIO}px`,
+    '--pt-input-dot-size': `${dot}px`,
+    '--pt-input-dot-hit': `${inputDotHitSize(dot)}px`,
   };
 }

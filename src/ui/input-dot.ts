@@ -41,6 +41,7 @@ import { mountIsolated, unmountIsolated } from './mount';
 import { measureEditableEnd, measureFieldEnd, type TextEnd } from './input-measure';
 import { GAP, SHOW_DELAY } from './paragraph-btn';
 import { tf } from '../i18n';
+import { inputDotHitSize } from './floating-ui-size';
 import { decideInputEligibility, inputText, type TextInput } from './input-eligibility';
 
 const HOST_ID = 'input-dot';
@@ -48,13 +49,23 @@ const HOST_ID = 'input-dot';
 /** 框里至少有这么多字符才浮出 —— 空的搜索框上不该无故冒出一个点。 */
 const MIN_CHARS = 2;
 
-/** 圆点直径，与 injected.css 的 .pt-input-dot 一致。 */
-const SIZE = 14;
+/** 圆点直径的缺省值，与 injected.css 里 .pt-input-dot 的回落值一致。 */
+const DEFAULT_SIZE = 14;
+
 /**
- * 可点区边长（#638），与 injected.css 的 .pt-input-dot::before 一致：不小于逐段
- * 翻译按钮的 24px 下限。可见圆点仍是 SIZE —— 直接撑大会挡住文字（ADR-0006）。
+ * 圆点直径与可点区边长（#987）。直径读圆点自己的布局宽度 —— 由设置经文档根上的
+ * 变量给出，CSS 是唯一来源，这里不另读设置；隐藏时量不到，回落缺省值。可点区
+ * （#638）边长与 CSS 同一个换算：随直径等比放大、不小于逐段翻译按钮的 24px
+ * 下限。可见圆点不直接撑大成可点区 —— 那样会挡住文字（ADR-0006）。
  */
-const HIT = 24;
+interface DotDims {
+  size: number;
+  hit: number;
+}
+function dotDims(dot: HTMLElement): DotDims {
+  const size = dot.offsetWidth || DEFAULT_SIZE;
+  return { size, hit: inputDotHitSize(size) };
+}
 /** 回落位置离框内侧边缘的距离。 */
 const INSET = 6;
 
@@ -108,21 +119,28 @@ function innerBox(el: HTMLElement): InnerBox {
 type EndSide = 'left' | 'right' | 'top' | 'bottom';
 
 /**
- * 可点区在一条轴上相对可见圆点的偏移（#638）：可点区是 HIT 见方、把圆点
- * 包在里面的透明一圈，偏移取 [SIZE - HIT, 0]。guardMin / guardMax 是文字
+ * 可点区在一条轴上相对可见圆点的偏移（#638）：可点区是 hit 见方、把圆点
+ * 包在里面的透明一圈，偏移取 [size - hit, 0]。guardMin / guardMax 是文字
  * 末尾给出的硬边界；框的可见区域是软边界，框装得下这一圈时才收进去；
  * 其余情况居中。
  */
-function hitAxis(dot: number, boxLo: number, boxHi: number, guardMin: number, guardMax: number): number {
-  let min = Math.max(SIZE - HIT, guardMin);
+function hitAxis(
+  dot: number,
+  boxLo: number,
+  boxHi: number,
+  guardMin: number,
+  guardMax: number,
+  { size, hit }: DotDims,
+): number {
+  let min = Math.max(size - hit, guardMin);
   let max = Math.min(0, guardMax);
   const inMin = Math.max(min, boxLo - dot);
-  const inMax = Math.min(max, boxHi - HIT - dot);
+  const inMax = Math.min(max, boxHi - hit - dot);
   if (inMin <= inMax) {
     min = inMin;
     max = inMax;
   }
-  return Math.min(max, Math.max(min, (SIZE - HIT) / 2));
+  return Math.min(max, Math.max(min, (size - hit) / 2));
 }
 
 /**
@@ -138,26 +156,28 @@ function placeHit(
   left: number,
   top: number,
   box: InnerBox,
+  d: DotDims,
   end?: { side: EndSide; at: TextEnd },
 ): void {
-  const spare = SIZE - HIT;
+  const spare = d.size - d.hit;
   let xMin = spare, xMax = 0, yMin = spare, yMax = 0;
   if (end?.side === 'left') xMin = Math.min(0, end.at.x + 1 - left);
-  if (end?.side === 'right') xMax = Math.max(spare, end.at.x - 1 - HIT - left);
+  if (end?.side === 'right') xMax = Math.max(spare, end.at.x - 1 - d.hit - left);
   if (end?.side === 'top') yMin = Math.min(0, end.at.y + end.at.height + 1 - top);
-  if (end?.side === 'bottom') yMax = Math.max(spare, end.at.y - 1 - HIT - top);
-  dot.style.setProperty('--pt-hit-x', `${hitAxis(left, box.left, box.right, xMin, xMax)}px`);
-  dot.style.setProperty('--pt-hit-y', `${hitAxis(top, box.top, box.bottom, yMin, yMax)}px`);
+  if (end?.side === 'bottom') yMax = Math.max(spare, end.at.y - 1 - d.hit - top);
+  dot.style.setProperty('--pt-hit-x', `${hitAxis(left, box.left, box.right, xMin, xMax, d)}px`);
+  dot.style.setProperty('--pt-hit-y', `${hitAxis(top, box.top, box.bottom, yMin, yMax, d)}px`);
 }
 
 /** 回落位置：框内侧右下角（ADR-0006）。 */
 function placeFallback(dot: HTMLElement, el: HTMLElement): void {
   const box = innerBox(el);
-  const left = box.right - INSET - SIZE;
-  const top = box.bottom - INSET - SIZE;
+  const d = dotDims(dot);
+  const left = box.right - INSET - d.size;
+  const top = box.bottom - INSET - d.size;
   dot.style.left = `${left}px`;
   dot.style.top = `${top}px`;
-  placeHit(dot, left, top, box);
+  placeHit(dot, left, top, box, d);
 }
 
 /**
@@ -165,10 +185,15 @@ function placeFallback(dot: HTMLElement, el: HTMLElement): void {
  * 圆点停在离它最近的可见边缘，不隐藏、也不换样式 —— 长文本恰恰是最想
  * 翻译的那种，圆点消失会被当成功能坏了。框比圆点还小时贴左上。
  */
-function clampToBox(left: number, top: number, box: InnerBox): { left: number; top: number } {
+function clampToBox(
+  left: number,
+  top: number,
+  box: InnerBox,
+  size: number,
+): { left: number; top: number } {
   return {
-    left: Math.max(box.left, Math.min(left, box.right - SIZE)),
-    top: Math.max(box.top, Math.min(top, box.bottom - SIZE)),
+    left: Math.max(box.left, Math.min(left, box.right - size)),
+    top: Math.max(box.top, Math.min(top, box.bottom - size)),
   };
 }
 
@@ -185,17 +210,18 @@ function besideEnd(
   end: TextEnd,
   box: InnerBox,
   rtl: boolean,
+  size: number,
 ): { left: number; top: number; side: EndSide } {
-  const centered = end.y + end.height / 2 - SIZE / 2;
-  const after = rtl ? end.x - GAP - SIZE : end.x + GAP;
-  const before = rtl ? end.x + GAP : end.x - GAP - SIZE;
-  if (after >= box.left && after + SIZE <= box.right) {
+  const centered = end.y + end.height / 2 - size / 2;
+  const after = rtl ? end.x - GAP - size : end.x + GAP;
+  const before = rtl ? end.x + GAP : end.x - GAP - size;
+  if (after >= box.left && after + size <= box.right) {
     return { left: after, top: centered, side: rtl ? 'right' : 'left' };
   }
-  const left = rtl ? box.left : box.right - SIZE;
+  const left = rtl ? box.left : box.right - size;
   const below = end.y + end.height;
-  if (below + SIZE <= box.bottom) return { left, top: below, side: 'top' };
-  const above = end.y - SIZE;
+  if (below + size <= box.bottom) return { left, top: below, side: 'top' };
+  const above = end.y - size;
   if (above >= box.top) return { left, top: above, side: 'bottom' };
   return { left: before, top: centered, side: rtl ? 'left' : 'right' };
 }
@@ -215,11 +241,12 @@ function place(dot: HTMLElement, el: HTMLElement, shadow: ShadowRoot): void {
     return;
   }
   const box = innerBox(el);
-  const beside = besideEnd(end, box, getComputedStyle(el).direction === 'rtl');
-  const { left, top } = clampToBox(beside.left, beside.top, box);
+  const d = dotDims(dot);
+  const beside = besideEnd(end, box, getComputedStyle(el).direction === 'rtl', d.size);
+  const { left, top } = clampToBox(beside.left, beside.top, box, d.size);
   dot.style.left = `${left}px`;
   dot.style.top = `${top}px`;
-  placeHit(dot, left, top, box, { side: beside.side, at: end });
+  placeHit(dot, left, top, box, d, { side: beside.side, at: end });
 }
 
 /** 圆点的回调：点击时拿到当前输入框。 */
@@ -288,6 +315,21 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
           if (initialSize) initialSize = false;
           else onReflow();
         });
+  // #987: 设置里改了圆点大小（文档根上的变量变了）时圆点正显示着，变量变化
+  // 不经过上面任何一个时机，按新直径重新摆放一次。只认非零直径的变化 ——
+  // 显示与隐藏切换（0 ↔ 直径）不算，第一次量到直径也不算
+  let laidSize = 0;
+  const dotResized =
+    typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => {
+          const size = dot.offsetWidth;
+          if (size === 0 || size === laidSize) return;
+          const first = laidSize === 0;
+          laidSize = size;
+          if (!first) onReflow();
+        });
+  dotResized?.observe(dot);
   let watched: Element | null = null;
   const watch = (el: Element | null): void => {
     if (el === watched) return;
@@ -410,6 +452,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
     window.removeEventListener('resize', onReflow);
     document.fonts?.removeEventListener('loadingdone', onReflow);
     observer.disconnect();
+    dotResized?.disconnect();
     watch(null);
     unmountIsolated(HOST_ID);
   };

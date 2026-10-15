@@ -202,6 +202,12 @@ export interface Settings {
    * 延迟相同，范围见 PARA_BTN_HIDE_DELAY_MIN/MAX。浮出前的悬停延迟不在此列。
    */
   paraBtnHideDelay: number;
+
+  /**
+   * 输入翻译圆点的可见直径（px，#987）。默认 14 与原来的硬编码相同，范围见
+   * INPUT_DOT_SIZE_MIN/MAX；可点区随它等比放大，下限见 floating-ui-size.ts。
+   */
+  inputDotSize: number;
 }
 
 export const ENGINE_LABELS: Record<EngineId, string> = {
@@ -306,6 +312,22 @@ export function clampParaBtnHideDelay(n: unknown): number {
   return Math.min(PARA_BTN_HIDE_DELAY_MAX, Math.max(PARA_BTN_HIDE_DELAY_MIN, Math.round(n)));
 }
 
+/**
+ * 输入翻译圆点直径合法范围（px，#987）。圆点竖直居中于文字末尾那一行
+ * （ADR-0006），比行高大时上下伸进相邻两行。实测 16px 字号、1.4 行高（行高
+ * 22.4px）：28px 的圆点压进上一行字形盒 0.6px，24px 时还隔着 1.4px，上限取 24。
+ * 下限 12 比原来的 14 小一档，可点区仍不低于 24px，小的只是看得见的那个点。
+ */
+export const INPUT_DOT_SIZE_MIN = 12;
+export const INPUT_DOT_SIZE_MAX = 24;
+const INPUT_DOT_SIZE_DEFAULT = 14;
+
+/** 钳制输入翻译圆点直径 —— 与 clampBallSize 同形，脏值回落默认。 */
+export function clampInputDotSize(n: unknown): number {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return INPUT_DOT_SIZE_DEFAULT;
+  return Math.min(INPUT_DOT_SIZE_MAX, Math.max(INPUT_DOT_SIZE_MIN, Math.round(n)));
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   enginePriority: ['google-web', 'bing-edge'],
@@ -332,4 +354,5 @@ export const DEFAULT_SETTINGS: Settings = {
   floatingBallSize: BALL_SIZE_DEFAULT,
   paraBtnSize: PARA_BTN_SIZE_DEFAULT,
   paraBtnHideDelay: PARA_BTN_HIDE_DELAY_DEFAULT,
+  inputDotSize: INPUT_DOT_SIZE_DEFAULT,
 };

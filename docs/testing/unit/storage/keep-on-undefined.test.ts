@@ -18,6 +18,7 @@ const NON_DEFAULT: Record<string, number> = {
   floatingBallSize: 60,
   paraBtnSize: 34,
   paraBtnHideDelay: 2500,
+  inputDotSize: 20,
 };
 
 describe('显式 undefined 的标量键保留原值（#989）', () => {

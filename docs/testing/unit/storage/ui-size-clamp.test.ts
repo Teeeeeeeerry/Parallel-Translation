@@ -139,3 +139,33 @@ describe('clampParaBtnHideDelay（#972）', () => {
     expect(getSettings().paraBtnHideDelay).toBe(3000);
   });
 });
+
+describe('clampInputDotSize（#987）', () => {
+  test('默认 14px，与原来的硬编码相同', async () => {
+    const { DEFAULT_SETTINGS: d } = await import('~/src/storage/schema');
+    expect(d.inputDotSize).toBe(14);
+  });
+
+  test('范围 12–24px：越界钳到两端，取整，脏值回落默认', async () => {
+    const { clampInputDotSize, INPUT_DOT_SIZE_MIN, INPUT_DOT_SIZE_MAX } = await import('~/src/storage/schema');
+    expect(INPUT_DOT_SIZE_MIN).toBe(12);
+    expect(INPUT_DOT_SIZE_MAX).toBe(24);
+    expect(clampInputDotSize(0)).toBe(12);
+    expect(clampInputDotSize(99)).toBe(24);
+    expect(clampInputDotSize(17.6)).toBe(18);
+    for (const bad of [Number.NaN, '20', null, undefined, Number.POSITIVE_INFINITY]) {
+      expect(clampInputDotSize(bad)).toBe(14);
+    }
+  });
+
+  test('写入口钳制：patchSettings 与 replaceSettings', async () => {
+    resetStorage();
+    vi.resetModules();
+    const { settingsReady, getSettings, patchSettings, replaceSettings } = await import('~/src/storage/settings');
+    await settingsReady();
+    await patchSettings({ inputDotSize: 2 });
+    expect(getSettings().inputDotSize).toBe(12);
+    await replaceSettings({ ...DEFAULT_SETTINGS, inputDotSize: 100 });
+    expect(getSettings().inputDotSize).toBe(24);
+  });
+});

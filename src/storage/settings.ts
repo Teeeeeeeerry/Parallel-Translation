@@ -9,6 +9,7 @@ import {
   DEFAULT_SETTINGS,
   clampBallSize,
   clampConcurrency,
+  clampInputDotSize,
   clampParaBtnHideDelay,
   clampParaBtnSize,
   migrateStyle,
@@ -60,6 +61,7 @@ export const KEEP_ON_UNDEFINED_KEYS = [
   'floatingBallSize',
   'paraBtnSize',
   'paraBtnHideDelay',
+  'inputDotSize',
 ] as const satisfies readonly (keyof Settings)[];
 
 export type KeepOnUndefinedKey = (typeof KEEP_ON_UNDEFINED_KEYS)[number];
@@ -118,6 +120,7 @@ function clampWriteEntry(s: Settings): Settings {
     floatingBallSize: clampBallSize(s.floatingBallSize),
     paraBtnSize: clampParaBtnSize(s.paraBtnSize),
     paraBtnHideDelay: clampParaBtnHideDelay(s.paraBtnHideDelay),
+    inputDotSize: clampInputDotSize(s.inputDotSize),
   };
 }
 
