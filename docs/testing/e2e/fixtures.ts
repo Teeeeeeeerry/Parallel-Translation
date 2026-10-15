@@ -62,6 +62,7 @@ export const FIXTURES = [
   'content-zh-book-list',
   'skip-summary',
   'skip-frames',
+  'wiki-results-table',
 ] as const;
 
 export type FixtureName = (typeof FIXTURES)[number];

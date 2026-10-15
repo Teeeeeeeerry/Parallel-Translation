@@ -2312,3 +2312,42 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
   });
 });
 
+
+test.describe('维基成绩表形态：大量极短表格格子 @extended', () => {
+  test('TC-E2E-210: 2400 个极短格子、每个翻译请求慢 200 毫秒 —— 整页翻译全部完成，没有格子停在原文，不报批次失败也不弹错误提示（#1009，父 #1000）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    // 替身每请求 200 毫秒、后台引擎闸门放 6 个：2400 个格子整页要 80 秒左右。
+    // 旧实现（#1007 之前）所有批次一次性发出、发出即开始计 30 秒响应超时，排在
+    // 后面的批次没轮到引擎就超时 —— 这条在 #1007 之前的构建上是红的（实测：80 条
+    // “消息通道不可用: 响应超时”）。延迟取 100 毫秒、整页 40 秒时旧实现靠批次重试
+    // 能救回来，量不出差别；要让排队时间越过消息层加批次重试的总时长才红得稳
+    test.setTimeout(180_000);
+    // 关掉缓存：超时的那一批在后台其实翻完了，开着缓存时重试直接命中缓存“救”回来，
+    // 用例就看不见排队超时。关掉之后量的是排队本身
+    await seedSettings({ useCache: false });
+    await mockGoogle({ delayMs: 200 });
+    const batchErrors: string[] = [];
+    page.on('console', (m) => {
+      if (m.type() === 'error' && m.text().includes('[PT]')) batchErrors.push(m.text());
+    });
+    await gotoFixture('wiki-results-table');
+    const cells = page.locator('table.wikitable td');
+    await expect(cells).toHaveCount(2400);
+
+    const ball = await waitForBall(page);
+    await ball.click();
+    // 翻译中悬浮球是 loading；结束时要么 done 要么 error
+    await expect(ball).toHaveAttribute('data-state', /^(done|error)$/, { timeout: 150_000 });
+
+    expect(batchErrors).toEqual([]);
+    await expect(ball).toHaveAttribute('data-state', 'done');
+    // 每一个格子都有完成标记，没有停在原文的
+    const untranslated = await cells.evaluateAll((tds) =>
+      tds.filter((td) => td.getAttribute('data-pt') !== 'done').map((td) => td.id),
+    );
+    expect(untranslated).toEqual([]);
+    await expect(page.locator('#cell-2399 .pt-trans')).toHaveText(/^【译】/); // cjk-ok: 替身回显的译文前缀
+    await expect(page.locator('#pt-host-toast .pt-toast[data-kind="error"]')).toHaveCount(0);
+  });
+});
