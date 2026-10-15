@@ -51,18 +51,33 @@ export const NESTED_KEYS: Record<NestedSettingsKey, NestedMergeStrategy> = {
 };
 
 /**
- * 显式 undefined 必须回落原值的标量键（#989）—— 声明只在此一处。
- * 浅覆盖 `{...base, ...patch}` 会让 patch 里显式为 undefined 的键冲掉原值，
- * 随后写入口钳制把 undefined 变成默认值：不是保留，是静默重置。
- * 新增带写入口钳制的数值设置项时登记在这里。
+ * 显式 undefined 必须回落原值的标量键（#989、#992）—— 声明只在此一处。
+ * 浅覆盖 `{...base, ...patch}` 会让 patch 里显式为 undefined 的键冲掉原值：
+ * 数值键随后被写入口钳制变成默认值，布尔与字符串键则在写入的上下文里留成
+ * undefined，而 storage.sync 序列化丢掉它，其它上下文读回来是默认值 —— 两边
+ * 都不是用户原来的值。所以登记的是全部非嵌套键（数组 enginePriority 整体替换，
+ * 也算在内）；嵌套键另走 NESTED_KEYS，不在这里。新增设置项时登记在这里。
  */
 export const KEEP_ON_UNDEFINED_KEYS = [
+  'enabled',
+  'enginePriority',
+  'from',
+  'to',
+  'displayMode',
+  'paraDisplayMode',
+  'style',
+  'customCss',
+  'showFloatingBall',
+  'showParagraphBtn',
   'maxConcurrency',
+  'useCache',
+  'mtApplyTermTargets',
+  'inputTranslate',
   'floatingBallSize',
   'paraBtnSize',
   'paraBtnHideDelay',
   'inputDotSize',
-] as const satisfies readonly (keyof Settings)[];
+] as const satisfies readonly Exclude<keyof Settings, NestedSettingsKey>[];
 
 export type KeepOnUndefinedKey = (typeof KEEP_ON_UNDEFINED_KEYS)[number];
 
@@ -98,7 +113,7 @@ function mergeInto(base: Settings, patch: SettingsPatch): Settings {
     (merged as Record<NestedSettingsKey, unknown>)[key] = mergedValue;
   }
 
-  // #989: 显式 undefined 的标量键视同未携带（保持 base 原值），按声明表统一处理
+  // #989、#992: 显式 undefined 的标量键视同未携带（保持 base 原值），按声明表统一处理
   for (const key of KEEP_ON_UNDEFINED_KEYS) {
     if (patch[key] === undefined) {
       (merged as Record<KeepOnUndefinedKey, unknown>)[key] = base[key];
