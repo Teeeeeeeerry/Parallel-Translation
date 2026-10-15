@@ -14,6 +14,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import fs from 'fs';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
+import { createPageCollector } from '~/src/dom/page-collect';
 import { collect } from '~/src/dom/walker';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import {
@@ -105,12 +106,13 @@ async function translateFixture(file: string): Promise<string[]> {
     },
   } as Parameters<typeof createOrchestrator>[0]);
   orch.start();
+  // 与 content 同一个采集器（#1011）：首轮与补采集共用，同一元素只交出一次、跳过只计一次
+  const page = createPageCollector(
+    (onSkip) => collect(document.body, undefined, { onSkip }),
+    (_el, c) => countSkip(skips, c),
+  );
   const result = await orch.togglePage(
-    () =>
-      collect(document.body, undefined, { onSkip: (_el, c) => countSkip(skips, c) }).map((el) => ({
-        text: el.textContent!,
-        ctx: el,
-      })),
+    () => page().map((el) => ({ text: el.textContent!, ctx: el })),
     'auto',
     'zh-CN',
   );

@@ -499,12 +499,14 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     items: TranslateItem<unknown>[],
     from: string,
     to: string,
+    // #1011：补采集是整页翻译的延续，准入在整页入口已经判过，不重判
+    { admitted = false }: { admitted?: boolean } = {},
   ): Promise<PageTranslateSummary> => {
     if (!started) throw new Error('[PT] 编排未启动');
 
     // #311: 准入判定是翻译入口的前置步骤 —— 总开关关闭或站点被
     // 名单禁用时零请求，以结构化状态说明拦截原因
-    const admission = admissionFrom(opts);
+    const admission = admitted ? 'allowed' : admissionFrom(opts);
     if (admission !== 'allowed') {
       return {
         admission,
@@ -629,6 +631,24 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
           ? { showRealReason: true, reason: realReason ?? fatalError ?? undefined }
           : { showRealReason: false },
     };
+  };
+
+  /**
+   * 补采集（#1011）：再调一次整页入口的采集函数，交出来的单元走增量补翻那条
+   * 批次流水线。带完成标记的单元采集本身就跳过；首轮已交出过的单元（翻译失败
+   * 的、译文与原文相同没落标记的）由调用方的采集函数自己去重，不在这里认元素。
+   * 还原：开始前看纪元，每批放行时由闸门里的中止判定拦下（#1007）。补采集
+   * 自身的失败不回写整页的结论 —— 首轮已经成功的段落照常显示。
+   */
+  const recollect = async (
+    source: (mode?: { readOnly: boolean }) => TranslateItem<unknown>[],
+    from: string,
+    to: string,
+  ): Promise<void> => {
+    const epochAtStart = epoch;
+    const more = source();
+    if (more.length === 0 || epoch !== epochAtStart) return;
+    await translatePageImpl(more, from, to, { admitted: true });
   };
 
   // #327: 状态推送 —— 仅主框架推送（子框架不推送状态、不产生提示，
@@ -762,9 +782,18 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         pushVisual(
           status === 'translated' ? 'done' : status === 'error' ? 'error' : 'idle',
         );
+        if (status !== 'translated') return { status, admission, summary };
+        // #1011：补采集一轮。采集只在开头做了一次，观察器又要等到这里才启动，
+        // 整页翻译跑的这十几秒里懒加载出来的内容两边都不管，永久漏翻（#1010
+        // 实测）。触发条件与观察器启动一致（只有判为成功才补），页面级闸门与
+        // 准入不重判；同一个采集函数，同一条增量补翻的批次流水线
+        const epochAtDone = epoch;
+        if (typeof items === 'function') await recollect(items, from, to);
+        // 补采集期间用户点了还原：还原分支已推空闲态、停了观察器，这里不再启动
+        if (epoch !== epochAtDone) return { status: 'aborted', admission, summary };
         // #328: 观察器启停时机 —— 只在整页翻译成功后启动恰好一次；
-        // 失败 / 中止（在飞还原）不启动
-        if (status === 'translated') opts.onObserverStart?.();
+        // 失败 / 中止（在飞还原）不启动。#1011：补采集结束之后才启动
+        opts.onObserverStart?.();
         return { status, admission, summary };
       } finally {
         toggleInFlight = false;
