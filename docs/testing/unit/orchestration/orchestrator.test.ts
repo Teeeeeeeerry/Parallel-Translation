@@ -1,15 +1,15 @@
 /**
  * orchestration/orchestrator.ts — 翻译编排模块骨架 单元测试（#245）
  *
- * 假消息层断言：批次拆分与现状一致（每批 ≤ FULL_PAGE_BATCH_SIZE、
- * 余数进最后一批）、发送回调次数 = 批次数、单测不触碰 chrome。
+ * 假消息层断言：批次拆分（#245 起按个数，#1005 起按字符预算与个数双闸）、
+ * 发送回调次数 = 批次数、单测不触碰 chrome。
  */
 import { describe, test, expect, vi } from 'vitest';
 import {
   createOrchestrator,
   splitBatches,
   displayDecision,
-  FULL_PAGE_BATCH_SIZE,
+  FULL_PAGE_BATCH_LIMITS,
 } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import type { TranslateRequest } from '~/src/engines/types';
@@ -29,13 +29,16 @@ async function flush(): Promise<void> {
   await new Promise((r) => setTimeout(r, 0));
 }
 
+/** 按旧的 15 个一批切：这些用例管的是渲染与中止语义，要的是“多于一批” */
+const BY15 = { maxItems: 15, maxChars: Infinity };
+
 function items(n: number): TranslateItem<number>[] {
   return Array.from({ length: n }, (_, i) => ({ text: `text-${i}`, ctx: i }));
 }
 
 describe('splitBatches — 批次拆分', () => {
   test('恰好一批：数量 ≤ 批次大小', () => {
-    const batches = splitBatches(items(10), { maxItems: FULL_PAGE_BATCH_SIZE, maxChars: Infinity });
+    const batches = splitBatches(items(10), { maxItems: 15, maxChars: Infinity });
     expect(batches).toHaveLength(1);
     expect(batches[0]!.map((b) => b.text)).toEqual(
       Array.from({ length: 10 }, (_, i) => `text-${i}`),
@@ -43,18 +46,18 @@ describe('splitBatches — 批次拆分', () => {
   });
 
   test('40 项 → 3 批（15/15/10）：前 N-1 批满额，余数进最后一批', () => {
-    const batches = splitBatches(items(40), { maxItems: FULL_PAGE_BATCH_SIZE, maxChars: Infinity });
+    const batches = splitBatches(items(40), { maxItems: 15, maxChars: Infinity });
     expect(batches.map((b) => b.length)).toEqual([15, 15, 10]);
   });
 
   test('批次顺序与文本顺序一致', () => {
-    const batches = splitBatches(items(31), { maxItems: FULL_PAGE_BATCH_SIZE, maxChars: Infinity });
+    const batches = splitBatches(items(31), { maxItems: 15, maxChars: Infinity });
     const all = batches.flatMap((b) => b.map((x) => x.text));
     expect(all).toEqual(Array.from({ length: 31 }, (_, i) => `text-${i}`));
   });
 
   test('空数组 → 0 批', () => {
-    expect(splitBatches([], { maxItems: FULL_PAGE_BATCH_SIZE, maxChars: Infinity })).toEqual([]);
+    expect(splitBatches([], { maxItems: 15, maxChars: Infinity })).toEqual([]);
   });
 });
 
@@ -64,21 +67,20 @@ describe('createOrchestrator — 假消息层', () => {
     const orch = createOrchestrator({ send });
     orch.start();
 
-    await orch.translatePage(items(40), 'en', 'zh-CN');
+    const input = items(100);
+    await orch.translatePage(input, 'en', 'zh-CN');
 
-    expect(send).toHaveBeenCalledTimes(3);
-    expect(send.mock.calls[0]![0]).toEqual({
-      texts: Array.from({ length: 15 }, (_, i) => `text-${i}`),
-      from: 'en',
-      to: 'zh-CN',
-    });
-    expect(send.mock.calls[2]![0]!.texts).toHaveLength(10);
-    expect(send.mock.calls[2]![0]!.texts[9]).toBe('text-39');
+    // 缺省按 FULL_PAGE_BATCH_LIMITS 切（#1005）：发出去的就是切分函数给的那几批
+    const expected = splitBatches(input, FULL_PAGE_BATCH_LIMITS).map((b) => b.map((it) => it.text));
+    expect(expected.length).toBeGreaterThan(1);
+    expect(send).toHaveBeenCalledTimes(expected.length);
+    expect(send.mock.calls[0]![0]).toEqual({ texts: expected[0], from: 'en', to: 'zh-CN' });
+    expect(send.mock.calls.map((c) => c[0]!.texts)).toEqual(expected);
   });
 
-  test('自定义 batchSize 生效', async () => {
+  test('自定义个数上限生效', async () => {
     const send = vi.fn(async (_req: TranslateRequest) => ({ ok: true, data: { translations: [] } }));
-    const orch = createOrchestrator({ send, batchSize: 7 });
+    const orch = createOrchestrator({ send, batchLimits: { maxItems: 7, maxChars: Infinity } });
     orch.start();
 
     await orch.translatePage(items(16), 'auto', 'zh');
@@ -125,6 +127,7 @@ describe('渐进渲染回调注入（#256）', () => {
       .mockImplementation(async () => fastResult);
 
     const orch = createOrchestrator({
+      batchLimits: BY15,
       send,
       onBatchResult: (i) => order.push(i),
     });
@@ -153,6 +156,7 @@ describe('渐进渲染回调注入（#256）', () => {
       .mockImplementationOnce(async () => ({ ok: true, data: { translations: ['批1'] } }));
 
     const orch = createOrchestrator({
+      batchLimits: BY15,
       send,
       sleep: () => Promise.resolve(),
       onBatchResult: (i, _batch, result) => {
@@ -170,7 +174,7 @@ describe('渐进渲染回调注入（#256）', () => {
 
   test('未提供渲染回调 → 仅发送（兼容无渲染场景）', async () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
-    const orch = createOrchestrator({ send });
+    const orch = createOrchestrator({ send, batchLimits: BY15 });
     orch.start();
     await expect(orch.translatePage(items(16), 'en', 'zh')).resolves.toMatchObject({
       allFailed: false,
@@ -195,6 +199,7 @@ describe('epoch 中止语义（#262）', () => {
       .mockImplementation(async () => ({ ok: true, data: { translations: ['快批'] } }));
 
     const orch = createOrchestrator({
+      batchLimits: BY15,
       send,
       sleep: () => Promise.resolve(),
       onBatchResult: (i) => order.push(i),
@@ -230,6 +235,7 @@ describe('epoch 中止语义（#262）', () => {
       .mockImplementation(async () => ({ ok: true, data: { translations: ['新批'] } }));
 
     const orch = createOrchestrator({
+      batchLimits: BY15,
       send,
       sleep: () => Promise.resolve(),
       onBatchResult: (i) => order.push(i),
@@ -1122,7 +1128,7 @@ describe('全页翻译携带当前领域（#379）', () => {
     const domains = await getEffectiveDomains();
     const orch = createOrchestrator({
       send,
-      batchSize: 2,
+      batchLimits: { maxItems: 2, maxChars: Infinity },
       getSettings: () => DEFAULT_SETTINGS,
       getHostname: () => host,
       getDomains: () => domains,
