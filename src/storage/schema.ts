@@ -187,6 +187,9 @@ export interface Settings {
    * 目标语言取 from，不另设（ADR-0005）。
    */
   inputTranslate: boolean;
+
+  /** 悬浮球尺寸（px，#966）。默认 44 与原来的硬编码相同，范围见 BALL_SIZE_MIN/MAX。 */
+  floatingBallSize: number;
 }
 
 export const ENGINE_LABELS: Record<EngineId, string> = {
@@ -242,6 +245,24 @@ export function clampConcurrency(n: unknown): number {
   return Math.min(CONCURRENCY_MAX, Math.max(CONCURRENCY_MIN, v));
 }
 
+/**
+ * 悬浮球尺寸合法范围（px，#966）。下限 32 仍比逐段翻译按钮的 24px 点击下限大一圈；
+ * 上限 72 约是默认的 1.6 倍，球不至于压住网页右下角一大块。
+ */
+export const BALL_SIZE_MIN = 32;
+export const BALL_SIZE_MAX = 72;
+const BALL_SIZE_DEFAULT = 44;
+
+/**
+ * 钳制悬浮球尺寸 —— 与 clampConcurrency 同形，写入口单点生效。
+ * 非数字、NaN、Infinity 回落默认值而不是钳到某一端：脏值说明不出用户想要多大，
+ * 回到原来的尺寸最不意外。
+ */
+export function clampBallSize(n: unknown): number {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return BALL_SIZE_DEFAULT;
+  return Math.min(BALL_SIZE_MAX, Math.max(BALL_SIZE_MIN, Math.round(n)));
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   enginePriority: ['google-web', 'bing-edge'],
@@ -265,4 +286,5 @@ export const DEFAULT_SETTINGS: Settings = {
   models: {},
   mtApplyTermTargets: false,
   inputTranslate: true,
+  floatingBallSize: BALL_SIZE_DEFAULT,
 };
