@@ -372,14 +372,15 @@ export default defineContentScript({
       applyStyle(ns.style);
       applyCustomCss(ns.customCss);
 
+      // #966: 悬浮 UI 尺寸写在文档根上，经继承到达每个 shadow 里的球、按钮与圆点，
+      // 包括之后才创建的（开关先关后开、站点准入变化）。只改变量不重挂球：
+      // 翻译状态与每站位置都留在原处。#987: 输入翻译圆点每个 frame 都注入，
+      // 变量写入挪到主文档分支之外；球与按钮的启停仍只在主文档
+      const rootStyle = document.documentElement.style;
+      for (const [name, value] of Object.entries(floatingUiVars(ns))) {
+        rootStyle.setProperty(name, value);
+      }
       if (isMainFrame) {
-        // #966: 悬浮 UI 尺寸写在文档根上，经继承到达每个 shadow 里的球与按钮，
-        // 包括之后才创建的（开关先关后开、站点准入变化）。只改变量不重挂球：
-        // 翻译状态与每站位置都留在原处
-        const rootStyle = document.documentElement.style;
-        for (const [name, value] of Object.entries(floatingUiVars(ns))) {
-          rootStyle.setProperty(name, value);
-        }
         // #242/#243: 悬浮球 / 段落按钮开关经注册表 ensure —— 启停幂等、即时生效
         registry.ensure('ball', ns.showFloatingBall);
         // #632: 段落按钮还要站点获得准入；改名单经此入口即时启停

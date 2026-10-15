@@ -1695,6 +1695,179 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await expect.poll(() => uiMetrics(page, 'ball')).toEqual(await previewBall());
   });
 
+  test('TC-E2E-205: 输入翻译圆点大小跟着设置变 —— 可点区等比放大、最小档仍不低于 24px；改大小时圆点按新直径重新贴文字末尾，不压住上一行的字（#987）', async ({
+    page, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator('#pt-host-input-dot .pt-input-dot');
+    const LINE1 = 'Typing a long jumpy line here';
+    await box.click();
+    await page.keyboard.type(LINE1);
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('hi');
+    await expect(dot).toBeVisible();
+
+    /** 可点区：逐像素问 shadow root 这一点落在谁身上（同 TC-E2E-137），范围放宽到 48px 的可点区也装得下 */
+    const hitArea = () =>
+      page.evaluate(() => {
+        const root = document.getElementById('pt-host-input-dot')!.shadowRoot!;
+        const el = root.querySelector('.pt-input-dot')!;
+        const r = el.getBoundingClientRect();
+        let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+        for (let x = Math.floor(r.left) - 30; x <= Math.ceil(r.right) + 30; x++) {
+          for (let y = Math.floor(r.top) - 30; y <= Math.ceil(r.bottom) + 30; y++) {
+            if (root.elementFromPoint(x + 0.5, y + 0.5) !== el) continue;
+            left = Math.min(left, x);
+            right = Math.max(right, x + 1);
+            top = Math.min(top, y);
+            bottom = Math.max(bottom, y + 1);
+          }
+        }
+        return { left, top, width: right - left, height: bottom - top };
+      });
+    /** 第二行 'hi' 的末尾、第二行的竖直中线、第一行字形盒的下沿（同 TC-E2E-137 的量法） */
+    const geometry = await box.evaluate((el, line1) => {
+      const cs = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      const lh = parseFloat(cs.lineHeight);
+      const sp = document.createElement('span');
+      sp.style.font = cs.font;
+      sp.style.whiteSpace = 'pre';
+      sp.textContent = 'hi';
+      el.parentElement!.append(sp);
+      const endW = sp.getBoundingClientRect().width;
+      sp.remove();
+      const line = document.createElement('div');
+      line.style.font = cs.font;
+      line.style.lineHeight = cs.lineHeight;
+      line.style.whiteSpace = 'pre';
+      const g = document.createElement('span');
+      g.textContent = line1;
+      line.append(g);
+      el.parentElement!.append(line);
+      const lr = line.getBoundingClientRect();
+      const gr = g.getBoundingClientRect();
+      line.remove();
+      const top = r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop);
+      return {
+        endX: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + endW,
+        line2Mid: top + lh * 1.5,
+        line1GlyphBottom: top + (gr.top - lr.top) + gr.height,
+        line1Right: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + gr.width,
+      };
+    }, LINE1);
+
+    // 页内算期望可点区：与 floatingUiVars 同一条规则（等比 24/14、不低于 24），这里独立写一遍当真值
+    for (const [size, hit] of [[24, 41], [12, 24], [14, 24]] as const) {
+      await patchStoredSettings(serviceWorker, { inputDotSize: size });
+      await expect.poll(async () => (await dot.boundingBox())?.width).toBe(size);
+      // 直径变了圆点就重新摆：竖直居中于末尾那一行、离末尾字符 4px
+      await expect(async () => {
+        const d = (await dot.boundingBox())!;
+        expect(d.height).toBe(size);
+        expect(Math.abs(d.y + size / 2 - geometry.line2Mid), `${size}px 竖直居中`).toBeLessThanOrEqual(1);
+        expect(d.x - geometry.endX, `${size}px 与末尾字符的间隙`).toBeGreaterThanOrEqual(3);
+        expect(d.x - geometry.endX).toBeLessThanOrEqual(5);
+        // 上一行的字一直写到圆点上方：圆点不伸进上一行的字形盒
+        expect(geometry.line1Right).toBeGreaterThan(d.x + size);
+        expect(d.y, `${size}px 不压住上一行`).toBeGreaterThanOrEqual(geometry.line1GlyphBottom);
+      }).toPass({ timeout: 5_000 });
+      // 可点区：逐像素采样落在亚像素边界上时多数一格
+      const h = await hitArea();
+      for (const v of [h.width, h.height]) {
+        expect(v, `${size}px 圆点的可点区 ${JSON.stringify(h)}`).toBeGreaterThanOrEqual(hit);
+        expect(v).toBeLessThanOrEqual(hit + 1);
+      }
+      // 扩出的一圈不伸向文字末尾：末尾字符照常点得进输入框
+      // 采样点在像素中心（x + 0.5）：第一个落在圆点上的采样点不在末尾字符左边
+      expect(h.left + 0.5, `${size}px 可点区没盖住末尾字符`).toBeGreaterThanOrEqual(geometry.endX);
+      expect(
+        await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id ?? null, [geometry.endX - 2, geometry.line2Mid] as const),
+      ).toBe('reply');
+    }
+  });
+
+  test('TC-E2E-206: 圆点大小在主文档与同域、跨域 iframe 里都跟着设置变（变量写入点不只在主文档分支里）（#987）', async ({
+    page, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await gotoFixture('input-frames');
+    await waitForBall(page);
+    const DOT = '#pt-host-input-dot .pt-input-dot';
+    const frames = [
+      { name: 'main', root: page as { locator: (s: string) => import('@playwright/test').Locator }, box: '#reply' },
+      { name: 'same', root: page.frameLocator('#same'), box: '#child' },
+      { name: 'cross', root: page.frameLocator('#cross'), box: '#child' },
+    ];
+    const dotSizeIn = async (f: (typeof frames)[number]) => {
+      const box = f.root.locator(f.box);
+      await box.click();
+      await box.fill('');
+      await page.keyboard.type('Hello there');
+      const dot = f.root.locator(DOT);
+      await expect(dot, `${f.name} 圆点浮出`).toBeVisible({ timeout: 10_000 });
+      const b = (await dot.boundingBox())!;
+      return { width: b.width, height: b.height };
+    };
+    for (const f of frames) expect(await dotSizeIn(f), f.name).toEqual({ width: 14, height: 14 });
+    await patchStoredSettings(serviceWorker, { inputDotSize: 22 });
+    for (const f of frames) {
+      await expect.poll(() => dotSizeIn(f), f.name).toEqual({ width: 22, height: 22 });
+    }
+  });
+
+  test('TC-E2E-207: 设置页输入翻译圆点大小滑块 —— 预览里的圆点随拖动改尺寸、键盘可调，写盘后网页上的圆点跟着变（#987）', async ({
+    page, context, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    const extId = new URL(serviceWorker.url()).host;
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extId}/options.html`);
+    const label = await options.evaluate(() => chrome.i18n.getMessage('rowInputDotSize'));
+    const slider = options.getByRole('slider', { name: label });
+    await expect(slider).toHaveValue('14');
+    const previewDot = () =>
+      options.evaluate(() => {
+        const d = document.getElementById('pt-floating-preview')!.shadowRoot!.querySelector('.pt-input-dot')!;
+        const r = d.getBoundingClientRect();
+        return { width: r.width, height: r.height };
+      });
+    await expect.poll(previewDot).toEqual({ width: 14, height: 14 });
+
+    // 拖到最右：松手前预览已是上限
+    await slider.scrollIntoViewIfNeeded();
+    const sb = (await slider.boundingBox())!;
+    await options.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2);
+    await options.mouse.down();
+    await options.mouse.move(sb.x + sb.width + 40, sb.y + sb.height / 2, { steps: 8 });
+    await expect.poll(previewDot).toEqual({ width: 24, height: 24 });
+    await options.mouse.up();
+    await expect(options.locator('output[for="pt-slider-input-dot-size"]')).toHaveText('24 px');
+
+    // 键盘：方向键左两下，一步 2px
+    await slider.focus();
+    await options.keyboard.press('ArrowLeft');
+    await options.keyboard.press('ArrowLeft');
+    await expect(slider).toHaveValue('20');
+    await expect.poll(previewDot).toEqual({ width: 20, height: 20 });
+    await expect.poll(() =>
+      serviceWorker.evaluate(async () => ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any)?.inputDotSize),
+    ).toBe(20);
+
+    // 网页上的圆点跟着变
+    await gotoFixture('input');
+    await waitForBall(page);
+    await page.locator('#reply').click();
+    await page.keyboard.type('Hello there');
+    const dot = page.locator('#pt-host-input-dot .pt-input-dot');
+    await expect(dot).toBeVisible();
+    const d = (await dot.boundingBox())!;
+    expect({ width: d.width, height: d.height }).toEqual(await previewDot());
+  });
+
   test('TC-E2E-196: 改存储里的逐段翻译按钮尺寸不刷新，浮出的按钮实际尺寸与字号跟着变；绕过写入口写进 1px 时仍不小于 24px（#970）', async ({
     page, serviceWorker, seedSettings, gotoFixture,
   }) => {

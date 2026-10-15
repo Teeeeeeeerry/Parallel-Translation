@@ -6,13 +6,15 @@
  * 所以尺寸换算只有这一处。
  */
 import { describe, test, expect } from 'vitest';
-import { floatingUiVars } from '~/src/ui/floating-ui-size';
+import { floatingUiVars, inputDotHitSize } from '~/src/ui/floating-ui-size';
 import {
   DEFAULT_SETTINGS,
   BALL_SIZE_MIN,
   BALL_SIZE_MAX,
   PARA_BTN_SIZE_MIN,
   PARA_BTN_SIZE_MAX,
+  INPUT_DOT_SIZE_MIN,
+  INPUT_DOT_SIZE_MAX,
 } from '~/src/storage/schema';
 
 describe('floatingUiVars（#966）', () => {
@@ -88,3 +90,39 @@ describe('floatingUiVars：逐段翻译按钮（#970）', () => {
   });
 });
 
+
+describe('floatingUiVars：输入翻译圆点（#987）', () => {
+  test('默认 14px 圆点配 24px 可点区，与原来的硬编码相同', () => {
+    const v = floatingUiVars(DEFAULT_SETTINGS);
+    expect(v['--pt-input-dot-size']).toBe('14px');
+    expect(v['--pt-input-dot-hit']).toBe('24px');
+  });
+
+  test('可点区随直径等比放大：20px 配 34px、上限 24px 配 41px', () => {
+    expect(floatingUiVars({ ...DEFAULT_SETTINGS, inputDotSize: 20 })['--pt-input-dot-hit']).toBe('34px');
+    const max = floatingUiVars({ ...DEFAULT_SETTINGS, inputDotSize: INPUT_DOT_SIZE_MAX });
+    expect(max['--pt-input-dot-size']).toBe('24px');
+    expect(max['--pt-input-dot-hit']).toBe('41px');
+  });
+
+  test('可点区永远不低于逐段翻译按钮的 24px 点击下限（两个下限同源）', () => {
+    const min = floatingUiVars({ ...DEFAULT_SETTINGS, inputDotSize: INPUT_DOT_SIZE_MIN });
+    expect(min['--pt-input-dot-size']).toBe(`${INPUT_DOT_SIZE_MIN}px`);
+    expect(min['--pt-input-dot-hit']).toBe('24px');
+    for (const d of [1, 8, 12, 13]) expect(inputDotHitSize(d)).toBe(PARA_BTN_SIZE_MIN);
+    expect(PARA_BTN_SIZE_MIN).toBe(24);
+  });
+
+  test('脏值与越界值钳制后再换算，不出 NaNpx', () => {
+    const bad = floatingUiVars({ ...DEFAULT_SETTINGS, inputDotSize: Number.NaN as never });
+    expect(bad['--pt-input-dot-size']).toBe('14px');
+    expect(bad['--pt-input-dot-hit']).toBe('24px');
+    expect(floatingUiVars({ ...DEFAULT_SETTINGS, inputDotSize: 999 })['--pt-input-dot-hit']).toBe('41px');
+  });
+
+  test('球与按钮尺寸不影响圆点', () => {
+    const v = floatingUiVars({ ...DEFAULT_SETTINGS, floatingBallSize: 72, paraBtnSize: 40 });
+    expect(v['--pt-input-dot-size']).toBe('14px');
+    expect(v['--pt-input-dot-hit']).toBe('24px');
+  });
+});

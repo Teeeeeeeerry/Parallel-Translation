@@ -9,6 +9,8 @@
 import {
   BALL_SIZE_MAX,
   BALL_SIZE_MIN,
+  INPUT_DOT_SIZE_MAX,
+  INPUT_DOT_SIZE_MIN,
   LANG_LIST,
   PARA_BTN_HIDE_DELAY_MAX,
   PARA_BTN_HIDE_DELAY_MIN,
@@ -150,7 +152,24 @@ export function initGeneral(): void {
     get: () => getSettings().paraBtnHideDelay,
     set: (v) => savePatch({ paraBtnHideDelay: v }),
   });
-  sliderRows.append(ballSize.row, paraBtnSize.row, paraBtnHideDelay.row);
+  // #987: 输入翻译圆点大小（可见直径；可点区随它等比放大、不低于 24px）
+  const inputDotSize = createSliderRow({
+    id: 'pt-slider-input-dot-size',
+    labelKey: 'rowInputDotSize',
+    labelFallback: '输入翻译圆点大小',
+    min: INPUT_DOT_SIZE_MIN,
+    max: INPUT_DOT_SIZE_MAX,
+    step: 2,
+    unit: 'px',
+    format: (v) => String(v),
+    get: () => getSettings().inputDotSize,
+    set: (v) => savePatch({ inputDotSize: v }),
+    onInput: (v) => {
+      draft.inputDotSize = v;
+      updatePreview();
+    },
+  });
+  sliderRows.append(ballSize.row, paraBtnSize.row, paraBtnHideDelay.row, inputDotSize.row);
 
   const resetBallPosBtn = document.getElementById('pt-reset-ball-pos-btn')!;
   const ballPosToggle = document.getElementById('pt-ball-pos-toggle')!;
@@ -261,6 +280,7 @@ export function initGeneral(): void {
     if (ballSize.sync()) delete draft.floatingBallSize;
     if (paraBtnSize.sync()) delete draft.paraBtnSize;
     paraBtnHideDelay.sync();
+    if (inputDotSize.sync()) delete draft.inputDotSize;
     updatePreview();
   });
 }

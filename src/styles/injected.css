@@ -86,8 +86,9 @@
 .pt-input-dot {
   position: fixed;
   display: none;
-  width: 14px;
-  height: 14px;
+  /* #987: 直径读文档根上的变量，缺省回落原来的 14px */
+  width: var(--pt-input-dot-size, 14px);
+  height: var(--pt-input-dot-size, 14px);
   padding: 0;
   box-sizing: border-box;
   border-radius: 50%;
@@ -98,14 +99,15 @@
   overflow: visible;
 }
 
-/* 可点区（#638）：可见圆点仍是 14px，透明的一圈把可点区扩到 24px 见方，不小于
-   逐段翻译按钮的下限。偏移由 input-dot.ts 按文字末尾与框的位置算好写进两个
+/* 可点区（#638）：可见圆点默认 14px，透明的一圈把可点区扩到 24px 见方，不小于
+   逐段翻译按钮的下限。#987 起边长随圆点直径等比放大，由 floatingUiVars 给出，
+   缺省回落 24px。偏移由 input-dot.ts 按文字末尾与框的位置算好写进两个
    变量（缺省居中）；伪元素相对内边距盒定位，再减去 2px 描边 */
 .pt-input-dot::before {
   content: '';
   position: absolute;
-  width: 24px;
-  height: 24px;
+  width: var(--pt-input-dot-hit, 24px);
+  height: var(--pt-input-dot-hit, 24px);
   left: calc(var(--pt-hit-x, -5px) - 2px);
   top: calc(var(--pt-hit-y, -5px) - 2px);
 }

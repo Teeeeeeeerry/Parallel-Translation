@@ -43,10 +43,27 @@ const PREVIEW_CSS = `
   vertical-align: middle;
   cursor: default;
 }
+/* #987: 输入翻译圆点贴在一个示意输入框里的文字末尾，间隙与网页上同口径（4px）。
+   网页上它是 fixed 定位、平时隐藏；尺寸相关的声明一条不覆盖 */
+.pt-preview-stage .pt-preview-input {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 16px;
+  padding: 4px 8px;
+  border: 1px solid var(--pt-forest-22);
+  border-radius: var(--pt-r-sm);
+  background: var(--pt-surface);
+}
+.pt-preview-stage .pt-input-dot {
+  position: relative;
+  display: inline-block;
+  margin-left: 4px;
+  cursor: default;
+}
 `;
 
 export interface FloatingPreview {
-  update: (s: Pick<Settings, 'floatingBallSize' | 'paraBtnSize'>) => void;
+  update: (s: Pick<Settings, 'floatingBallSize' | 'paraBtnSize' | 'inputDotSize'>) => void;
 }
 
 export function createFloatingPreview(host: HTMLElement): FloatingPreview {
@@ -68,6 +85,16 @@ export function createFloatingPreview(host: HTMLElement): FloatingPreview {
   paraBtn.className = 'pt-para-btn';
   paraBtn.textContent = tf('paraBtnGlyph', '译');
   text.append(paraBtn);
+  // #987: 输入翻译圆点，同样是与网页上一样的 button
+  const input = document.createElement('span');
+  input.className = 'pt-preview-input';
+  input.textContent = tf('previewInputSample', 'Hello there');
+  const dot = document.createElement('button');
+  dot.type = 'button';
+  dot.tabIndex = -1;
+  dot.className = 'pt-input-dot';
+  input.append(dot);
+  text.append(input);
   // 与网页上的球同一种元素（button），浏览器默认样式一致
   const ball = document.createElement('button');
   ball.type = 'button';

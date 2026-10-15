@@ -26,6 +26,13 @@ describe('createFloatingPreview（#968）', () => {
     expect(root.querySelector('.pt-ball')).not.toBeNull();
   });
 
+  test('预览里有一个与网页同类名、同元素的输入翻译圆点（#987）', () => {
+    createFloatingPreview(host);
+    const dot = host.shadowRoot!.querySelector('.pt-input-dot');
+    expect(dot?.tagName).toBe('BUTTON');
+    expect((dot as HTMLButtonElement).tabIndex).toBe(-1);
+  });
+
   test('预览里同样有一个逐段翻译按钮，与球同处一块底板（#971）', () => {
     createFloatingPreview(host);
     expect(host.shadowRoot!.querySelector('.pt-para-btn')).not.toBeNull();
@@ -34,7 +41,7 @@ describe('createFloatingPreview（#968）', () => {
   test('写到预览上的变量与纯函数的输出逐项相同（含需要钳制的脏值）', () => {
     const preview = createFloatingPreview(host);
     for (const size of [44, 60, 999, Number.NaN]) {
-      const s = { ...DEFAULT_SETTINGS, floatingBallSize: size, paraBtnSize: size };
+      const s = { ...DEFAULT_SETTINGS, floatingBallSize: size, paraBtnSize: size, inputDotSize: size };
       preview.update(s);
       for (const [name, value] of Object.entries(floatingUiVars(s))) {
         expect(host.style.getPropertyValue(name)).toBe(value);
@@ -44,5 +51,7 @@ describe('createFloatingPreview（#968）', () => {
     expect(host.style.getPropertyValue('--pt-ball-font')).toBe('11px');
     expect(host.style.getPropertyValue('--pt-para-btn-size')).toBe('24px');
     expect(host.style.getPropertyValue('--pt-para-btn-font')).toBe('12px');
+    expect(host.style.getPropertyValue('--pt-input-dot-size')).toBe('14px');
+    expect(host.style.getPropertyValue('--pt-input-dot-hit')).toBe('24px');
   });
 });
