@@ -89,8 +89,12 @@ export function createSliderRow(spec: SliderRowSpec): SliderRow {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(flush, SLIDER_SAVE_DELAY);
   });
-  // 松手立即写，不让用户等防抖；键盘方向键每按一下也会触发 change
-  input.addEventListener('change', flush);
+  // 鼠标松手立即写，不让用户等防抖。不挂在 change 上：键盘按住方向键时
+  // 每走一步都派发一次 change，按住几秒就超出 storage.sync 每分钟的写入
+  // 配额 —— 键盘调值只走上面的防抖
+  input.addEventListener('pointerup', flush);
+  // 防抖还没到点就关掉设置页时补写，最后一次调整不丢
+  window.addEventListener('pagehide', flush);
 
   const sync = () => {
     if (saveTimer !== undefined) return;

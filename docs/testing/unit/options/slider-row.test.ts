@@ -78,14 +78,36 @@ describe('createSliderRow（#967）', () => {
     expect(set).toHaveBeenCalledWith(60);
   });
 
-  test('松手（change）立即写盘，不再等防抖，也不重复写', () => {
+  test('鼠标松手立即写盘，不再等防抖，也不重复写', () => {
     const { drag, input, set } = setup(44);
     drag(52);
-    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('pointerup', { bubbles: true }));
     expect(set).toHaveBeenCalledTimes(1);
     expect(set).toHaveBeenCalledWith(52);
     vi.advanceTimersByTime(SLIDER_SAVE_DELAY * 2);
     expect(set).toHaveBeenCalledTimes(1);
+  });
+
+  test('键盘按住方向键：每一步都派发 input 与 change，写盘仍只在停手后写一次（storage.sync 配额）', () => {
+    const { input, set, readout } = setup(44);
+    for (let v = 46; v <= 72; v += 2) {
+      input.value = String(v);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      vi.advanceTimersByTime(30); // 按键自动重复的间隔
+    }
+    expect(readout.textContent).toBe('72 px');
+    expect(set).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(SLIDER_SAVE_DELAY);
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(set).toHaveBeenCalledWith(72);
+  });
+
+  test('防抖没到点就关掉设置页：pagehide 时补写最后的值', () => {
+    const { drag, set } = setup(44);
+    drag(64);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(set).toHaveBeenCalledWith(64);
   });
 
   test('sync() 按存储值重画滑块与读数（别处改了设置）', () => {
