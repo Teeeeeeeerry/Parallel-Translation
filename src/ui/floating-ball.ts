@@ -20,6 +20,20 @@ const VIEWPORT_MARGIN = 8;
 type BallState = 'idle' | 'loading' | 'done' | 'error';
 
 /**
+ * 球能占的视口尺寸（#994）。position: fixed 的包含块是视口去掉滚动条的那一块；
+ * innerWidth 把占位的经典滚动条（Windows 默认约 15–17px）也算进去，拿它钳制，
+ * 拖到最右时球会被滚动条盖住一截。标准模式下根元素的 client* 就是去掉滚动条的
+ * 视口，怪异模式下这个值归 body。量不到（为 0）时退回 inner*。
+ */
+function viewportSize(): { vw: number; vh: number } {
+  const root = document.compatMode === 'BackCompat' ? document.body : document.documentElement;
+  return {
+    vw: root?.clientWidth || window.innerWidth,
+    vh: root?.clientHeight || window.innerHeight,
+  };
+}
+
+/**
  * 将坐标钳制在视口内。
  * 先取上限再取下限：视口比球还小时不会算出负值。
  */
@@ -29,8 +43,7 @@ function clampToViewport(
   w: number,
   h: number,
 ): { x: number; y: number } {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
+  const { vw, vh } = viewportSize();
   return {
     x: Math.max(VIEWPORT_MARGIN, Math.min(x, vw - w - VIEWPORT_MARGIN)),
     y: Math.max(VIEWPORT_MARGIN, Math.min(y, vh - h - VIEWPORT_MARGIN)),
