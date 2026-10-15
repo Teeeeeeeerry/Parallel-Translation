@@ -645,6 +645,10 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // 初始化与变更共用同一响应路径
       if (!unsubscribeSettings && opts.subscribeSettings) {
         unsubscribeSettings = opts.subscribeSettings((s) => {
+          // #1008: 翻译途中改并发数，在飞上限跟着变。用闸门自带的 setMax，不重建：
+          // 重建的话旧闸门里的批次照旧占着名额，新批次进新闸门再占一份，在飞翻倍。
+          // 调大时排队的批次立刻放行到新上限；调小时已在飞的照常跑完，只是不再放新的
+          sendGate.setMax(s.maxConcurrency);
           opts.onSettingsChange?.(s);
         });
       }
