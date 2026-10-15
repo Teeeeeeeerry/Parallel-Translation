@@ -9,6 +9,7 @@ import {
   DEFAULT_SETTINGS,
   clampBallSize,
   clampConcurrency,
+  clampParaBtnHideDelay,
   clampParaBtnSize,
   migrateStyle,
 } from './schema';
@@ -90,6 +91,9 @@ function mergeInto(base: Settings, patch: SettingsPatch): Settings {
   if (patch.paraBtnSize === undefined) {
     merged.paraBtnSize = base.paraBtnSize;
   }
+  if (patch.paraBtnHideDelay === undefined) {
+    merged.paraBtnHideDelay = base.paraBtnHideDelay;
+  }
 
   return merged;
 }
@@ -105,6 +109,7 @@ function clampWriteEntry(s: Settings): Settings {
     // #966: 悬浮 UI 尺寸同样在写入口钳制，导出 JSON 手改后导入也越不了界
     floatingBallSize: clampBallSize(s.floatingBallSize),
     paraBtnSize: clampParaBtnSize(s.paraBtnSize),
+    paraBtnHideDelay: clampParaBtnHideDelay(s.paraBtnHideDelay),
   };
 }
 

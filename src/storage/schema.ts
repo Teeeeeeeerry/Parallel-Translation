@@ -196,6 +196,12 @@ export interface Settings {
    * 默认 24 与原来的点击下限相同，范围见 PARA_BTN_SIZE_MIN/MAX。
    */
   paraBtnSize: number;
+
+  /**
+   * 鼠标离开段落后逐段翻译按钮停留多久（ms，#972）。默认 1500 与原来的固定
+   * 延迟相同，范围见 PARA_BTN_HIDE_DELAY_MIN/MAX。浮出前的悬停延迟不在此列。
+   */
+  paraBtnHideDelay: number;
 }
 
 export const ENGINE_LABELS: Record<EngineId, string> = {
@@ -284,6 +290,22 @@ export function clampParaBtnSize(n: unknown): number {
   return Math.min(PARA_BTN_SIZE_MAX, Math.max(PARA_BTN_SIZE_MIN, Math.round(n)));
 }
 
+/**
+ * 逐段翻译按钮显示时长合法范围（ms，#972）。默认 1.5 秒是用户实机试用后定的：
+ * 它要覆盖指针从段落边缘跨过间隙、移到按钮上的全程（见 paragraph-btn.ts）。
+ * 下限 0.5 秒手快的人仍够得着，上限 3 秒再长就成了长期压在正文上的按钮；
+ * “不自动隐藏”一档不做（#964 的排除清单）。
+ */
+export const PARA_BTN_HIDE_DELAY_MIN = 500;
+export const PARA_BTN_HIDE_DELAY_MAX = 3000;
+const PARA_BTN_HIDE_DELAY_DEFAULT = 1500;
+
+/** 钳制逐段翻译按钮显示时长 —— 与 clampBallSize 同形，脏值回落默认。 */
+export function clampParaBtnHideDelay(n: unknown): number {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return PARA_BTN_HIDE_DELAY_DEFAULT;
+  return Math.min(PARA_BTN_HIDE_DELAY_MAX, Math.max(PARA_BTN_HIDE_DELAY_MIN, Math.round(n)));
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   enginePriority: ['google-web', 'bing-edge'],
@@ -309,4 +331,5 @@ export const DEFAULT_SETTINGS: Settings = {
   inputTranslate: true,
   floatingBallSize: BALL_SIZE_DEFAULT,
   paraBtnSize: PARA_BTN_SIZE_DEFAULT,
+  paraBtnHideDelay: PARA_BTN_HIDE_DELAY_DEFAULT,
 };

@@ -68,6 +68,7 @@ import {
   patchSettings,
 } from '~/src/storage/settings';
 import type { Settings } from '~/src/storage/schema';
+import { clampParaBtnHideDelay } from '~/src/storage/schema';
 import { watchEffectiveDomains, currentDomain, parseDomainChoice } from '~/src/storage/domains';
 import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { siteRulesReady } from '~/src/storage/specialization';
@@ -223,6 +224,9 @@ export default defineContentScript({
           createParaBtn({
             translate: (el) => translateOne(el),
             restore: (el) => unrender(el),
+            // #972: 取值函数而不是快照 —— 每次开始倒计时都读当前设置，改了即时生效。
+            // 读出路径不经写入口，再钳一次
+            hideDelay: () => clampParaBtnHideDelay(getSettings().paraBtnHideDelay),
           }),
         stop: (stopParaBtn) => stopParaBtn(),
       });

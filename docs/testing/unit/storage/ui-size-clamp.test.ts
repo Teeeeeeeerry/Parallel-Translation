@@ -107,3 +107,35 @@ describe('clampParaBtnSize（#970）', () => {
   });
 });
 
+
+describe('clampParaBtnHideDelay（#972）', () => {
+  test('默认 1500ms，与原来的固定延迟相同', async () => {
+    const { DEFAULT_SETTINGS: d } = await import('~/src/storage/schema');
+    expect(d.paraBtnHideDelay).toBe(1500);
+  });
+
+  test('范围 500–3000ms：越界钳到两端，取整到毫秒，脏值回落默认', async () => {
+    const { clampParaBtnHideDelay, PARA_BTN_HIDE_DELAY_MIN, PARA_BTN_HIDE_DELAY_MAX } = await import('~/src/storage/schema');
+    expect(PARA_BTN_HIDE_DELAY_MIN).toBe(500);
+    expect(PARA_BTN_HIDE_DELAY_MAX).toBe(3000);
+    expect(clampParaBtnHideDelay(0)).toBe(500);
+    expect(clampParaBtnHideDelay(99999)).toBe(3000);
+    expect(clampParaBtnHideDelay(1234.6)).toBe(1235);
+    for (const bad of [Number.NaN, '800', null, undefined]) {
+      expect(clampParaBtnHideDelay(bad)).toBe(1500);
+    }
+  });
+
+  test('写入口钳制：patchSettings 与 replaceSettings', async () => {
+    resetStorage();
+    vi.resetModules();
+    const { settingsReady, getSettings, patchSettings, replaceSettings } = await import('~/src/storage/settings');
+    await settingsReady();
+    await patchSettings({ paraBtnHideDelay: 50 });
+    expect(getSettings().paraBtnHideDelay).toBe(500);
+    await patchSettings({ style: 'bold' });
+    expect(getSettings().paraBtnHideDelay).toBe(500);
+    await replaceSettings({ ...DEFAULT_SETTINGS, paraBtnHideDelay: 10_000 });
+    expect(getSettings().paraBtnHideDelay).toBe(3000);
+  });
+});
