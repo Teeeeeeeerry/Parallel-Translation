@@ -189,8 +189,16 @@ export function createBall(callbacks: BallCallbacks): () => void {
     }
   };
   window.addEventListener('resize', onResize);
+  // #969: 球自己变大（设置里调了悬浮球尺寸）时，贴边拖过的球同样可能越出视口 ——
+  // 复用同一个分支钳回去并写回位置。它只改 left/top、不改尺寸，不会自激；
+  // 没拖过的球由上面的 position 判断挡掉。ResizeObserver 量的是布局尺寸，
+  // 转圈与悬停放大的 transform 不触发它
+  const sizeObserver =
+    typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => onResize());
+  sizeObserver?.observe(ball);
 
   return () => {
+    sizeObserver?.disconnect();
     window.removeEventListener('resize', onResize);
     window.removeEventListener('blur', onDragReset);
     ball.removeEventListener('pointercancel', onDragReset);

@@ -1516,5 +1516,46 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await expect.poll(previewBall).toEqual({ width: 66, height: 66 });
     await expect(slider).toHaveValue('66');
   });
+
+  test('TC-E2E-195: 悬浮球拖到右下角贴边后调大，球仍完整在视口内、存储里的位置更新成钳制后的值；没拖过的球不受影响（#969）', async ({
+    page, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('basic');
+    const ball = await waitForBall(page);
+    const posKey = 'pt-ball-pos:localhost';
+    const storedPos = () => serviceWorker.evaluate(async (k) => (await chrome.storage.local.get(k))[k] ?? null, posKey);
+    const ballState = () =>
+      page.evaluate(() => {
+        const b = document.getElementById('pt-host-ball')!.shadowRoot!.querySelector('.pt-ball') as HTMLElement;
+        const r = b.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, position: b.style.position };
+      });
+
+    // 没拖过：默认右下角锚定，调大后仍靠 host 的 right/bottom 锚定，不写位置
+    await patchStoredSettings(serviceWorker, { floatingBallSize: 60 });
+    await expect.poll(async () => (await ballState()).width).toBe(60);
+    const anchored = await ballState();
+    expect(anchored.position).toBe('');
+    expect(anchored.right).toBe(1280 - 24);
+    expect(anchored.bottom).toBe(720 - 24);
+    expect(await storedPos()).toBeNull();
+
+    // 拖到右下角贴边：钳在 VIEWPORT_MARGIN(8) 处
+    await patchStoredSettings(serviceWorker, { floatingBallSize: 44 });
+    await expect.poll(async () => (await ballState()).width).toBe(44);
+    const box = (await ball.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(3000, 3000, { steps: 12 });
+    await page.mouse.up();
+    await expect.poll(storedPos).toEqual({ x: 1280 - 8 - 44, y: 720 - 8 - 44 });
+
+    // 调大：球仍完整在视口内，位置钳回并写回存储，尺寸不被钳制改动
+    await patchStoredSettings(serviceWorker, { floatingBallSize: 72 });
+    await expect.poll(async () => (await ballState()).width).toBe(72);
+    await expect.poll(ballState).toMatchObject({ right: 1280 - 8, bottom: 720 - 8, width: 72 });
+    await expect.poll(storedPos).toEqual({ x: 1280 - 8 - 72, y: 720 - 8 - 72 });
+  });
 });
 
