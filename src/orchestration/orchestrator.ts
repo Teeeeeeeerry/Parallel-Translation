@@ -344,17 +344,39 @@ export interface OrchestratorOptions {
 export type PageToggleVisual = 'idle' | 'loading' | 'done' | 'error';
 
 /**
- * 按批次大小切分翻译项（#245）。
- * 与 content 现有切片逻辑一致：前 N-1 批满额，最后一批为余数。
+ * 切批的两道闸（#1004）：一批的文字总长不超过 maxChars，条目数不超过 maxItems，
+ * 谁先到按谁切。字符预算防的是少量长段落挤成一个巨大请求；个数上限防的是成千
+ * 上万个一两个字的表格格子挤进同一批（引擎对单次条目数也有自己的限制）。
+ * 文字长度按 String.length 计。
+ */
+export interface BatchLimits {
+  maxItems: number;
+  maxChars: number;
+}
+
+/**
+ * 按两道闸切分翻译项（#245、#1004）。纯函数：不读设置、不碰 DOM。
+ * 按原顺序贪心装批：当前批再装下一项会超过任一道闸就先收批。单个单元本身就
+ * 超过字符预算时自成一批，绝不丢弃 —— 丢单元就是静默漏翻。
  */
 export function splitBatches<T>(
   items: TranslateItem<T>[],
-  size: number,
+  limits: BatchLimits,
 ): TranslateItem<T>[][] {
   const batches: TranslateItem<T>[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    batches.push(items.slice(i, i + size));
+  let current: TranslateItem<T>[] = [];
+  let chars = 0;
+  for (const item of items) {
+    const len = item.text.length;
+    if (current.length > 0 && (current.length >= limits.maxItems || chars + len > limits.maxChars)) {
+      batches.push(current);
+      current = [];
+      chars = 0;
+    }
+    current.push(item);
+    chars += len;
   }
+  if (current.length > 0) batches.push(current);
   return batches;
 }
 
@@ -474,8 +496,9 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     }
 
     const epochAtStart = epoch;
-    // 批次拆分（#245）：与现状一致，每批独立发送
-    const batches = splitBatches(items, batchSize);
+    // 批次拆分（#245）：与现状一致，每批独立发送。字符预算还没接上（#1005），
+    // 这里只按个数切
+    const batches = splitBatches(items, { maxItems: batchSize, maxChars: Infinity });
     // #379: 当前领域在翻译开始时定一次，各批次一致；没有则不携带字段
     const domainId = currentDomainIdFrom(opts, to);
 

@@ -35,7 +35,7 @@ function items(n: number): TranslateItem<number>[] {
 
 describe('splitBatches — 批次拆分', () => {
   test('恰好一批：数量 ≤ 批次大小', () => {
-    const batches = splitBatches(items(10), FULL_PAGE_BATCH_SIZE);
+    const batches = splitBatches(items(10), { maxItems: FULL_PAGE_BATCH_SIZE, maxChars: Infinity });
     expect(batches).toHaveLength(1);
     expect(batches[0]!.map((b) => b.text)).toEqual(
       Array.from({ length: 10 }, (_, i) => `text-${i}`),
@@ -43,18 +43,18 @@ describe('splitBatches — 批次拆分', () => {
   });
 
   test('40 项 → 3 批（15/15/10）：前 N-1 批满额，余数进最后一批', () => {
-    const batches = splitBatches(items(40), FULL_PAGE_BATCH_SIZE);
+    const batches = splitBatches(items(40), { maxItems: FULL_PAGE_BATCH_SIZE, maxChars: Infinity });
     expect(batches.map((b) => b.length)).toEqual([15, 15, 10]);
   });
 
   test('批次顺序与文本顺序一致', () => {
-    const batches = splitBatches(items(31), FULL_PAGE_BATCH_SIZE);
+    const batches = splitBatches(items(31), { maxItems: FULL_PAGE_BATCH_SIZE, maxChars: Infinity });
     const all = batches.flatMap((b) => b.map((x) => x.text));
     expect(all).toEqual(Array.from({ length: 31 }, (_, i) => `text-${i}`));
   });
 
   test('空数组 → 0 批', () => {
-    expect(splitBatches([], FULL_PAGE_BATCH_SIZE)).toEqual([]);
+    expect(splitBatches([], { maxItems: FULL_PAGE_BATCH_SIZE, maxChars: Infinity })).toEqual([]);
   });
 });
 
