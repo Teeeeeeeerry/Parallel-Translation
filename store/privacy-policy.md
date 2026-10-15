@@ -2,7 +2,7 @@
 
 # Parallel-Translation 隐私政策
 
-**最后更新日期：2026-10-02**
+**最后更新日期：2026-10-15**
 
 ## 数据收集
 
@@ -20,7 +20,7 @@ Parallel-Translation **不收集任何个人信息**。本扩展：
 | 引擎 | 目标服务 | 隐私政策 |
 |------|---------|---------|
 | Google 翻译 | translate.googleapis.com | [Google 隐私权政策](https://policies.google.com/privacy) |
-| Bing 翻译 | api-edge.cognitive.microsofttranslator.com；edge.microsoft.com（仅获取短期访问令牌，不发送待翻译文本） | [Microsoft 隐私声明](https://privacy.microsoft.com/zh-cn/privacystatement) |
+| Bing 翻译 | edge.microsoft.com | [Microsoft 隐私声明](https://privacy.microsoft.com/zh-cn/privacystatement) |
 | OpenAI | api.openai.com | [OpenAI 隐私政策](https://openai.com/policies/privacy-policy) |
 | DeepL | api.deepl.com / api-free.deepl.com | [DeepL 隐私政策](https://www.deepl.com/privacy) |
 | Gemini | generativelanguage.googleapis.com | [Google 隐私权政策](https://policies.google.com/privacy) |
@@ -60,8 +60,7 @@ API 密钥以明文形式存储在 `chrome.storage.local` 中，仅用于向对�
 | 地址 | 用途 |
 |------|-----|
 | `https://translate.googleapis.com/*` | Google 翻译（默认引擎，无需 API 密钥） |
-| `https://api-edge.cognitive.microsofttranslator.com/*` | Bing 翻译（无需 API 密钥） |
-| `https://edge.microsoft.com/translate/auth` | Bing 翻译获取短期访问令牌，不发送待翻译文本 |
+| `https://edge.microsoft.com/translate/translatetext` | Bing 翻译（无需 API 密钥） |
 | `https://api.openai.com/*` | OpenAI，仅在用户填入自己的 API 密钥后使用 |
 | `https://generativelanguage.googleapis.com/*` | Gemini，仅在用户填入自己的 API 密钥后使用 |
 | `https://api.deepl.com/*` | DeepL，仅在用户填入自己的 API 密钥后使用 |

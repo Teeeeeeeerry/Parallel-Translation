@@ -2,7 +2,7 @@
 
 # Parallel-Translation Privacy Policy
 
-**Last updated: 2026-10-02**
+**Last updated: 2026-10-15**
 
 ## Data collection
 
@@ -20,7 +20,7 @@ Text that you select, or that is visible on the page and is to be translated, is
 | Engine | Service | Privacy policy |
 |--------|---------|----------------|
 | Google Translate | translate.googleapis.com | [Google Privacy Policy](https://policies.google.com/privacy) |
-| Bing Translator | api-edge.cognitive.microsofttranslator.com; edge.microsoft.com (only to obtain a short-lived access token; no text to translate is sent) | [Microsoft Privacy Statement](https://privacy.microsoft.com/en-us/privacystatement) |
+| Bing Translator | edge.microsoft.com | [Microsoft Privacy Statement](https://privacy.microsoft.com/en-us/privacystatement) |
 | OpenAI | api.openai.com | [OpenAI Privacy Policy](https://openai.com/policies/privacy-policy) |
 | DeepL | api.deepl.com / api-free.deepl.com | [DeepL Privacy Policy](https://www.deepl.com/privacy) |
 | Gemini | generativelanguage.googleapis.com | [Google Privacy Policy](https://policies.google.com/privacy) |
@@ -60,8 +60,7 @@ In addition, the extension requests `host_permissions` (listed under `permission
 | Address | Purpose |
 |---------|---------|
 | `https://translate.googleapis.com/*` | Google Translate (default engine, no API key required) |
-| `https://api-edge.cognitive.microsofttranslator.com/*` | Bing Translator (no API key required) |
-| `https://edge.microsoft.com/translate/auth` | Bing Translator short-lived access token; no text to translate is sent |
+| `https://edge.microsoft.com/translate/translatetext` | Bing Translator (no API key required) |
 | `https://api.openai.com/*` | OpenAI, used only after you enter your own API key |
 | `https://generativelanguage.googleapis.com/*` | Gemini, used only after you enter your own API key |
 | `https://api.deepl.com/*` | DeepL, used only after you enter your own API key |
