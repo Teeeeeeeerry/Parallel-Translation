@@ -28,6 +28,8 @@
   "rowFloatingBall": { "message": "浮動球" },
   "rowBallSize": { "message": "浮動球大小" },
   "rowParaBtnSize": { "message": "逐段翻譯按鈕大小" },
+  "rowParaBtnHideDelay": { "message": "滑鼠離開段落後按鈕停留" },
+  "unitSeconds": { "message": "秒" },
   "rowParagraphBtn": { "message": "逐段翻譯" },
   "btnResetBallPos": { "message": "重設浮動球位置" },
   "toastBallPosReset": { "message": "已重設" },

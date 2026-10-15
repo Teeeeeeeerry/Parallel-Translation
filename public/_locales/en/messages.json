@@ -28,6 +28,8 @@
   "rowFloatingBall": { "message": "Floating ball" },
   "rowBallSize": { "message": "Floating ball size" },
   "rowParaBtnSize": { "message": "Translate on hover button size" },
+  "rowParaBtnHideDelay": { "message": "Hover button stays after mouse leaves" },
+  "unitSeconds": { "message": "s" },
   "rowParagraphBtn": { "message": "Translate on hover" },
   "btnResetBallPos": { "message": "Reset ball position" },
   "toastBallPosReset": { "message": "Reset" },

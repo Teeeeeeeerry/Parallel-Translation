@@ -1340,6 +1340,30 @@ async function patchStoredSettings(serviceWorker: import('@playwright/test').Wor
   }, patch);
 }
 
+/**
+ * 悬停第一段让逐段翻译按钮浮出，再把鼠标移到空白处，返回离开段落到按钮消失隔了多久。
+ * 页内记下最后一次 mouseout 的时刻，按钮 display 变成 none 时再记一次 —— 两个时刻
+ * 都在页面里取，不受 Playwright 往返的延迟影响（#972）
+ */
+async function measureHideAfterLeave(page: Page): Promise<number> {
+  const paraBtn = page.locator('#pt-host-para-btn .pt-para-btn');
+  await page.locator('p').first().hover();
+  await expect(paraBtn).toBeVisible({ timeout: 10_000 });
+  await page.evaluate(() => {
+    const w = window as any;
+    const btn = document.getElementById('pt-host-para-btn')!.shadowRoot!.querySelector('.pt-para-btn') as HTMLElement;
+    w.__ptLeftAt = 0;
+    w.__ptHiddenAt = 0;
+    document.addEventListener('mouseout', () => (w.__ptLeftAt = performance.now()), { capture: true });
+    new MutationObserver(() => {
+      if (btn.style.display === 'none' && !w.__ptHiddenAt) w.__ptHiddenAt = performance.now();
+    }).observe(btn, { attributes: true, attributeFilter: ['style'] });
+  });
+  await page.mouse.move(5, 710);
+  await expect(paraBtn).toBeHidden({ timeout: 10_000 });
+  return page.evaluate(() => (window as any).__ptHiddenAt - (window as any).__ptLeftAt);
+}
+
 test.describe('悬浮 UI 尺寸 @extended', () => {
   test('TC-E2E-191: 尺寸改由文档根上的自定义属性给出，缺省时与原来逐像素相同，写上后穿过 shadow 与 all: initial 生效（#965）', async ({
     page, seedSettings, gotoFixture,
@@ -1707,30 +1731,7 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await seedSettings({});
     await gotoFixture('basic');
     await waitForBall(page);
-    const firstP = page.locator('p').first();
-    const paraBtn = page.locator('#pt-host-para-btn .pt-para-btn');
-
-    /**
-     * 离开段落到按钮消失隔了多久：页内记下最后一次 mouseout 的时刻，按钮 display
-     * 变成 none 时再记一次。两个时刻都在页面里取，不受 Playwright 往返的延迟影响
-     */
-    const hideAfterLeave = async () => {
-      await firstP.hover();
-      await expect(paraBtn).toBeVisible({ timeout: 10_000 });
-      await page.evaluate(() => {
-        const w = window as any;
-        const btn = document.getElementById('pt-host-para-btn')!.shadowRoot!.querySelector('.pt-para-btn') as HTMLElement;
-        w.__ptLeftAt = 0;
-        w.__ptHiddenAt = 0;
-        document.addEventListener('mouseout', () => (w.__ptLeftAt = performance.now()), { capture: true });
-        new MutationObserver(() => {
-          if (btn.style.display === 'none' && !w.__ptHiddenAt) w.__ptHiddenAt = performance.now();
-        }).observe(btn, { attributes: true, attributeFilter: ['style'] });
-      });
-      await page.mouse.move(5, 710);
-      await expect(paraBtn).toBeHidden({ timeout: 10_000 });
-      return page.evaluate(() => (window as any).__ptHiddenAt - (window as any).__ptLeftAt);
-    };
+    const hideAfterLeave = () => measureHideAfterLeave(page);
 
     await patchStoredSettings(serviceWorker, { paraBtnHideDelay: 600 });
     await expect.poll(() => serviceWorker.evaluate(async () => ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any).paraBtnHideDelay)).toBe(600);
@@ -1742,6 +1743,48 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     const long = await hideAfterLeave();
     expect(long).toBeGreaterThanOrEqual(2600 - 20);
     expect(long).toBeLessThan(3000);
+  });
+
+  test('TC-E2E-200: 设置页逐段翻译按钮显示时长滑块 —— 读数以秒显示，标签写明是鼠标离开段落之后；键盘调到 0.5 秒后，网页上离开段落的按钮约半秒就消失（#973）', async ({
+    page, context, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('basic');
+    await waitForBall(page);
+
+    const extId = new URL(serviceWorker.url()).host;
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extId}/options.html`);
+    const [label, unit] = await options.evaluate(() => [
+      chrome.i18n.getMessage('rowParaBtnHideDelay'),
+      chrome.i18n.getMessage('unitSeconds'),
+    ]);
+    const slider = options.getByRole('slider', { name: label });
+    const readout = options.locator('output[for="pt-slider-para-btn-hide-delay"]');
+    await expect(slider).toHaveValue('1500');
+    await expect(readout).toHaveText(`1.5 ${unit}`);
+
+    // 键盘：从按钮大小滑块 Tab 过来，左方向键每按一下少 0.1 秒，按到下限 0.5 秒
+    await options.locator('#pt-slider-para-btn-size').focus();
+    await options.keyboard.press('Tab');
+    await expect(slider).toBeFocused();
+    await options.keyboard.press('ArrowLeft');
+    await expect(readout).toHaveText(`1.4 ${unit}`);
+    for (let i = 0; i < 13; i++) await options.keyboard.press('ArrowLeft');
+    await expect(slider).toHaveValue('500');
+    await expect(readout).toHaveText(`0.5 ${unit}`);
+    await expect(slider).toHaveAttribute('aria-valuetext', `0.5 ${unit}`);
+
+    // 键盘调值只走防抖：停手后写一次
+    await expect
+      .poll(() => serviceWorker.evaluate(async () => ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any)?.paraBtnHideDelay))
+      .toBe(500);
+
+    // 网页上：离开段落后约半秒消失（默认是 1.5 秒）
+    await page.bringToFront();
+    const ms = await measureHideAfterLeave(page);
+    expect(ms).toBeGreaterThanOrEqual(500 - 20);
+    expect(ms).toBeLessThan(1000);
   });
 });
 

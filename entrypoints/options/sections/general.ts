@@ -10,6 +10,8 @@ import {
   BALL_SIZE_MAX,
   BALL_SIZE_MIN,
   LANG_LIST,
+  PARA_BTN_HIDE_DELAY_MAX,
+  PARA_BTN_HIDE_DELAY_MIN,
   PARA_BTN_SIZE_MAX,
   PARA_BTN_SIZE_MIN,
 } from '~/src/storage/schema';
@@ -134,7 +136,21 @@ export function initGeneral(): void {
       updatePreview();
     },
   });
-  sliderRows.append(ballSize.row, paraBtnSize.row);
+  // #973: 逐段翻译按钮显示时长 —— 鼠标离开段落之后停留多久，不是浮出前的等待
+  // （那个 140ms 与输入翻译圆点同源，不做成设置）。存毫秒、读数按秒，不进预览
+  const paraBtnHideDelay = createSliderRow({
+    id: 'pt-slider-para-btn-hide-delay',
+    labelKey: 'rowParaBtnHideDelay',
+    labelFallback: '鼠标离开段落后按钮停留',
+    min: PARA_BTN_HIDE_DELAY_MIN,
+    max: PARA_BTN_HIDE_DELAY_MAX,
+    step: 100,
+    unit: tf('unitSeconds', '秒'),
+    format: (v) => (v / 1000).toFixed(1),
+    get: () => getSettings().paraBtnHideDelay,
+    set: (v) => savePatch({ paraBtnHideDelay: v }),
+  });
+  sliderRows.append(ballSize.row, paraBtnSize.row, paraBtnHideDelay.row);
 
   const resetBallPosBtn = document.getElementById('pt-reset-ball-pos-btn')!;
   const ballPosToggle = document.getElementById('pt-ball-pos-toggle')!;
@@ -244,6 +260,7 @@ export function initGeneral(): void {
     // 滑块按存储值重画了，拖动中的值就作废，预览改按存储值画（popup、另一个设置页改的）
     if (ballSize.sync()) delete draft.floatingBallSize;
     if (paraBtnSize.sync()) delete draft.paraBtnSize;
+    paraBtnHideDelay.sync();
     updatePreview();
   });
 }
