@@ -54,4 +54,20 @@ describe('createFloatingPreview（#968）', () => {
     expect(host.style.getPropertyValue('--pt-input-dot-size')).toBe('14px');
     expect(host.style.getPropertyValue('--pt-input-dot-hit')).toBe('24px');
   });
+
+  test('开关关着的那一项置灰，另外两项不受影响；打开后恢复（#988）', () => {
+    const preview = createFloatingPreview(host);
+    const root = host.shadowRoot!;
+    const off = (sel: string) => root.querySelector(sel)!.classList.contains('pt-preview-off');
+    preview.update(DEFAULT_SETTINGS);
+    expect([off('.pt-ball'), off('.pt-para-btn'), off('.pt-preview-input')]).toEqual([false, false, false]);
+    preview.update({ ...DEFAULT_SETTINGS, showFloatingBall: false });
+    expect([off('.pt-ball'), off('.pt-para-btn'), off('.pt-preview-input')]).toEqual([true, false, false]);
+    preview.update({ ...DEFAULT_SETTINGS, showParagraphBtn: false });
+    expect([off('.pt-ball'), off('.pt-para-btn'), off('.pt-preview-input')]).toEqual([false, true, false]);
+    preview.update({ ...DEFAULT_SETTINGS, inputTranslate: false });
+    expect([off('.pt-ball'), off('.pt-para-btn'), off('.pt-preview-input')]).toEqual([false, false, true]);
+    preview.update(DEFAULT_SETTINGS);
+    expect([off('.pt-ball'), off('.pt-para-btn'), off('.pt-preview-input')]).toEqual([false, false, false]);
+  });
 });

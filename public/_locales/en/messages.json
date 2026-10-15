@@ -30,6 +30,10 @@
   "rowParaBtnSize": { "message": "Translate on hover button size" },
   "rowParaBtnHideDelay": { "message": "Hover button stays after mouse leaves" },
   "rowInputDotSize": { "message": "Translate input dot size" },
+  "sliderOffNote": {
+    "message": "$FEATURE$ is off. Turn it on above to see it.",
+    "placeholders": { "feature": { "content": "$1" } }
+  },
   "unitSeconds": { "message": "s" },
   "rowParagraphBtn": { "message": "Translate on hover" },
   "btnResetBallPos": { "message": "Reset ball position" },
