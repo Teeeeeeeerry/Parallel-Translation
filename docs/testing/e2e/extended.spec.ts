@@ -1549,7 +1549,22 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await page.mouse.down();
     await page.mouse.move(3000, 3000, { steps: 12 });
     await page.mouse.up();
-    await expect.poll(storedPos).toEqual({ x: 1280 - 8 - 44, y: 720 - 8 - 44 });
+    // 拖动的钳制与松手的持久化读的都是带 transform 的外接矩形（#980）：指针捕获期间
+    // 球处在悬停放大 1.08 的过渡里，贴边的位置会比 1228 少零点几像素（实测 1227.6），
+    // 偏多少看时机。这一步只断言球已贴到右下角（2px 之内）且位置已写入；调大之后
+    // 指针已离开、过渡已走完，钳制后的位置与存储值都精确断言
+    const dropped = await page.evaluate(() => {
+      const b = document.getElementById('pt-host-ball')!.shadowRoot!.querySelector('.pt-ball') as HTMLElement;
+      return { left: parseFloat(b.style.left), top: parseFloat(b.style.top), position: b.style.position };
+    });
+    expect(dropped.position).toBe('fixed');
+    expect(dropped.left).toBeGreaterThanOrEqual(1280 - 8 - 44 - 2);
+    expect(dropped.left).toBeLessThanOrEqual(1280 - 8 - 44);
+    expect(dropped.top).toBeGreaterThanOrEqual(720 - 8 - 44 - 2);
+    expect(dropped.top).toBeLessThanOrEqual(720 - 8 - 44);
+    await expect.poll(storedPos).not.toBeNull();
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(300);
 
     // 调大：球仍完整在视口内，位置钳回并写回存储，尺寸不被钳制改动
     await patchStoredSettings(serviceWorker, { floatingBallSize: 72 });
