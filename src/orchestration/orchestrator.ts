@@ -778,19 +778,23 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
           : summary.allFailed || opts.allRenderRejected?.()
             ? 'error'
             : 'translated';
-        // #327: 中止（还原）→ 空闲态；失败 → 错误态；成功 → 完成态
-        pushVisual(
-          status === 'translated' ? 'done' : status === 'error' ? 'error' : 'idle',
-        );
-        if (status !== 'translated') return { status, admission, summary };
+        // #327: 中止（还原）→ 空闲态；失败 → 错误态；成功 → 完成态。
+        // #1012：成功的完成态等补采集结束才推（见下）—— 先报完成、下半页却还在
+        // 翻，正是 #1003 最让人困惑的地方
+        if (status !== 'translated') {
+          pushVisual(status === 'error' ? 'error' : 'idle');
+          return { status, admission, summary };
+        }
         // #1011：补采集一轮。采集只在开头做了一次，观察器又要等到这里才启动，
         // 整页翻译跑的这十几秒里懒加载出来的内容两边都不管，永久漏翻（#1010
         // 实测）。触发条件与观察器启动一致（只有判为成功才补），页面级闸门与
         // 准入不重判；同一个采集函数，同一条增量补翻的批次流水线
         const epochAtDone = epoch;
         if (typeof items === 'function') await recollect(items, from, to);
-        // 补采集期间用户点了还原：还原分支已推空闲态、停了观察器，这里不再启动
+        // 补采集期间用户点了还原：还原分支已推空闲态、停了观察器，这里不再推
+        // 完成态、不再启动
         if (epoch !== epochAtDone) return { status: 'aborted', admission, summary };
+        pushVisual('done');
         // #328: 观察器启停时机 —— 只在整页翻译成功后启动恰好一次；
         // 失败 / 中止（在飞还原）不启动。#1011：补采集结束之后才启动
         opts.onObserverStart?.();
