@@ -1790,6 +1790,95 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     }
   });
 
+  test('TC-E2E-209: 行高紧凑的多行框里圆点不伸进上一行 —— 直径按行高收小，可点区仍不低于 24px；行高宽松时照设置的直径（#997）', async ({
+    page, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator('#pt-host-input-dot .pt-input-dot');
+    const LINE1 = 'Typing a long jumpy line here';
+    await box.click();
+    await page.keyboard.type(LINE1);
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('hi');
+    await expect(dot).toBeVisible();
+
+    /** 第一行字形盒的下沿、第二行的竖直中线与末尾横坐标（同 TC-E2E-205 的量法），按当前行高量 */
+    const geometry = () =>
+      box.evaluate((el, line1) => {
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        const lh = parseFloat(cs.lineHeight);
+        const sp = document.createElement('span');
+        sp.style.font = cs.font;
+        sp.style.whiteSpace = 'pre';
+        sp.textContent = 'hi';
+        el.parentElement!.append(sp);
+        const endW = sp.getBoundingClientRect().width;
+        sp.remove();
+        const line = document.createElement('div');
+        line.style.font = cs.font;
+        line.style.lineHeight = cs.lineHeight;
+        line.style.whiteSpace = 'pre';
+        const g = document.createElement('span');
+        g.textContent = line1;
+        line.append(g);
+        el.parentElement!.append(line);
+        const lr = line.getBoundingClientRect();
+        const gr = g.getBoundingClientRect();
+        line.remove();
+        const top = r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop);
+        return {
+          endX: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + endW,
+          line2Mid: top + lh * 1.5,
+          line1GlyphBottom: top + (gr.top - lr.top) + gr.height,
+        };
+      }, LINE1);
+    /** 可点区边长：逐像素问 shadow root（同 TC-E2E-205） */
+    const hitSide = () =>
+      page.evaluate(() => {
+        const root = document.getElementById('pt-host-input-dot')!.shadowRoot!;
+        const el = root.querySelector('.pt-input-dot')!;
+        const r = el.getBoundingClientRect();
+        let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+        for (let x = Math.floor(r.left) - 30; x <= Math.ceil(r.right) + 30; x++) {
+          for (let y = Math.floor(r.top) - 30; y <= Math.ceil(r.bottom) + 30; y++) {
+            if (root.elementFromPoint(x + 0.5, y + 0.5) !== el) continue;
+            left = Math.min(left, x); right = Math.max(right, x + 1);
+            top = Math.min(top, y); bottom = Math.max(bottom, y + 1);
+          }
+        }
+        return Math.min(right - left, bottom - top);
+      });
+
+    // 上限 24px；三档行高：1.0 与 1.2 下 24px 居中会伸进上一行（实测 5px 与 1.8px），1.4 不会
+    await patchStoredSettings(serviceWorker, { inputDotSize: 24 });
+    await expect.poll(async () => (await dot.boundingBox())?.width).toBe(24);
+    for (const lh of ['1', '1.2', '1.4']) {
+      await box.evaluate((el, v) => { (el as HTMLElement).style.lineHeight = v; }, lh);
+      const g = await geometry();
+      await expect(async () => {
+        const d = (await dot.boundingBox())!;
+        expect(d.width, `行高 ${lh} 直径`).toBe(d.height);
+        expect(d.y, `行高 ${lh} 圆点 ${JSON.stringify(d)} 不压住上一行`).toBeGreaterThanOrEqual(g.line1GlyphBottom);
+        expect(Math.abs(d.y + d.height / 2 - g.line2Mid), `行高 ${lh} 竖直居中`).toBeLessThanOrEqual(1);
+        expect(d.x - g.endX, `行高 ${lh} 与末尾字符的间隙`).toBeGreaterThanOrEqual(3);
+        expect(d.x - g.endX).toBeLessThanOrEqual(5);
+        // 1.4 下装得下，不收：照设置的 24px
+        if (lh === '1.4') expect(d.width).toBe(24);
+      }).toPass({ timeout: 5_000 });
+      expect(await hitSide(), `行高 ${lh} 可点区`).toBeGreaterThanOrEqual(24);
+    }
+
+    // 收小之后设置里再改直径，圆点照常跟着变：1.0 行高下改到 12px，比收小后的直径还小
+    await box.evaluate((el) => { (el as HTMLElement).style.lineHeight = '1'; });
+    await expect.poll(async () => (await dot.boundingBox())?.width).toBeLessThan(24);
+    await patchStoredSettings(serviceWorker, { inputDotSize: 12 });
+    await expect.poll(async () => (await dot.boundingBox())?.width).toBe(12);
+  });
+
   test('TC-E2E-206: 圆点大小在主文档与同域、跨域 iframe 里都跟着设置变（变量写入点不只在主文档分支里）（#987）', async ({
     page, serviceWorker, seedSettings, gotoFixture,
   }) => {
