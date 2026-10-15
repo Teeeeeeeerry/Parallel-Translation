@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <title>Lorenzo Ferrante - Wikipedia</title>
+  <style>
+    body { max-width: 1100px; margin: 24px auto; font: 14px/1.5 sans-serif; }
+    table.wikitable { border-collapse: collapse; margin: 12px 0; font-size: 12px; }
+    table.wikitable td, table.wikitable th { border: 1px solid #aaa; padding: 2px 4px; }
+  </style>
+</head>
+<body class="mediawiki ltr skin-vector">
+  <!-- #1009：维基成绩表形态，照 #1000 实测的 Giancarlo Fisichella 条目造（2026-10-15：交给编排
+       模块的 1217 个单元里绝大多数是表格格子，文字中位数 7 个字符）。这里把格子数放大到 2400 个，
+       让旧实现（#1007 之前：所有批次一次性发出，发出即开始计 30 秒响应超时）在端到端替身的
+       每请求 200 毫秒延迟下必然排队超时：Google 一条文本一个请求，后台引擎闸门放 6 个，
+       2400 个格子要 80 秒才翻完，排在后面的批次没轮到引擎就超时。
+       格子文字一律带字母（赛站代码、名次、退赛标记），不受“没有字母的单元不算翻译单元”影响。
+       人物、车队与赛季是虚构的。表格由下面的脚本在加载时生成，免得夹具文件几百 KB。 -->
+  <div id="content" class="mw-body" role="main">
+    <h1 id="firstHeading" class="firstHeading mw-first-heading"><span class="mw-page-title-main">Lorenzo Ferrante</span></h1>
+    <div id="bodyContent" class="vector-body">
+      <div id="mw-content-text" class="mw-body-content" lang="en" dir="ltr">
+        <div class="mw-content-ltr mw-parser-output" lang="en" dir="ltr">
+          <p id="lead">Lorenzo Ferrante is an Italian former racing driver who competed in fourteen seasons of the championship between the late nineties and the early twenty-tens, driving for five different teams and scoring several podium finishes along the way.</p>
+          <h2 id="results">Complete results</h2>
+          <div id="tables"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var RACES = ['AUS', 'MAL', 'BRA', 'SMR', 'ESP', 'MON', 'CAN', 'EUR', 'FRA', 'GBR',
+        'GER', 'AUT', 'HUN', 'BEL', 'ITA', 'USA', 'JPN', 'CHN', 'TUR', 'BHR'];
+      var MARKS = ['Ret', 'DNF', 'DSQ', 'NC', 'DNS', 'WD', 'EX', 'DNQ'];
+      var TEAMS = ['Minardi', 'Jordan', 'Benetton', 'Sauber', 'Renault', 'Force India'];
+      var root = document.getElementById('tables');
+      var n = 0;
+      for (var t = 0; t < 8; t++) {
+        var table = document.createElement('table');
+        table.className = 'wikitable';
+        table.id = 'results-' + t;
+        for (var r = 0; r < 15; r++) {
+          var tr = document.createElement('tr');
+          for (var c = 0; c < 20; c++) {
+            var td = document.createElement('td');
+            // 名次带字母后缀或退赛标记；每格各不相同，替身回显的译文能对上原文
+            var cell = (n % 3 === 0)
+              ? MARKS[n % MARKS.length] + ' ' + RACES[c]
+              : RACES[c] + ' ' + ((n % 18) + 1) + 'th ' + TEAMS[r % TEAMS.length].slice(0, 3) + n;
+            td.textContent = cell;
+            td.id = 'cell-' + n;
+            tr.appendChild(td);
+            n++;
+          }
+          table.appendChild(tr);
+        }
+        root.appendChild(table);
+      }
+    })();
+  </script>
+</body>
+</html>
