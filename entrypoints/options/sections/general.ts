@@ -6,7 +6,7 @@
 
 // Phase 7 — 通用设置分区：开关、语言对、显示模式、悬浮 UI。
 
-import { LANG_LIST } from '~/src/storage/schema';
+import { BALL_SIZE_MAX, BALL_SIZE_MIN, LANG_LIST } from '~/src/storage/schema';
 import type { DisplayMode } from '~/src/storage/schema';
 import {
   getSettings,
@@ -14,6 +14,7 @@ import {
   onSettingsChanged,
 } from '~/src/storage/settings';
 import { tf } from '~/src/i18n';
+import { createSliderRow } from '../slider-row';
 
 function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
   patchSettings(patch).catch((e) => console.error('[PT] 设置写入失败:', e));
@@ -84,6 +85,22 @@ export function initGeneral(): void {
   toggleInputTranslate.addEventListener('click', () => {
     savePatch({ inputTranslate: !getSettings().inputTranslate });
   });
+
+  // #967: 悬浮 UI 尺寸滑块，跟在三个开关之后；三项共用 slider-row 工厂
+  const sliderRows = document.getElementById('pt-floating-ui-sliders')!;
+  const ballSize = createSliderRow({
+    id: 'pt-slider-ball-size',
+    labelKey: 'rowBallSize',
+    labelFallback: '悬浮球大小',
+    min: BALL_SIZE_MIN,
+    max: BALL_SIZE_MAX,
+    step: 2,
+    unit: 'px',
+    format: (v) => String(v),
+    get: () => getSettings().floatingBallSize,
+    set: (v) => savePatch({ floatingBallSize: v }),
+  });
+  sliderRows.append(ballSize.row);
 
   const resetBallPosBtn = document.getElementById('pt-reset-ball-pos-btn')!;
   const ballPosToggle = document.getElementById('pt-ball-pos-toggle')!;
@@ -187,5 +204,8 @@ export function initGeneral(): void {
   });
 
   syncUI();
-  onSettingsChanged(() => syncUI());
+  onSettingsChanged(() => {
+    syncUI();
+    ballSize.sync();
+  });
 }

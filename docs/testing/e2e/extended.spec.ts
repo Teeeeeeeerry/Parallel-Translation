@@ -1422,4 +1422,49 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await waitForBall(page);
     expect(await ballLayoutSize(page)).toEqual({ width: 36, height: 36 });
   });
+
+  test('TC-E2E-193: 设置页悬浮球大小滑块 —— 读数随拖动变、键盘 Tab 到滑块后方向键能改值、写盘后网页上的球跟着变、重开设置页值还在（#967）', async ({
+    page, context, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('basic');
+    await waitForBall(page);
+
+    const extId = new URL(serviceWorker.url()).host;
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extId}/options.html`);
+    const label = await options.evaluate(() => chrome.i18n.getMessage('rowBallSize'));
+    const slider = options.getByRole('slider', { name: label });
+    const readout = options.locator('#pt-floating-ui-sliders output');
+    await expect(slider).toHaveValue('44');
+    await expect(readout).toHaveText('44 px');
+
+    // 键盘：从前一个开关 Tab 过来，方向键每按一下走一个步长
+    await options.locator('#pt-toggle-input-translate').focus();
+    await options.keyboard.press('Tab');
+    await expect(slider).toBeFocused();
+    await options.keyboard.press('ArrowRight');
+    await expect(slider).toHaveValue('46');
+    await expect(readout).toHaveText('46 px');
+    await expect(slider).toHaveAttribute('aria-valuetext', '46 px');
+
+    // 鼠标拖到最右端：读数在拖动中就变，不等写盘
+    const box = (await slider.boundingBox())!;
+    await options.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await options.mouse.down();
+    await options.mouse.move(box.x + box.width + 40, box.y + box.height / 2, { steps: 8 });
+    await expect(readout).toHaveText('72 px');
+    await options.mouse.up();
+
+    const stored = () =>
+      serviceWorker.evaluate(async () => ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any)?.floatingBallSize);
+    await expect.poll(stored).toBe(72);
+    // 网页上的球不刷新就跟着变
+    await expect.poll(async () => (await uiMetrics(page, 'ball')).width).toBe(72);
+
+    await options.reload();
+    await expect(options.getByRole('slider', { name: label })).toHaveValue('72');
+    await expect(options.locator('#pt-floating-ui-sliders output')).toHaveText('72 px');
+  });
 });
+
