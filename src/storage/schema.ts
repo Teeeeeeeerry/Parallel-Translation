@@ -190,6 +190,12 @@ export interface Settings {
 
   /** 悬浮球尺寸（px，#966）。默认 44 与原来的硬编码相同，范围见 BALL_SIZE_MIN/MAX。 */
   floatingBallSize: number;
+
+  /**
+   * 逐段翻译按钮尺寸（px，#970）：按钮的最小边长，字号按它等比折算。
+   * 默认 24 与原来的点击下限相同，范围见 PARA_BTN_SIZE_MIN/MAX。
+   */
+  paraBtnSize: number;
 }
 
 export const ENGINE_LABELS: Record<EngineId, string> = {
@@ -263,6 +269,21 @@ export function clampBallSize(n: unknown): number {
   return Math.min(BALL_SIZE_MAX, Math.max(BALL_SIZE_MIN, Math.round(n)));
 }
 
+/**
+ * 逐段翻译按钮尺寸合法范围（px，#970）。下限就是原来的 24px 点击下限，不许再低：
+ * 8px 字号那版实测约 20×15px，指针要瞄准才点得中（见 injected.css 的注释）。
+ * 上限 40 时字号 20px，按钮仍只占段落右上角一小块。
+ */
+export const PARA_BTN_SIZE_MIN = 24;
+export const PARA_BTN_SIZE_MAX = 40;
+const PARA_BTN_SIZE_DEFAULT = 24;
+
+/** 钳制逐段翻译按钮尺寸 —— 与 clampBallSize 同形，脏值回落默认。 */
+export function clampParaBtnSize(n: unknown): number {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return PARA_BTN_SIZE_DEFAULT;
+  return Math.min(PARA_BTN_SIZE_MAX, Math.max(PARA_BTN_SIZE_MIN, Math.round(n)));
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   enginePriority: ['google-web', 'bing-edge'],
@@ -287,4 +308,5 @@ export const DEFAULT_SETTINGS: Settings = {
   mtApplyTermTargets: false,
   inputTranslate: true,
   floatingBallSize: BALL_SIZE_DEFAULT,
+  paraBtnSize: PARA_BTN_SIZE_DEFAULT,
 };

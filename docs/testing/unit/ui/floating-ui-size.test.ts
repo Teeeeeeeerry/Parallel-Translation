@@ -7,7 +7,13 @@
  */
 import { describe, test, expect } from 'vitest';
 import { floatingUiVars } from '~/src/ui/floating-ui-size';
-import { DEFAULT_SETTINGS, BALL_SIZE_MIN, BALL_SIZE_MAX } from '~/src/storage/schema';
+import {
+  DEFAULT_SETTINGS,
+  BALL_SIZE_MIN,
+  BALL_SIZE_MAX,
+  PARA_BTN_SIZE_MIN,
+  PARA_BTN_SIZE_MAX,
+} from '~/src/storage/schema';
 
 describe('floatingUiVars（#966）', () => {
   test('默认设置得到与原来硬编码相同的球尺寸', () => {
@@ -27,3 +33,37 @@ describe('floatingUiVars（#966）', () => {
     expect(floatingUiVars({ ...DEFAULT_SETTINGS, floatingBallSize: 1 })['--pt-ball-size']).toBe(`${BALL_SIZE_MIN}px`);
   });
 });
+
+describe('floatingUiVars：逐段翻译按钮（#970）', () => {
+  test('默认设置得到与原来硬编码相同的最小边长 24px、字号 12px', () => {
+    const v = floatingUiVars(DEFAULT_SETTINGS);
+    expect(v['--pt-para-btn-size']).toBe('24px');
+    expect(v['--pt-para-btn-font']).toBe('12px');
+  });
+
+  test('一个值同时驱动最小边长与字号，字号按最小边长等比折算（不出现大框小字）', () => {
+    const v = floatingUiVars({ ...DEFAULT_SETTINGS, paraBtnSize: 36 });
+    expect(v['--pt-para-btn-size']).toBe('36px');
+    expect(v['--pt-para-btn-font']).toBe('18px');
+    const w = floatingUiVars({ ...DEFAULT_SETTINGS, paraBtnSize: 30 });
+    expect(w['--pt-para-btn-font']).toBe('15px');
+  });
+
+  test('球与按钮互不影响', () => {
+    const bigBtn = floatingUiVars({ ...DEFAULT_SETTINGS, paraBtnSize: 40 });
+    expect(bigBtn['--pt-ball-size']).toBe('44px');
+    const bigBall = floatingUiVars({ ...DEFAULT_SETTINGS, floatingBallSize: 72 });
+    expect(bigBall['--pt-para-btn-size']).toBe('24px');
+    expect(bigBall['--pt-para-btn-font']).toBe('12px');
+  });
+
+  test('存储里的脏值同样钳制：低于下限仍是 24px，不会画出点不中的按钮', () => {
+    for (const bad of [0, 8, -3]) {
+      const v = floatingUiVars({ ...DEFAULT_SETTINGS, paraBtnSize: bad });
+      expect(v['--pt-para-btn-size']).toBe(`${PARA_BTN_SIZE_MIN}px`);
+    }
+    expect(floatingUiVars({ ...DEFAULT_SETTINGS, paraBtnSize: 999 })['--pt-para-btn-size']).toBe(`${PARA_BTN_SIZE_MAX}px`);
+    expect(floatingUiVars({ ...DEFAULT_SETTINGS, paraBtnSize: Number.NaN as never })['--pt-para-btn-size']).toBe('24px');
+  });
+});
+

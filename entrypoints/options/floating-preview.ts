@@ -37,7 +37,7 @@ const PREVIEW_CSS = `
 `;
 
 export interface FloatingPreview {
-  update: (s: Pick<Settings, 'floatingBallSize'>) => void;
+  update: (s: Pick<Settings, 'floatingBallSize' | 'paraBtnSize'>) => void;
 }
 
 export function createFloatingPreview(host: HTMLElement): FloatingPreview {

@@ -11,12 +11,25 @@
 // UI 分叉。变量名与 injected.css 里的 var() 一一对应，回落值也在那里。
 
 import type { Settings } from '../storage/schema';
-import { clampBallSize } from '../storage/schema';
+import { clampBallSize, clampParaBtnSize } from '../storage/schema';
 
 export type FloatingUiVars = Record<`--pt-${string}`, string>;
 
-export function floatingUiVars(s: Pick<Settings, 'floatingBallSize'>): FloatingUiVars {
+/**
+ * 逐段翻译按钮的字号与最小边长之比：原来是 12px 字号配 24px 下限。
+ * 一个值同时驱动两者，按钮调大时字跟着长，不出现大框小字
+ */
+const PARA_BTN_FONT_RATIO = 12 / 24;
+
+export function floatingUiVars(
+  s: Pick<Settings, 'floatingBallSize' | 'paraBtnSize'>,
+): FloatingUiVars {
   // 存储读出来的值不经写入口（直接写 storage 的旧数据），再钳一次：
   // 脏值写成 'NaNpx' 会让 var() 在计算值时刻失效，球的宽高变成 auto 塌掉
-  return { '--pt-ball-size': `${clampBallSize(s.floatingBallSize)}px` };
+  const btn = clampParaBtnSize(s.paraBtnSize);
+  return {
+    '--pt-ball-size': `${clampBallSize(s.floatingBallSize)}px`,
+    '--pt-para-btn-size': `${btn}px`,
+    '--pt-para-btn-font': `${btn * PARA_BTN_FONT_RATIO}px`,
+  };
 }

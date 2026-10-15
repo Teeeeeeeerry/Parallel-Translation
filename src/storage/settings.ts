@@ -5,7 +5,13 @@
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
 import type { DeepPartial, Settings } from './schema';
-import { DEFAULT_SETTINGS, clampBallSize, clampConcurrency, migrateStyle } from './schema';
+import {
+  DEFAULT_SETTINGS,
+  clampBallSize,
+  clampConcurrency,
+  clampParaBtnSize,
+  migrateStyle,
+} from './schema';
 
 const KEY = 'pt-settings';
 
@@ -81,6 +87,9 @@ function mergeInto(base: Settings, patch: SettingsPatch): Settings {
   if (patch.floatingBallSize === undefined) {
     merged.floatingBallSize = base.floatingBallSize;
   }
+  if (patch.paraBtnSize === undefined) {
+    merged.paraBtnSize = base.paraBtnSize;
+  }
 
   return merged;
 }
@@ -95,6 +104,7 @@ function clampWriteEntry(s: Settings): Settings {
     maxConcurrency: clampConcurrency(s.maxConcurrency),
     // #966: 悬浮 UI 尺寸同样在写入口钳制，导出 JSON 手改后导入也越不了界
     floatingBallSize: clampBallSize(s.floatingBallSize),
+    paraBtnSize: clampParaBtnSize(s.paraBtnSize),
   };
 }
 

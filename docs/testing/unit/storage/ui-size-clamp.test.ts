@@ -12,6 +12,9 @@ import {
   BALL_SIZE_MIN,
   BALL_SIZE_MAX,
   clampBallSize,
+  PARA_BTN_SIZE_MIN,
+  PARA_BTN_SIZE_MAX,
+  clampParaBtnSize,
 } from '~/src/storage/schema';
 
 describe('clampBallSize（#966）', () => {
@@ -71,3 +74,36 @@ describe('写入口单点钳制（#966）', () => {
     expect(getSettings().floatingBallSize).toBe(BALL_SIZE_MIN);
   });
 });
+
+describe('clampParaBtnSize（#970）', () => {
+  test('默认值就是原来的 24px 点击下限', () => {
+    expect(DEFAULT_SETTINGS.paraBtnSize).toBe(24);
+  });
+
+  test('下限不低于 24px —— 8px 字号那版实测约 20×15px，指针要瞄准才点得中', () => {
+    expect(PARA_BTN_SIZE_MIN).toBeGreaterThanOrEqual(24);
+    for (const v of [0, 1, 16, 23, -10]) {
+      expect(clampParaBtnSize(v)).toBeGreaterThanOrEqual(24);
+    }
+  });
+
+  test('超上限钳到上限，非数字与 NaN 回落默认', () => {
+    expect(clampParaBtnSize(PARA_BTN_SIZE_MAX + 50)).toBe(PARA_BTN_SIZE_MAX);
+    expect(clampParaBtnSize(31.4)).toBe(31);
+    for (const bad of [Number.NaN, '32', null, undefined]) {
+      expect(clampParaBtnSize(bad)).toBe(24);
+    }
+  });
+
+  test('写入口钳制：导入手改成 8px 的配置写进存储时已是 24px', async () => {
+    resetStorage();
+    vi.resetModules();
+    const { settingsReady, getSettings, patchSettings, replaceSettings } = await import('~/src/storage/settings');
+    await settingsReady();
+    await patchSettings({ paraBtnSize: 8 });
+    expect(getSettings().paraBtnSize).toBe(PARA_BTN_SIZE_MIN);
+    await replaceSettings({ ...DEFAULT_SETTINGS, paraBtnSize: 999 });
+    expect(getSettings().paraBtnSize).toBe(PARA_BTN_SIZE_MAX);
+  });
+});
+
