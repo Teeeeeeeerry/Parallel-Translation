@@ -6,7 +6,13 @@
 
 // Phase 7 — 通用设置分区：开关、语言对、显示模式、悬浮 UI。
 
-import { BALL_SIZE_MAX, BALL_SIZE_MIN, LANG_LIST } from '~/src/storage/schema';
+import {
+  BALL_SIZE_MAX,
+  BALL_SIZE_MIN,
+  LANG_LIST,
+  PARA_BTN_SIZE_MAX,
+  PARA_BTN_SIZE_MIN,
+} from '~/src/storage/schema';
 import type { DisplayMode, Settings } from '~/src/storage/schema';
 import {
   getSettings,
@@ -111,7 +117,24 @@ export function initGeneral(): void {
       updatePreview();
     },
   });
-  sliderRows.append(ballSize.row);
+  // #971: 逐段翻译按钮大小（按钮的最小边长，字号随它等比走）
+  const paraBtnSize = createSliderRow({
+    id: 'pt-slider-para-btn-size',
+    labelKey: 'rowParaBtnSize',
+    labelFallback: '逐段翻译按钮大小',
+    min: PARA_BTN_SIZE_MIN,
+    max: PARA_BTN_SIZE_MAX,
+    step: 2,
+    unit: 'px',
+    format: (v) => String(v),
+    get: () => getSettings().paraBtnSize,
+    set: (v) => savePatch({ paraBtnSize: v }),
+    onInput: (v) => {
+      draft.paraBtnSize = v;
+      updatePreview();
+    },
+  });
+  sliderRows.append(ballSize.row, paraBtnSize.row);
 
   const resetBallPosBtn = document.getElementById('pt-reset-ball-pos-btn')!;
   const ballPosToggle = document.getElementById('pt-ball-pos-toggle')!;
@@ -220,6 +243,7 @@ export function initGeneral(): void {
     syncUI();
     // 滑块按存储值重画了，拖动中的值就作废，预览改按存储值画（popup、另一个设置页改的）
     if (ballSize.sync()) delete draft.floatingBallSize;
+    if (paraBtnSize.sync()) delete draft.paraBtnSize;
     updatePreview();
   });
 }

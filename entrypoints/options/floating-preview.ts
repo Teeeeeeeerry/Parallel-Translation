@@ -34,6 +34,15 @@ const PREVIEW_CSS = `
   flex: none;
   cursor: default;
 }
+/* 网页上的按钮是 fixed 定位、平时隐藏，由 paragraph-btn.ts 浮出；预览里跟在示例
+   文字末尾常驻显示。尺寸相关的声明一条不覆盖，仍由 injected.css 与变量决定 */
+.pt-preview-stage .pt-para-btn {
+  position: static;
+  display: inline-block;
+  margin-left: 4px;
+  vertical-align: middle;
+  cursor: default;
+}
 `;
 
 export interface FloatingPreview {
@@ -49,7 +58,20 @@ export function createFloatingPreview(host: HTMLElement): FloatingPreview {
   stage.className = 'pt-preview-stage';
   const text = document.createElement('span');
   text.textContent = tf('previewOrigin', 'The quick brown fox jumps over the lazy dog.');
-  const ball = document.createElement('div');
+  // #971: 逐段翻译按钮贴在示例文字末尾，与网页上浮在段落文字末尾的位置一致。
+  // 元素必须与网页上的一样是 button：button 的浏览器默认样式是 border-box，换成
+  // span 就成了 content-box，最小边长再加上内边距与描边，预览比网页上高出 10px。
+  // 预览只给人看，不进 Tab 序列
+  const paraBtn = document.createElement('button');
+  paraBtn.type = 'button';
+  paraBtn.tabIndex = -1;
+  paraBtn.className = 'pt-para-btn';
+  paraBtn.textContent = tf('paraBtnGlyph', '译');
+  text.append(paraBtn);
+  // 与网页上的球同一种元素（button），浏览器默认样式一致
+  const ball = document.createElement('button');
+  ball.type = 'button';
+  ball.tabIndex = -1;
   ball.className = 'pt-ball';
   ball.dataset.state = 'idle';
   ball.textContent = tf('ballGlyph', '译');

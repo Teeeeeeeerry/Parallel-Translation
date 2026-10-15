@@ -1435,7 +1435,7 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await options.goto(`chrome-extension://${extId}/options.html`);
     const label = await options.evaluate(() => chrome.i18n.getMessage('rowBallSize'));
     const slider = options.getByRole('slider', { name: label });
-    const readout = options.locator('#pt-floating-ui-sliders output');
+    const readout = options.locator('output[for="pt-slider-ball-size"]');
     await expect(slider).toHaveValue('44');
     await expect(readout).toHaveText('44 px');
 
@@ -1464,7 +1464,7 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
 
     await options.reload();
     await expect(options.getByRole('slider', { name: label })).toHaveValue('72');
-    await expect(options.locator('#pt-floating-ui-sliders output')).toHaveText('72 px');
+    await expect(options.locator('output[for="pt-slider-ball-size"]')).toHaveText('72 px');
   });
 
   test('TC-E2E-194: 设置页的悬浮 UI 预览 —— 拖动中预览里的球就按滑块值变、不等写盘；别处改了尺寸预览跟着变（#968）', async ({
@@ -1642,6 +1642,63 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await expect.poll(async () => (await uiMetrics(page, 'ball')).width).toBe(72);
     await expect(dot).toBeVisible();
     expect(await dotMetrics()).toEqual(before);
+  });
+
+  test('TC-E2E-198: 设置页逐段翻译按钮大小滑块 —— 预览里的按钮随拖动改尺寸、键盘可调，写盘后网页上浮出的按钮跟着变（#971）', async ({
+    page, context, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('basic');
+    await waitForBall(page);
+
+    const extId = new URL(serviceWorker.url()).host;
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extId}/options.html`);
+    const label = await options.evaluate(() => chrome.i18n.getMessage('rowParaBtnSize'));
+    const slider = options.getByRole('slider', { name: label });
+    const readout = options.locator('output[for="pt-slider-para-btn-size"]');
+    const previewBtn = () =>
+      options.evaluate(() => {
+        const b = document.getElementById('pt-floating-preview')!.shadowRoot!.querySelector('.pt-para-btn')!;
+        const r = b.getBoundingClientRect();
+        return { height: r.height, width: r.width, fontSize: getComputedStyle(b).fontSize };
+      });
+    await expect(slider).toHaveValue('24');
+    await expect(readout).toHaveText('24 px');
+    await expect.poll(previewBtn).toMatchObject({ height: 24, fontSize: '12px' });
+
+    // 键盘：从悬浮球大小滑块 Tab 过来，方向键走一个步长，预览跟着变
+    await options.locator('#pt-slider-ball-size').focus();
+    await options.keyboard.press('Tab');
+    await expect(slider).toBeFocused();
+    await options.keyboard.press('ArrowRight');
+    await expect(readout).toHaveText('26 px');
+    await expect.poll(previewBtn).toMatchObject({ height: 26, fontSize: '13px' });
+
+    // 拖到最右端：松手前预览已是 40
+    const box = (await slider.boundingBox())!;
+    await options.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await options.mouse.down();
+    await options.mouse.move(box.x + box.width + 40, box.y + box.height / 2, { steps: 8 });
+    await expect(readout).toHaveText('40 px');
+    const big = await previewBtn();
+    expect(big).toMatchObject({ height: 40, fontSize: '20px' });
+    expect(big.width).toBeGreaterThanOrEqual(40);
+    await options.mouse.up();
+
+    await expect
+      .poll(() => serviceWorker.evaluate(async () => ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any)?.paraBtnSize))
+      .toBe(40);
+
+    // 网页上浮出的按钮跟着变，不用刷新
+    await page.bringToFront();
+    await page.locator('p').first().hover();
+    const paraBtn = page.locator('#pt-host-para-btn .pt-para-btn');
+    await expect(paraBtn).toBeVisible({ timeout: 10_000 });
+    await expect.poll(async () => (await paraBtn.boundingBox())!.height).toBe(40);
+    // 预览不骗人：同一设置下，网页上的按钮与预览里的按钮宽高、字号逐项相同
+    const onPage = await uiMetrics(page, 'para-btn');
+    expect(onPage).toEqual({ width: big.width, height: big.height, fontSize: big.fontSize });
   });
 });
 

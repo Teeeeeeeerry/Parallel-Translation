@@ -26,15 +26,22 @@ describe('createFloatingPreview（#968）', () => {
     expect(root.querySelector('.pt-ball')).not.toBeNull();
   });
 
+  test('预览里同样有一个逐段翻译按钮，与球同处一块底板（#971）', () => {
+    createFloatingPreview(host);
+    expect(host.shadowRoot!.querySelector('.pt-para-btn')).not.toBeNull();
+  });
+
   test('写到预览上的变量与纯函数的输出逐项相同（含需要钳制的脏值）', () => {
     const preview = createFloatingPreview(host);
     for (const size of [44, 60, 999, Number.NaN]) {
-      const s = { ...DEFAULT_SETTINGS, floatingBallSize: size };
+      const s = { ...DEFAULT_SETTINGS, floatingBallSize: size, paraBtnSize: size };
       preview.update(s);
       for (const [name, value] of Object.entries(floatingUiVars(s))) {
         expect(host.style.getPropertyValue(name)).toBe(value);
       }
     }
     expect(host.style.getPropertyValue('--pt-ball-size')).toBe('44px');
+    expect(host.style.getPropertyValue('--pt-para-btn-size')).toBe('24px');
+    expect(host.style.getPropertyValue('--pt-para-btn-font')).toBe('12px');
   });
 });

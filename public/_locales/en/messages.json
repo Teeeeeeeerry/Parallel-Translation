@@ -27,6 +27,7 @@
   "cardFloatingUi": { "message": "Floating UI" },
   "rowFloatingBall": { "message": "Floating ball" },
   "rowBallSize": { "message": "Floating ball size" },
+  "rowParaBtnSize": { "message": "Translate on hover button size" },
   "rowParagraphBtn": { "message": "Translate on hover" },
   "btnResetBallPos": { "message": "Reset ball position" },
   "toastBallPosReset": { "message": "Reset" },
