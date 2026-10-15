@@ -1324,6 +1324,22 @@ async function uiMetrics(page: Page, host: 'ball' | 'para-btn') {
   }, host);
 }
 
+/** 不受 transform 影响的布局尺寸：翻译中的球在转、悬停时放大 1.08，外接矩形会比球大 */
+async function ballLayoutSize(page: Page) {
+  return page.evaluate(() => {
+    const el = document.getElementById('pt-host-ball')!.shadowRoot!.querySelector('.pt-ball') as HTMLElement;
+    return { width: el.offsetWidth, height: el.offsetHeight };
+  });
+}
+
+/** 不刷新页面改存储里的设置：读出当前值合并后写回，与设置页、导入走的是同一个存储键 */
+async function patchStoredSettings(serviceWorker: import('@playwright/test').Worker, patch: Record<string, unknown>) {
+  await serviceWorker.evaluate(async (p) => {
+    const cur = ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] ?? {}) as object;
+    await chrome.storage.sync.set({ 'pt-settings': { ...cur, ...p } });
+  }, patch);
+}
+
 test.describe('悬浮 UI 尺寸 @extended', () => {
   test('TC-E2E-191: 尺寸改由文档根上的自定义属性给出，缺省时与原来逐像素相同，写上后穿过 shadow 与 all: initial 生效（#965）', async ({
     page, seedSettings, gotoFixture,
@@ -1368,5 +1384,42 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     });
     expect(await uiMetrics(page, 'ball')).toEqual(ball);
     expect(await uiMetrics(page, 'para-btn')).toEqual(btn);
+  });
+
+  test('TC-E2E-192: 改存储里的悬浮球尺寸不刷新页面，球的实际尺寸跟着变；翻译进行中改尺寸球不重挂、状态不丢；关掉再打开的新球同样吃到尺寸（#966）', async ({
+    page, serviceWorker, seedSettings, gotoFixture, mockGoogle,
+  }) => {
+    await seedSettings({});
+    await mockGoogle({ delayMs: 15_000 });
+    await gotoFixture('basic');
+    const ball = await waitForBall(page);
+    expect((await uiMetrics(page, 'ball')).width).toBe(44);
+
+    await patchStoredSettings(serviceWorker, { floatingBallSize: 60 });
+    await expect.poll(async () => (await uiMetrics(page, 'ball')).width).toBe(60);
+    expect((await ball.boundingBox())!.height).toBe(60);
+
+    // 翻译进行中：给球打个记号，改尺寸后还是同一个元素、仍在转
+    await ball.click();
+    await expect(ball).toHaveAttribute('data-state', 'loading');
+    await page.evaluate(() => {
+      const el = document.getElementById('pt-host-ball')!.shadowRoot!.querySelector('.pt-ball') as any;
+      el.__ptMark = 'same-ball';
+    });
+    await patchStoredSettings(serviceWorker, { floatingBallSize: 36 });
+    await expect.poll(() => ballLayoutSize(page)).toEqual({ width: 36, height: 36 });
+    await expect(ball).toHaveAttribute('data-state', 'loading');
+    expect(
+      await page.evaluate(
+        () => (document.getElementById('pt-host-ball')!.shadowRoot!.querySelector('.pt-ball') as any).__ptMark,
+      ),
+    ).toBe('same-ball');
+
+    // 关掉再打开：新建的球同样是 36
+    await patchStoredSettings(serviceWorker, { showFloatingBall: false });
+    await expect(page.locator('#pt-host-ball')).toHaveCount(0);
+    await patchStoredSettings(serviceWorker, { showFloatingBall: true });
+    await waitForBall(page);
+    expect(await ballLayoutSize(page)).toEqual({ width: 36, height: 36 });
   });
 });

@@ -5,7 +5,7 @@
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
 import type { DeepPartial, Settings } from './schema';
-import { DEFAULT_SETTINGS, clampConcurrency, migrateStyle } from './schema';
+import { DEFAULT_SETTINGS, clampBallSize, clampConcurrency, migrateStyle } from './schema';
 
 const KEY = 'pt-settings';
 
@@ -78,16 +78,24 @@ function mergeInto(base: Settings, patch: SettingsPatch): Settings {
   if (patch.maxConcurrency === undefined) {
     merged.maxConcurrency = base.maxConcurrency;
   }
+  if (patch.floatingBallSize === undefined) {
+    merged.floatingBallSize = base.floatingBallSize;
+  }
 
   return merged;
 }
 
 /**
- * 写入口钳制（#254）—— 并发钳制唯一生效点，定义只在 schema 一处。
+ * 写入口钳制（#254）—— 数值钳制唯一生效点，定义只在 schema 一处。
  * 合并函数不再负责语义钳制（纯合并）；并发闸门只保留结构性防御。
  */
 function clampWriteEntry(s: Settings): Settings {
-  return { ...s, maxConcurrency: clampConcurrency(s.maxConcurrency) };
+  return {
+    ...s,
+    maxConcurrency: clampConcurrency(s.maxConcurrency),
+    // #966: 悬浮 UI 尺寸同样在写入口钳制，导出 JSON 手改后导入也越不了界
+    floatingBallSize: clampBallSize(s.floatingBallSize),
+  };
 }
 
 /**

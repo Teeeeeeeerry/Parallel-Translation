@@ -127,6 +127,7 @@ describe('route', () => {
       models: {},
       mtApplyTermTargets: false,
       inputTranslate: true,
+      floatingBallSize: 44,
     });
 
     vi.mocked(cacheGet).mockResolvedValue(null);
@@ -423,6 +424,7 @@ describe('route', () => {
       models: {},
       mtApplyTermTargets: false,
       inputTranslate: true,
+      floatingBallSize: 44,
     });
     // 修复前：非缓存路径不跳过已填充槽位 —— 下一引擎重翻全部并
     // 覆盖成功译文（TC-E2E-33 暴露）；修复后只补失败槽位
