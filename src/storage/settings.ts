@@ -50,6 +50,21 @@ export const NESTED_KEYS: Record<NestedSettingsKey, NestedMergeStrategy> = {
 };
 
 /**
+ * 显式 undefined 必须回落原值的标量键（#989）—— 声明只在此一处。
+ * 浅覆盖 `{...base, ...patch}` 会让 patch 里显式为 undefined 的键冲掉原值，
+ * 随后写入口钳制把 undefined 变成默认值：不是保留，是静默重置。
+ * 新增带写入口钳制的数值设置项时登记在这里。
+ */
+export const KEEP_ON_UNDEFINED_KEYS = [
+  'maxConcurrency',
+  'floatingBallSize',
+  'paraBtnSize',
+  'paraBtnHideDelay',
+] as const satisfies readonly (keyof Settings)[];
+
+export type KeepOnUndefinedKey = (typeof KEEP_ON_UNDEFINED_KEYS)[number];
+
+/**
  * 将 patch 深度合并到 base。
  * 嵌套对象（hotkeys / siteList / models）按 NESTED_KEYS 声明表逐键合并，
  * 其余字段浅覆盖。'replace' 策略下保持浅覆盖结果（patch 值整体替换）；
@@ -81,18 +96,11 @@ function mergeInto(base: Settings, patch: SettingsPatch): Settings {
     (merged as Record<NestedSettingsKey, unknown>)[key] = mergedValue;
   }
 
-  // 显式 undefined 的 maxConcurrency 视同未携带（保持 base 原值）
-  if (patch.maxConcurrency === undefined) {
-    merged.maxConcurrency = base.maxConcurrency;
-  }
-  if (patch.floatingBallSize === undefined) {
-    merged.floatingBallSize = base.floatingBallSize;
-  }
-  if (patch.paraBtnSize === undefined) {
-    merged.paraBtnSize = base.paraBtnSize;
-  }
-  if (patch.paraBtnHideDelay === undefined) {
-    merged.paraBtnHideDelay = base.paraBtnHideDelay;
+  // #989: 显式 undefined 的标量键视同未携带（保持 base 原值），按声明表统一处理
+  for (const key of KEEP_ON_UNDEFINED_KEYS) {
+    if (patch[key] === undefined) {
+      (merged as Record<KeepOnUndefinedKey, unknown>)[key] = base[key];
+    }
   }
 
   return merged;
