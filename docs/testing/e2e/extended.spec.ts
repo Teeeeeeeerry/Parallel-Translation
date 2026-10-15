@@ -1573,20 +1573,13 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await page.mouse.down();
     await page.mouse.move(3000, 3000, { steps: 12 });
     await page.mouse.up();
-    // 拖动的钳制与松手的持久化读的都是带 transform 的外接矩形（#980）：指针捕获期间
-    // 球处在悬停放大 1.08 的过渡里，贴边的位置会比 1228 少零点几像素（实测 1227.6），
-    // 偏多少看时机。这一步只断言球已贴到右下角（2px 之内）且位置已写入；调大之后
-    // 指针已离开、过渡已走完，钳制后的位置与存储值都精确断言
+    // 松手时指针还在球上（悬停放大 1.08），拖动钳制与持久化读布局位置（#980），贴边位置精确
     const dropped = await page.evaluate(() => {
       const b = document.getElementById('pt-host-ball')!.shadowRoot!.querySelector('.pt-ball') as HTMLElement;
-      return { left: parseFloat(b.style.left), top: parseFloat(b.style.top), position: b.style.position };
+      return { left: b.style.left, top: b.style.top, position: b.style.position };
     });
-    expect(dropped.position).toBe('fixed');
-    expect(dropped.left).toBeGreaterThanOrEqual(1280 - 8 - 44 - 2);
-    expect(dropped.left).toBeLessThanOrEqual(1280 - 8 - 44);
-    expect(dropped.top).toBeGreaterThanOrEqual(720 - 8 - 44 - 2);
-    expect(dropped.top).toBeLessThanOrEqual(720 - 8 - 44);
-    await expect.poll(storedPos).not.toBeNull();
+    expect(dropped).toEqual({ left: `${1280 - 8 - 44}px`, top: `${720 - 8 - 44}px`, position: 'fixed' });
+    await expect.poll(storedPos).toEqual({ x: 1280 - 8 - 44, y: 720 - 8 - 44 });
     await page.mouse.move(5, 5);
     await page.waitForTimeout(300);
 
@@ -1595,6 +1588,67 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await expect.poll(async () => (await ballState()).width).toBe(72);
     await expect.poll(ballState).toMatchObject({ right: 1280 - 8, bottom: 720 - 8, width: 72 });
     await expect.poll(storedPos).toEqual({ x: 1280 - 8 - 72, y: 720 - 8 - 72 });
+  });
+
+  test('TC-E2E-203: 悬停放大时松手、翻译中转圈时拖动或改窗口大小，存下的都是球的布局位置而不是外接矩形（#980）', async ({
+    page, serviceWorker, seedSettings, gotoFixture, mockGoogle,
+  }) => {
+    await seedSettings({});
+    await mockGoogle({ delayMs: 15_000 });
+    await gotoFixture('basic');
+    const ball = await waitForBall(page);
+    const posKey = 'pt-ball-pos:localhost';
+    const storedPos = () => serviceWorker.evaluate(async (k) => (await chrome.storage.local.get(k))[k] ?? null, posKey);
+    const ballBox = () =>
+      page.evaluate(() => {
+        const b = document.getElementById('pt-host-ball')!.shadowRoot!.querySelector('.pt-ball') as HTMLElement;
+        const r = b.getBoundingClientRect();
+        return { left: b.style.left, top: b.style.top, rectLeft: r.left, rectTop: r.top, rectWidth: r.width };
+      });
+
+    // 票里那组实测：44px 的球从默认位置（左上角 1212, 652）拖 (-634, -274)，悬停着松手
+    const box = (await ball.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(400);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 - 634, box.y + box.height / 2 - 274, { steps: 10 });
+    await page.waitForTimeout(400);
+    await page.mouse.up();
+    const hovered = await ballBox();
+    // 前提成立：松手时外接矩形确实被悬停放大了（否则这条用例测不到 #980）
+    expect(hovered.rectWidth).toBeGreaterThan(44);
+    expect(hovered).toMatchObject({ left: '578px', top: '378px' });
+    await expect.poll(storedPos).toEqual({ x: 578, y: 378 });
+
+    // 刷新后鼠标移开再量：球回到松手时的位置，不往左上偏
+    await page.reload();
+    await waitForBall(page);
+    await page.mouse.move(5, 5);
+    await expect.poll(async () => (await ballBox()).rectLeft).toBe(578);
+    expect((await ballBox()).rectTop).toBe(378);
+
+    // 翻译进行中（球在转圈）拖动：存下的位置同样是布局位置
+    const b2 = (await ball.boundingBox())!;
+    const cx = b2.x + b2.width / 2;
+    const cy = b2.y + b2.height / 2;
+    await page.mouse.click(cx, cy);
+    await expect(ball).toHaveAttribute('data-state', 'loading');
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(300);
+    expect((await ballBox()).rectWidth).toBeGreaterThan(44); // 转圈中外接矩形比球大
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx - 100, cy - 50, { steps: 8 });
+    await page.mouse.up();
+    await expect(ball).toHaveAttribute('data-state', 'loading');
+    await expect.poll(storedPos).toEqual({ x: 478, y: 328 });
+
+    // 翻译进行中改窗口大小：钳到右边距 8px 处，不被转圈的外接矩形推得更远
+    await page.mouse.move(5, 5);
+    await page.setViewportSize({ width: 500, height: 720 });
+    await expect.poll(storedPos).toEqual({ x: 500 - 8 - 44, y: 328 });
+    expect(await ballBox()).toMatchObject({ left: `${500 - 8 - 44}px`, top: '328px' });
+    await expect(ball).toHaveAttribute('data-state', 'loading');
   });
 
   test('TC-E2E-196: 改存储里的逐段翻译按钮尺寸不刷新，浮出的按钮实际尺寸与字号跟着变；绕过写入口写进 1px 时仍不小于 24px（#970）', async ({

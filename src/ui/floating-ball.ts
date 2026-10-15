@@ -37,6 +37,25 @@ function clampToViewport(
   };
 }
 
+/**
+ * 球的布局位置与尺寸（#980）。不用 getBoundingClientRect：悬停时球放大 1.08、
+ * 翻译中在转圈，外接矩形比球大，拿它存位置每拖一次就往左上偏一点。
+ *
+ * 在 shadow 树里实测：没拖过的球 offsetParent 是 shadow 外的 host（host 自身
+ * position: fixed，offsetParent 为 null，offsetLeft 即视口坐标），球的 offsetLeft
+ * 为 0，两者相加；拖过的球自身 position: fixed，offsetParent 为 null，offsetLeft
+ * 就是视口坐标，页面滚动不影响。offset* 取整到像素。
+ */
+function layoutBox(ball: HTMLElement): { x: number; y: number; w: number; h: number } {
+  const parent = ball.offsetParent as HTMLElement | null;
+  return {
+    x: ball.offsetLeft + (parent ? parent.offsetLeft : 0),
+    y: ball.offsetTop + (parent ? parent.offsetTop : 0),
+    w: ball.offsetWidth,
+    h: ball.offsetHeight,
+  };
+}
+
 interface BallCallbacks {
   /**
    * 翻译/还原的统一入口，由 content script 提供。
@@ -66,8 +85,7 @@ export function createBall(callbacks: BallCallbacks): () => void {
   let startY = 0;
   let origX = 0;
   let origY = 0;
-  // 球的实际渲染尺寸，从 getBoundingClientRect 获取。
-  // 页面缩放时 CSS 像素可能产生子像素差异，用实际值比硬编码 BALL_SIZE 准确。
+  // 球的布局尺寸，按下时从 layoutBox 读（#980：不含悬停放大与转圈）
   let ballW = BALL_SIZE;
   let ballH = BALL_SIZE;
 
@@ -78,8 +96,8 @@ export function createBall(callbacks: BallCallbacks): () => void {
     .then((r) => {
       const pos = r[posKey] as { x: number; y: number } | undefined;
       if (pos) {
-        const rect = ball.getBoundingClientRect();
-        const clamped = clampToViewport(pos.x, pos.y, rect.width, rect.height);
+        const box = layoutBox(ball);
+        const clamped = clampToViewport(pos.x, pos.y, box.w, box.h);
         // 钳制后与存储值不同时写回，防止下次再读到越界坐标
         if (clamped.x !== pos.x || clamped.y !== pos.y) {
           chrome.storage.local
@@ -100,11 +118,11 @@ export function createBall(callbacks: BallCallbacks): () => void {
     dragged = false;
     startX = e.clientX;
     startY = e.clientY;
-    const rect = ball.getBoundingClientRect();
-    origX = rect.left;
-    origY = rect.top;
-    ballW = rect.width;
-    ballH = rect.height;
+    const box = layoutBox(ball);
+    origX = box.x;
+    origY = box.y;
+    ballW = box.w;
+    ballH = box.h;
     // #180: 指针捕获 —— 窗口外松开时 mouseup 仍派发到球上，
     // 否则 dragging/dragged 卡在 true，期间键盘 Enter 的 click 被吞
     const pointerId = (e as MouseEvent & { pointerId?: number }).pointerId;
@@ -138,9 +156,9 @@ export function createBall(callbacks: BallCallbacks): () => void {
   const onMouseUp = () => {
     if (dragging && dragged) {
       // 持久化新位置
-      const rect = ball.getBoundingClientRect();
+      const box = layoutBox(ball);
       chrome.storage.local
-        .set({ [posKey]: { x: rect.left, y: rect.top } })
+        .set({ [posKey]: { x: box.x, y: box.y } })
         .catch(() => {});
     }
     dragging = false;
@@ -178,9 +196,9 @@ export function createBall(callbacks: BallCallbacks): () => void {
     if (dragging) return;
     // 没有手动定位的球靠 host 的 right/bottom 锚定，无需处理
     if (ball.style.position !== 'fixed') return;
-    const rect = ball.getBoundingClientRect();
-    const clamped = clampToViewport(rect.left, rect.top, rect.width, rect.height);
-    if (clamped.x !== rect.left || clamped.y !== rect.top) {
+    const box = layoutBox(ball);
+    const clamped = clampToViewport(box.x, box.y, box.w, box.h);
+    if (clamped.x !== box.x || clamped.y !== box.y) {
       ball.style.left = `${clamped.x}px`;
       ball.style.top = `${clamped.y}px`;
       chrome.storage.local
