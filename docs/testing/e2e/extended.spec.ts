@@ -1557,5 +1557,76 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await expect.poll(ballState).toMatchObject({ right: 1280 - 8, bottom: 720 - 8, width: 72 });
     await expect.poll(storedPos).toEqual({ x: 1280 - 8 - 72, y: 720 - 8 - 72 });
   });
+
+  test('TC-E2E-196: 改存储里的逐段翻译按钮尺寸不刷新，浮出的按钮实际尺寸与字号跟着变；绕过写入口写进 1px 时仍不小于 24px（#970）', async ({
+    page, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('basic');
+    await waitForBall(page);
+    await page.locator('p').first().hover();
+    const paraBtn = page.locator('#pt-host-para-btn .pt-para-btn');
+    await expect(paraBtn).toBeVisible({ timeout: 10_000 });
+    expect(await uiMetrics(page, 'para-btn')).toMatchObject({ height: 24, fontSize: '12px' });
+
+    await patchStoredSettings(serviceWorker, { paraBtnSize: 36 });
+    await expect.poll(async () => (await uiMetrics(page, 'para-btn')).height).toBe(36);
+    const big = await uiMetrics(page, 'para-btn');
+    expect(big.fontSize).toBe('18px');
+    expect(big.width).toBeGreaterThanOrEqual(36);
+    expect((await paraBtn.boundingBox())!.height).toBe(36);
+
+    // 直接写存储绕过写入口钳制：纯函数再钳一次，按钮不会小于 24px 的点击下限
+    await patchStoredSettings(serviceWorker, { paraBtnSize: 1 });
+    await expect.poll(async () => (await uiMetrics(page, 'para-btn')).height).toBe(24);
+    const small = await uiMetrics(page, 'para-btn');
+    expect(small.width).toBeGreaterThanOrEqual(24);
+    expect(small.fontSize).toBe('12px');
+  });
+
+  test('TC-E2E-197: 调大逐段翻译按钮不改变输入翻译圆点的可见尺寸与 24px 可点区（#970）', async ({
+    page, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await gotoFixture('input');
+    await waitForBall(page);
+    const box = page.locator('#reply');
+    const dot = page.locator('#pt-host-input-dot .pt-input-dot');
+    await box.click();
+    await page.keyboard.type('Hello there');
+    await expect(dot).toBeVisible();
+
+    /** 圆点的可见尺寸与可点区：逐像素问圆点所在的 shadow root 这一点落在谁身上（同 TC-E2E-137） */
+    const dotMetrics = () =>
+      page.evaluate(() => {
+        const root = document.getElementById('pt-host-input-dot')!.shadowRoot!;
+        const el = root.querySelector('.pt-input-dot')!;
+        const r = el.getBoundingClientRect();
+        let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+        for (let x = Math.floor(r.left) - 16; x <= Math.ceil(r.right) + 16; x++) {
+          for (let y = Math.floor(r.top) - 16; y <= Math.ceil(r.bottom) + 16; y++) {
+            if (root.elementFromPoint(x + 0.5, y + 0.5) !== el) continue;
+            left = Math.min(left, x);
+            right = Math.max(right, x + 1);
+            top = Math.min(top, y);
+            bottom = Math.max(bottom, y + 1);
+          }
+        }
+        return { width: r.width, height: r.height, hitWidth: right - left, hitHeight: bottom - top };
+      });
+    const before = await dotMetrics();
+    expect(before.width).toBe(14);
+    expect(before.height).toBe(14);
+    // 逐像素采样落在亚像素边界上时多数一格：24px 的可点区量出 24 或 25
+    for (const hit of [before.hitWidth, before.hitHeight]) {
+      expect(hit).toBeGreaterThanOrEqual(24);
+      expect(hit).toBeLessThanOrEqual(25);
+    }
+
+    await patchStoredSettings(serviceWorker, { paraBtnSize: 40, floatingBallSize: 72 });
+    await expect.poll(async () => (await uiMetrics(page, 'ball')).width).toBe(72);
+    await expect(dot).toBeVisible();
+    expect(await dotMetrics()).toEqual(before);
+  });
 });
 
