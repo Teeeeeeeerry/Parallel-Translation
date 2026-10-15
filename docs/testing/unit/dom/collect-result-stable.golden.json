@@ -3687,6 +3687,37 @@
    null
   ]
  },
+ "wiki-results-table.html": {
+  "units": [
+   {
+    "path": "div[0]/h1[0]",
+    "text": "Lorenzo Ferrante",
+    "preserves": []
+   },
+   {
+    "path": "div[0]/div[1]/div[0]/div[0]/p[0]",
+    "text": "Lorenzo Ferrante is an Italian former racing driver who competed in fourteen seasons of the championship between the late nineties and the early twenty-tens, driving for five different teams and scoring several podium finishes along the way.",
+    "preserves": []
+   },
+   {
+    "path": "div[0]/div[1]/div[0]/div[0]/h2[1]",
+    "text": "Complete results",
+    "preserves": []
+   }
+  ],
+  "html": "\n  <!-- #1009：维基成绩表形态，照 #1000 实测的 Giancarlo Fisichella 条目造（2026-10-15：交给编排\n       模块的 1217 个单元里绝大多数是表格格子，文字中位数 7 个字符）。这里把格子数放大到 2400 个，\n       让旧实现（#1007 之前：所有批次一次性发出，发出即开始计 30 秒响应超时）在端到端替身的\n       每请求 200 毫秒延迟下必然排队超时：Google 一条文本一个请求，后台引擎闸门放 6 个，\n       2400 个格子要 80 秒才翻完，排在后面的批次没轮到引擎就超时。\n       格子文字一律带字母（赛站代码、名次、退赛标记），不受“没有字母的单元不算翻译单元”影响。\n       人物、车队与赛季是虚构的。表格由下面的脚本在加载时生成，免得夹具文件几百 KB。 -->\n  <div id=\"content\" class=\"mw-body\" role=\"main\">\n    <h1 id=\"firstHeading\" class=\"firstHeading mw-first-heading\"><span class=\"mw-page-title-main\">Lorenzo Ferrante</span></h1>\n    <div id=\"bodyContent\" class=\"vector-body\">\n      <div id=\"mw-content-text\" class=\"mw-body-content\" lang=\"en\" dir=\"ltr\">\n        <div class=\"mw-content-ltr mw-parser-output\" lang=\"en\" dir=\"ltr\">\n          <p id=\"lead\">Lorenzo Ferrante is an Italian former racing driver who competed in fourteen seasons of the championship between the late nineties and the early twenty-tens, driving for five different teams and scoring several podium finishes along the way.</p>\n          <h2 id=\"results\">Complete results</h2>\n          <div id=\"tables\"></div>\n        </div>\n      </div>\n    </div>\n  </div>\n  \n",
+  "hover": [
+   null,
+   "div[0]/h1[0]",
+   "div[0]/h1[0]",
+   null,
+   null,
+   null,
+   "div[0]/div[1]/div[0]/div[0]/p[0]",
+   "div[0]/div[1]/div[0]/div[0]/h2[1]",
+   null
+  ]
+ },
  "edge-cases": {
   "units": [
    {
