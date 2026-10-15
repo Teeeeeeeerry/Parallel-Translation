@@ -6,7 +6,9 @@
 
 | 用户语言 | UI 文案(zh_CN / en) | 代码标识 |
 |---|---|---|
-| **逐段翻译** | 逐段翻译 / Translate on hover | `showParagraphBtn`(设置项)、`translateOne()`(翻译入口)、`createParaBtn()`(悬停按钮注入) |
+| **逐段翻译** | 逐段翻译 / Translate on hover | `showParagraphBtn`(设置项)、`paraBtnSize`(按钮大小)、`paraBtnHideDelay`(鼠标离开段落后按钮停留)、`translateOne()`(翻译入口)、`createParaBtn()`(悬停按钮注入) |
+| **悬浮球** | 悬浮球 / Floating ball | `showFloatingBall`(设置项)、`floatingBallSize`(悬浮球大小)、`createBall()`(注入)、`pt-ball-pos:<主机名>`(每站位置,storage.local) |
+| **悬浮 UI 尺寸** | 悬浮球大小、逐段翻译按钮大小、输入翻译圆点大小 / Floating ball size, Translate on hover button size, Translate input dot size | 设置项 `floatingBallSize`、`paraBtnSize`、`inputDotSize`,写入口 `clampWriteEntry()` 钳制 → `floatingUiVars()`(纯函数,设置映射成 `--pt-*` 变量)→ `applySettings()` 写到文档根 → `src/styles/injected.css` 的 `var()`;设置页滑块 `createSliderRow()`、预览 `createFloatingPreview()` 读同一个纯函数 |
 | 全页翻译 | 翻译整页 | `togglePage()` |
 | 划词翻译 | 翻译选中文本 | `translateSelection()` |
 | **更新提示** | 更新内容 / What's New | `src/changelog/`(数据与渲染)、`pt-changelog`(storage key) |
