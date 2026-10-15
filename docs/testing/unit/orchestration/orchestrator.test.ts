@@ -134,8 +134,9 @@ describe('渐进渲染回调注入（#256）', () => {
     orch.start();
 
     const pending = orch.translatePage(items(20), 'en', 'zh');
-    await Promise.resolve();
-    await Promise.resolve();
+    // 等一个宏任务（#1007 之后批次经闸门放行，多出几跳微任务；数微任务是
+    // 实现细节，这条要钉的只是慢批没回来之前快批已经渲染）
+    await new Promise((r) => setTimeout(r, 0));
     // 快批先返回并触发渲染回调 —— 首屏不等最慢段
     expect(order).toEqual([1]);
 

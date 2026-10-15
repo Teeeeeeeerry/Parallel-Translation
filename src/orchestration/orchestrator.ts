@@ -22,6 +22,7 @@ import type {
   FailureCategory,
 } from '~/src/engines/types';
 import type { Settings } from '~/src/storage/schema';
+import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 import { currentDomain } from '~/src/storage/domains';
 import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { isSiteBlocked } from '~/src/dom/site-filter';
@@ -38,6 +39,7 @@ import {
 import { normalizeLangCode } from './lang-code';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
+import { createGate } from '~/src/queue/concurrency';
 
 /**
  * 全页翻译与增量补翻的切批闸值（#1005，父 #1000）。原先按 15 个单元一批切，与
@@ -417,6 +419,12 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   let epoch = 0;
   // #326: 整页开关入口在飞互斥 —— 在飞期间页面尚无译文时忽略新触发
   let toggleInFlight = false;
+  // #1007: content 侧在飞批次闸门 —— 同时在飞的批次不超过并发数设置。原先所有
+  // 批次一次性发出，每批发出那一刻就开始走单次响应超时，而后台引擎闸门只放
+  // 并发数那么多：排在队尾的批次还没轮到引擎，计时器已经走完。排队挪到这里，
+  // 没轮到的批次还没发消息、不计时。整页与增量补翻共用这一道（一个页面一份）。
+  // 复用引擎侧同一个闸门模块；上限沿用并发数设置，每次翻译开始时按当时的值调
+  const sendGate = createGate(DEFAULT_SETTINGS.maxConcurrency);
   // #265: 设置变更订阅（start 订阅 / stop 退订）
   let unsubscribeSettings: (() => void) | null = null;
   // #659: 引擎报告的检测语言，只在内存里
@@ -509,6 +517,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     }
 
     const epochAtStart = epoch;
+    const maxConcurrency = opts.getSettings?.()?.maxConcurrency;
+    if (maxConcurrency !== undefined) sendGate.setMax(maxConcurrency);
     // 批次拆分（#245、#1005）：字符预算与个数上限双闸，每批独立发送
     const batches = splitBatches(items, batchLimits);
     // #379: 当前领域在翻译开始时定一次，各批次一致；没有则不携带字段
@@ -525,19 +535,32 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     // #262: 中止谓词 —— 还原（abort 递增纪元）或他批已判失效
     const isAborted = (): boolean =>
       invalidated || epoch !== epochAtStart;
+    // #1007: 某一批的响应已是失效（见闸门里的放行判定）
+    let invalidationSeen = false;
 
     await Promise.all(
       batches.map(async (batch, i) => {
         // 批次级失败有界重试（#91 语义由 batch-retry 承接）：
         // 失效全局短路 + epoch 中止在每次尝试前后检查
+        // #1007: 每次尝试都过闸门（重试退避期间不占名额）。放行的那一刻重判
+        // 中止：批次可能在队列里待了十几秒，期间用户点了还原、或别的批次判了
+        // 失效 —— 这时直接作废，消息一条都不发
         const result = await attemptBatchWithRetry(
           () =>
-            opts.send({
-              texts: batch.map((item) => item.text),
-              from,
-              to,
-              ...(domainId !== undefined && { domainId }),
-            }) as Promise<TranslateBatchResult>,
+            sendGate(async (): Promise<TranslateBatchResult> => {
+              if (isAborted() || invalidationSeen) return { ok: false, aborted: true };
+              const resp = (await opts.send({
+                texts: batch.map((item) => item.text),
+                from,
+                to,
+                ...(domainId !== undefined && { domainId }),
+              })) as TranslateBatchResult;
+              // 失效要在让出名额之前记下：名额一让出，队首的批次在同一轮里就被
+              // 放行，等这一批的记账（下面的 invalidated = true）走到，它已经发出去了。
+              // 单独一个标志只拦排队的批次，不改这一批自己的结果（它仍报失效）
+              if (resp?.invalidated) invalidationSeen = true;
+              return resp;
+            }),
           {
             sleep: sleepFn,
             shouldAbort: isAborted,
