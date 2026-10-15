@@ -7,7 +7,7 @@
 // Phase 7 — 通用设置分区：开关、语言对、显示模式、悬浮 UI。
 
 import { BALL_SIZE_MAX, BALL_SIZE_MIN, LANG_LIST } from '~/src/storage/schema';
-import type { DisplayMode } from '~/src/storage/schema';
+import type { DisplayMode, Settings } from '~/src/storage/schema';
 import {
   getSettings,
   patchSettings,
@@ -15,6 +15,7 @@ import {
 } from '~/src/storage/settings';
 import { tf } from '~/src/i18n';
 import { createSliderRow } from '../slider-row';
+import { createFloatingPreview } from '../floating-preview';
 
 function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
   patchSettings(patch).catch((e) => console.error('[PT] 设置写入失败:', e));
@@ -86,6 +87,12 @@ export function initGeneral(): void {
     savePatch({ inputTranslate: !getSettings().inputTranslate });
   });
 
+  // #968: 实时预览。拖动中、还没写盘的滑块值记在 draft 里，预览先按它画，
+  // 不等写盘；尺寸换算只经 floatingUiVars（预览模块里），不在这里另算
+  const preview = createFloatingPreview(document.getElementById('pt-floating-preview')!);
+  const draft: Partial<Settings> = {};
+  const updatePreview = () => preview.update({ ...getSettings(), ...draft });
+
   // #967: 悬浮 UI 尺寸滑块，跟在三个开关之后；三项共用 slider-row 工厂
   const sliderRows = document.getElementById('pt-floating-ui-sliders')!;
   const ballSize = createSliderRow({
@@ -99,6 +106,10 @@ export function initGeneral(): void {
     format: (v) => String(v),
     get: () => getSettings().floatingBallSize,
     set: (v) => savePatch({ floatingBallSize: v }),
+    onInput: (v) => {
+      draft.floatingBallSize = v;
+      updatePreview();
+    },
   });
   sliderRows.append(ballSize.row);
 
@@ -204,8 +215,11 @@ export function initGeneral(): void {
   });
 
   syncUI();
+  updatePreview();
   onSettingsChanged(() => {
     syncUI();
-    ballSize.sync();
+    // 滑块按存储值重画了，拖动中的值就作废，预览改按存储值画（popup、另一个设置页改的）
+    if (ballSize.sync()) delete draft.floatingBallSize;
+    updatePreview();
   });
 }

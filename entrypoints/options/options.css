@@ -227,6 +227,15 @@ body {
   min-width: 140px;
 }
 
+/* 悬浮 UI 实时预览（#968）：与外观分区的样式预览同一种底板 */
+.pt-floating-preview {
+  margin: -8px 0 20px;
+  padding: 0 16px;
+  background: var(--pt-paper);
+  border-radius: var(--pt-r-sm);
+  border: 1px solid var(--pt-forest-08);
+}
+
 /* 滑块行（#967）：标签在左，滑块与读数在右；读数用等宽字体、定宽，拖动时不左右跳 */
 .pt-slider-rows {
   margin-bottom: 20px;

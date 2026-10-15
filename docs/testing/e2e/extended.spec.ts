@@ -1466,5 +1466,55 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await expect(options.getByRole('slider', { name: label })).toHaveValue('72');
     await expect(options.locator('#pt-floating-ui-sliders output')).toHaveText('72 px');
   });
+
+  test('TC-E2E-194: 设置页的悬浮 UI 预览 —— 拖动中预览里的球就按滑块值变、不等写盘；别处改了尺寸预览跟着变（#968）', async ({
+    page, serviceWorker, seedSettings,
+  }) => {
+    await seedSettings({});
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    const previewBall = () =>
+      page.evaluate(() => {
+        const b = document.getElementById('pt-floating-preview')!.shadowRoot!.querySelector('.pt-ball')!;
+        const r = b.getBoundingClientRect();
+        return { width: r.width, height: r.height };
+      });
+    await expect.poll(previewBall).toEqual({ width: 44, height: 44 });
+
+    // 一次 evaluate 里改值、量预览、读存储：防抖 400ms 还没到点，存储仍是 44，预览已经是 60
+    const during = await page.evaluate(async () => {
+      const input = document.getElementById('pt-slider-ball-size') as HTMLInputElement;
+      input.value = '60';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const b = document.getElementById('pt-floating-preview')!.shadowRoot!.querySelector('.pt-ball')!;
+      const width = b.getBoundingClientRect().width;
+      const stored = ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any)?.floatingBallSize ?? 44;
+      return { width, stored };
+    });
+    expect(during).toEqual({ width: 60, stored: 44 });
+
+    // 真拖：按住拖到最左端，松手之前预览已是最小值
+    const slider = page.locator('#pt-slider-ball-size');
+    await expect.poll(() =>
+      serviceWorker.evaluate(async () => ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any)?.floatingBallSize),
+    ).toBe(60);
+    const box = (await slider.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x - 40, box.y + box.height / 2, { steps: 8 });
+    await expect.poll(previewBall).toEqual({ width: 32, height: 32 });
+    await page.mouse.up();
+    await expect.poll(() =>
+      serviceWorker.evaluate(async () => ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any)?.floatingBallSize),
+    ).toBe(32);
+
+    // 别处（popup、另一个设置页）改了尺寸：经存储变更回调，预览与滑块都跟着变
+    await serviceWorker.evaluate(async () => {
+      const cur = (await chrome.storage.sync.get('pt-settings'))['pt-settings'] as object;
+      await chrome.storage.sync.set({ 'pt-settings': { ...cur, floatingBallSize: 66 } });
+    });
+    await expect.poll(previewBall).toEqual({ width: 66, height: 66 });
+    await expect(slider).toHaveValue('66');
+  });
 });
 

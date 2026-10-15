@@ -113,7 +113,7 @@ describe('createSliderRow（#967）', () => {
   test('sync() 按存储值重画滑块与读数（别处改了设置）', () => {
     const { slider, setStored, input, readout } = setup(44);
     setStored(64);
-    slider.sync();
+    expect(slider.sync()).toBe(true);
     expect(input.value).toBe('64');
     expect(readout.textContent).toBe('64 px');
   });
@@ -122,7 +122,7 @@ describe('createSliderRow（#967）', () => {
     const { slider, drag, input, readout } = setup(44);
     drag(60);
     // 期间别的设置变了，回调里 sync() —— 存储里的尺寸还是 44
-    slider.sync();
+    expect(slider.sync()).toBe(false);
     expect(input.value).toBe('60');
     expect(readout.textContent).toBe('60 px');
   });
