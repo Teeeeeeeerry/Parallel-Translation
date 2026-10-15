@@ -37,7 +37,7 @@ const KEYLESS_CASES: Case[] = [
   { engineId: 'google-web', status: 403, hasKey: true, expected: 'transient' },
   { engineId: 'google-web', status: 429, hasKey: true, expected: 'transient' },
   { engineId: 'google-web', status: 500, hasKey: true, expected: 'transient' },
-  // bing-edge 401 是会话失效：仍瞬时可重试（清 JWT 逻辑在适配器内）
+  // 免 key 引擎的 401 同样瞬时可重试
   { engineId: 'bing-edge', status: 401, hasKey: true, expected: 'transient' },
   { engineId: 'bing-edge', status: 403, hasKey: true, expected: 'transient' },
   { engineId: 'bing-edge', status: 429, hasKey: true, expected: 'transient' },

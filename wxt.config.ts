@@ -76,8 +76,8 @@ export default defineConfig({
     // testConnection 对 CORS 异常端点的探测也不再静默失败）
     host_permissions: [
       'https://translate.googleapis.com/*',
-      'https://api-edge.cognitive.microsofttranslator.com/*',
-      'https://edge.microsoft.com/translate/auth',
+      // #1021: Bing 改走同主机的 translatetext，不再取令牌、不再访问 api-edge
+      'https://edge.microsoft.com/translate/translatetext',
       'https://api.openai.com/*',
       'https://generativelanguage.googleapis.com/*',
       'https://api.deepl.com/*',

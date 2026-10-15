@@ -5,9 +5,11 @@
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
 // Phase 2 — Bing Edge 翻译引擎（免 key）。
-// 通过 edge.microsoft.com/translate/auth 获取短期 JWT，
-// 再调 cognitive.microsofttranslator.com 批量翻译。
-// JWT 缓存约 10 分钟，解析 exp 复用，401 清空重取。
+// #1021: 原来的两步走（edge.microsoft.com/translate/auth 取短期 JWT，再带 Bearer
+// 调 api-edge.cognitive.microsofttranslator.com）在 2026 年 8 月前后断了：auth 端点
+// 一律 404，翻译端点不带令牌 401。Edge 自己改走同主机的 translatetext 端点，
+// 不要令牌，一次 POST 拿译文。它同样是没有承诺的内部端点，随时可能再变 ——
+// 真实可用性由定时的引擎冒烟检查盯着（#1022）。
 
 import { fetchWithTimeout } from './fetch-timeout';
 import { engineGate } from './engine-gate';
@@ -18,44 +20,7 @@ import type { TranslateEngine } from './types';
 // #159: 引擎级并发闸门 —— 整页翻译批次并发 → translate() 并发调用
 const getGate = engineGate();
 
-const AUTH_ENDPOINT = 'https://edge.microsoft.com/translate/auth';
-const TRANS_ENDPOINT =
-  'https://api-edge.cognitive.microsofttranslator.com/translate';
-
-let cachedJwt: string | null = null;
-/** 在飞的 auth 请求（single-flight，#159）—— 并发 translate() 首取 JWT
- * 时只发一次 auth 请求，其余调用共享同一个 promise。 */
-let jwtPromise: Promise<string> | null = null;
-
-function isExpired(jwt: string): boolean {
-  try {
-    const b64 = jwt.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/');
-    const payload = JSON.parse(atob(b64));
-    return Math.floor(Date.now() / 1000) >= (payload.exp as number) - 30;
-  } catch {
-    return true;
-  }
-}
-
-async function getJwt(): Promise<string> {
-  if (cachedJwt && !isExpired(cachedJwt)) return cachedJwt;
-  if (!jwtPromise) {
-    jwtPromise = (async () => {
-      const resp = await fetchWithTimeout('bing-edge', AUTH_ENDPOINT);
-      if (!resp.ok) {
-        // #259: 分类走公共判定 —— 免 key 引擎一律瞬时（可重试）
-        const category = classifyStatus('bing-edge', resp, true);
-        throw new EngineError('bing-edge', true, `auth HTTP ${resp.status}`, category);
-      }
-      cachedJwt = await resp.text(); // 返回纯文本 JWT，非 JSON
-      return cachedJwt!;
-    })().finally(() => {
-      // 无论成败都清掉在飞引用，下次调用可重新发起
-      jwtPromise = null;
-    });
-  }
-  return jwtPromise;
-}
+const TRANS_ENDPOINT = 'https://edge.microsoft.com/translate/translatetext';
 
 export const bingEdge: TranslateEngine = {
   id: 'bing-edge',
@@ -66,33 +31,28 @@ export const bingEdge: TranslateEngine = {
   masksNoTranslate: true,
 
   async translate({ texts, from, to }) {
-    // #159: 整个请求体（含 JWT 获取）过闸门，限制并发在飞请求数
+    // #159: 整个请求过闸门，限制并发在飞请求数
     return getGate()(async () => {
-      const jwt = await getJwt();
-
       // auto → 空字符串（Bing 不接受 'auto' 字面量）
       const fromParam = from === 'auto' ? '' : from;
 
+      // 只认纯文本：带 textType=html 也照纯文本翻（属性引号会被换成弯引号），
+      // 与 Google、DeepL 的调用方式一致，送进来的本来就是纯文本
       const qs = new URLSearchParams({
         from: fromParam,
         to,
-        'api-version': '3.0',
-        textType: 'html',
+        isEnterpriseClient: 'false',
       });
 
       const resp = await fetchWithTimeout('bing-edge', `${TRANS_ENDPOINT}?${qs}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${jwt}`,
-        },
-        body: JSON.stringify(texts.map((Text) => ({ Text }))),
+        headers: { 'Content-Type': 'application/json' },
+        // 请求体是字符串数组，不是 v3 接口的 { Text } 对象
+        body: JSON.stringify(texts),
       });
 
       if (!resp.ok) {
-        // #259: 会话逻辑（401 清 JWT）留在适配器内、不参与分类；
-        // 分类走公共判定 —— 免 key 引擎的 401 会话失效仍瞬时可重试
-        if (resp.status === 401) cachedJwt = null;
+        // #259: 分类走公共判定 —— 免 key 引擎一律瞬时（可重试）
         const category = classifyStatus('bing-edge', resp, true);
         throw new EngineError('bing-edge', true, `HTTP ${resp.status}`, category);
       }

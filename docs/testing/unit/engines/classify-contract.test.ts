@@ -52,7 +52,7 @@ afterEach(() => {
 
 /**
  * 驱动真实适配器走一遍 translate，返回失败类别。
- * fetch mock：bing-edge 的 auth 端点返回 200，其余端点返回指定状态码。
+ * fetch mock：所有端点返回指定状态码。
  */
 async function categoryFor(engineId: string, status: number): Promise<string> {
   vi.resetModules();
@@ -62,9 +62,6 @@ async function categoryFor(engineId: string, status: number): Promise<string> {
     'fetch',
     vi.fn(async (input: unknown) => {
       const url = String(input);
-      if (url.includes('edge.microsoft.com/translate/auth')) {
-        return new Response('jwt-token', { status: 200 });
-      }
       return new Response('err', { status });
     }),
   );

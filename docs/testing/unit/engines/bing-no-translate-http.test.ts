@@ -26,12 +26,6 @@ vi.mock('~/src/storage/domains', () => ({
 
 import { route } from '~/src/engines/router';
 
-const AUTH_URL = 'https://edge.microsoft.com/translate/auth';
-const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
-const payload = Buffer.from(
-  JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }),
-).toString('base64url');
-const JWT = `${header}.${payload}.sig`;
 
 /** 假 Bing：把每段文本原样包上“译:”返回，可按需改写。 */
 let rewrite: (text: string) => string = (t) => `译:${t}`;
@@ -39,9 +33,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 /** 每次翻译请求发给 Bing 的文本，按请求分组。 */
 function requests(): string[][] {
-  return fetchMock.mock.calls
-    .filter((c) => String(c[0]) !== AUTH_URL)
-    .map((c) => (JSON.parse(String(c[1].body)) as { Text: string }[]).map((r) => r.Text));
+  return fetchMock.mock.calls.map((c) => JSON.parse(String(c[1].body)) as string[]);
 }
 
 function translate(texts: string[]) {
@@ -67,9 +59,8 @@ beforeEach(() => {
     },
   ];
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-    if (String(url) === AUTH_URL) return new Response(JWT, { status: 200 });
-    const rows = (JSON.parse(String(init!.body)) as { Text: string }[]).map((r) => ({
-      translations: [{ text: rewrite(r.Text) }],
+    const rows = (JSON.parse(String(init!.body)) as string[]).map((t) => ({
+      translations: [{ text: rewrite(t) }],
     }));
     return new Response(JSON.stringify(rows), { status: 200 });
   });
