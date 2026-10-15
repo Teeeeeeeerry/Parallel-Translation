@@ -31,6 +31,7 @@ interface Pending {
 function harness(maxConcurrency: number) {
   let inFlight = 0;
   let peak = 0;
+  let settingsListener: ((s: typeof settings) => void) | null = null;
   const pending: Pending[] = [];
   const sent: string[][] = [];
   const send = (req: TranslateRequest) =>
@@ -51,6 +52,12 @@ function harness(maxConcurrency: number) {
     send,
     getSettings: () => settings,
     getHostname: () => 'example.com',
+    subscribeSettings: (fn) => {
+      settingsListener = fn;
+      return () => {
+        settingsListener = null;
+      };
+    },
     // 退避不真等
     sleep: async () => {},
   });
@@ -65,7 +72,19 @@ function harness(maxConcurrency: number) {
     }
     throw new Error('drain 没有收敛');
   };
-  return { orch, sent, pending, drain, peak: () => peak, settings };
+  /** 模拟用户在设置页改并发数（storage 变更推给订阅者） */
+  const changeConcurrency = (n: number) => {
+    settings.maxConcurrency = n;
+    settingsListener?.({ ...settings });
+  };
+  /** 从此刻起重新计峰值 */
+  const resetPeak = () => {
+    peak = inFlight;
+  };
+  return {
+    orch, sent, pending, drain, peak: () => peak, settings, changeConcurrency, resetPeak,
+    inFlight: () => inFlight,
+  };
 }
 
 /** 切出来的批次数（不写死，跟着闸值走） */
@@ -136,6 +155,64 @@ describe('content 侧在飞批次闸门（#1007）', () => {
     expect(h.pending).toHaveLength(4);
     await h.drain();
     await done;
+    expect(h.peak()).toBe(4);
+  });
+});
+
+describe('翻译途中改并发数，在飞上限跟着变（#1008）', () => {
+  test('调大：排队的批次立刻放行到新上限，之后峰值符合新上限', async () => {
+    const h = harness(2);
+    const done = h.orch.translatePage(items(300), 'en', 'zh-CN');
+    await flush();
+    expect(h.pending).toHaveLength(2);
+    expect(h.peak()).toBe(2);
+    h.changeConcurrency(5);
+    await flush();
+    // 没有任何一批返回，排队的就已经补到 5 批在飞
+    expect(h.pending).toHaveLength(5);
+    await h.drain();
+    await done;
+    expect(h.peak()).toBe(5);
+    expect(h.sent).toHaveLength(batchCount(300));
+  });
+
+  test('调小：已在飞的照常跑完不被砍断，之后在飞数降到新上限以内', async () => {
+    const h = harness(5);
+    const done = h.orch.translatePage(items(300), 'en', 'zh-CN');
+    await flush();
+    expect(h.pending).toHaveLength(5);
+    h.changeConcurrency(2);
+    await flush();
+    // 在飞的 5 批不受影响，也没有新批次放进来
+    expect(h.pending).toHaveLength(5);
+    const sentAtChange = h.sent.length;
+    // 放行其中 3 批：在飞降到 2，名额仍满，不放新批次
+    h.pending.splice(0, 3).forEach((p) => p.release());
+    await flush();
+    expect(h.sent).toHaveLength(sentAtChange);
+    expect(h.inFlight()).toBe(2);
+    // 从这里起峰值不超过新上限
+    h.resetPeak();
+    await h.drain();
+    const summary = await done;
+    expect(summary.allFailed).toBe(false);
+    expect(h.peak()).toBe(2);
+    expect(h.sent).toHaveLength(batchCount(300));
+  });
+
+  test('改设置不重建闸门：改完之后再来一路增量补翻，两路在飞总数仍只受新上限约束', async () => {
+    const h = harness(3);
+    const a = h.orch.translatePage(items(300, 'a'), 'en', 'zh-CN');
+    await flush();
+    h.changeConcurrency(4);
+    await flush();
+    expect(h.pending).toHaveLength(4);
+    // 重建闸门的话：旧闸门里 a 的批次照旧占着名额，b 进新闸门再占 4 个，在飞翻倍
+    const b = h.orch.translatePage(items(300, 'b'), 'en', 'zh-CN');
+    await flush();
+    expect(h.pending).toHaveLength(4);
+    await h.drain();
+    await Promise.all([a, b]);
     expect(h.peak()).toBe(4);
   });
 });
