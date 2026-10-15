@@ -1309,3 +1309,64 @@ test.describe('popup：翻译领域 @extended', () => {
     expect(data.builtin['builtin:software-zh-CN'].addedSites).toEqual(['localhost']);
   });
 });
+
+// ── 悬浮 UI 尺寸（#964）──
+
+/** shadow 里的球或段落按钮的实际渲染尺寸与字号（量 getBoundingClientRect，不读 CSS 文本） */
+async function uiMetrics(page: Page, host: 'ball' | 'para-btn') {
+  return page.evaluate((h) => {
+    const sel = h === 'ball' ? '.pt-ball' : '.pt-para-btn';
+    const el = document
+      .getElementById(`pt-host-${h}`)
+      ?.shadowRoot?.querySelector(sel) as HTMLElement | null;
+    const r = el!.getBoundingClientRect();
+    return { width: r.width, height: r.height, fontSize: getComputedStyle(el!).fontSize };
+  }, host);
+}
+
+test.describe('悬浮 UI 尺寸 @extended', () => {
+  test('TC-E2E-191: 尺寸改由文档根上的自定义属性给出，缺省时与原来逐像素相同，写上后穿过 shadow 与 all: initial 生效（#965）', async ({
+    page, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('basic');
+    await waitForBall(page);
+
+    // 缺省（没有任何变量）：球 44×44，按钮最小边长 24、字号 12 —— 与改动前的硬编码相同
+    const ball = await uiMetrics(page, 'ball');
+    expect(ball).toEqual({ width: 44, height: 44, fontSize: '11px' });
+
+    await page.locator('p').first().hover();
+    const paraBtn = page.locator('#pt-host-para-btn .pt-para-btn');
+    await expect(paraBtn).toBeVisible({ timeout: 10_000 });
+    const btn = await uiMetrics(page, 'para-btn');
+    expect(btn.height).toBe(24);
+    expect(btn.width).toBeGreaterThanOrEqual(24);
+    expect(btn.fontSize).toBe('12px');
+
+    // 写在文档根上：host 的内联 all: initial 不拦自定义属性，shadow 里的球与按钮都吃到
+    await page.evaluate(() => {
+      const s = document.documentElement.style;
+      s.setProperty('--pt-ball-size', '60px');
+      s.setProperty('--pt-para-btn-size', '40px');
+      s.setProperty('--pt-para-btn-font', '20px');
+    });
+    const bigBall = await uiMetrics(page, 'ball');
+    expect(bigBall.width).toBe(60);
+    expect(bigBall.height).toBe(60);
+    const bigBtn = await uiMetrics(page, 'para-btn');
+    expect(bigBtn.height).toBe(40);
+    expect(bigBtn.width).toBeGreaterThanOrEqual(40);
+    expect(bigBtn.fontSize).toBe('20px');
+
+    // 去掉变量回到原样：失败模式是“尺寸没变”，不是尺寸为 0
+    await page.evaluate(() => {
+      const s = document.documentElement.style;
+      s.removeProperty('--pt-ball-size');
+      s.removeProperty('--pt-para-btn-size');
+      s.removeProperty('--pt-para-btn-font');
+    });
+    expect(await uiMetrics(page, 'ball')).toEqual(ball);
+    expect(await uiMetrics(page, 'para-btn')).toEqual(btn);
+  });
+});
