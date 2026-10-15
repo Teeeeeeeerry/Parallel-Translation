@@ -1786,5 +1786,81 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     expect(ms).toBeGreaterThanOrEqual(500 - 20);
     expect(ms).toBeLessThan(1000);
   });
+
+  test('TC-E2E-201: 设置页导入缺三个字段的旧配置 → 网页上的球与按钮回到默认尺寸且照常显示；导入超范围值 → 钳制后生效、按钮仍不小于 24px；恢复默认 → 三个值一起回到默认（#974）', async ({
+    page, context, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ floatingBallSize: 60, paraBtnSize: 36, paraBtnHideDelay: 2500 });
+    await gotoFixture('basic');
+    await waitForBall(page);
+    expect((await uiMetrics(page, 'ball')).width).toBe(60);
+
+    const extId = new URL(serviceWorker.url()).host;
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extId}/options.html`);
+    await options.click('.pt-nav-btn[data-section="advanced"]');
+    const stored = () =>
+      serviceWorker.evaluate(async () => {
+        const s = (await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any;
+        return [s.floatingBallSize, s.paraBtnSize, s.paraBtnHideDelay];
+      });
+    const importJson = (data: object) =>
+      options.setInputFiles('#pt-import-file', {
+        name: 'settings.json',
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify(data), 'utf-8'),
+      });
+    const pageSizes = async () => {
+      await page.mouse.move(5, 710);
+      await page.locator('p').first().hover();
+      await expect(page.locator('#pt-host-para-btn .pt-para-btn')).toBeVisible({ timeout: 10_000 });
+      return { ball: (await uiMetrics(page, 'ball')).width, btn: (await uiMetrics(page, 'para-btn')).height };
+    };
+
+    // 旧版本导出的配置：没有这三个字段
+    await importJson({ enabled: true, showFloatingBall: true, showParagraphBtn: true, enginePriority: ['google-web'], to: 'zh-CN' });
+    await expect.poll(stored).toEqual([44, 24, 1500]);
+    await expect.poll(pageSizes).toEqual({ ball: 44, btn: 24 });
+
+    // 手改过的导出文件：越界值钳制后生效
+    await importJson({ showFloatingBall: true, showParagraphBtn: true, enginePriority: ['google-web'], floatingBallSize: 999, paraBtnSize: 2, paraBtnHideDelay: 50 });
+    await expect.poll(stored).toEqual([72, 24, 500]);
+    await expect.poll(pageSizes).toEqual({ ball: 72, btn: 24 });
+
+    // 恢复默认（确认框点确定）：三个值一起回到默认
+    await importJson({ showFloatingBall: true, showParagraphBtn: true, floatingBallSize: 56, paraBtnSize: 32, paraBtnHideDelay: 2200 });
+    await expect.poll(stored).toEqual([56, 32, 2200]);
+    options.once('dialog', (d) => d.accept());
+    await options.click('#pt-reset-settings-btn');
+    await expect.poll(stored).toEqual([44, 24, 1500]);
+    await expect.poll(pageSizes).toEqual({ ball: 44, btn: 24 });
+  });
+
+  test('TC-E2E-202: popup 刚改了显示模式，设置页里拖尺寸滑块不把它回滚（#974）', async ({
+    context, serviceWorker, seedSettings,
+  }) => {
+    await seedSettings({});
+    const extId = new URL(serviceWorker.url()).host;
+    // 设置页先打开，内存里是旧的显示模式
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extId}/options.html`);
+    await expect(options.locator('#pt-slider-ball-size')).toHaveValue('44');
+
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extId}/popup.html`);
+    await popup.selectOption('#pt-mode-select', 'translation-only');
+    const stored = () =>
+      serviceWorker.evaluate(async () => {
+        const s = (await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any;
+        return { displayMode: s.displayMode, floatingBallSize: s.floatingBallSize };
+      });
+    await expect.poll(stored).toEqual({ displayMode: 'translation-only', floatingBallSize: 44 });
+
+    await options.bringToFront();
+    await options.locator('#pt-slider-ball-size').focus();
+    await options.keyboard.press('ArrowRight');
+    await options.keyboard.press('ArrowRight');
+    await expect.poll(stored).toEqual({ displayMode: 'translation-only', floatingBallSize: 48 });
+  });
 });
 
