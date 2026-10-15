@@ -66,6 +66,38 @@ function dotDims(dot: HTMLElement): DotDims {
   const size = dot.offsetWidth || DEFAULT_SIZE;
   return { size, hit: inputDotHitSize(size) };
 }
+/**
+ * 多行的框里收小圆点（#997）。圆点竖直居中在末尾那一行，字形盒在行盒里上下
+ * 对称，所以居中的圆点碰不到上一行字形的条件是：直径 ≤ 2 × 行高 − 字形高。
+ * 行高紧凑的框（聊天、评论框常见 1.0–1.2）里设置的直径超过它时，按这个上限
+ * 收小可见直径，宁可小一点也不压住文字（ADR-0006）；可点区按收小后的直径换算，
+ * 仍不低于 24px。
+ *
+ * 上限写成圆点自己的 max-width / max-height，不覆盖直径变量：设置里再改直径时
+ * 圆点照常变化，上面的直径观察器照常重新摆放。单行框上下没有别的行，不收。
+ * 行高是 normal 时按字形高算（normal 的行盒约等于字形盒）。
+ */
+function fitLine(dot: HTMLElement, el: HTMLElement, end: TextEnd): DotDims {
+  const d = dotDims(dot);
+  if (el instanceof HTMLInputElement) return d;
+  const lh = parseFloat(getComputedStyle(el).lineHeight);
+  const cap = Math.floor(2 * (Number.isFinite(lh) ? lh : end.height) - end.height);
+  if (d.size <= cap) return d;
+  const size = Math.max(MIN_FIT_SIZE, cap);
+  dot.style.maxWidth = dot.style.maxHeight = `${size}px`;
+  dot.style.setProperty('--pt-input-dot-hit', `${inputDotHitSize(size)}px`);
+  return { size, hit: inputDotHitSize(size) };
+}
+
+/** 收小的下限：再小就只剩描边，看不出是个按钮。行高低到要收到这以下时宁可压一点。 */
+const MIN_FIT_SIZE = 8;
+
+/** 撤掉上一次的收小，回到设置给的直径与可点区。 */
+function unfit(dot: HTMLElement): void {
+  dot.style.maxWidth = dot.style.maxHeight = '';
+  dot.style.removeProperty('--pt-input-dot-hit');
+}
+
 /** 回落位置离框内侧边缘的距离。 */
 const INSET = 6;
 
@@ -236,12 +268,13 @@ function place(dot: HTMLElement, el: HTMLElement, shadow: ShadowRoot): void {
     el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement
       ? measureFieldEnd(el, shadow)
       : measureEditableEnd(el);
+  unfit(dot);
   if (!end) {
     placeFallback(dot, el);
     return;
   }
   const box = innerBox(el);
-  const d = dotDims(dot);
+  const d = fitLine(dot, el, end);
   const beside = besideEnd(end, box, getComputedStyle(el).direction === 'rtl', d.size);
   const { left, top } = clampToBox(beside.left, beside.top, box, d.size);
   dot.style.left = `${left}px`;
