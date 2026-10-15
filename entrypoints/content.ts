@@ -13,6 +13,7 @@
 import '~/src/styles/tokens.css';
 import '~/src/styles/presets.css';
 import { collect } from '~/src/dom/walker';
+import { createPageCollector } from '~/src/dom/page-collect';
 import { closestUnit } from '~/src/dom/classify';
 import {
   translatableText,
@@ -566,6 +567,12 @@ export default defineContentScript({
       // #792：按需采集 —— 页面级闸门命中、准入拦截、还原时不采集（采集会把
       // 超长段落切成切块，页面就不是一个字不动了）
       // #843：只读模式供闸门取样 —— 不切块、不登记隐藏单元，页面一个字不动
+      // #1011：同一次整页翻译里首轮采集与补采集共用一个，同一个元素只交出
+      // 一次、跳过的单元只计一次
+      const collectPage = createPageCollector(
+        (onSkip) => collect(document.body, registerHiddenForObserver, { onSkip }),
+        (_el, category) => countSkip(skipStats, category),
+      );
       const collectItems = (mode?: { readOnly: boolean }): TranslateItem<PageItemCtx>[] => {
         try {
           if (mode?.readOnly) {
@@ -573,11 +580,7 @@ export default defineContentScript({
           }
           // #727：整页翻译这一次采集顺带记下被跳过的单元。闸门取样（上面的
           // 只读采集）不计，否则同一页算两遍
-          return buildPageItems(
-            collect(document.body, registerHiddenForObserver, {
-              onSkip: (_el, category) => countSkip(skipStats, category),
-            }),
-          );
+          return buildPageItems(collectPage());
         } catch (e) {
           throw new Error(
             `[collect] ${e instanceof Error ? e.message : String(e)}`,

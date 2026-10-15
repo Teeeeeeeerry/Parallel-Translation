@@ -14,6 +14,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { MAX_TEXT, closestUnit } from '~/src/dom/classify';
 import { collect, type SkipCategory } from '~/src/dom/walker';
+import { createPageCollector } from '~/src/dom/page-collect';
 import { render } from '~/src/dom/renderer';
 import { hasBlockTextChildren, unitTextEx } from '~/src/dom/text';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
@@ -128,9 +129,14 @@ describe('整页翻译：其余行有译文，汇总报出被跳过的这一行�
       },
     } as Parameters<typeof createOrchestrator>[0]);
     orch.start();
+    // 与 content 同一个采集器（#1011）：首轮与补采集共用，同一元素只交出一次、跳过只计一次
+    const page = createPageCollector(
+      (onSkip) => collect(document.body, undefined, { onSkip }),
+      (_el, c) => countSkip(skips, c),
+    );
     const result = await orch.togglePage(
       () =>
-        collect(document.body, undefined, { onSkip: (_el, c) => countSkip(skips, c) }).map((el) => ({
+        page().map((el) => ({
           text: unitTextEx(el, { shallow: hasBlockTextChildren(el) }).text,
           ctx: el,
         })),

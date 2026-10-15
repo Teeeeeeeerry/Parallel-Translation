@@ -225,14 +225,16 @@ describe('没注入识别：整页翻译与改动前一致（#843）', () => {
     const collectItems = (mode?: { readOnly: boolean }) => {
       calls++;
       if (mode?.readOnly) throw new Error('boom');
-      return STEAM;
+      // 真实的采集器补采集（#1011）时只交出新出现的单元，这里没有新单元
+      return calls === 2 ? STEAM : [];
     };
     const { orch, send } = setup('en', async () => reliable(['zh', 100]));
 
     const result = await orch.togglePage(collectItems, 'auto', 'zh-CN');
 
     expect(result.status).toBe('translated');
-    expect(calls).toBe(2);
+    // 只读取样一次（抛错）、照常翻译采集一次、补采集一次
+    expect(calls).toBe(3);
     expect(send).toHaveBeenCalledTimes(1);
     orch.stop();
   });

@@ -175,13 +175,14 @@ describe('不命中：整页翻译行为与改动前完全一致（#792）', () 
     orch.stop();
   });
 
-  test('按需采集的形式：不命中时采集一次，照常翻译', async () => {
-    const collectItems = vi.fn(() => items(2));
+  test('按需采集的形式：不命中时采集一次，照常翻译；翻完再补采集一次（#1011）', async () => {
+    // 真实的采集器补采集时只交出新出现的单元（src/dom/page-collect.ts），这里没有新单元
+    const collectItems = vi.fn().mockReturnValueOnce(items(2)).mockReturnValue([]);
     const { orch, send } = setup({ pageLang: 'en' });
 
     const result = await orch.togglePage(collectItems, 'auto', 'zh-CN');
 
-    expect(collectItems).toHaveBeenCalledTimes(1);
+    expect(collectItems).toHaveBeenCalledTimes(2);
     expect(result.status).toBe('translated');
     expect(send).toHaveBeenCalledTimes(1);
     orch.stop();
