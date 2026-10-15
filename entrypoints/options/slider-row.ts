@@ -43,6 +43,11 @@ export interface SliderRow {
    * 返回这次是否真的重画了（跳过时预览要继续按拖动中的值画）
    */
   sync: () => boolean;
+  /**
+   * 对应功能的开关关掉时置灰（#988）：滑块不可拖、不可聚焦，行内一句说明
+   * 讲清为什么；传 null 恢复。只改界面，不写盘 —— 已存的值原样留着
+   */
+  setOff: (note: string | null) => void;
 }
 
 export function createSliderRow(spec: SliderRowSpec): SliderRow {
@@ -69,7 +74,16 @@ export function createSliderRow(spec: SliderRowSpec): SliderRow {
   const control = document.createElement('div');
   control.className = 'pt-slider-control';
   control.append(input, readout);
-  row.append(label, control);
+
+  // #988: 功能关闭时的说明，挂在标签下面，经 aria-describedby 读给读屏
+  const note = document.createElement('span');
+  note.className = 'pt-slider-note';
+  note.id = `${spec.id}-note`;
+  note.hidden = true;
+  const head = document.createElement('div');
+  head.className = 'pt-slider-head';
+  head.append(label, note);
+  row.append(head, control);
 
   const render = (v: number) => {
     const text = `${spec.format(v)} ${spec.unit}`;
@@ -108,5 +122,15 @@ export function createSliderRow(spec: SliderRowSpec): SliderRow {
   };
   sync();
 
-  return { row, sync };
+  const setOff = (text: string | null) => {
+    const off = text !== null;
+    input.disabled = off;
+    row.classList.toggle('pt-slider-off', off);
+    note.hidden = !off;
+    note.textContent = text ?? '';
+    if (off) input.setAttribute('aria-describedby', note.id);
+    else input.removeAttribute('aria-describedby');
+  };
+
+  return { row, sync, setOff };
 }

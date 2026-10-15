@@ -30,6 +30,10 @@
   "rowParaBtnSize": { "message": "逐段翻译按钮大小" },
   "rowParaBtnHideDelay": { "message": "鼠标离开段落后按钮停留" },
   "rowInputDotSize": { "message": "输入翻译圆点大小" },
+  "sliderOffNote": {
+    "message": "“$FEATURE$”已关闭，打开上方开关后才会显示",
+    "placeholders": { "feature": { "content": "$1" } }
+  },
   "unitSeconds": { "message": "秒" },
   "rowParagraphBtn": { "message": "逐段翻译" },
   "btnResetBallPos": { "message": "重置悬浮球位置" },

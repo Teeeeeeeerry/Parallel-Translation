@@ -60,10 +60,26 @@ const PREVIEW_CSS = `
   margin-left: 4px;
   cursor: default;
 }
+/* #988: 对应开关关着的那一项与设置页的滑块一同置灰 —— 尺寸照画，看得出“调了也不显示” */
+.pt-preview-stage .pt-preview-off {
+  opacity: .25;
+  filter: grayscale(1);
+}
 `;
 
+/** 预览要的设置：三项尺寸，加上三个开关（关着的那一项置灰，#988） */
+export type PreviewSettings = Pick<
+  Settings,
+  | 'floatingBallSize'
+  | 'paraBtnSize'
+  | 'inputDotSize'
+  | 'showFloatingBall'
+  | 'showParagraphBtn'
+  | 'inputTranslate'
+>;
+
 export interface FloatingPreview {
-  update: (s: Pick<Settings, 'floatingBallSize' | 'paraBtnSize' | 'inputDotSize'>) => void;
+  update: (s: PreviewSettings) => void;
 }
 
 export function createFloatingPreview(host: HTMLElement): FloatingPreview {
@@ -110,6 +126,9 @@ export function createFloatingPreview(host: HTMLElement): FloatingPreview {
       for (const [name, value] of Object.entries(floatingUiVars(s))) {
         host.style.setProperty(name, value);
       }
+      ball.classList.toggle('pt-preview-off', !s.showFloatingBall);
+      paraBtn.classList.toggle('pt-preview-off', !s.showParagraphBtn);
+      input.classList.toggle('pt-preview-off', !s.inputTranslate);
     },
   };
 }

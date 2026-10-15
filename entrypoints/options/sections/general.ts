@@ -171,6 +171,18 @@ export function initGeneral(): void {
   });
   sliderRows.append(ballSize.row, paraBtnSize.row, paraBtnHideDelay.row, inputDotSize.row);
 
+  // #988: 对应开关关着时滑块置灰并说明原因（预览里那一项同样置灰，见预览模块）。
+  // 只看三个开关 —— 逐段翻译按钮还要站点准入，设置页里没有“当前站点”，那一层不在这里表达
+  const offNote = (on: boolean, featureKey: string, fallback: string) =>
+    on ? null : tf('sliderOffNote', `“${fallback}”已关闭，打开上方开关后才会显示`, tf(featureKey, fallback));
+  function syncOffState(s: Settings): void {
+    ballSize.setOff(offNote(s.showFloatingBall, 'rowFloatingBall', '悬浮球'));
+    const paraOff = offNote(s.showParagraphBtn, 'rowParagraphBtn', '逐段翻译');
+    paraBtnSize.setOff(paraOff);
+    paraBtnHideDelay.setOff(paraOff);
+    inputDotSize.setOff(offNote(s.inputTranslate, 'rowInputTranslate', '输入翻译'));
+  }
+
   const resetBallPosBtn = document.getElementById('pt-reset-ball-pos-btn')!;
   const ballPosToggle = document.getElementById('pt-ball-pos-toggle')!;
   const ballPosPanel = document.getElementById('pt-ball-pos-panel')!;
@@ -273,9 +285,11 @@ export function initGeneral(): void {
   });
 
   syncUI();
+  syncOffState(getSettings());
   updatePreview();
-  onSettingsChanged(() => {
+  onSettingsChanged((s) => {
     syncUI();
+    syncOffState(s);
     // 滑块按存储值重画了，拖动中的值就作废，预览改按存储值画（popup、另一个设置页改的）
     if (ballSize.sync()) delete draft.floatingBallSize;
     if (paraBtnSize.sync()) delete draft.paraBtnSize;

@@ -253,6 +253,28 @@ body {
   cursor: pointer;
 }
 
+/* #988: 对应开关关掉时整行置灰，标签下一句说明；滑块本身 disabled */
+.pt-slider-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pt-slider-note {
+  font-size: 12px;
+  color: var(--pt-forest-55);
+}
+
+.pt-slider-off .pt-row-label,
+.pt-slider-off .pt-slider-value {
+  color: var(--pt-forest-40);
+}
+
+.pt-slider-off .pt-slider {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
 .pt-slider-value {
   font-family: var(--pt-font-mono);
   font-size: 12px;

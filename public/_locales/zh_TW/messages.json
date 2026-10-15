@@ -30,6 +30,10 @@
   "rowParaBtnSize": { "message": "逐段翻譯按鈕大小" },
   "rowParaBtnHideDelay": { "message": "滑鼠離開段落後按鈕停留" },
   "rowInputDotSize": { "message": "輸入翻譯圓點大小" },
+  "sliderOffNote": {
+    "message": "「$FEATURE$」已關閉，開啟上方開關後才會顯示",
+    "placeholders": { "feature": { "content": "$1" } }
+  },
   "unitSeconds": { "message": "秒" },
   "rowParagraphBtn": { "message": "逐段翻譯" },
   "btnResetBallPos": { "message": "重設浮動球位置" },

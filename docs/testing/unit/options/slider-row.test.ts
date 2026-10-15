@@ -142,4 +142,29 @@ describe('createSliderRow（#967）', () => {
     });
     expect(s.row.querySelector('output')!.textContent).toBe('1.5 s');
   });
+
+  test('setOff：对应开关关掉时滑块禁用、行置灰、说明经 aria-describedby 关联；恢复后一切回原样（#988）', () => {
+    const { slider, input, set } = setup(60);
+    const note = slider.row.querySelector('.pt-slider-note') as HTMLElement;
+    expect(note.hidden).toBe(true);
+    expect(input.disabled).toBe(false);
+
+    slider.setOff('Floating ball is off.');
+    expect(input.disabled).toBe(true);
+    expect(slider.row.classList.contains('pt-slider-off')).toBe(true);
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toBe('Floating ball is off.');
+    expect(input.getAttribute('aria-describedby')).toBe(note.id);
+    // 只改界面：值原样、不写盘
+    expect(input.value).toBe('60');
+    expect(set).not.toHaveBeenCalled();
+
+    slider.setOff(null);
+    expect(input.disabled).toBe(false);
+    expect(slider.row.classList.contains('pt-slider-off')).toBe(false);
+    expect(note.hidden).toBe(true);
+    expect(input.hasAttribute('aria-describedby')).toBe(false);
+    expect(input.value).toBe('60');
+    expect(set).not.toHaveBeenCalled();
+  });
 });

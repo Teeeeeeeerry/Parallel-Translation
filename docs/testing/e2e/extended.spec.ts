@@ -1868,6 +1868,94 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     expect({ width: d.width, height: d.height }).toEqual(await previewDot());
   });
 
+  test('TC-E2E-208: 关掉悬浮球、逐段翻译、输入翻译开关，对应的尺寸滑块置灰带说明、预览里那一项置灰；重新打开指示消失；关开关不清已存的尺寸（#988）', async ({
+    page, serviceWorker, seedSettings,
+  }) => {
+    await seedSettings({ floatingBallSize: 60, paraBtnSize: 30, paraBtnHideDelay: 2000, inputDotSize: 20 });
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    const stored = () =>
+      serviceWorker.evaluate(async () => {
+        const s = (await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any;
+        return [s.floatingBallSize, s.paraBtnSize, s.paraBtnHideDelay, s.inputDotSize];
+      });
+    const SLIDERS = {
+      ball: 'pt-slider-ball-size',
+      size: 'pt-slider-para-btn-size',
+      delay: 'pt-slider-para-btn-hide-delay',
+      dot: 'pt-slider-input-dot-size',
+    } as const;
+    /** 每个滑块：是否禁用、说明文字（隐藏时为 null）、说明是否经 aria-describedby 关联；预览三项的不透明度 */
+    const state = () =>
+      page.evaluate((ids) => {
+        const out: Record<string, unknown> = {};
+        for (const [k, id] of Object.entries(ids)) {
+          const input = document.getElementById(id) as HTMLInputElement;
+          const note = document.getElementById(`${id}-note`)!;
+          out[k] = {
+            disabled: input.disabled,
+            note: note.hidden ? null : note.textContent,
+            described: input.getAttribute('aria-describedby') === note.id,
+          };
+        }
+        const root = document.getElementById('pt-floating-preview')!.shadowRoot!;
+        const op = (sel: string) => Number(getComputedStyle(root.querySelector(sel)!).opacity);
+        out.preview = { ball: op('.pt-ball'), btn: op('.pt-para-btn'), dot: op('.pt-preview-input') };
+        return out;
+      }, SLIDERS);
+    const note = (featureKey: string) =>
+      page.evaluate((k) => chrome.i18n.getMessage('sliderOffNote', [chrome.i18n.getMessage(k)]), featureKey);
+    const on = { disabled: false, note: null, described: false };
+    const off = async (featureKey: string) => ({ disabled: true, note: await note(featureKey), described: true });
+
+    await expect.poll(state).toEqual({ ball: on, size: on, delay: on, dot: on, preview: { ball: 1, btn: 1, dot: 1 } });
+    expect(await stored()).toEqual([60, 30, 2000, 20]);
+
+    // 关悬浮球：只有悬浮球大小置灰，预览里只有球置灰
+    await page.locator('#pt-toggle-floating-ball').click();
+    await expect.poll(state).toEqual({
+      ball: await off('rowFloatingBall'), size: on, delay: on, dot: on,
+      preview: { ball: 0.25, btn: 1, dot: 1 },
+    });
+    // 置灰的滑块拖不动：在它上面按下拖动，值与存储都不变
+    const ballSlider = page.locator(`#${SLIDERS.ball}`);
+    await ballSlider.scrollIntoViewIfNeeded();
+    const bb = (await ballSlider.boundingBox())!;
+    await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(bb.x + bb.width + 30, bb.y + bb.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await expect(ballSlider).toHaveValue('60');
+
+    // 关逐段翻译：按钮大小与显示时长两个滑块同时置灰
+    await page.locator('#pt-toggle-paragraph-btn').click();
+    await expect.poll(state).toEqual({
+      ball: await off('rowFloatingBall'), size: await off('rowParagraphBtn'), delay: await off('rowParagraphBtn'), dot: on,
+      preview: { ball: 0.25, btn: 0.25, dot: 1 },
+    });
+
+    // 关输入翻译：圆点大小置灰
+    await page.locator('#pt-toggle-input-translate').click();
+    await expect.poll(state).toEqual({
+      ball: await off('rowFloatingBall'), size: await off('rowParagraphBtn'), delay: await off('rowParagraphBtn'), dot: await off('rowInputTranslate'),
+      preview: { ball: 0.25, btn: 0.25, dot: 0.25 },
+    });
+    // 关开关不清尺寸
+    expect(await stored()).toEqual([60, 30, 2000, 20]);
+
+    // 别处（popup、另一个设置页）把三个开关打开：指示全部消失，滑块值仍是已存的值
+    await serviceWorker.evaluate(async () => {
+      const cur = (await chrome.storage.sync.get('pt-settings'))['pt-settings'] as object;
+      await chrome.storage.sync.set({
+        'pt-settings': { ...cur, showFloatingBall: true, showParagraphBtn: true, inputTranslate: true },
+      });
+    });
+    await expect.poll(state).toEqual({ ball: on, size: on, delay: on, dot: on, preview: { ball: 1, btn: 1, dot: 1 } });
+    await expect(ballSlider).toHaveValue('60');
+    await expect(page.locator(`#${SLIDERS.dot}`)).toHaveValue('20');
+    expect(await stored()).toEqual([60, 30, 2000, 20]);
+  });
+
   test('TC-E2E-196: 改存储里的逐段翻译按钮尺寸不刷新，浮出的按钮实际尺寸与字号跟着变；绕过写入口写进 1px 时仍不小于 24px（#970）', async ({
     page, serviceWorker, seedSettings, gotoFixture,
   }) => {
