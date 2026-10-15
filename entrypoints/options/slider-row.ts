@@ -38,8 +38,11 @@ export interface SliderRowSpec {
 
 export interface SliderRow {
   row: HTMLElement;
-  /** 按存储值重画；还有没写盘的拖动时跳过，不把滑块拽回旧值 */
-  sync: () => void;
+  /**
+   * 按存储值重画；还有没写盘的拖动时跳过，不把滑块拽回旧值。
+   * 返回这次是否真的重画了（跳过时预览要继续按拖动中的值画）
+   */
+  sync: () => boolean;
 }
 
 export function createSliderRow(spec: SliderRowSpec): SliderRow {
@@ -97,10 +100,11 @@ export function createSliderRow(spec: SliderRowSpec): SliderRow {
   window.addEventListener('pagehide', flush);
 
   const sync = () => {
-    if (saveTimer !== undefined) return;
+    if (saveTimer !== undefined) return false;
     input.value = String(spec.get());
     // 存储里的值可能在滑块范围之外（直接写过存储），读数跟滑块实际停的位置走
     render(Number(input.value));
+    return true;
   };
   sync();
 
