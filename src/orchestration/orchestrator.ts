@@ -39,8 +39,17 @@ import { normalizeLangCode } from './lang-code';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
 
-/** 全页翻译的批次大小 —— 与 content 现有 FULL_PAGE_BATCH_SIZE 一致（#25）。 */
-export const FULL_PAGE_BATCH_SIZE = 15;
+/**
+ * 全页翻译与增量补翻的切批闸值（#1005，父 #1000）。原先按 15 个单元一批切，与
+ * 单元多长无关：维基 F1 车手页 2053 个单元、文字中位数 5 字符，切出 137 批。
+ *
+ * 这是临时值，最终值由实测定（#1006）。依据：
+ * - 个数上限 40：DeepL 单次请求最多 50 条文本，40 留出余量；
+ * - 字符预算 2000：Microsoft Translator 单次 5 万字符，LLM 引擎把全部条目编号
+ *   拼进同一条提示，2000 字连同编号与指令仍是很短的请求；
+ * - 上面那一页按 40 / 2000 切出 65 批，往返次数约减半（#1000 实测）。
+ */
+export const FULL_PAGE_BATCH_LIMITS: BatchLimits = { maxItems: 40, maxChars: 2000 };
 
 /** 翻译项：文本 + 调用方携带的渲染/还原上下文（#245 保持与现状同构）。 */
 export interface TranslateItem<TCtx> {
@@ -243,8 +252,8 @@ export type PageToggleStatus =
 export interface OrchestratorOptions {
   /** 消息发送层（测试注入假层；content 注入 translateViaBackground）。 */
   send: SendTranslate;
-  /** 批次大小，缺省与现状一致（15）。 */
-  batchSize?: number;
+  /** 切批闸值（#1005），缺省 FULL_PAGE_BATCH_LIMITS。整页与增量补翻共用。 */
+  batchLimits?: BatchLimits;
   /** 注入 sleep 以便测试推进虚拟时钟；缺省共享实现。 */
   sleep?: (ms: number) => Promise<void>;
   /** 渲染回调（#256 渐进渲染）：每批返回即触发，首屏不等待最慢段。 */
@@ -395,7 +404,7 @@ export function splitBatches<T>(
 export const CONTENT_DETECT_TIMEOUT_MS = 1000;
 
 export function createOrchestrator(opts: OrchestratorOptions): TranslationOrchestrator {
-  const batchSize = opts.batchSize ?? FULL_PAGE_BATCH_SIZE;
+  const batchLimits = opts.batchLimits ?? FULL_PAGE_BATCH_LIMITS;
   const sleepFn = opts.sleep ?? defaultSleep;
   const onBatchResult = opts.onBatchResult;
   let started = false;
@@ -496,9 +505,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     }
 
     const epochAtStart = epoch;
-    // 批次拆分（#245）：与现状一致，每批独立发送。字符预算还没接上（#1005），
-    // 这里只按个数切
-    const batches = splitBatches(items, { maxItems: batchSize, maxChars: Infinity });
+    // 批次拆分（#245、#1005）：字符预算与个数上限双闸，每批独立发送
+    const batches = splitBatches(items, batchLimits);
     // #379: 当前领域在翻译开始时定一次，各批次一致；没有则不携带字段
     const domainId = currentDomainIdFrom(opts, to);
 

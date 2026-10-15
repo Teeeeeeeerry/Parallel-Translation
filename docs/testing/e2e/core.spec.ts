@@ -551,7 +551,8 @@ test.describe('Fixture: spa', () => {
     await translateAndWait(page);
     const initialDone = await page.locator('[data-pt="done"]').count();
 
-    // 一次性注入 20 段 —— 跨 FULL_PAGE_BATCH_SIZE(15) 两个批次；
+    // 一次性注入 20 段 —— 每段约 110 字，合计超过一个字符预算（#1005，
+    // FULL_PAGE_BATCH_LIMITS 的 2000 字），跨两个批次；
     // failOnce 只击落其中一个批次的请求，另一批正常。修复前失败
     // 批被 allFailed 掩码（整页 status 仍是 'translated'），漏翻永
     // 不重试；修复后批次级重试补齐。
@@ -560,7 +561,7 @@ test.describe('Fixture: spa', () => {
       const frag = document.createDocumentFragment();
       for (let i = 1; i <= 20; i++) {
         const p = document.createElement('p');
-        p.textContent = `Paragraph ${i} added after initial translation.`;
+        p.textContent = `Paragraph ${i} added after initial translation, padded with enough words that twenty of them exceed one budget.`;
         frag.appendChild(p);
       }
       document.body.appendChild(frag);
@@ -831,7 +832,17 @@ test.describe('Fixture: pre-blocks', () => {
     });
     const chunks = page.locator('[data-pt-chunk="1"]');
     await expect(chunks).toHaveCount(24, { timeout: 30_000 });
-    await expect(chunks.first()).toHaveAttribute('data-pt', 'done');
+    // 等 24 块全部译完、请求数不再变化再数（#1005：按字符预算切批后一批只装
+    // 五六块，第一块译完时后面的批次还在路上，立刻数会少数）。多请求的重复
+    // 在这之后才会显形，所以先等稳定，再断言恰好 24 个
+    await expect(page.locator('[data-pt-chunk="1"][data-pt="done"]')).toHaveCount(24, { timeout: 30_000 });
+    await expect
+      .poll(async () => {
+        const s1 = await served();
+        await page.waitForTimeout(1200);
+        return (await served()) === s1;
+      }, { timeout: 20_000 })
+      .toBe(true);
     expect(await served()).toBe(before2 + 24);
   });
 });

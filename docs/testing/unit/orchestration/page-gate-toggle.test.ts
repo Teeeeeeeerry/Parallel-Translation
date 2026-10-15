@@ -5,7 +5,7 @@
  * 补翻的观察器不启动。经整页开关入口 togglePage 断言，假消息层数请求条数。
  */
 import { describe, test, expect, vi } from 'vitest';
-import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { createOrchestrator, splitBatches, FULL_PAGE_BATCH_LIMITS } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import { collect } from '~/src/dom/walker';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
@@ -158,7 +158,8 @@ describe('不命中：整页翻译行为与改动前完全一致（#792）', () 
 
     expect(result.status).toBe('translated');
     expect(result.gate).toBeUndefined();
-    expect(send).toHaveBeenCalledTimes(3);
+    // 批次数按当前切批闸值（#1005），不写死
+    expect(send).toHaveBeenCalledTimes(splitBatches(items(40), FULL_PAGE_BATCH_LIMITS).length);
     expect(pushes).toEqual(['loading', 'done']);
     expect(onObserverStart).toHaveBeenCalledTimes(1);
     orch.stop();
