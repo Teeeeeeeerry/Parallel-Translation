@@ -1388,12 +1388,14 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await page.evaluate(() => {
       const s = document.documentElement.style;
       s.setProperty('--pt-ball-size', '60px');
+      s.setProperty('--pt-ball-font', '15px');
       s.setProperty('--pt-para-btn-size', '40px');
       s.setProperty('--pt-para-btn-font', '20px');
     });
     const bigBall = await uiMetrics(page, 'ball');
     expect(bigBall.width).toBe(60);
     expect(bigBall.height).toBe(60);
+    expect(bigBall.fontSize).toBe('15px');
     const bigBtn = await uiMetrics(page, 'para-btn');
     expect(bigBtn.height).toBe(40);
     expect(bigBtn.width).toBeGreaterThanOrEqual(40);
@@ -1403,6 +1405,7 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await page.evaluate(() => {
       const s = document.documentElement.style;
       s.removeProperty('--pt-ball-size');
+      s.removeProperty('--pt-ball-font');
       s.removeProperty('--pt-para-btn-size');
       s.removeProperty('--pt-para-btn-font');
     });
@@ -1649,6 +1652,47 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     await expect.poll(storedPos).toEqual({ x: 500 - 8 - 44, y: 328 });
     expect(await ballBox()).toMatchObject({ left: `${500 - 8 - 44}px`, top: '328px' });
     await expect(ball).toHaveAttribute('data-state', 'loading');
+  });
+
+  test('TC-E2E-204: 悬浮球的字号随球径等比变：默认 44px 仍是 11px，上限 72px 是 18px、下限 32px 是 8px；设置页预览里的球与网页上的同径同字号（#986）', async ({
+    page, context, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('basic');
+    await waitForBall(page);
+    // 不改设置时渲染结果不变
+    expect(await uiMetrics(page, 'ball')).toEqual({ width: 44, height: 44, fontSize: '11px' });
+
+    await patchStoredSettings(serviceWorker, { floatingBallSize: 72 });
+    await expect.poll(() => uiMetrics(page, 'ball')).toEqual({ width: 72, height: 72, fontSize: '18px' });
+    // 字形真的跟着长：量球里文字的渲染高度，不只看 computed 值
+    const glyphHeight = () =>
+      page.evaluate(() => {
+        const b = document.getElementById('pt-host-ball')!.shadowRoot!.querySelector('.pt-ball')!;
+        const range = document.createRange();
+        range.selectNodeContents(b);
+        return range.getBoundingClientRect().height;
+      });
+    const bigGlyph = await glyphHeight();
+
+    await patchStoredSettings(serviceWorker, { floatingBallSize: 32 });
+    await expect.poll(() => uiMetrics(page, 'ball')).toEqual({ width: 32, height: 32, fontSize: '8px' });
+    expect(bigGlyph).toBeGreaterThan((await glyphHeight()) * 2);
+
+    // 设置页预览：滑块拉到上限，预览里的球与网页上的球同径同字号
+    const extId = new URL(serviceWorker.url()).host;
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extId}/options.html`);
+    const previewBall = () =>
+      options.evaluate(() => {
+        const b = document.getElementById('pt-floating-preview')!.shadowRoot!.querySelector('.pt-ball')!;
+        const r = b.getBoundingClientRect();
+        return { width: r.width, height: r.height, fontSize: getComputedStyle(b).fontSize };
+      });
+    await expect.poll(previewBall).toEqual({ width: 32, height: 32, fontSize: '8px' });
+    await options.locator('#pt-slider-ball-size').fill('72');
+    await expect.poll(previewBall).toEqual({ width: 72, height: 72, fontSize: '18px' });
+    await expect.poll(() => uiMetrics(page, 'ball')).toEqual(await previewBall());
   });
 
   test('TC-E2E-196: 改存储里的逐段翻译按钮尺寸不刷新，浮出的按钮实际尺寸与字号跟着变；绕过写入口写进 1px 时仍不小于 24px（#970）', async ({

@@ -34,6 +34,27 @@ describe('floatingUiVars（#966）', () => {
   });
 });
 
+describe('floatingUiVars：悬浮球字号（#986）', () => {
+  test('默认 44px 的球仍是原来硬编码的 11px 字号', () => {
+    expect(floatingUiVars(DEFAULT_SETTINGS)['--pt-ball-font']).toBe('11px');
+  });
+
+  test('字号随球径等比折算：上限 72px 配 18px、下限 32px 配 8px', () => {
+    expect(floatingUiVars({ ...DEFAULT_SETTINGS, floatingBallSize: BALL_SIZE_MAX })['--pt-ball-font']).toBe('18px');
+    expect(floatingUiVars({ ...DEFAULT_SETTINGS, floatingBallSize: BALL_SIZE_MIN })['--pt-ball-font']).toBe('8px');
+    expect(floatingUiVars({ ...DEFAULT_SETTINGS, floatingBallSize: 60 })['--pt-ball-font']).toBe('15px');
+  });
+
+  test('字号跟着钳制后的球径走：脏值与越界值不出 NaNpx', () => {
+    expect(floatingUiVars({ ...DEFAULT_SETTINGS, floatingBallSize: Number.NaN as never })['--pt-ball-font']).toBe('11px');
+    expect(floatingUiVars({ ...DEFAULT_SETTINGS, floatingBallSize: 9999 })['--pt-ball-font']).toBe('18px');
+  });
+
+  test('按钮尺寸不影响球的字号', () => {
+    expect(floatingUiVars({ ...DEFAULT_SETTINGS, paraBtnSize: 40 })['--pt-ball-font']).toBe('11px');
+  });
+});
+
 describe('floatingUiVars：逐段翻译按钮（#970）', () => {
   test('默认设置得到与原来硬编码相同的最小边长 24px、字号 12px', () => {
     const v = floatingUiVars(DEFAULT_SETTINGS);

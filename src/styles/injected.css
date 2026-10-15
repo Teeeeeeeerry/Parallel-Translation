@@ -25,7 +25,8 @@
   border: 1.5px solid var(--pt-brass);
   cursor: pointer;
   font-family: var(--pt-font-mono);
-  font-size: 11px;
+  /* #986: 字号随球径等比折算，换算只在 floatingUiVars 里，这里只读结果 */
+  font-size: var(--pt-ball-font, 11px);
   font-weight: 700;
   display: flex;
   align-items: center;

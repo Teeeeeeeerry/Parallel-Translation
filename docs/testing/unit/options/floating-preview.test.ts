@@ -41,6 +41,7 @@ describe('createFloatingPreview（#968）', () => {
       }
     }
     expect(host.style.getPropertyValue('--pt-ball-size')).toBe('44px');
+    expect(host.style.getPropertyValue('--pt-ball-font')).toBe('11px');
     expect(host.style.getPropertyValue('--pt-para-btn-size')).toBe('24px');
     expect(host.style.getPropertyValue('--pt-para-btn-font')).toBe('12px');
   });
