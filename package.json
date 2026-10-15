@@ -1,6 +1,6 @@
 {
   "name": "parallel-translation",
-  "version": "2.1.175",
+  "version": "2.1.176",
   "description": "对照式网页翻译浏览器扩展",
   "license": "GPL-3.0-or-later",
   "private": true,
@@ -21,6 +21,7 @@
     "typecheck": "tsc --noEmit",
     "check:changelog": "npx tsx scripts/check-changelog.ts",
     "check:e2e-cjk": "npx tsx scripts/check-e2e-cjk.ts",
+    "check:engines": "npx tsx scripts/check-engines.ts",
     "test": "vitest run --config docs/testing/vitest.config.ts",
     "test:watch": "vitest --config docs/testing/vitest.config.ts",
     "test:coverage": "vitest run --config docs/testing/vitest.config.ts --coverage",
