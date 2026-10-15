@@ -4,7 +4,7 @@
  * 经编排模块的两个整页入口（togglePage 是悬浮球那一路，translatePage 是增量补翻
  * 那一路）与注入的假发送函数断言：
  *   - 新旧两种切法送出去的文本完全相同，只是分组不同 —— 不多翻、不漏翻；
- *   - 维基成绩表形态的页面上往返次数明显下降；
+ *   - 维基成绩表形态的页面上往返次数不比旧切法多；
  *   - 长段落为主的页面上单次请求不再大得离谱；
  *   - 渐进渲染按批次下标回调、回调里的批次就是发出去的那一批。
  *
@@ -94,11 +94,15 @@ describe('整页翻译按字符预算切批（#1005）', () => {
     });
   }
 
-  test('维基成绩表形态：往返次数明显下降（不到旧切法的六成）', async () => {
+  // #1006 实测之后放宽：个数上限从临时的 40 收到 20，往返次数不再腰斩。往返次数
+  // 本来就不是瓶颈 —— Google 一条文本一个请求，分批只省 content 与后台之间的消息；
+  // 真正要压的是单批耗时（条数乘单次请求耗时），见 docs/research/batch-char-budget.md。
+  // 这里仍钉住“改用字符预算之后往返次数不比旧切法多”
+  test('维基成绩表形态：往返次数比旧切法少', async () => {
     const input = wikiTablePage();
     const { sent } = await run(input, 'togglePage');
     const oldCount = splitBatches(input, OLD).length;
-    expect(sent.length).toBeLessThan(oldCount * 0.6);
+    expect(sent.length).toBeLessThan(oldCount);
   });
 
   test('长段落为主：没有一批超过字符预算，除非它只装了一个超长段落；旧切法下一批会大得多', async () => {

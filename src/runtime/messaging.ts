@@ -55,7 +55,7 @@ const READY_BUDGET_MS = 10_000;
  */
 const SEND_BUDGET_MS = 45_000;
 /** 单次 sendMessage 响应级超时 —— 与引擎 fetch 超时对齐（#154）。 */
-const MESSAGE_TIMEOUT_MS = 30_000;
+export const MESSAGE_TIMEOUT_MS = 30_000;
 /** 退避起点（毫秒），每次翻倍，上限 2s。 */
 const BACKOFF_INITIAL_MS = 250;
 const BACKOFF_MAX_MS = 2000;
