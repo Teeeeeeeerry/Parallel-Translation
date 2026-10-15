@@ -228,3 +228,105 @@ describe('整页翻译完成后补采集一轮（#1011）', () => {
     expect(h.events).toContain('observer:start');
   });
 });
+
+describe('补采集没做完时悬浮球保持进行中（#1012）', () => {
+  /** 把发送也记进事件序列，断言推送的先后 */
+  function ordered(extra: Partial<OrchestratorOptions> = {}) {
+    const events: string[] = [];
+    let translated = false;
+    const releases: (() => void)[] = [];
+    const send = vi.fn(
+      (req: TranslateRequest) =>
+        new Promise((r) => {
+          events.push(`send:${req.texts[0]}`);
+          releases.push(() => {
+            events.push(`back:${req.texts[0]}`);
+            r({ ok: true, data: { translations: req.texts.map((t) => `T(${t})`) } });
+          });
+        }),
+    );
+    const orch = createOrchestrator({
+      send,
+      hasTranslated: () => translated,
+      restore: () => {
+        translated = false;
+      },
+      onBatchResult: () => {
+        translated = true;
+      },
+      pushStatus: (s) => events.push(`push:${s}`),
+      onObserverStart: () => events.push('observer:start'),
+      onObserverStop: () => events.push('observer:stop'),
+      sleep: async () => {},
+      ...extra,
+    });
+    orch.start();
+    /** 放行所有在飞的请求，直到不再有新的发出 */
+    const drain = async () => {
+      for (let i = 0; i < 100; i++) {
+        await flush();
+        const now = releases.splice(0);
+        if (now.length === 0) return;
+        now.forEach((f) => f());
+      }
+    };
+    return { orch, events, releases, drain };
+  }
+
+  test('完成态在补采集返回之后才推：首轮翻完时球仍是进行中', async () => {
+    const h = ordered();
+    const src = source(items('a', 3), items('new', 3));
+    const done = h.orch.togglePage(src.fn, 'en', 'zh-CN');
+    await flush();
+    h.releases.shift()!(); // 首轮返回
+    await flush();
+    // 首轮已经翻完、补采集在飞：此刻只推过进行中
+    expect(h.events.filter((e) => e.startsWith('push:'))).toEqual(['push:loading']);
+    await h.drain();
+    await done;
+    expect(h.events).toEqual([
+      'push:loading',
+      'send:a0',
+      'back:a0',
+      'send:new0',
+      'back:new0',
+      'push:done',
+      'observer:start',
+    ]);
+  });
+
+  test('补采集期间点还原：状态回到空闲，之后不再推完成', async () => {
+    const h = ordered();
+    const src = source(items('a', 3), items('new', 3));
+    const first = h.orch.togglePage(src.fn, 'en', 'zh-CN');
+    await flush();
+    h.releases.shift()!();
+    await flush();
+    expect(h.events.at(-1)).toBe('send:new0');
+    const restored = await h.orch.togglePage(src.fn, 'en', 'zh-CN');
+    expect(restored.status).toBe('restored');
+    await h.drain();
+    expect((await first).status).toBe('aborted');
+    const pushes = h.events.filter((e) => e.startsWith('push:'));
+    expect(pushes).toEqual(['push:loading', 'push:idle']);
+  });
+
+  test('没有新内容：首轮一返回就推完成，不多等一轮请求', async () => {
+    const h = ordered();
+    const src = source(items('a', 3), []);
+    const done = h.orch.togglePage(src.fn, 'en', 'zh-CN');
+    await flush();
+    h.releases.shift()!();
+    await done;
+    expect(h.events).toEqual(['push:loading', 'send:a0', 'back:a0', 'push:done', 'observer:start']);
+  });
+
+  test('首轮失败：照旧推错误态，不进补采集', async () => {
+    const send = vi.fn(async () => ({ ok: false, error: 'HTTP 503', category: 'transient' as const }));
+    const h = ordered({ send });
+    const src = source(items('a', 3), items('new', 3));
+    const result = await h.orch.togglePage(src.fn, 'en', 'zh-CN');
+    expect(result.status).toBe('error');
+    expect(h.events).toEqual(['push:loading', 'push:error']);
+  });
+});
