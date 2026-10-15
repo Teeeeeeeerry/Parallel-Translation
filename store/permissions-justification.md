@@ -51,7 +51,7 @@ The extension creates no other menu items and neither reads nor modifies any oth
 Every host permission is the API endpoint of one translation service the user can select:
 
 - translate.googleapis.com — Google translation, the default engine, no API key required
-- api-edge.cognitive.microsofttranslator.com and edge.microsoft.com — Bing/Edge translation, no API key required
+- edge.microsoft.com — Bing/Edge translation, no API key required
 - api.openai.com — OpenAI, used only when the user supplies their own API key
 - generativelanguage.googleapis.com — Google Gemini, used only with the user's own key
 - api.deepl.com and api-free.deepl.com — DeepL, used only with the user's own key

@@ -57,9 +57,6 @@ async function translateCategoryFor(
     'fetch',
     vi.fn(async (input: unknown) => {
       const url = String(input);
-      if (url.includes('edge.microsoft.com/translate/auth')) {
-        return new Response('jwt-token', { status: 200 });
-      }
       return new Response(body ?? 'err', { status });
     }),
   );

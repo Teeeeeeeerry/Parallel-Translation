@@ -188,16 +188,14 @@ describe('e2e-mock', () => {
     expect(realFetch).not.toHaveBeenCalled();
   });
 
-  test('bing：鉴权端点给出令牌，翻译端点按前缀回显，计数可断言（#766）', async () => {
+  test('bing：翻译端点按前缀回显字符串数组，计数可断言（#766、#1021）', async () => {
     const { applyE2EMock, getE2EMockStats } = await import('~/src/engines/e2e-mock');
     await applyE2EMock({ bing: { prefix: '[BING] ' } });
     const before = getE2EMockStats().bingServed;
 
-    const auth = await fetch('https://edge.microsoft.com/translate/auth');
-    expect(await auth.text()).toBe('mock-jwt-token');
     const resp = await fetch(
-      'https://api-edge.cognitive.microsofttranslator.com/translate?api-version=3.0&to=zh-Hans',
-      { method: 'POST', body: JSON.stringify([{ Text: 'Hello' }, { Text: 'World' }]) },
+      'https://edge.microsoft.com/translate/translatetext?from=&to=zh-Hans&isEnterpriseClient=false',
+      { method: 'POST', body: JSON.stringify(['Hello', 'World']) },
     );
     expect(await resp.json()).toEqual([
       { translations: [{ text: '[BING] Hello' }] },
@@ -214,9 +212,9 @@ describe('e2e-mock', () => {
     (self as unknown as { fetch: unknown }).fetch = realFetch;
 
     await ensureE2EMock();
-    const resp = await fetch('https://api-edge.cognitive.microsofttranslator.com/translate', {
+    const resp = await fetch('https://edge.microsoft.com/translate/translatetext', {
       method: 'POST',
-      body: JSON.stringify([{ Text: 'Hi' }]),
+      body: JSON.stringify(['Hi']),
     });
     expect((await resp.json())[0].translations[0].text).toBe('[BING] Hi');
     expect(realFetch).not.toHaveBeenCalled();

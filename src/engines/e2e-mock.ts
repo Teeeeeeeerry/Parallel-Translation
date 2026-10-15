@@ -72,9 +72,8 @@ const DEEPL_ENDPOINTS = [
   'https://api.deepl.com/v2/translate',
 ];
 
-/** Bing 的鉴权端点与翻译端点 */
-const BING_AUTH = 'https://edge.microsoft.com/translate/auth';
-const BING_TRANSLATE = 'https://api-edge.cognitive.microsofttranslator.com/';
+/** Bing 的翻译端点（#1021：不再取令牌） */
+const BING_TRANSLATE = 'https://edge.microsoft.com/translate/translatetext';
 
 const STORAGE_KEY = 'pt-e2e-mock';
 
@@ -177,14 +176,11 @@ function installStub(): void {
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
     }
-    if (cfg.bing && url.startsWith(BING_AUTH)) {
-      return new Response('mock-jwt-token', { status: 200 });
-    }
     if (cfg.bing && url.startsWith(BING_TRANSLATE)) {
       bingServed++;
-      const body = JSON.parse(String(init?.body ?? '[]')) as Array<{ Text: string }>;
+      const body = JSON.parse(String(init?.body ?? '[]')) as string[];
       return new Response(
-        JSON.stringify(body.map((t) => ({ translations: [{ text: `${cfg.bing!.prefix}${t.Text}` }] }))),
+        JSON.stringify(body.map((t) => ({ translations: [{ text: `${cfg.bing!.prefix}${t}` }] }))),
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
     }

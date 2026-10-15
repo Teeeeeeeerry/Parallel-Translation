@@ -50,7 +50,8 @@ describe('构建产物校验', () => {
     const chromeManifest = path.join(OUTPUT_DIR, 'chrome-mv3', 'manifest.json');
     if (fs.existsSync(chromeManifest)) {
       const m = JSON.parse(fs.readFileSync(chromeManifest, 'utf-8')) as Record<string, string[]>;
-      expect(m.host_permissions).toHaveLength(7);
+      // #1021: Bing 的两条（取令牌、api-edge）合成一条 translatetext
+      expect(m.host_permissions).toHaveLength(6);
       for (const p of optional) {
         expect(m.optional_host_permissions).toContain(p);
         expect(m.host_permissions).not.toContain(p);

@@ -101,9 +101,6 @@ describe('响应形状契约', () => {
 
   test('bing-edge：data[i].translations[0].text 为译文，detectedLanguage 可选', async () => {
     const fetchMock = vi.fn().mockImplementation(async (url: string) => {
-      if (String(url).includes('translate/auth')) {
-        return new Response('jwt.payload.sig', { status: 200 });
-      }
       return new Response(
         JSON.stringify([
           { translations: [{ text: '你好' }], detectedLanguage: { language: 'en' } },

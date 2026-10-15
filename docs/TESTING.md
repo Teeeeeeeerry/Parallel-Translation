@@ -347,7 +347,6 @@ test('全流程仅访问允许的主机', async ({ page, context }) => {
   const ALLOWED = [
     'translate.googleapis.com',
     'edge.microsoft.com',
-    'api-edge.cognitive.microsofttranslator.com',
     'localhost',           // fixture 服务器
   ];
   const violations: string[] = [];
