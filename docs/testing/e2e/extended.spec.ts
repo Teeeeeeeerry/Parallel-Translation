@@ -1700,5 +1700,48 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     const onPage = await uiMetrics(page, 'para-btn');
     expect(onPage).toEqual({ width: big.width, height: big.height, fontSize: big.fontSize });
   });
+
+  test('TC-E2E-199: 改存储里的逐段翻译按钮显示时长不刷新，下一次离开段落就按新时长消失（#972）', async ({
+    page, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({});
+    await gotoFixture('basic');
+    await waitForBall(page);
+    const firstP = page.locator('p').first();
+    const paraBtn = page.locator('#pt-host-para-btn .pt-para-btn');
+
+    /**
+     * 离开段落到按钮消失隔了多久：页内记下最后一次 mouseout 的时刻，按钮 display
+     * 变成 none 时再记一次。两个时刻都在页面里取，不受 Playwright 往返的延迟影响
+     */
+    const hideAfterLeave = async () => {
+      await firstP.hover();
+      await expect(paraBtn).toBeVisible({ timeout: 10_000 });
+      await page.evaluate(() => {
+        const w = window as any;
+        const btn = document.getElementById('pt-host-para-btn')!.shadowRoot!.querySelector('.pt-para-btn') as HTMLElement;
+        w.__ptLeftAt = 0;
+        w.__ptHiddenAt = 0;
+        document.addEventListener('mouseout', () => (w.__ptLeftAt = performance.now()), { capture: true });
+        new MutationObserver(() => {
+          if (btn.style.display === 'none' && !w.__ptHiddenAt) w.__ptHiddenAt = performance.now();
+        }).observe(btn, { attributes: true, attributeFilter: ['style'] });
+      });
+      await page.mouse.move(5, 710);
+      await expect(paraBtn).toBeHidden({ timeout: 10_000 });
+      return page.evaluate(() => (window as any).__ptHiddenAt - (window as any).__ptLeftAt);
+    };
+
+    await patchStoredSettings(serviceWorker, { paraBtnHideDelay: 600 });
+    await expect.poll(() => serviceWorker.evaluate(async () => ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any).paraBtnHideDelay)).toBe(600);
+    const short = await hideAfterLeave();
+    expect(short).toBeGreaterThanOrEqual(600 - 20);
+    expect(short).toBeLessThan(1000);
+
+    await patchStoredSettings(serviceWorker, { paraBtnHideDelay: 2600 });
+    const long = await hideAfterLeave();
+    expect(long).toBeGreaterThanOrEqual(2600 - 20);
+    expect(long).toBeLessThan(3000);
+  });
 });
 

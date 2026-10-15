@@ -20,25 +20,26 @@ type RestoreOneFn = (el: Element) => void;
 interface ParaBtnHandlers {
   translate: TranslateOneFn;
   restore: RestoreOneFn;
+  /**
+   * 离开段落后的隐藏延迟（ms，#972）—— 取值函数，每次开始倒计时都重新问一次，
+   * 改了设置不用重建按钮。由内容脚本注入：src/ui 下不读 getSettings。
+   *
+   * 这个值是“按钮能不能点到”的决定性因素：它要覆盖用户从段落边缘跨过间隙、
+   * 移动到按钮上的全程。阶段文档给的 200ms 在真机上偏紧 —— 指针经过间隙时
+   * 落在宿主页面的其它元素上，那段时间计时器照常在跑，稍一犹豫按钮就没了。
+   *
+   * 默认 1.5 秒是用户实机试用后定的值。偏长的代价是移开鼠标后按钮还会停留一会儿，
+   * 但它只占段落右上角一小块、不挡正文，比“够不着”轻得多。手快手慢因人而异，
+   * 所以做成了设置项（范围见 schema 的 PARA_BTN_HIDE_DELAY_MIN/MAX）。
+   */
+  hideDelay: () => number;
 }
-
-/**
- * 离开段落后的隐藏延迟。
- *
- * 这个值是“按钮能不能点到”的决定性因素：它要覆盖用户从段落边缘跨过间隙、
- * 移动到按钮上的全程。阶段文档给的 200ms 在真机上偏紧 —— 指针经过间隙时
- * 落在宿主页面的其它元素上，那段时间计时器照常在跑，稍一犹豫按钮就没了。
- *
- * 取 1.5 秒是用户实机试用后定的值。偏长的代价是移开鼠标后按钮还会停留一会儿，
- * 但它只占段落右上角一小块、不挡正文，比“够不着”轻得多。
- */
-const HIDE_DELAY = 1500;
 
 /**
  * 悬停意图延迟：指针在同一段落上停住这么久才浮出按钮。
  *
  * 没有这道闸门时，mouseover 一命中段落就立刻浮出并重定位 —— 鼠标从文章
- * 上方扫到下方，按钮会挨个段落跳几十次，看起来就是不停闪。HIDE_DELAY
+ * 上方扫到下方，按钮会挨个段落跳几十次，看起来就是不停闪。隐藏延迟
  * 越长这个现象越显眼，因为按钮全程挂着而不是跳完就消失。
  *
  * 140ms 略低于人眼把“停顿”与“路过”区分开的阈值，有意停留时几乎无感，
@@ -63,7 +64,7 @@ const CANDIDATE =
   'div,section,article,main,figure';
 
 export function createParaBtn(handlers: ParaBtnHandlers): () => void {
-  const { translate, restore } = handlers;
+  const { translate, restore, hideDelay } = handlers;
   const shadow = mountIsolated('para-btn');
   const btn = document.createElement('button');
   btn.className = 'pt-para-btn';
@@ -116,7 +117,7 @@ export function createParaBtn(handlers: ParaBtnHandlers): () => void {
     hideTimer = self.setTimeout(() => {
       btn.style.display = 'none';
       target = null;
-    }, HIDE_DELAY);
+    }, hideDelay());
   };
 
   const onMouseOver = (e: MouseEvent) => {
