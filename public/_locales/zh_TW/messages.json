@@ -26,6 +26,7 @@
   "modeFollow": { "message": "跟隨全域" },
   "cardFloatingUi": { "message": "浮動 UI" },
   "rowFloatingBall": { "message": "浮動球" },
+  "rowBallSize": { "message": "浮動球大小" },
   "rowParagraphBtn": { "message": "逐段翻譯" },
   "btnResetBallPos": { "message": "重設浮動球位置" },
   "toastBallPosReset": { "message": "已重設" },

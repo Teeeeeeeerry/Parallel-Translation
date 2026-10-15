@@ -26,6 +26,7 @@
   "modeFollow": { "message": "跟随全局" },
   "cardFloatingUi": { "message": "悬浮 UI" },
   "rowFloatingBall": { "message": "悬浮球" },
+  "rowBallSize": { "message": "悬浮球大小" },
   "rowParagraphBtn": { "message": "逐段翻译" },
   "btnResetBallPos": { "message": "重置悬浮球位置" },
   "toastBallPosReset": { "message": "已重置" },
