@@ -144,6 +144,25 @@ jobs:
           path: docs/testing/logs/
           retention-days: 14
 
+  # #1022：免 key 引擎的真实端点。端到端里引擎端点一律走替身，Bing 取令牌
+  # 404 了多久没人知道（#1021）。依赖外部网络，只在定时与手动触发时跑，不进
+  # PR 门禁；被限流（429）、超时、5xx 只记 warning，404、DNS 失败、响应结构
+  # 变了才让这个 job 红。不设 continue-on-error：红了就要看得见
+  engine-endpoints:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:engines
+
   smoke-real-sites:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     continue-on-error: true # 允许红
