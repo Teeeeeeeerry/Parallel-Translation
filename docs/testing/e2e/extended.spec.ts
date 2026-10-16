@@ -2354,8 +2354,11 @@ test.describe('维基成绩表形态：大量极短表格格子 @extended', () =
 
 test.describe('翻译在飞期间插入的内容由补采集补上 @extended', () => {
   test('TC-E2E-211: 整页翻译开始后、结束前往页面里插入段落 —— 插进来的段落最后有译文，原有段落的译文没有第二份（#1014，父 #1003）', async ({
-    page, mockGoogle, gotoFixture,
+    page, mockGoogle, gotoFixture, seedSettings,
   }) => {
+    // #1045：定下目标语言（zh-CN）。不定的话目标语言按浏览器界面语言推，CI 的英文
+    // 界面推出 en，英文夹具被页面级闸门判成同语言，悬浮球停在空闲
+    await seedSettings({});
     // 替身每请求慢 1.5 秒，把“采集已做完、观察器还没启动”的窗口拉开。插入由
     // 用例在悬浮球进入进行中之后直接做，不靠滚动触发：进行中态是在首轮采集之后
     // 才推的，这时插入的段落一定不在首轮采集结果里
@@ -2475,8 +2478,11 @@ test.describe('输入翻译圆点：contenteditable 内层段落的行高 @exten
 
 test.describe('还原时后台在飞的批次被中止 @extended', () => {
   test('TC-E2E-214: 增量补翻在飞时点还原 —— 引擎侧在飞的请求被取消，不是翻完再丢（#1001）', async ({
-    page, mockGoogle, mockRequests, gotoFixture,
+    page, mockGoogle, mockRequests, gotoFixture, seedSettings,
   }) => {
+    // #1045：定下目标语言（zh-CN）。不定的话目标语言按浏览器界面语言推，CI 的英文
+    // 界面推出 en，英文夹具被页面级闸门判成同语言，悬浮球停在空闲
+    await seedSettings({});
     await mockGoogle();
     await gotoFixture('basic');
     const ball = await waitForBall(page);
