@@ -2416,3 +2416,59 @@ test.describe('逐段翻译：没有字母的单元 @extended', () => {
     await expect(paraBtn).toBeVisible({ timeout: 5_000 });
   });
 });
+
+test.describe('输入翻译圆点：contenteditable 内层段落的行高 @extended', () => {
+  test('TC-E2E-213: 编辑宿主行高 1.5、内层段落行高 1.0 —— 圆点按末尾那一行的实际行高收小，不伸进上一行（#1017）', async ({
+    page, serviceWorker, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await gotoFixture('rich-input');
+    await waitForBall(page);
+    const box = page.locator('#rich');
+    const dot = page.locator('#pt-host-input-dot .pt-input-dot');
+    // 富文本编辑器常见写法：宿主一个行高，内层段落主题样式另写一个更紧的行高
+    await box.evaluate((el) => {
+      el.style.lineHeight = '1.5';
+      el.innerHTML =
+        '<p style="line-height:1;margin:0">Typing a long jumpy line here</p>' +
+        '<p id="last" style="line-height:1;margin:0">hi</p>';
+    });
+    await box.click();
+    await page.evaluate(() => {
+      const last = document.getElementById('last')!;
+      const r = document.createRange();
+      r.selectNodeContents(last);
+      r.collapse(false);
+      const sel = getSelection()!;
+      sel.removeAllRanges();
+      sel.addRange(r);
+    });
+    await page.keyboard.type('!');
+    await patchStoredSettings(serviceWorker, { inputDotSize: 24 });
+    await expect(dot).toBeVisible();
+
+    /** 第一行文字的字形盒下沿、第二行文字的行盒与末尾横坐标：直接量文字的 Range */
+    const geometry = () =>
+      box.evaluate((el) => {
+        const [p1, p2] = [...el.querySelectorAll('p')];
+        const rangeOf = (p: Element) => {
+          const r = document.createRange();
+          r.selectNodeContents(p);
+          return [...r.getClientRects()].at(-1)!;
+        };
+        const g1 = rangeOf(p1!);
+        const g2 = rangeOf(p2!);
+        const l2 = p2!.getBoundingClientRect();
+        return { line1GlyphBottom: g1.bottom, line2Mid: l2.top + l2.height / 2, endX: g2.right };
+      });
+    const g = await geometry();
+    await expect(async () => {
+      const d = (await dot.boundingBox())!;
+      expect(d.width, '直径').toBe(d.height);
+      expect(d.y, `圆点 ${JSON.stringify(d)} 不压住上一行`).toBeGreaterThanOrEqual(g.line1GlyphBottom);
+      expect(Math.abs(d.y + d.height / 2 - g.line2Mid), '竖直居中于末尾那一行').toBeLessThanOrEqual(1);
+      expect(d.x - g.endX, '与末尾字符的间隙').toBeGreaterThanOrEqual(3);
+      expect(d.x - g.endX).toBeLessThanOrEqual(5);
+    }).toPass({ timeout: 5_000 });
+  });
+});
