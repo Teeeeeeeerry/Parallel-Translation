@@ -2530,3 +2530,76 @@ test.describe('用例起始状态没有首装欢迎页 @extended', () => {
     expect(tabCount, `浏览器标签页数，页面列表 ${JSON.stringify(pages)}`).toBe(pages.length);
   });
 });
+
+test.describe('补采集到顶之后进 DOM 的内容由观察器那条路接上 @extended', () => {
+  test('TC-E2E-216: 持续懒加载补满三轮补采集，第 3 轮在飞期间插入的段落最后也有译文，每段只有一份（#1036）', async ({
+    page, mockGoogle, gotoFixture, seedSettings,
+  }) => {
+    test.setTimeout(60_000);
+    await seedSettings({});
+    // 替身每请求慢 1 秒；页面每 800 毫秒追加一段，一直加到悬浮球进入完成态。
+    // 补采集每轮之间等 1.5 秒，每轮开头都能采到新段落，三轮补满；第 3 轮采集
+    // 之后、它的译文回来之前追加的段落，就落在补采集到顶与观察器启动之间
+    await mockGoogle({ delayMs: 1_000 });
+    await gotoFixture('basic');
+    const rounds: string[] = [];
+    page.on('console', (m) => {
+      if (/^\[PT\] 补采集第 \d 轮/.test(m.text())) rounds.push(m.text()); // cjk-ok: 匹配控制台日志
+    });
+    const ball = await waitForBall(page);
+    await ball.click();
+    await expect(ball).toHaveAttribute('data-state', 'loading');
+    await page.evaluate(() => {
+      let n = 0;
+      const ball = document.getElementById('pt-host-ball')!.shadowRoot!.querySelector('.pt-ball')!;
+      const timer = setInterval(() => {
+        if (ball.getAttribute('data-state') === 'done') {
+          clearInterval(timer);
+          return;
+        }
+        const p = document.createElement('p');
+        p.className = 'lazy';
+        p.textContent = `Lazy loaded entry number ${++n} that arrived while the page was still translating.`;
+        document.body.append(p);
+      }, 800);
+    });
+    await expect(ball).toHaveAttribute('data-state', 'done', { timeout: 40_000 });
+    expect(rounds.map((r) => r.match(/第 (\d) 轮/)![1])).toEqual(['1', '2', '3']); // cjk-ok: 匹配控制台日志
+
+    const lazy = page.locator('p.lazy');
+    const total = await lazy.count();
+    expect(total).toBeGreaterThan(6);
+    // 每一段最后都有译文，而且只有一份
+    await expect
+      .poll(() => lazy.evaluateAll((ps) => ps.map((p) => p.querySelectorAll('.pt-trans').length)), {
+        timeout: 15_000,
+      })
+      .toEqual(Array(total).fill(1));
+  });
+
+  test('TC-E2E-217: 用户没点整页翻译时，页面自己持续追加内容不触发任何翻译 —— 观察器仍只在整页翻译成功后启动（#1036 回归，#328）', async ({
+    page, mockGoogle, mockRequests, gotoFixture, seedSettings,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+    const requests = await mockRequests();
+    // 像 SPA 或直播页那样，页面自己每 300 毫秒追加一段，持续 3 秒
+    await page.evaluate(() => {
+      let n = 0;
+      const timer = setInterval(() => {
+        const p = document.createElement('p');
+        p.className = 'spa';
+        p.textContent = `Live update number ${++n} pushed by the page itself.`;
+        document.body.append(p);
+        if (n >= 10) clearInterval(timer);
+      }, 300);
+    });
+    await expect(page.locator('p.spa')).toHaveCount(10, { timeout: 10_000 });
+    // 观察器的防抖是 300 毫秒，多等一个防抖加一个替身往返
+    await page.waitForTimeout(1_000);
+    expect((await requests()).google).toBe(0);
+    await expect(page.locator('[data-pt]')).toHaveCount(0);
+  });
+});

@@ -350,11 +350,13 @@ describe('补采集最多补几轮（#1013）', () => {
     const src = source(items('a', 5), ...rounds);
     const result = await h.orch.togglePage(src.fn, 'en', 'zh-CN');
     expect(result.status).toBe('translated');
-    // 首轮一次，补采集封顶 RECOLLECT_MAX_ROUNDS 次
-    expect(src.collects()).toBe(1 + RECOLLECT_MAX_ROUNDS);
-    const expected = [items('a', 5), ...rounds.slice(0, RECOLLECT_MAX_ROUNDS)].flat().map((it) => it.text);
+    await flush();
+    // 首轮一次，补采集封顶 RECOLLECT_MAX_ROUNDS 次，到顶后在观察器启动那一刻
+    // 再采一次交给增量补翻（#1036），之后不再有轮次
+    expect(src.collects()).toBe(2 + RECOLLECT_MAX_ROUNDS);
+    const expected = [items('a', 5), ...rounds.slice(0, RECOLLECT_MAX_ROUNDS + 1)].flat().map((it) => it.text);
     expect(h.sent).toEqual(expected);
-    expect(h.sent).not.toContain(`r${RECOLLECT_MAX_ROUNDS}-0`);
+    expect(h.sent).not.toContain(`r${RECOLLECT_MAX_ROUNDS + 1}-0`);
     expect(h.events.filter((e) => e === 'observer:start')).toHaveLength(1);
   });
 
@@ -434,5 +436,64 @@ describe('补采集最多补几轮（#1013）', () => {
     } finally {
       info.mockRestore();
     }
+  });
+});
+
+describe('补采集到顶那一轮在飞期间插入的内容（#1036）', () => {
+  /** 记下采集、观察器启动、发送三类事件的先后 */
+  function ordered() {
+    const order: string[] = [];
+    const h = harness({ onObserverStart: () => order.push('observer:start') });
+    h.send.mockImplementation(async (req: TranslateRequest) => {
+      order.push(`send:${req.texts.join(',')}`);
+      h.sent.push(...req.texts);
+      return { ok: true, data: { translations: req.texts.map((t) => `T(${t})`) } };
+    });
+    return { h, order };
+  }
+
+  test('补满轮数：观察器启动之前紧挨着再采一次，采到的发出去，观察器照常只启动一次', async () => {
+    const { h, order } = ordered();
+    const rounds = Array.from({ length: RECOLLECT_MAX_ROUNDS + 1 }, (_, i) => items(`r${i}-`, 1));
+    const src = source(items('a', 2), ...rounds);
+    const fn = vi.fn((mode?: { readOnly: boolean }) => {
+      if (!mode?.readOnly) order.push('collect');
+      return src.fn(mode);
+    });
+    const result = await h.orch.togglePage(fn, 'en', 'zh-CN');
+    expect(result.status).toBe('translated');
+    await flush();
+    const late = `r${RECOLLECT_MAX_ROUNDS}-0`;
+    // 最后一次采集与观察器启动之间什么都没有；交出的单元在启动之后发出
+    const start = order.indexOf('observer:start');
+    expect(order[start - 1]).toBe('collect');
+    expect(order.slice(start + 1)).toEqual([`send:${late}`]);
+    expect(h.sent.filter((t) => t === late)).toHaveLength(1);
+    expect(order.filter((e) => e === 'observer:start')).toHaveLength(1);
+  });
+
+  test('没补满（某一轮为空提前结束）：不多采一次，与改动前一致', async () => {
+    const { h, order } = ordered();
+    const src = source(items('a', 2), items('new', 1), [], items('never', 1));
+    const fn = vi.fn((mode?: { readOnly: boolean }) => {
+      if (!mode?.readOnly) order.push('collect');
+      return src.fn(mode);
+    });
+    await h.orch.togglePage(fn, 'en', 'zh-CN');
+    await flush();
+    expect(src.collects()).toBe(3);
+    expect(h.sent).not.toContain('never0');
+    expect(order.at(-1)).toBe('observer:start');
+  });
+
+  test('整页翻译失败：观察器不启动，也不多采', async () => {
+    const send = vi.fn(async () => ({ ok: false, error: 'HTTP 503', category: 'transient' as const }));
+    const h = harness({ send });
+    const rounds = Array.from({ length: RECOLLECT_MAX_ROUNDS + 1 }, (_, i) => items(`r${i}-`, 1));
+    const src = source(items('a', 2), ...rounds);
+    const result = await h.orch.togglePage(src.fn, 'en', 'zh-CN');
+    expect(result.status).toBe('error');
+    expect(src.collects()).toBe(1);
+    expect(h.events).not.toContain('observer:start');
   });
 });
