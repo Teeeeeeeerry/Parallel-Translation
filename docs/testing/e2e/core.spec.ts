@@ -6027,9 +6027,16 @@ test.describe('划词翻译的提示（#726）', () => {
       });
     /** 一轮划词从发起到提示消失的经过：状态序列与译文停留了多久。 */
     const summarize = async () => {
-      const raw = await page.evaluate(
-        () => (window as unknown as { __ptSeq: [number, string][] }).__ptSeq,
-      );
+      const readSeq = () =>
+        page.evaluate(() => (window as unknown as { __ptSeq: [number, string][] }).__ptSeq);
+      // #1041：调用前 Playwright 已看到提示没了，但页内采样器要到下一拍才记下
+      // “0 条”那一项 —— 等它记下再取，不然取消失时刻时序列里还没有那一项
+      await expect
+        .poll(async () => (await readSeq()).at(-1)?.[1].split('|')[0], {
+          message: '采样序列记下提示消失', // cjk-ok: 断言说明，不是界面文案
+        })
+        .toBe('0');
+      const raw = await readSeq();
       const seq = raw.map(([t, e]) => [t, ...e.split('|')] as [number, string, string, string, string, string]);
       const shownSeq = seq.filter(([, count]) => count !== '0');
       const first = shownSeq[0]!;
