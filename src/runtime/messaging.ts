@@ -22,6 +22,12 @@
 // 2. 再发 pt:translate；传输层失败（无响应/连接被拒/超时）有界重试
 // 3. SW 已响应的 {ok:false} 是引擎级失败（router 已做过引擎降级），不重试
 // 4. 预算耗尽返回 {ok:false} + 错误说明，永不抛出 —— 调用方按原约定处理
+//
+// #1001：每次发出 pt:translate 都带一个新的批次身份。这一次不再等了（单次
+// 响应超时、连接被拒），或调用方的中止信号触发（用户点还原、别的批次判了
+// 失效），就把这个身份发给后台（pt:cancel-batches），后台中止对应的引擎调用。
+// 中止消息发出去就算数：不等回复、不重试，后台没收到只是回到原来的行为
+// （后台把这一批翻完，结果没人要）。
 
 import type {
   TranslateRequest,
@@ -113,14 +119,38 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+/** 批次身份（#1001）：本 content 实例内唯一，前缀区分同一 frame 里重新注入的实例。 */
+const BATCH_ID_PREFIX = Math.random().toString(36).slice(2, 10);
+let batchSeq = 0;
+function newBatchId(): string {
+  return `${BATCH_ID_PREFIX}-${++batchSeq}`;
+}
+
+/**
+ * 通知后台这些批次不用再翻了（#1001）。发出去就算数：不等回复，发送失败
+ * （上下文已失效、后台没在听）一律吞掉 —— 后台没收到只是回到原来的行为。
+ */
+export function cancelBatches(ids: string[]): void {
+  if (ids.length === 0) return;
+  try {
+    chrome.runtime.sendMessage({ type: 'pt:cancel-batches', ids }).catch(() => {});
+  } catch {
+    // 上下文失效时 chrome.runtime 访问本身会抛
+  }
+}
+
 /**
  * 有界重试发送：只要收不到任何响应（undefined / 连接被拒 / 超时），
  * 就以指数退避重发，直到预算耗尽。收到响应（无论内容）即返回。
  * 预算耗尽时抛出最后一次失败原因。
+ *
+ * #1001：消息按次生成（每次重发是一条新消息）；某一次不再等时交给
+ * onAbandon（翻译消息据此通知后台中止那一次）。
  */
 async function sendWithTransportRetry(
-  msg: unknown,
+  makeMsg: () => unknown,
   budgetMs: number,
+  onAbandon?: (msg: unknown) => void,
 ): Promise<unknown> {
   const deadline = Date.now() + budgetMs;
   let delay = BACKOFF_INITIAL_MS;
@@ -138,12 +168,14 @@ async function sendWithTransportRetry(
     const attemptTimeout = Math.min(remaining, MESSAGE_TIMEOUT_MS);
 
     let resp: unknown;
+    const msg = makeMsg();
     try {
       resp = await withTimeout(
         chrome.runtime.sendMessage(msg),
         attemptTimeout,
       );
     } catch (e) {
+      onAbandon?.(msg);
       // 类型化判定（#139）：sendMessage 抛错时再查一次上下文是否已失效 ——
       // 失效是结构化状态（chrome.runtime.id 为 null），不依赖错误文案。
       // 上下文仍有效则视为可重试的传输层错误（如 SW 监听器未注册、响应超时）。
@@ -170,15 +202,31 @@ async function sendWithTransportRetry(
  */
 export async function translateViaBackground(
   payload: TranslateRequest,
+  ctl?: { signal?: AbortSignal },
 ): Promise<TranslateResult> {
+  // #1001：正在等的那一次的批次身份；调用方中止时通知后台中止它
+  let current: string | null = null;
+  const onAbort = () => {
+    if (current) cancelBatches([current]);
+  };
+  ctl?.signal?.addEventListener('abort', onAbort);
   try {
     // 1) SW 就绪等待：任何 ping 响应都证明消息通道已注册监听器。
-    await sendWithTransportRetry({ type: 'pt:ping' }, READY_BUDGET_MS);
+    await sendWithTransportRetry(() => ({ type: 'pt:ping' }), READY_BUDGET_MS);
 
-    // 2) 发送翻译消息，传输层失败重试。
+    // 2) 发送翻译消息，传输层失败重试。每次发送一个新的批次身份；
+    // 这一次不再等（超时、连接被拒）时通知后台中止它
     const resp = (await sendWithTransportRetry(
-      { type: 'pt:translate', payload },
+      () => {
+        current = newBatchId();
+        return { type: 'pt:translate', payload: { ...payload, batchId: current } };
+      },
       SEND_BUDGET_MS,
+      (msg) => {
+        const id = (msg as { payload: { batchId: string } }).payload.batchId;
+        if (current === id) current = null;
+        cancelBatches([id]);
+      },
     )) as {
       ok?: boolean;
       data?: TranslateResponse;
@@ -210,5 +258,8 @@ export async function translateViaBackground(
       aborted: false,
       ...(contextInvalidated && { contextInvalidated: true }),
     };
+  } finally {
+    current = null;
+    ctl?.signal?.removeEventListener('abort', onAbort);
   }
 }

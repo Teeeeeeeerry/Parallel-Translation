@@ -302,6 +302,31 @@ describe('route', () => {
     expect(res.translations).toEqual(['你好']);
   });
 
+  test('请求已中止（#1001）：一个引擎都不调，抛“已中止”', async () => {
+    const ctrl = new AbortController();
+    ctrl.abort();
+    await expect(
+      route({ texts: ['Hello'], from: 'auto', to: 'zh-CN', signal: ctrl.signal }),
+    ).rejects.toMatchObject({ category: 'aborted', aborted: true });
+    expect(mockGoogleTranslate).not.toHaveBeenCalled();
+    expect(mockBingTranslate).not.toHaveBeenCalled();
+  });
+
+  test('第一个引擎在飞时中止（#1001）：信号交给引擎，不再换下一个引擎', async () => {
+    const ctrl = new AbortController();
+    // 引擎报的是可重试的失败（例如中止恰好与超时同时到）：router 照常会换下一个
+    // 引擎，要靠下一轮开头的中止判断拦住
+    mockGoogleTranslate.mockImplementation(async (req: { signal?: AbortSignal }) => {
+      expect(req.signal).toBe(ctrl.signal);
+      ctrl.abort();
+      throw new EngineError('google-web', true, '请求超时（30000ms）');
+    });
+    await expect(
+      route({ texts: ['Hello'], from: 'auto', to: 'zh-CN', signal: ctrl.signal }),
+    ).rejects.toMatchObject({ category: 'aborted' });
+    expect(mockBingTranslate).not.toHaveBeenCalled();
+  });
+
   test('单引擎 non-retryable 失败 → 原样抛出不改写类别（#237）', async () => {
     vi.mocked(getSettings).mockReturnValue({
       ...vi.mocked(getSettings)(),

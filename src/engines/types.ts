@@ -28,6 +28,17 @@ export interface TranslateRequest {
    * 请求一律不携带。
    */
   noCache?: boolean;
+  /**
+   * 批次身份（#1001）：content 每次发送一条翻译消息时取一个新值，后台据此把
+   * 这次引擎调用登记进在飞表；content 放弃这一批时凭它通知后台中止。只在
+   * content → 后台的消息里出现，后台收到后取下，不往引擎传。
+   */
+  batchId?: string;
+  /**
+   * 中止信号（#1001）：后台在飞表给这次调用的。只在后台内部传（消息里传不了），
+   * 引擎把它接到 fetch 上；中止后排队中的请求不再发出，在飞的 fetch 被取消。
+   */
+  signal?: AbortSignal;
 }
 
 export interface TranslateResponse {

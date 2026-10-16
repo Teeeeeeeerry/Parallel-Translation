@@ -95,6 +95,12 @@ let totalServed = 0;
 /** 发给 Google 的原文，按请求顺序（#766：替代用例自己叠的记录层）。 */
 const queries: string[] = [];
 
+/**
+ * Google 请求在替身延迟期间被调用方中止的次数（#1001：断言 content 放弃一批后
+ * 引擎侧真的收到中止，而不是翻完再丢）。
+ */
+let googleAborted = 0;
+
 /** Bing 翻译端点已服务的请求数（#766）。 */
 let bingServed = 0;
 
@@ -108,6 +114,7 @@ export function getE2EMockStats(): {
   failTextsServed: number;
   totalServed: number;
   queries: string[];
+  googleAborted: number;
   bingServed: number;
   chatServed: Record<string, number>;
 } {
@@ -117,6 +124,7 @@ export function getE2EMockStats(): {
     failTextsServed,
     totalServed,
     queries: [...queries],
+    googleAborted,
     bingServed,
     chatServed: { ...chatServed },
   };
@@ -214,7 +222,23 @@ function installStub(): void {
       return new Response('Service Unavailable', { status: 500 });
     }
     if (cfg.delayMs) {
-      await new Promise((resolve) => self.setTimeout(resolve, cfg.delayMs));
+      // #1001：延迟期间调用方中止（fetch 的 signal 触发）就不回译文，与真实 fetch 一样抛 AbortError
+      const signal = (init as RequestInit | undefined)?.signal;
+      const aborted = await new Promise<boolean>((resolve) => {
+        const timer = self.setTimeout(() => resolve(false), cfg.delayMs);
+        signal?.addEventListener(
+          'abort',
+          () => {
+            self.clearTimeout(timer);
+            resolve(true);
+          },
+          { once: true },
+        );
+      });
+      if (aborted) {
+        googleAborted++;
+        throw new DOMException('The operation was aborted.', 'AbortError');
+      }
     }
     // 与真实端点同形：data[0] 是分句数组，每项 [0] 为译文。
     const suffix = cfg.echoTargetLang ? ` [tl=${tl}]` : '';

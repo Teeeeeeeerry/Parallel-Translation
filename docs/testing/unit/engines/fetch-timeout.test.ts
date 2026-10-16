@@ -68,4 +68,41 @@ describe('fetchWithTimeout', () => {
     expect((init as RequestInit).method).toBe('POST');
     expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
   });
+
+  // #1001：content 放弃了这一批，后台在飞表的中止信号接到这里
+  test('调用方中止：在飞的 fetch 被取消，抛“已中止”（不可重试、不算失败）', async () => {
+    let fetchSignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init: RequestInit) => {
+        fetchSignal = init.signal ?? undefined;
+        return new Promise(() => {});
+      }),
+    );
+    const { fetchWithTimeout } = await import('~/src/engines/fetch-timeout');
+    const ctrl = new AbortController();
+    const pending = fetchWithTimeout('bing-edge', 'https://example.com', { signal: ctrl.signal });
+    pending.catch(() => {});
+    await Promise.resolve();
+    ctrl.abort();
+    await expect(pending).rejects.toMatchObject({
+      name: 'EngineError',
+      category: 'aborted',
+      aborted: true,
+      retryable: false,
+    });
+    expect(fetchSignal?.aborted).toBe(true);
+  });
+
+  test('已经中止才轮到（在引擎闸门里排过队）：一个请求都不发', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { fetchWithTimeout } = await import('~/src/engines/fetch-timeout');
+    const ctrl = new AbortController();
+    ctrl.abort();
+    await expect(
+      fetchWithTimeout('google-web', 'https://example.com', { signal: ctrl.signal }),
+    ).rejects.toMatchObject({ category: 'aborted' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

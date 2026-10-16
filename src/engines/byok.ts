@@ -106,6 +106,7 @@ export function createByokEngine(spec: ByokEngineSpec): TranslateEngine {
           method: 'POST',
           headers,
           ...(body ? { body } : {}),
+          signal: req.signal,
         });
 
         if (!resp.ok) {
