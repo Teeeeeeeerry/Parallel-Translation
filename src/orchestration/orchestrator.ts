@@ -409,6 +409,15 @@ export function splitBatches<T>(
  */
 export const CONTENT_DETECT_TIMEOUT_MS = 1000;
 
+/**
+ * 补采集的轮数上限与轮间间隔（#1013）。间隔按实测定：翻译期间滚到底之后，
+ * Reddit 列表 929、1243 毫秒出现下一批，dev.to 首页 390 到 788 毫秒出现、最慢
+ * 一次 1429 毫秒才渲染完（docs/research/lazy-load-window-repro.md 第 6 节）。
+ * 观察器的 300 毫秒防抖一次都接不住。
+ */
+export const RECOLLECT_MAX_ROUNDS = 3;
+export const RECOLLECT_INTERVAL_MS = 1500;
+
 export function createOrchestrator(opts: OrchestratorOptions): TranslationOrchestrator {
   const batchLimits = opts.batchLimits ?? FULL_PAGE_BATCH_LIMITS;
   const sleepFn = opts.sleep ?? defaultSleep;
@@ -637,8 +646,12 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
    * 补采集（#1011）：再调一次整页入口的采集函数，交出来的单元走增量补翻那条
    * 批次流水线。带完成标记的单元采集本身就跳过；首轮已交出过的单元（翻译失败
    * 的、译文与原文相同没落标记的）由调用方的采集函数自己去重，不在这里认元素。
-   * 还原：开始前看纪元，每批放行时由闸门里的中止判定拦下（#1007）。补采集
+   * 还原：每轮开始前看纪元，每批放行时由闸门里的中止判定拦下（#1007）。补采集
    * 自身的失败不回写整页的结论 —— 首轮已经成功的段落照常显示。
+   *
+   * #1013：补完一轮再查一次，有新的接着补，最多 RECOLLECT_MAX_ROUNDS 轮；某一轮
+   * 没有新单元就结束。第一轮紧接首轮，之后每轮先等 RECOLLECT_INTERVAL_MS，给
+   * 懒加载留出渲染下一批的时间。到顶之后剩下的交给观察器。
    */
   const recollect = async (
     source: (mode?: { readOnly: boolean }) => TranslateItem<unknown>[],
@@ -646,9 +659,15 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     to: string,
   ): Promise<void> => {
     const epochAtStart = epoch;
-    const more = source();
-    if (more.length === 0 || epoch !== epochAtStart) return;
-    await translatePageImpl(more, from, to, { admitted: true });
+    for (let round = 1; round <= RECOLLECT_MAX_ROUNDS; round++) {
+      if (round > 1) await sleepFn(RECOLLECT_INTERVAL_MS);
+      if (epoch !== epochAtStart) return;
+      const more = source();
+      if (more.length === 0) return;
+      console.info(`[PT] 补采集第 ${round} 轮：${more.length} 个新单元`);
+      const summary = await translatePageImpl(more, from, to, { admitted: true });
+      if (summary.aborted || summary.invalidated) return;
+    }
   };
 
   // #327: 状态推送 —— 仅主框架推送（子框架不推送状态、不产生提示，

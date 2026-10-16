@@ -12,6 +12,8 @@
 import { describe, test, expect, vi } from 'vitest';
 import {
   createOrchestrator,
+  RECOLLECT_MAX_ROUNDS,
+  RECOLLECT_INTERVAL_MS,
   type TranslateItem,
   type OrchestratorOptions,
 } from '~/src/orchestration/orchestrator';
@@ -74,7 +76,8 @@ describe('整页翻译完成后补采集一轮（#1011）', () => {
     const src = source(items('a', 30), items('new', 3));
     const result = await h.orch.togglePage(src.fn, 'en', 'zh-CN');
     expect(result.status).toBe('translated');
-    expect(src.collects()).toBe(2);
+    // 首轮采集、补采集第一轮补到 3 个、第二轮没有新单元结束（#1013）
+    expect(src.collects()).toBe(3);
     expect(h.sent).toEqual([...items('a', 30), ...items('new', 3)].map((it) => it.text));
     // 观察器启动那一刻，补采集的单元已经全部发出并返回
     expect(observerSawSent).toBe(33);
@@ -328,5 +331,108 @@ describe('补采集没做完时悬浮球保持进行中（#1012）', () => {
     const result = await h.orch.togglePage(src.fn, 'en', 'zh-CN');
     expect(result.status).toBe('error');
     expect(h.events).toEqual(['push:loading', 'push:error']);
+  });
+});
+
+describe('补采集最多补几轮（#1013）', () => {
+  test('第二轮才出现的内容被补到', async () => {
+    const h = harness();
+    const src = source(items('a', 5), items('new', 3), items('late', 2), []);
+    const result = await h.orch.togglePage(src.fn, 'en', 'zh-CN');
+    expect(result.status).toBe('translated');
+    expect(h.sent).toEqual([...items('a', 5), ...items('new', 3), ...items('late', 2)].map((it) => it.text));
+    expect(src.collects()).toBe(4);
+  });
+
+  test('到达轮数上限后不再补：剩下的交给观察器', async () => {
+    const h = harness();
+    const rounds = Array.from({ length: RECOLLECT_MAX_ROUNDS + 2 }, (_, i) => items(`r${i}-`, 2));
+    const src = source(items('a', 5), ...rounds);
+    const result = await h.orch.togglePage(src.fn, 'en', 'zh-CN');
+    expect(result.status).toBe('translated');
+    // 首轮一次，补采集封顶 RECOLLECT_MAX_ROUNDS 次
+    expect(src.collects()).toBe(1 + RECOLLECT_MAX_ROUNDS);
+    const expected = [items('a', 5), ...rounds.slice(0, RECOLLECT_MAX_ROUNDS)].flat().map((it) => it.text);
+    expect(h.sent).toEqual(expected);
+    expect(h.sent).not.toContain(`r${RECOLLECT_MAX_ROUNDS}-0`);
+    expect(h.events.filter((e) => e === 'observer:start')).toHaveLength(1);
+  });
+
+  test('某一轮没有新单元就提前结束，后面的轮次不再采集', async () => {
+    const h = harness();
+    const src = source(items('a', 5), items('new', 3), [], items('never', 2));
+    const result = await h.orch.togglePage(src.fn, 'en', 'zh-CN');
+    expect(result.status).toBe('translated');
+    expect(src.collects()).toBe(3);
+    expect(h.sent).not.toContain('never0');
+  });
+
+  test('轮与轮之间等一个间隔：第一轮紧接首轮，之后每轮先等再采集', async () => {
+    const order: string[] = [];
+    const h = harness({
+      sleep: async (ms: number) => {
+        order.push(`sleep:${ms}`);
+      },
+    });
+    const src = source(items('a', 5), items('new', 3), items('late', 2), []);
+    const fn = vi.fn((mode?: { readOnly: boolean }) => {
+      if (!mode?.readOnly) order.push('collect');
+      return src.fn(mode);
+    });
+    await h.orch.togglePage(fn, 'en', 'zh-CN');
+    expect(order).toEqual([
+      'collect',
+      'collect',
+      `sleep:${RECOLLECT_INTERVAL_MS}`,
+      'collect',
+      `sleep:${RECOLLECT_INTERVAL_MS}`,
+      'collect',
+    ]);
+  });
+
+  test('没有新内容的页面不多等：补采集第一轮为空时一次间隔都不等', async () => {
+    const sleeps: number[] = [];
+    const h = harness({
+      sleep: async (ms: number) => {
+        sleeps.push(ms);
+      },
+    });
+    const src = source(items('a', 5), []);
+    await h.orch.togglePage(src.fn, 'en', 'zh-CN');
+    expect(sleeps).not.toContain(RECOLLECT_INTERVAL_MS);
+  });
+
+  test('轮间等待期间点还原：下一轮不再采集、不再发出，这一次报中止', async () => {
+    let wake!: () => void;
+    const h = harness({
+      sleep: (ms: number) =>
+        ms === RECOLLECT_INTERVAL_MS ? new Promise<void>((r) => (wake = r)) : Promise.resolve(),
+    });
+    const src = source(items('a', 5), items('new', 3), items('late', 2));
+    const pending = h.orch.togglePage(src.fn, 'en', 'zh-CN');
+    for (let i = 0; i < 20 && !wake; i++) await flush();
+    expect(src.collects()).toBe(2);
+    const restored = await h.orch.togglePage(src.fn, 'en', 'zh-CN');
+    expect(restored.status).toBe('restored');
+    wake();
+    const result = await pending;
+    expect(result.status).toBe('aborted');
+    expect(src.collects()).toBe(2);
+    expect(h.sent).not.toContain('late0');
+    expect(h.events).not.toContain('observer:start');
+  });
+
+  test('控制台记下每轮补了多少', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      const h = harness();
+      const src = source(items('a', 5), items('new', 3), items('late', 2), []);
+      await h.orch.togglePage(src.fn, 'en', 'zh-CN');
+      const lines = info.mock.calls.map((c) => String(c[0]));
+      expect(lines.some((l) => l.includes('第 1 轮') && l.includes('3'))).toBe(true);
+      expect(lines.some((l) => l.includes('第 2 轮') && l.includes('2'))).toBe(true);
+    } finally {
+      info.mockRestore();
+    }
   });
 });
