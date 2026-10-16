@@ -83,7 +83,11 @@ export function createInputTranslator(deps: InputTranslatorDeps): (el: TextInput
       return;
     }
     // #642：译文不进翻译缓存，也不读它
-    const result = await deps.translateText(snapshot, 'auto', target.lang, { noCache: true });
+    // #1044：与页面的翻译态无关 —— 点悬浮球还原整页不取消、不作废这一条
+    const result = await deps.translateText(snapshot, 'auto', target.lang, {
+      noCache: true,
+      keepOnRestore: true,
+    });
 
     // 准入拦截：与逐段 / 划词翻译一致的提示，零请求
     if (result.admission === 'blocked') {

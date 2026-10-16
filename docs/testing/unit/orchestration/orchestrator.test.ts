@@ -404,11 +404,15 @@ describe('单文本翻译入口（#312）', () => {
 
     expect(result.ok).toBe(true);
     expect(result.translation).toBe('  你好，世界！  ');
-    expect(send).toHaveBeenCalledWith({
-      texts: ['Hello, World!'],
-      from: 'en',
-      to: 'zh-CN',
-    });
+    // #1044：第二个参数是放弃时通知后台中止的信号
+    expect(send).toHaveBeenCalledWith(
+      {
+        texts: ['Hello, World!'],
+        from: 'en',
+        to: 'zh-CN',
+      },
+      { signal: expect.any(AbortSignal) },
+    );
     orch.stop();
   });
 

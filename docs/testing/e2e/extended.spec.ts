@@ -2603,3 +2603,113 @@ test.describe('补采集到顶之后进 DOM 的内容由观察器那条路接上
     await expect(page.locator('[data-pt]')).toHaveCount(0);
   });
 });
+
+test.describe('单文本入口放弃时后台中止（#1044） @extended', () => {
+  /** 经 SW 向页面发整页开关，不经悬浮球 —— 不挪走输入框的焦点 */
+  async function togglePage(sw: import('@playwright/test').Worker) {
+    return sw.evaluate(async () => {
+      for (const tab of await chrome.tabs.query({})) {
+        try {
+          const r = await chrome.tabs.sendMessage(tab.id!, { type: 'pt:toggle-translate' });
+          if (r) return (r as { status?: string }).status;
+        } catch {
+          // 扩展页等没有 content script 的标签页
+        }
+      }
+      return null;
+    });
+  }
+
+  test('TC-E2E-218: 逐段翻译在飞时点还原整页 —— 这一段的引擎请求被取消，不是翻完再丢', async ({
+    page, mockGoogle, mockRequests, gotoFixture, seedSettings,
+  }) => {
+    await seedSettings({ showParagraphBtn: true });
+    await mockGoogle();
+    await gotoFixture('basic');
+    const ball = await waitForBall(page);
+    const paraBtn = page.locator('#pt-host-para-btn .pt-para-btn');
+    const first = page.locator('body > p').nth(0);
+    const second = page.locator('body > p').nth(1);
+
+    // 先逐段翻好一段，页面才有可还原的译文
+    await first.hover();
+    await paraBtn.click();
+    await expect(first).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
+
+    // 换成慢替身（每请求 5 秒），再逐段翻第二段：请求进到替身的延迟里
+    await mockGoogle({ delayMs: 5_000 });
+    const requests = await mockRequests();
+    await second.hover();
+    await paraBtn.click();
+    await expect.poll(async () => (await requests()).google, { timeout: 10_000 }).toBe(1);
+
+    // 点悬浮球还原整页：在飞的这一段在 5 秒延迟走完之前被取消
+    await ball.click();
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0, { timeout: 5_000 });
+    await expect.poll(async () => (await requests()).googleAborted, { timeout: 3_000 }).toBe(1);
+    await page.waitForTimeout(5_500);
+    expect(await requests()).toMatchObject({ google: 1, googleAborted: 1 });
+    await expect(second.locator('.pt-trans')).toHaveCount(0);
+  });
+
+  test('TC-E2E-219: 输入翻译在飞时还原整页 —— 不取消，照常翻完写回（输入翻译与页面翻译态无关）', async ({
+    page, serviceWorker, mockGoogle, mockRequests, gotoFixture, seedSettings,
+  }) => {
+    await seedSettings({ from: 'en' });
+    await mockGoogle();
+    await gotoFixture('input');
+    await waitForBall(page);
+    expect(await togglePage(serviceWorker)).toBe('translated');
+    await expect(page.locator('#intro')).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
+
+    await mockGoogle({ delayMs: 3_000 });
+    const requests = await mockRequests();
+    const box = page.locator('#reply');
+    await box.click();
+    await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
+    await expect(box).toHaveValue('你好世界'); // cjk-ok: 用例输入的文字
+    // 圆点停手后才挪到文字末尾（#670，#1048）：挪到位再点
+    const dot = page.locator('#pt-host-input-dot .pt-input-dot');
+    const field = (await box.boundingBox())!;
+    await expect
+      .poll(async () => (await dot.boundingBox())?.x ?? Infinity)
+      .toBeLessThan(field.x + field.width / 2);
+    await dot.click();
+    await expect.poll(async () => (await requests()).google, { timeout: 10_000 }).toBe(1);
+
+    // 输入翻译在飞时还原整页：页面回到原文，这一条照常翻完、写回框里
+    expect(await togglePage(serviceWorker)).toBe('restored');
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0, { timeout: 5_000 });
+    await expect(box).toHaveValue('【译】你好世界', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
+    expect(await requests()).toMatchObject({ google: 1, googleAborted: 0 });
+  });
+
+  test('TC-E2E-220: 划词翻译在飞时又划了一段 —— 前一段的引擎请求被取消，提示显示后一段的译文', async ({
+    page, serviceWorker, mockGoogle, mockRequests, gotoFixture, seedSettings,
+  }) => {
+    await seedSettings({});
+    await mockGoogle({ delayMs: 3_000 });
+    await gotoFixture('basic');
+    await waitForBall(page);
+    const requests = await mockRequests();
+    const select = (text: string) =>
+      serviceWorker.evaluate(async (t: string) => {
+        for (const tab of await chrome.tabs.query({})) {
+          try {
+            await chrome.tabs.sendMessage(tab.id!, { type: 'pt:translate-selection', text: t });
+          } catch {
+            // 扩展页等没有 content script 的标签页
+          }
+        }
+      }, text);
+
+    await select('The first selection that will be superseded.');
+    await expect.poll(async () => (await requests()).google, { timeout: 10_000 }).toBe(1);
+    await select('The second selection that the user actually wants.');
+    await expect.poll(async () => (await requests()).googleAborted, { timeout: 3_000 }).toBe(1);
+    await expect(page.locator('#pt-host-toast .pt-toast')).toContainText('【译】The second selection', { // cjk-ok: 替身回显的译文前缀
+      timeout: 10_000,
+    });
+    expect(await requests()).toMatchObject({ google: 2, googleAborted: 1 });
+  });
+});
