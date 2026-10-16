@@ -15,8 +15,16 @@ import { toast, toastPending } from './toast';
 import { tf } from '../i18n';
 
 export interface SelectionTranslatorDeps {
-  /** 编排模块的单文本入口（#315）。 */
-  translateText(text: string, from: string, to: string): Promise<SingleTextResult>;
+  /**
+   * 编排模块的单文本入口（#315）。#1044：signal 在这一轮被后发的一轮顶掉时
+   * 触发，编排模块据此通知后台中止。
+   */
+  translateText(
+    text: string,
+    from: string,
+    to: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<SingleTextResult>;
   /** 发起时读当前设置的源语言与目标语言。 */
   getLangs(): { from: string; to: string };
   /** 子 frame 不弹站点禁用提示。 */
@@ -31,11 +39,18 @@ export function createSelectionTranslator(
   // 的，说明期间又发起了一轮，这一轮整条丢弃 —— 与编排模块“还原后旧结果
   // 不落地”同一个思路
   let latest = 0;
+  // #1044：最新一轮的放弃句柄。后发一轮顶掉它时，它的结果反正整条丢弃 ——
+  // 还在飞的话通知后台中止，不翻完再丢。提示被关掉不算放弃：等待态没有关闭
+  // 按钮，能关的只有已经出来的译文，那时请求早已结束
+  let abandonLatest: AbortController | null = null;
 
   return async function translateSelection(text: string): Promise<void> {
     // 跨行划词时选区文本天然带 \n，入口归一化
     text = normalizeText(text);
     const seq = ++latest;
+    abandonLatest?.abort();
+    const abandon = new AbortController();
+    abandonLatest = abandon;
 
     // #746：点下去立即显示等待态，它自己不消失，由译文或失败替换。准入
     // 拦截不提示、出错等没有提示接替它的退出路径，收尾时收掉
@@ -44,7 +59,7 @@ export function createSelectionTranslator(
       // #315: 划词翻译走编排模块的单文本入口 —— 与逐段翻译共用
       // 同一份准入判定与失败提示语义，不再直连消息通道
       const { from, to } = deps.getLangs();
-      const result = await deps.translateText(text, from, to);
+      const result = await deps.translateText(text, from, to, { signal: abandon.signal });
       // 被丢弃的那一轮不替换等待态、不弹提示：此刻页面上的等待态（或译文）
       // 属于后发那一轮
       if (seq !== latest) return;

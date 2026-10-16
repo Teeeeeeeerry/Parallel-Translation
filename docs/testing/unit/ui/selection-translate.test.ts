@@ -505,3 +505,33 @@ describe('状态类不受影响（#749）', () => {
     expect(toasts()).toHaveLength(0);
   });
 });
+
+describe('后发一轮顶掉先发的一轮时通知中止（#1044）', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  test('第二次划词发起时，第一次的放弃信号触发；第二次自己的信号不触发', async () => {
+    const signals: AbortSignal[] = [];
+    const releases: ((r: SingleTextResult) => void)[] = [];
+    const translate = createSelectionTranslator({
+      translateText: (_t, _f, _to, opts) =>
+        new Promise<SingleTextResult>((r) => {
+          signals.push(opts!.signal!);
+          releases.push(r);
+        }),
+      getLangs: () => ({ from: 'en', to: 'zh-CN' }),
+      isMainFrame: true,
+    });
+    const first = translate('first');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(signals[0]!.aborted).toBe(false);
+    const second = translate('second');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(signals[0]!.aborted).toBe(true);
+    expect(signals[1]!.aborted).toBe(false);
+    releases[0]!({ admission: 'allowed', ok: false, category: 'aborted' });
+    releases[1]!({ admission: 'allowed', ok: true, translation: 'T(second)' });
+    await settle(Promise.all([first, second]).then(() => {}));
+    expect(signals[1]!.aborted).toBe(false);
+  });
+});

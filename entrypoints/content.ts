@@ -291,7 +291,7 @@ export default defineContentScript({
 
     // 划词翻译入口：拖选划词与右键菜单都走这里
     const translateSelection = createSelectionTranslator({
-      translateText: (text, from, to) => orchestrator.translateText(text, from, to),
+      translateText: (text, from, to, opts) => orchestrator.translateText(text, from, to, opts),
       getLangs: () => {
         const ns = getSettings();
         return { from: ns.from, to: ns.to };

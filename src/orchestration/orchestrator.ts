@@ -224,6 +224,17 @@ export interface SingleTextOptions {
    * 句子几乎不会重复，缓存只会挤占阅读侧的额度；逐段翻译与划词翻译不声明。
    */
   noCache?: boolean;
+  /**
+   * 不跟着页面还原放弃（#1044）。输入翻译声明为 true —— 用户在输入框里点的
+   * 翻译与页面的翻译态无关，点悬浮球还原整页时它照常翻完、照常写回；逐段与
+   * 划词不声明，还原时在飞的那一条作废，并通知后台中止。
+   */
+  keepOnRestore?: boolean;
+  /**
+   * 调用方自己的放弃信号（#1044）：划词又发起了新一轮，旧一轮的结果整条丢弃，
+   * 由它通知后台中止。触发后这一次报 aborted。
+   */
+  signal?: AbortSignal;
 }
 
 /** 整页开关入口的结果（#325）。 */
@@ -884,16 +895,34 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // 划词翻译同样携带当前领域，术语译法与全页翻译一致（#383/#384）
       const epochAtStart = epoch;
       const domainId = currentDomainIdFrom(opts, to);
-      const result = (await opts.send({
-        texts: [text],
-        from,
-        to,
-        ...(domainId !== undefined && { domainId }),
-        ...(textOpts?.noCache && { noCache: true }),
-      })) as TranslateBatchResult;
+      // #1044：这一条被放弃时通知后台中止，与整页批次同一条路（#1001）——
+      // 中止信号交给消息层，消息层把这次发送的批次身份发给后台。放弃有两种：
+      // 页面还原（纪元递增，keepOnRestore 的不算）与调用方自己的信号
+      if (textOpts?.signal?.aborted) return { admission, ok: false, category: 'aborted' };
+      const followsRestore = !textOpts?.keepOnRestore;
+      const abandon = new AbortController();
+      const onAbandon = () => abandon.abort();
+      if (followsRestore) onEpochBump.add(onAbandon);
+      textOpts?.signal?.addEventListener('abort', onAbandon);
+      let result: TranslateBatchResult;
+      try {
+        result = (await opts.send(
+          {
+            texts: [text],
+            from,
+            to,
+            ...(domainId !== undefined && { domainId }),
+            ...(textOpts?.noCache && { noCache: true }),
+          },
+          { signal: abandon.signal },
+        )) as TranslateBatchResult;
+      } finally {
+        onEpochBump.delete(onAbandon);
+        textOpts?.signal?.removeEventListener('abort', onAbandon);
+      }
 
-      // 在飞期间被中止（还原递增纪元）—— 不返回译文
-      if (epoch !== epochAtStart) {
+      // 在飞期间被放弃（还原递增纪元、调用方中止）—— 不返回译文
+      if ((followsRestore && epoch !== epochAtStart) || textOpts?.signal?.aborted) {
         return { admission, ok: false, category: 'aborted' };
       }
 
