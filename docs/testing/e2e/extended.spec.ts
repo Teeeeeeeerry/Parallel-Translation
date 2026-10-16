@@ -2351,3 +2351,42 @@ test.describe('维基成绩表形态：大量极短表格格子 @extended', () =
     await expect(page.locator('#pt-host-toast .pt-toast[data-kind="error"]')).toHaveCount(0);
   });
 });
+
+test.describe('翻译在飞期间插入的内容由补采集补上 @extended', () => {
+  test('TC-E2E-211: 整页翻译开始后、结束前往页面里插入段落 —— 插进来的段落最后有译文，原有段落的译文没有第二份（#1014，父 #1003）', async ({
+    page, mockGoogle, gotoFixture,
+  }) => {
+    // 替身每请求慢 1.5 秒，把“采集已做完、观察器还没启动”的窗口拉开。插入由
+    // 用例在悬浮球进入进行中之后直接做，不靠滚动触发：进行中态是在首轮采集之后
+    // 才推的，这时插入的段落一定不在首轮采集结果里
+    await mockGoogle({ delayMs: 1500 });
+    await gotoFixture('basic');
+    const originals = page.locator('body > p');
+    const originalCount = await originals.count();
+
+    const ball = await waitForBall(page);
+    await ball.click();
+    await expect(ball).toHaveAttribute('data-state', 'loading');
+    await page.evaluate(() => {
+      for (const id of ['late-1', 'late-2']) {
+        const p = document.createElement('p');
+        p.id = id;
+        p.textContent = `A paragraph inserted while the page translation was still in flight (${id}).`;
+        document.body.append(p);
+      }
+    });
+    expect(await page.locator('#late-1 .pt-trans').count()).toBe(0);
+
+    await expect(ball).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
+    for (const id of ['late-1', 'late-2']) {
+      await expect(page.locator(`#${id}`)).toHaveAttribute('data-pt', 'done');
+      await expect(page.locator(`#${id} .pt-trans`)).toHaveCount(1);
+      await expect(page.locator(`#${id} .pt-trans`)).toHaveText(/^【译】/); // cjk-ok: 替身回显的译文前缀
+    }
+    // 原有段落：每段恰好一份译文，补采集没有把它们再送一遍
+    const transPerOriginal = await originals.evaluateAll((ps) =>
+      ps.filter((p) => !p.id.startsWith('late-')).map((p) => p.querySelectorAll('.pt-trans').length),
+    );
+    expect(transPerOriginal).toEqual(Array(originalCount).fill(1));
+  });
+});
