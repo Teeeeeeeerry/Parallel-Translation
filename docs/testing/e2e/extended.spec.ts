@@ -2516,3 +2516,17 @@ test.describe('还原时后台在飞的批次被中止 @extended', () => {
     await expect(page.locator('[data-pt="done"]')).toHaveCount(0);
   });
 });
+
+test.describe('用例起始状态没有首装欢迎页 @extended', () => {
+  test('TC-E2E-215: 用例开头既看不到欢迎页，浏览器里也没有还没挂上的标签页（#1035）', async ({
+    page, serviceWorker, seedSettings,
+  }) => {
+    await seedSettings({});
+    const pages = page.context().pages().map((p) => p.url());
+    expect(pages.filter((u) => u.endsWith('/welcome.html')), `开头的页面 ${JSON.stringify(pages)}`).toEqual([]);
+    // 欢迎页由 chrome.tabs.create 异步建出：Playwright 还没收到它的 page 事件时，
+    // 浏览器里已经有这张标签页了。以扩展自己看到的标签页数为准，二者必须相等
+    const tabCount = await serviceWorker.evaluate(async () => (await chrome.tabs.query({})).length);
+    expect(tabCount, `浏览器标签页数，页面列表 ${JSON.stringify(pages)}`).toBe(pages.length);
+  });
+});

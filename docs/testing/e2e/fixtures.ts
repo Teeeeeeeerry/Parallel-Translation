@@ -190,6 +190,15 @@ export const test = base.extend<
         ],
       });
 
+      // #1035：首装时 background 的 onInstalled 用 chrome.tabs.create 打开欢迎页，
+      // 这一步是异步的 —— launchPersistentContext 返回时它多半还没建出来，直接扫
+      // pages() 一张都关不掉，用例就带着它跑。所以先等到欢迎页本身（已在列表里，
+      // 或等它的 page 事件），再由下面的循环关掉扩展页。每个用例的 profile 都是
+      // 清空的，必然是首装，等不到就是首装流程变了，直接报错而不是静默跳过
+      const isWelcome = (p: Page) => p.url().endsWith('/welcome.html');
+      if (!context.pages().some(isWelcome)) {
+        await context.waitForEvent('page', { predicate: isWelcome, timeout: 10_000 });
+      }
       for (const p of context.pages()) {
         if (p.url().startsWith('chrome-extension://')) {
           await p.close().catch(() => {});
