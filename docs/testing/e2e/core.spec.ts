@@ -4783,7 +4783,18 @@ test.describe('输入翻译：iframe 里的输入框（#672）', () => {
     const box = frame.locator('#child');
     await box.click();
     await page.keyboard.type('谢谢你'); // cjk-ok: 用例输入的文字
-    await frame.locator(DOT).click();
+    // #1034：字确实进了框。CI 上见过打完字框还是空的，圆点因此一直不显示；
+    // 在这里断言，失败时报的是“字没进框”，而不是去点一个不会出现的圆点
+    await expect(box).toHaveValue('谢谢你'); // cjk-ok: 用例输入的文字
+    // #1034：打字时圆点先放在回落位置（框内侧右下角），停手 SHOW_DELAY 后才挪到
+    // 文字末尾旁边（#670）。点击赶上这一挪，按下与抬起落在不同元素上，click 不
+    // 触发，框里一直是原文。等它挪到文字末尾（短文本在框的左半边）再点
+    const dot = frame.locator(DOT);
+    const field = (await box.boundingBox())!;
+    await expect
+      .poll(async () => (await dot.boundingBox())?.x ?? Infinity, { message: '圆点挪到文字末尾旁边' }) // cjk-ok: 断言说明，不是界面文案
+      .toBeLessThan(field.x + field.width / 2);
+    await dot.click();
     await expect(box).toHaveValue('【译】谢谢你 [tl=en]', { timeout: 10_000 }); // cjk-ok: 替身回显的译文
   }
 
