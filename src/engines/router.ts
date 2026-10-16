@@ -87,6 +87,8 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
   for (const id of enginePriority) {
     const engine = REGISTRY[id];
     if (!engine) continue;
+    // #1001：content 放弃了这一批 —— 不再换下一个引擎、不再发请求
+    if (req.signal?.aborted) throw abortedByCaller();
 
     // #175: BYOK 引擎的模型名参与缓存 key —— 切换模型后不命中旧译文
     const model = getSettings().models?.[id] ?? DEFAULT_MODELS[id] ?? '';
@@ -154,6 +156,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
         from: req.from,
         to: req.to,
         ...(batchTerms.length > 0 && { terms: batchTerms }),
+        ...(req.signal && { signal: req.signal }),
       };
       const resp = await engine.translate(subReq);
 
@@ -196,6 +199,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
             texts: corrupted.map((j) => uncached[j]!.text),
             from: req.from,
             to: req.to,
+            ...(req.signal && { signal: req.signal }),
           });
           retried = corrupted.map((_, k) =>
             retry.failedIndices?.includes(k) ? undefined : (retry.translations[k] ?? undefined),
@@ -291,4 +295,9 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
   // #237: 聚合失败显式构造类型化结果（瞬时、可重试）—— 不再抛裸普通
   // Error，消除「普通 Error 即隐式可重试」的启发式
   throw new AllEnginesFailedError(summary, errors);
+}
+
+/** content 放弃了这一批（#1001）：已中止，不算失败。 */
+function abortedByCaller(): EngineError {
+  return new EngineError('router', false, '已中止', 'aborted', false, true);
 }

@@ -71,6 +71,7 @@ export type FixtureName = (typeof FIXTURES)[number];
 interface MockStats {
   totalServed: number;
   queries: string[];
+  googleAborted: number;
   bingServed: number;
   chatServed: Record<string, number>;
 }
@@ -78,6 +79,8 @@ interface MockStats {
 /** mockRequests 读到的增量：各端点请求数与发给 Google 的原文（#766） */
 export interface MockRequests {
   google: number;
+  /** Google 请求在替身延迟期间被中止的次数（#1001） */
+  googleAborted: number;
   bing: number;
   /** 键是对话式端点 URL */
   chat: Record<string, number>;
@@ -333,6 +336,7 @@ export const test = base.extend<
         for (const [url, n] of Object.entries(stats.chatServed)) chat[url] = n - (base.chatServed[url] ?? 0);
         return {
           google: stats.totalServed - base.totalServed,
+          googleAborted: stats.googleAborted - base.googleAborted,
           bing: stats.bingServed - base.bingServed,
           chat,
           queries: stats.queries.slice(base.queries.length),

@@ -64,7 +64,11 @@ export interface TranslateItem<TCtx> {
 }
 
 /** 消息发送回调 —— 注入假消息层即可单测，模块不直接触碰 chrome。 */
-export type SendTranslate = (req: TranslateRequest) => Promise<unknown>;
+/**
+ * 消息发送层。#1001：第二个参数带一个中止信号，编排模块放弃这一批（还原、
+ * 失效短路）时触发，发送层据此通知后台中止对应的引擎调用。
+ */
+export type SendTranslate = (req: TranslateRequest, ctl?: { signal: AbortSignal }) => Promise<unknown>;
 
 /** 单批发送结果（#256）：渲染层按批消费，批次间不互相等待。 */
 export interface TranslateBatchResult {
@@ -426,6 +430,12 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   // #262: 还原纪元在模块内 —— abort() 递增，在飞翻译据此放弃
   // 尝试、重试与渲染；新翻译快照新纪元，不受旧批次干扰
   let epoch = 0;
+  // #1001：纪元递增（还原）时要通知的在飞整页翻译 —— 各自中止自己发出的批次。
+  // 只是通知，纪元本身的判定（isAborted、闸门放行）一行没动
+  const onEpochBump = new Set<() => void>();
+  const abandonInFlight = (): void => {
+    for (const f of [...onEpochBump]) f();
+  };
   // #326: 整页开关入口在飞互斥 —— 在飞期间页面尚无译文时忽略新触发
   let toggleInFlight = false;
   // #1007: content 侧在飞批次闸门 —— 同时在飞的批次不超过并发数设置。原先所有
@@ -548,6 +558,11 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       invalidated || epoch !== epochAtStart;
     // #1007: 某一批的响应已是失效（见闸门里的放行判定）
     let invalidationSeen = false;
+    // #1001：这一次整页翻译放弃了（还原、失效短路）—— 在飞的批次通知后台中止，
+    // 不翻完再丢。结果照旧按 isAborted 记账
+    const abandon = new AbortController();
+    const onBump = () => abandon.abort();
+    onEpochBump.add(onBump);
 
     await Promise.all(
       batches.map(async (batch, i) => {
@@ -560,16 +575,23 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
           () =>
             sendGate(async (): Promise<TranslateBatchResult> => {
               if (isAborted() || invalidationSeen) return { ok: false, aborted: true };
-              const resp = (await opts.send({
-                texts: batch.map((item) => item.text),
-                from,
-                to,
-                ...(domainId !== undefined && { domainId }),
-              })) as TranslateBatchResult;
+              const resp = (await opts.send(
+                {
+                  texts: batch.map((item) => item.text),
+                  from,
+                  to,
+                  ...(domainId !== undefined && { domainId }),
+                },
+                { signal: abandon.signal },
+              )) as TranslateBatchResult;
               // 失效要在让出名额之前记下：名额一让出，队首的批次在同一轮里就被
               // 放行，等这一批的记账（下面的 invalidated = true）走到，它已经发出去了。
               // 单独一个标志只拦排队的批次，不改这一批自己的结果（它仍报失效）
-              if (resp?.invalidated) invalidationSeen = true;
+              if (resp?.invalidated) {
+                invalidationSeen = true;
+                // #1001：别的在飞批次的结果反正要作废，通知后台中止它们
+                abandon.abort();
+              }
               return resp;
             }),
           {
@@ -625,6 +647,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       }),
     );
 
+    onEpochBump.delete(onBump);
     // #157: 还原恰在最后一批与返回之间发生 —— 也报 aborted
     if (isAborted()) aborted = true;
 
@@ -701,6 +724,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
 
     abort(): void {
       epoch++;
+      abandonInFlight();
     },
 
     async translatePage(items, from, to): Promise<PageTranslateSummary> {
@@ -730,6 +754,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       if (opts.hasTranslated?.()) {
         // #326: 还原中止在飞批次（epoch 递增，在飞翻译放弃重试与渲染）
         epoch++;
+        // #1001：在飞的批次通知后台中止，不翻完再丢
+        abandonInFlight();
         opts.restore?.();
         // #327: 还原后推送空闲态（不是错误）
         pushVisual('idle');

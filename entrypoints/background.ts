@@ -12,6 +12,7 @@ import { getKey, setKey, removeKey } from '~/src/storage/keys';
 import { settingsReady, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import { route } from '~/src/engines/router';
 import { EngineError } from '~/src/engines/types';
+import { createInFlightTable, inFlightKey } from '~/src/runtime/inflight';
 import { ensureE2EMock, applyE2EMock, getE2EMockStats } from '~/src/engines/e2e-mock';
 import { initContextMenu } from '~/src/ui/context-menu';
 import { claimShow, markFreshInstall } from '~/src/changelog/claim';
@@ -206,16 +207,32 @@ export default defineBackground(() => {
     }
   });
 
+  // #1001：在飞表 —— content 放弃一批时凭批次身份中止对应的引擎调用。只在
+  // 实例内存里，实例被回收就清空，查不到就当没有可中止的（见 inflight.ts）
+  const inFlight = createInFlightTable();
+
+  // #1001：content 放弃的批次。发出去就算数 —— 不回复，content 也不等
+  chrome.runtime.onMessage.addListener((msg, sender) => {
+    if (msg?.type !== 'pt:cancel-batches') return;
+    for (const id of Array.isArray(msg.ids) ? msg.ids : []) {
+      if (typeof id === 'string') inFlight.cancel(inFlightKey(sender.tab?.id, sender.frameId, id));
+    }
+  });
+
   // 翻译代理
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg?.type !== 'pt:translate') return;
 
+    // #1001：带批次身份的登记进在飞表；批次身份不往引擎传，换成中止信号
+    const { batchId, ...payload } = msg.payload ?? {};
+    const key = typeof batchId === 'string' ? inFlightKey(sender.tab?.id, sender.frameId, batchId) : null;
+    const signal = key ? inFlight.start(key) : undefined;
     try {
       settingsReady()
         // #90：路由前确保 E2E mock 已从 storage 安装 —— SW 实例被替换后，
         // 实例内存里的 stub 消失，此步让 mock 随每次翻译自愈
         .then(() => ensureE2EMock())
-        .then(() => route(msg.payload))
+        .then(() => route(signal ? { ...payload, signal } : payload))
         .then((r) => sendResponse({ ok: true, data: r }))
         .catch((e) => {
           // #263: 纯透传 —— background 不再重算可重试性；引擎产出的
@@ -229,8 +246,12 @@ export default defineBackground(() => {
             invalidated: e instanceof EngineError ? e.invalidated : false,
             aborted: e instanceof EngineError ? e.aborted : false,
           });
+        })
+        .finally(() => {
+          if (key) inFlight.finish(key);
         });
     } catch (e) {
+      if (key) inFlight.finish(key);
       sendResponse({
         ok: false,
         error: e instanceof Error ? e.message : String(e),

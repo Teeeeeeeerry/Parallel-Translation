@@ -20,6 +20,7 @@ async function fetchOne(
   text: string,
   from: string,
   to: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const qs = new URLSearchParams({
     client: 'gtx',
@@ -31,7 +32,7 @@ async function fetchOne(
     q: text,
   });
 
-  const resp = await fetchWithTimeout('google-web', `${ENDPOINT}?${qs}`);
+  const resp = await fetchWithTimeout('google-web', `${ENDPOINT}?${qs}`, { signal });
   if (!resp.ok) {
     // #266: 分类走公共判定 —— 免 key 引擎一律瞬时（可重试）
     const category = classifyStatus('google-web', resp, true);
@@ -59,10 +60,12 @@ export const googleWeb: TranslateEngine = {
   // #386: “不翻译”术语走占位符
   masksNoTranslate: true,
 
-  async translate({ texts, from, to }) {
+  async translate({ texts, from, to, signal }) {
     const results = await Promise.allSettled(
-      texts.map((text) => getGate()(() => fetchOne(text, from, to))),
+      texts.map((text) => getGate()(() => fetchOne(text, from, to, signal))),
     );
+    // #1001：调用方中止了这一批 —— 不按“全部失败”报瞬时故障
+    if (signal?.aborted) throw new EngineError('google-web', false, '已中止', 'aborted', false, true);
 
     const translations: string[] = [];
     const failedIndices: number[] = [];

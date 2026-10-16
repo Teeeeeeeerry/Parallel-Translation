@@ -36,9 +36,10 @@ describe('translateViaBackground — SW 就绪时', () => {
     expect(result).toEqual({ ok: true, data: { translations: ['你好'] } });
     expect(sendMessage).toHaveBeenCalledTimes(2);
     expect(sendMessage).toHaveBeenNthCalledWith(1, { type: 'pt:ping' });
+    // #1001：每次发送带一个批次身份，后台凭它登记在飞表
     expect(sendMessage).toHaveBeenNthCalledWith(2, {
       type: 'pt:translate',
-      payload: PAYLOAD,
+      payload: { ...PAYLOAD, batchId: expect.any(String) },
     });
   });
 });
@@ -305,5 +306,85 @@ describe('translateViaBackground — 失败语义', () => {
     if (!result.ok) {
       expect(result.error).toContain('响应超时');
     }
+  });
+});
+
+describe('放弃的批次通知后台中止（#1001）', () => {
+  const sent = () => sendMessage.mock.calls.map((c) => c[0] as unknown as { type: string; payload?: { batchId?: string }; ids?: string[] });
+
+  test('单次响应超时：把这一次的批次身份发给后台中止；重发用新的身份', async () => {
+    vi.useFakeTimers();
+    let translates = 0;
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return { ok: true };
+      if (m.type === 'pt:cancel-batches') return undefined;
+      // 第一次后台一直没回（还在翻），第二次正常回
+      if (++translates === 1) return new Promise(() => {});
+      return { ok: true, data: { translations: ['你好'] } };
+    });
+    const pending = translateViaBackground(PAYLOAD);
+    await vi.advanceTimersByTimeAsync(31_000);
+    const result = await pending;
+    expect(result.ok).toBe(true);
+
+    const translatesSent = sent().filter((m) => m.type === 'pt:translate');
+    const cancels = sent().filter((m) => m.type === 'pt:cancel-batches');
+    expect(translatesSent).toHaveLength(2);
+    const [first, second] = translatesSent.map((m) => m.payload!.batchId!);
+    expect(first).not.toBe(second);
+    expect(cancels).toEqual([{ type: 'pt:cancel-batches', ids: [first] }]);
+  });
+
+  test('调用方中止（用户点还原）：正在等的那一次发给后台中止，不再多等一轮', async () => {
+    let reply: (v: unknown) => void = () => {};
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return { ok: true };
+      if (m.type === 'pt:cancel-batches') {
+        // 后台中止了引擎调用，这一批的回复是“已中止”
+        reply({ ok: false, error: '已中止', category: 'aborted', aborted: true });
+        return undefined;
+      }
+      return new Promise<unknown>((r) => (reply = r as (v: unknown) => void));
+    });
+    const ctrl = new AbortController();
+    const pending = translateViaBackground(PAYLOAD, { signal: ctrl.signal });
+    await vi.waitFor(() => expect(sent().some((m) => m.type === 'pt:translate')).toBe(true));
+    ctrl.abort();
+    const result = await pending;
+
+    const id = sent().find((m) => m.type === 'pt:translate')!.payload!.batchId!;
+    expect(sent().filter((m) => m.type === 'pt:cancel-batches')).toEqual([{ type: 'pt:cancel-batches', ids: [id] }]);
+    expect(result).toMatchObject({ ok: false, aborted: true });
+  });
+
+  test('中止消息丢了（后台没在听、实例已换）：不报错，照旧等到这一批的回复', async () => {
+    let reply: (v: unknown) => void = () => {};
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return { ok: true };
+      if (m.type === 'pt:cancel-batches') throw new Error('Could not establish connection. Receiving end does not exist.');
+      return new Promise<unknown>((r) => (reply = r as (v: unknown) => void));
+    });
+    const ctrl = new AbortController();
+    const pending = translateViaBackground(PAYLOAD, { signal: ctrl.signal });
+    await vi.waitFor(() => expect(sent().some((m) => m.type === 'pt:translate')).toBe(true));
+    ctrl.abort();
+    // 回落到原来的行为：后台把这一批翻完，回复照常交给调用方（由调用方按纪元丢弃）
+    reply({ ok: true, data: { translations: ['你好'] } });
+    expect(await pending).toEqual({ ok: true, data: { translations: ['你好'] } });
+  });
+
+  test('回复到了之后才中止：不再发中止消息', async () => {
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return { ok: true };
+      return { ok: true, data: { translations: ['你好'] } };
+    });
+    const ctrl = new AbortController();
+    await translateViaBackground(PAYLOAD, { signal: ctrl.signal });
+    ctrl.abort();
+    expect(sent().filter((m) => m.type === 'pt:cancel-batches')).toEqual([]);
   });
 });

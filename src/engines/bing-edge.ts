@@ -33,7 +33,7 @@ export const bingEdge: TranslateEngine = {
   // #387: “不翻译”术语走占位符
   masksNoTranslate: true,
 
-  async translate({ texts, from, to }) {
+  async translate({ texts, from, to, signal }) {
     // #159: 整个请求过闸门，限制并发在飞请求数
     return getGate()(async () => {
       // auto → 空字符串（Bing 不接受 'auto' 字面量）
@@ -52,6 +52,7 @@ export const bingEdge: TranslateEngine = {
         headers: { 'Content-Type': 'application/json' },
         // 请求体是字符串数组，不是 v3 接口的 { Text } 对象
         body: JSON.stringify(texts),
+        signal,
       });
 
       if (!resp.ok) {

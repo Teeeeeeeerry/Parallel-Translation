@@ -2472,3 +2472,41 @@ test.describe('输入翻译圆点：contenteditable 内层段落的行高 @exten
     }).toPass({ timeout: 5_000 });
   });
 });
+
+test.describe('还原时后台在飞的批次被中止 @extended', () => {
+  test('TC-E2E-214: 增量补翻在飞时点还原 —— 引擎侧在飞的请求被取消，不是翻完再丢（#1001）', async ({
+    page, mockGoogle, mockRequests, gotoFixture,
+  }) => {
+    await mockGoogle();
+    await gotoFixture('basic');
+    const ball = await waitForBall(page);
+    await ball.click();
+    await expect(ball).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
+
+    // 换成慢替身（每请求 5 秒），追加 5 段 → 观察器的增量补翻发出一批，Google 一段一个请求
+    await mockGoogle({ delayMs: 5_000 });
+    const requests = await mockRequests();
+    await page.evaluate(() => {
+      for (let i = 1; i <= 5; i++) {
+        const p = document.createElement('p');
+        p.className = 'late';
+        p.textContent = `Paragraph ${i} appended after the page was translated.`;
+        document.body.appendChild(p);
+      }
+    });
+    // 5 个请求都已到了引擎侧、正在替身的延迟里
+    await expect.poll(async () => (await requests()).google, { timeout: 10_000 }).toBe(5);
+
+    // 用户点还原
+    await ball.click();
+    await expect(ball).toHaveAttribute('data-state', 'idle', { timeout: 10_000 });
+    // 引擎侧收到中止：5 个在飞的请求都在 5 秒延迟走完之前被取消
+    await expect.poll(async () => (await requests()).googleAborted, { timeout: 3_000 }).toBe(5);
+
+    // 过了替身延迟：没有任何一段被翻出来，也没有新的请求
+    await page.waitForTimeout(5_500);
+    const after = await requests();
+    expect(after).toMatchObject({ google: 5, googleAborted: 5 });
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0);
+  });
+});

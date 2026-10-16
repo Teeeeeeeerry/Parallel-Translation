@@ -26,8 +26,13 @@ export async function fetchWithTimeout(
   init?: RequestInit,
   timeoutMs: number = FETCH_TIMEOUT_MS,
 ): Promise<Response> {
+  // #1001：调用方的中止信号（content 放弃了这一批）。已经中止就不发请求 ——
+  // 在引擎闸门里排队的请求轮到时走到这里，直接作废
+  const outer = init?.signal ?? undefined;
+  if (outer?.aborted) throw abortedError(engineId);
   const ctrl = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let onOuterAbort: (() => void) | undefined;
   try {
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
@@ -35,12 +40,26 @@ export async function fetchWithTimeout(
         reject(new EngineError(engineId, true, `请求超时（${timeoutMs}ms）`));
       }, timeoutMs);
     });
-    // race 放弃方（fetch 或 timeout）的后续 settle 由 race 内部消化，无未处理拒绝。
+    const cancelled = new Promise<never>((_, reject) => {
+      onOuterAbort = () => {
+        ctrl.abort();
+        reject(abortedError(engineId));
+      };
+      outer?.addEventListener('abort', onOuterAbort, { once: true });
+    });
+    // race 放弃方（fetch、timeout 或 cancelled）的后续 settle 由 race 内部消化，无未处理拒绝。
     return await Promise.race([
       fetch(input, { ...init, signal: ctrl.signal }),
       timeout,
+      cancelled,
     ]);
   } finally {
     clearTimeout(timer);
+    if (onOuterAbort) outer?.removeEventListener('abort', onOuterAbort);
   }
+}
+
+/** 调用方中止（#1001）：不可重试、不算失败，router 不再换下一个引擎。 */
+function abortedError(engineId: string): EngineError {
+  return new EngineError(engineId, false, '已中止', 'aborted', false, true);
 }
