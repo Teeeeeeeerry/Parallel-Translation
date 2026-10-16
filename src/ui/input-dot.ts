@@ -80,7 +80,8 @@ function dotDims(dot: HTMLElement): DotDims {
 function fitLine(dot: HTMLElement, el: HTMLElement, end: TextEnd): DotDims {
   const d = dotDims(dot);
   if (el instanceof HTMLInputElement) return d;
-  const lh = parseFloat(getComputedStyle(el).lineHeight);
+  // #1017：contenteditable 读末尾那一行文字自己的行高，内层段落可能比宿主紧
+  const lh = end.lineHeight ?? parseFloat(getComputedStyle(el).lineHeight);
   const cap = Math.floor(2 * (Number.isFinite(lh) ? lh : end.height) - end.height);
   if (d.size <= cap) return d;
   const size = Math.max(MIN_FIT_SIZE, cap);

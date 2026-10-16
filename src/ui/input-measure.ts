@@ -27,6 +27,12 @@ export interface TextEnd {
   x: number;
   y: number;
   height: number;
+  /**
+   * 末尾那一行文字实际排版用的行高（#1017），只有 contenteditable 给：内层段落
+   * 可以另设行高，宿主的行高不一定是文字的。文本框与单行框里没有内层元素，
+   * 不给，调用方读框自己的行高。
+   */
+  lineHeight?: number;
 }
 
 /** 复制到镜像上的排版样式。宽高与盒模型单独处理。 */
@@ -154,5 +160,19 @@ export function measureEditableEnd(el: HTMLElement): TextEnd | null {
   if (!last) return null;
   const x = getComputedStyle(el).direction === 'rtl' ? last.left : last.right;
   if (!Number.isFinite(x) || !Number.isFinite(last.top)) return null;
-  return { x, y: last.top, height: last.height };
+  return { x, y: last.top, height: last.height, lineHeight: endLineHeight(el) };
+}
+
+/**
+ * 末尾那段文字所在元素的计算行高（#1017）。行高会继承，所以文字的父元素上读到
+ * 的就是它排版用的值：富文本编辑器给内层段落另设的行高、行内元素自己的行高都
+ * 在这里体现。没有文字时读宿主自己的。normal 时为 NaN，由调用方按字形高处理。
+ */
+function endLineHeight(el: HTMLElement): number {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let last: Node | null = null;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (n.textContent?.trim()) last = n;
+  }
+  return parseFloat(getComputedStyle(last?.parentElement ?? el).lineHeight);
 }
