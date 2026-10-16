@@ -45,6 +45,19 @@ describe('attemptBatchWithRetry — 成功路径', () => {
 });
 
 describe('attemptBatchWithRetry — 不可恢复错误（#180 → #263）', () => {
+  test('category=too-large → 立即失败，0 次重试，不等退避（#1026）', async () => {
+    const sleep = vi.fn(async () => {});
+    const send = vi.fn(async () => ({
+      ok: false,
+      error: '所有引擎均失败: bing-edge(HTTP 400)',
+      category: 'too-large' as const,
+    }));
+    const result = await attemptBatchWithRetry(send, { sleep });
+    expect(result.ok).toBe(false);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
   test('category=invalid-key → 立即失败，0 次重试', async () => {
     const send = vi.fn(async () => ({
       ok: false,

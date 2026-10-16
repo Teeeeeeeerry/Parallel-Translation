@@ -22,6 +22,9 @@ const getGate = engineGate();
 
 const TRANS_ENDPOINT = 'https://edge.microsoft.com/translate/translatetext';
 
+/** 超过单次上限时 400 的正文（2026-10-16 实测，text/plain）。 */
+const TOO_LARGE_TEXT = 'Request exceeds the maximum allowed translation size';
+
 export const bingEdge: TranslateEngine = {
   id: 'bing-edge',
   displayName: 'Microsoft',
@@ -52,6 +55,12 @@ export const bingEdge: TranslateEngine = {
       });
 
       if (!resp.ok) {
+        // #1026：超过单次上限（1000 条或 5 万字）回 400，正文是这一句纯文本 ——
+        // 确定性失败，不按瞬时处理。别的 400 不划进来：目标语言非法时同样回 400、
+        // 正文为空，有些 400 是瞬时的
+        if (resp.status === 400 && (await resp.text().catch(() => '')).includes(TOO_LARGE_TEXT)) {
+          throw new EngineError('bing-edge', true, 'HTTP 400 请求过大', 'too-large');
+        }
         // #259: 分类走公共判定 —— 免 key 引擎一律瞬时（可重试）
         const category = classifyStatus('bing-edge', resp, true);
         throw new EngineError('bing-edge', true, `HTTP ${resp.status}`, category);

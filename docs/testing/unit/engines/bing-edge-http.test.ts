@@ -133,4 +133,52 @@ describe('bing-edge HTTP 路径', () => {
       bingEdge.translate({ texts: ['a'], from: 'auto', to: 'zh' }),
     ).rejects.toThrow();
   });
+
+  // #1026：超过单次上限（1000 条或 5 万字）时 translatetext 回 400，正文是纯文本
+  // “Request exceeds the maximum allowed translation size.”（2026-10-16 实测）。同样的
+  // 请求重发多少次都是 400，判成不可重试的“请求过大”；router 照常换下一个引擎，
+  // 别的引擎上限不同
+  test('400 请求过大 → 类别 too-large，不按瞬时故障处理（#1026）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('Request exceeds the maximum allowed translation size.', {
+          status: 400,
+          headers: { 'content-type': 'text/plain; charset=utf-8' },
+        }),
+      ),
+    );
+    const { bingEdge } = await import('~/src/engines/bing-edge');
+    await expect(bingEdge.translate({ texts: ['a'], from: 'auto', to: 'zh-CN' })).rejects.toMatchObject({
+      name: 'EngineError',
+      engineId: 'bing-edge',
+      category: 'too-large',
+      retryable: true,
+    });
+  });
+
+  // 其它 400 不划进去：目标语言非法时同样回 400、正文为空（同日实测），有些 400 是
+  // 瞬时的。判据只认“请求过大”这一句
+  test.each([
+    ['正文为空', ''],
+    ['别的说明', 'The request is invalid.'],
+  ])('其它 400（%s）→ 仍是瞬时故障，行为不变（#1026）', async (_label, body) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 400 })));
+    const { bingEdge } = await import('~/src/engines/bing-edge');
+    await expect(bingEdge.translate({ texts: ['a'], from: 'auto', to: 'zh-CN' })).rejects.toMatchObject({
+      category: 'transient',
+      retryable: true,
+    });
+  });
+
+  test('5xx 带同一句说明也不算请求过大：只认 400（#1026）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('Request exceeds the maximum allowed translation size.', { status: 503 })),
+    );
+    const { bingEdge } = await import('~/src/engines/bing-edge');
+    await expect(bingEdge.translate({ texts: ['a'], from: 'auto', to: 'zh-CN' })).rejects.toMatchObject({
+      category: 'transient',
+    });
+  });
 });
