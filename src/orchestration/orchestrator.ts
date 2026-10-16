@@ -675,22 +675,28 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
    * #1013：补完一轮再查一次，有新的接着补，最多 RECOLLECT_MAX_ROUNDS 轮；某一轮
    * 没有新单元就结束。第一轮紧接首轮，之后每轮先等 RECOLLECT_INTERVAL_MS，给
    * 懒加载留出渲染下一批的时间。到顶之后剩下的交给观察器。
+   *
+   * #1036：返回是否补满了 RECOLLECT_MAX_ROUNDS 轮。补满时最后一轮采集之后、它
+   * 的译文回来之前进 DOM 的内容，补采集不再采、观察器启动前也看不到，由调用方
+   * 在启动观察器的同一刻再采一次接上；提前结束（某轮为空、中止、失效）时没有
+   * 这段窗口。
    */
   const recollect = async (
     source: (mode?: { readOnly: boolean }) => TranslateItem<unknown>[],
     from: string,
     to: string,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const epochAtStart = epoch;
     for (let round = 1; round <= RECOLLECT_MAX_ROUNDS; round++) {
       if (round > 1) await sleepFn(RECOLLECT_INTERVAL_MS);
-      if (epoch !== epochAtStart) return;
+      if (epoch !== epochAtStart) return false;
       const more = source();
-      if (more.length === 0) return;
+      if (more.length === 0) return false;
       console.info(`[PT] 补采集第 ${round} 轮：${more.length} 个新单元`);
       const summary = await translatePageImpl(more, from, to, { admitted: true });
-      if (summary.aborted || summary.invalidated) return;
+      if (summary.aborted || summary.invalidated) return false;
     }
+    return true;
   };
 
   // #327: 状态推送 —— 仅主框架推送（子框架不推送状态、不产生提示，
@@ -835,14 +841,25 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         // 实测）。触发条件与观察器启动一致（只有判为成功才补），页面级闸门与
         // 准入不重判；同一个采集函数，同一条增量补翻的批次流水线
         const epochAtDone = epoch;
-        if (typeof items === 'function') await recollect(items, from, to);
+        const capped = typeof items === 'function' && (await recollect(items, from, to));
         // 补采集期间用户点了还原：还原分支已推空闲态、停了观察器，这里不再推
         // 完成态、不再启动
         if (epoch !== epochAtDone) return { status: 'aborted', admission, summary };
         pushVisual('done');
+        // #1036：补满了轮数时，最后一轮在飞期间进 DOM 的内容两边都不管 —— 在启动
+        // 观察器的同一个同步段里再采一次，交给增量补翻。采集与启动之间没有 await，
+        // 页面脚本插不进来：这一刻之前进 DOM 的由这次采集接住，之后的由观察器接住，
+        // 同一个节点不会两边各翻一次。观察器的启动时机不变，仍在整页翻译成功之后
+        const handoff = capped && typeof items === 'function' ? items() : [];
         // #328: 观察器启停时机 —— 只在整页翻译成功后启动恰好一次；
         // 失败 / 中止（在飞还原）不启动。#1011：补采集结束之后才启动
         opts.onObserverStart?.();
+        if (handoff.length > 0) {
+          console.info(`[PT] 补采集到顶，交给观察器补翻：${handoff.length} 个新单元`);
+          translatePageImpl(handoff, from, to, { admitted: true }).catch((e) =>
+            console.error('[PT] 补采集到顶后的补翻失败:', e),
+          );
+        }
         return { status, admission, summary };
       } finally {
         toggleInFlight = false;
