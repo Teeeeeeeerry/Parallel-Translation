@@ -277,6 +277,31 @@ describe('route', () => {
     }
   });
 
+  test('所有引擎都报请求过大 → 聚合结果的类别是 too-large，批次重试据此不再重发（#1026）', async () => {
+    vi.mocked(getSettings).mockReturnValue({ ...vi.mocked(getSettings)(), enginePriority: ['bing-edge'] });
+    mockBingTranslate.mockRejectedValue(new EngineError('bing-edge', true, 'HTTP 400', 'too-large'));
+    await expect(route({ texts: ['Hello'], from: 'auto', to: 'zh-CN' })).rejects.toMatchObject({
+      name: 'AllEnginesFailedError',
+      category: 'too-large',
+    });
+  });
+
+  test('Bing 请求过大、Google 瞬时失败 → 聚合结果仍是瞬时，照常重试（#1026）', async () => {
+    mockGoogleTranslate.mockRejectedValue(new EngineError('google-web', true, 'HTTP 503', 'transient'));
+    mockBingTranslate.mockRejectedValue(new EngineError('bing-edge', true, 'HTTP 400', 'too-large'));
+    await expect(route({ texts: ['Hello'], from: 'auto', to: 'zh-CN' })).rejects.toMatchObject({
+      category: 'transient',
+    });
+  });
+
+  test('Bing 请求过大时照常换下一个引擎：Google 翻成功就用它的译文（#1026）', async () => {
+    vi.mocked(getSettings).mockReturnValue({ ...vi.mocked(getSettings)(), enginePriority: ['bing-edge', 'google-web'] });
+    mockBingTranslate.mockRejectedValue(new EngineError('bing-edge', true, 'HTTP 400', 'too-large'));
+    mockGoogleTranslate.mockResolvedValue({ translations: ['你好'] });
+    const res = await route({ texts: ['Hello'], from: 'auto', to: 'zh-CN' });
+    expect(res.translations).toEqual(['你好']);
+  });
+
   test('单引擎 non-retryable 失败 → 原样抛出不改写类别（#237）', async () => {
     vi.mocked(getSettings).mockReturnValue({
       ...vi.mocked(getSettings)(),

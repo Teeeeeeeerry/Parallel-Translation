@@ -81,6 +81,11 @@ export type FailureCategory =
   | 'quota'
   /** 瞬时故障（5xx / 超时 / 网络）—— 默认可重试。 */
   | 'transient'
+  /**
+   * 请求超过引擎的单次上限（#1026）—— 确定性失败，同样的请求重发多少次都一样，
+   * 批次重试不再重发。别的引擎上限不同，router 照常换下一个引擎。
+   */
+  | 'too-large'
   /** 已中止（用户还原 / 页面切换）—— 调用方不应记成失败。 */
   | 'aborted';
 
@@ -147,7 +152,10 @@ export class AllEnginesFailedError extends EngineError {
   public readonly engineErrors: readonly EngineError[];
 
   constructor(detail: string, engineErrors: readonly EngineError[] = []) {
-    super('router', true, `所有引擎均失败: ${detail}`, 'transient');
+    // #1026：每个引擎都报请求过大时，整体也是请求过大 —— 重发同一批没有意义；
+    // 只要有一个引擎是别的失败，整体仍按瞬时处理
+    const tooLarge = engineErrors.length > 0 && engineErrors.every((e) => e.category === 'too-large');
+    super('router', true, `所有引擎均失败: ${detail}`, tooLarge ? 'too-large' : 'transient');
     this.name = 'AllEnginesFailedError';
     this.engineErrors = engineErrors;
   }

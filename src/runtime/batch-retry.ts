@@ -153,8 +153,9 @@ export async function attemptBatchWithRetry(
       return { ok: false, invalidated: false, aborted: true, error: lastError };
     }
     // #246/#263: 类型化类别 —— invalid-key / quota 不可恢复，立即失败
-    // （旧字段 retryable 已清理，#180 语义由类别承载）
-    if (resp?.category === 'invalid-key' || resp?.category === 'quota') {
+    // （旧字段 retryable 已清理，#180 语义由类别承载）。#1026：请求过大同理，
+    // 同一批重发还是过大
+    if (resp?.category === 'invalid-key' || resp?.category === 'quota' || resp?.category === 'too-large') {
       return {
         ok: false,
         invalidated: false,
