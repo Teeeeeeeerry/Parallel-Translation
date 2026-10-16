@@ -129,6 +129,9 @@ export const MAX_TEXT = 3072;
 export const MAX_HTML = 4096;
 const MIN_TEXT = 3;
 
+/** 文字里有没有字母（#1002）：Unicode 字母类别，不限拉丁字母。 */
+const HAS_LETTER_RE = /\p{L}/u;
+
 /**
  * 单元子树里元素个数的上限 —— 复杂度的兜底守卫（#733），只拦真正病态的
  * 结构（被整棵塞进一个段落的表格、列表，动辄上千个元素）。送翻量由文字
@@ -184,7 +187,8 @@ export type NonVisualSkip =
   | 'too-short'
   | 'too-long'
   | 'too-complex'
-  | 'numeric';
+  | 'numeric'
+  | 'no-letters';
 
 /** 非可见性相关的所有跳过判定。元素即便变为可见，这些条件也不会改变。 */
 export function shouldSkipNonVisual(el: Element): boolean {
@@ -232,6 +236,11 @@ export function nonVisualSkipReason(el: Element): NonVisualSkip | null {
   // #733：数元素个数，不序列化 DOM
   if (el.getElementsByTagName('*').length > MAX_ELEMENTS) return 'too-complex';
   if (isMainlyNumeric(text)) return 'numeric';
+  // #1002：一个字母都没有的元素（`1996–2009`、`—`、`±0.5`）送去引擎只会原样回来。
+  // 维基成绩表里这类格子占三成。按 Unicode 字母类别判：中日韩、西里尔、阿拉伯文
+  // 都算字母，Ret、DNF 照常是单元。逐段翻译按钮找单元走同一条判定，这些格子上
+  // 不再浮出按钮 —— 接受的取舍
+  if (!HAS_LETTER_RE.test(text)) return 'no-letters';
 
   return null;
 }

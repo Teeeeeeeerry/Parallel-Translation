@@ -3745,11 +3745,6 @@
     ]
    },
    {
-    "path": "p[6]",
-    "text": "!!! ??? ...",
-    "preserves": []
-   },
-   {
     "path": "li[8]",
     "text": "Item label",
     "preserves": []
@@ -3800,7 +3795,7 @@
    "p[5]",
    "p[5]",
    null,
-   "p[6]",
+   null,
    null,
    null,
    null,

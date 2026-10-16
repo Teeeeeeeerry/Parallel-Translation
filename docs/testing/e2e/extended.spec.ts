@@ -2390,3 +2390,29 @@ test.describe('翻译在飞期间插入的内容由补采集补上 @extended', (
     expect(transPerOriginal).toEqual(Array(originalCount).fill(1));
   });
 });
+
+test.describe('逐段翻译：没有字母的单元 @extended', () => {
+  test('TC-E2E-212: 鼠标停在纯数字加连接号的列表项上不浮出按钮，同一列表里带字母的短项照常浮出（#1002，接受的取舍）', async ({
+    page, mockGoogle, seedSettings, gotoFixture,
+  }) => {
+    await seedSettings({ showParagraphBtn: true });
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+    // 成绩表的两种文字：赛季区间（一个字母都没有）与退赛标记（三个字母）。放在列表项里：
+    // 表格格子 td 不在按钮的候选选择器里，本来就不浮按钮，量不出这次改动
+    await page.evaluate(() => {
+      const ul = document.createElement('ul');
+      ul.innerHTML = '<li id="years">1996–2009</li><li id="dnf">DNF</li>';
+      document.body.prepend(ul);
+    });
+
+    const paraBtn = page.locator('.pt-para-btn');
+    await page.locator('#years').hover();
+    await page.waitForTimeout(600);
+    await expect(paraBtn).toBeHidden();
+
+    await page.locator('#dnf').hover();
+    await expect(paraBtn).toBeVisible({ timeout: 5_000 });
+  });
+});
