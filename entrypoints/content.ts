@@ -711,7 +711,8 @@ export default defineContentScript({
 
       if (!result.ok) {
         // #313: 展示决策由编排模块给出 —— key 无效 / 配额展示真实
-        // 原因，瞬时故障展示泛化文案
+        // 原因，瞬时故障展示泛化文案；#1053：被放弃（还原整页）不提示
+        if (result.display?.silent) return;
         if (result.display?.showRealReason && result.error) {
           toast(result.error, { purpose: 'status', kind: 'error' });
         } else {

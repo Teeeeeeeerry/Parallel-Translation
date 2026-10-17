@@ -105,3 +105,46 @@ describe('单文本入口放弃时通知后台中止（#1044）', () => {
     expect(s.signals[0]!.aborted).toBe(false);
   });
 });
+
+describe('放弃不算失败：结果带“不提示”的语义（#1053）', () => {
+  test('在飞时页面还原 → aborted 且 display.silent', async () => {
+    const s = slowSend();
+    const orch = createOrchestrator({ send: s.send });
+    orch.start();
+    const pending = orch.translateText('Hello', 'en', 'zh-CN');
+    await flush();
+    orch.abort();
+    s.release();
+    expect(await pending).toMatchObject({ ok: false, category: 'aborted', display: { silent: true } });
+  });
+
+  test('调用方信号触发（划词被后发一轮顶掉）→ aborted 且 display.silent；发起前已触发的同样', async () => {
+    const s = slowSend();
+    const orch = createOrchestrator({ send: s.send });
+    orch.start();
+    const caller = new AbortController();
+    const pending = orch.translateText('Hello', 'en', 'zh-CN', { signal: caller.signal });
+    await flush();
+    caller.abort();
+    s.release();
+    expect(await pending).toMatchObject({ ok: false, category: 'aborted', display: { silent: true } });
+    expect(await orch.translateText('Hello', 'en', 'zh-CN', { signal: caller.signal })).toMatchObject({
+      ok: false,
+      category: 'aborted',
+      display: { silent: true },
+    });
+  });
+
+  test('判据是类别不是文案：后台报 aborted 时文案换成什么都不提示；瞬时故障照常提示', async () => {
+    const orch = createOrchestrator({
+      send: vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, category: 'aborted', error: 'some other wording' })
+        .mockResolvedValueOnce({ ok: false, category: 'transient', error: '已中止' }),
+    });
+    orch.start();
+    expect((await orch.translateText('a', 'en', 'zh-CN')).display).toEqual({ silent: true, showRealReason: false });
+    // 文案恰好是“已中止”的瞬时故障仍是失败
+    expect((await orch.translateText('b', 'en', 'zh-CN')).display).toEqual({ showRealReason: false });
+  });
+});

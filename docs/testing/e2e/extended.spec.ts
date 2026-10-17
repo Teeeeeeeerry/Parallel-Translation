@@ -2604,22 +2604,35 @@ test.describe('补采集到顶之后进 DOM 的内容由观察器那条路接上
   });
 });
 
-test.describe('单文本入口放弃时后台中止（#1044） @extended', () => {
-  /** 经 SW 向页面发整页开关，不经悬浮球 —— 不挪走输入框的焦点 */
-  async function togglePage(sw: import('@playwright/test').Worker) {
-    return sw.evaluate(async () => {
-      for (const tab of await chrome.tabs.query({})) {
-        try {
-          const r = await chrome.tabs.sendMessage(tab.id!, { type: 'pt:toggle-translate' });
-          if (r) return (r as { status?: string }).status;
-        } catch {
-          // 扩展页等没有 content script 的标签页
-        }
+/** 经 SW 向页面发整页开关，不经悬浮球 —— 不挪走输入框的焦点 */
+async function togglePage(sw: import('@playwright/test').Worker) {
+  return sw.evaluate(async () => {
+    for (const tab of await chrome.tabs.query({})) {
+      try {
+        const r = await chrome.tabs.sendMessage(tab.id!, { type: 'pt:toggle-translate' });
+        if (r) return (r as { status?: string }).status;
+      } catch {
+        // 扩展页等没有 content script 的标签页
       }
-      return null;
-    });
-  }
+    }
+    return null;
+  });
+}
 
+/** 经 SW 向页面发划词翻译（与右键菜单同一条消息） */
+async function selectText(sw: import('@playwright/test').Worker, text: string) {
+  await sw.evaluate(async (t: string) => {
+    for (const tab of await chrome.tabs.query({})) {
+      try {
+        await chrome.tabs.sendMessage(tab.id!, { type: 'pt:translate-selection', text: t });
+      } catch {
+        // 扩展页等没有 content script 的标签页
+      }
+    }
+  }, text);
+}
+
+test.describe('单文本入口放弃时后台中止（#1044） @extended', () => {
   test('TC-E2E-218: 逐段翻译在飞时点还原整页 —— 这一段的引擎请求被取消，不是翻完再丢', async ({
     page, mockGoogle, mockRequests, gotoFixture, seedSettings,
   }) => {
@@ -2711,5 +2724,150 @@ test.describe('单文本入口放弃时后台中止（#1044） @extended', () =>
       timeout: 10_000,
     });
     expect(await requests()).toMatchObject({ google: 2, googleAborted: 1 });
+  });
+});
+
+test.describe('单文本入口被放弃不算失败（#1053） @extended', () => {
+  const TOAST = '#pt-host-toast .pt-toast';
+
+  /**
+   * 页内记下每一条出现过的错误提示。提示只有一个位置，后来的提示会就地顶掉
+   * 前一条 —— 失败提示可能一闪就被还原的状态提示换掉，只在某一刻去看会漏
+   */
+  async function recordErrorToasts(page: Page): Promise<() => Promise<string[]>> {
+    await page.evaluate(() => {
+      const seen: string[] = [];
+      (window as unknown as { __ptErrToasts: string[] }).__ptErrToasts = seen;
+      const watchShadow = (root: ShadowRoot) => {
+        const check = () => {
+          for (const el of root.querySelectorAll<HTMLElement>('.pt-toast[data-kind="error"]')) {
+            if (!el.dataset.ptSeen) {
+              el.dataset.ptSeen = '1';
+              seen.push(el.textContent ?? '');
+            }
+          }
+        };
+        new MutationObserver(check).observe(root, {
+          subtree: true, childList: true, attributes: true, characterData: true,
+        });
+        check();
+      };
+      const host = document.getElementById('pt-host-toast');
+      if (host?.shadowRoot) {
+        watchShadow(host.shadowRoot);
+        return;
+      }
+      const mo = new MutationObserver(() => {
+        const h = document.getElementById('pt-host-toast');
+        if (h?.shadowRoot) {
+          mo.disconnect();
+          watchShadow(h.shadowRoot);
+        }
+      });
+      mo.observe(document.documentElement, { subtree: true, childList: true });
+    });
+    return () => page.evaluate(() => (window as unknown as { __ptErrToasts: string[] }).__ptErrToasts);
+  }
+
+  test('TC-E2E-221: 逐段翻译在飞时点还原整页 —— 页面回到原文，不弹任何错误提示', async ({
+    page, mockGoogle, mockRequests, gotoFixture, seedSettings,
+  }) => {
+    await seedSettings({ showParagraphBtn: true });
+    await mockGoogle();
+    await gotoFixture('basic');
+    const ball = await waitForBall(page);
+    const paraBtn = page.locator('#pt-host-para-btn .pt-para-btn');
+    const first = page.locator('body > p').nth(0);
+    const second = page.locator('body > p').nth(1);
+
+    // 先逐段翻好一段，页面才有可还原的译文
+    await first.hover();
+    await paraBtn.click();
+    await expect(first).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
+
+    // 慢替身（每请求 5 秒）下逐段翻第二段，请求在替身的延迟里时还原整页
+    await mockGoogle({ delayMs: 5_000 });
+    const requests = await mockRequests();
+    const errorToasts = await recordErrorToasts(page);
+    await second.hover();
+    await paraBtn.click();
+    await expect.poll(async () => (await requests()).google, { timeout: 10_000 }).toBe(1);
+    await ball.click();
+    await expect(page.locator('[data-pt="done"]')).toHaveCount(0, { timeout: 5_000 });
+    await expect.poll(async () => (await requests()).googleAborted, { timeout: 3_000 }).toBe(1);
+
+    // 被放弃的这一段在中止那一刻就有了结果；替身的 5 秒延迟走完之后，
+    // 从点按钮起一条错误提示都没出现过
+    await page.waitForTimeout(5_500);
+    expect(await errorToasts()).toEqual([]);
+    await expect(second.locator('.pt-trans')).toHaveCount(0);
+  });
+
+  test('TC-E2E-222: 划词翻译在飞时还原整页 —— 不弹错误提示，“翻译中”的等待态收掉', async ({
+    page, serviceWorker, mockGoogle, mockRequests, gotoFixture, seedSettings,
+  }) => {
+    await seedSettings({});
+    await mockGoogle();
+    await gotoFixture('basic');
+    await waitForBall(page);
+    expect(await togglePage(serviceWorker)).toBe('translated');
+    await expect(page.locator('body > p').first()).toHaveAttribute('data-pt', 'done', { timeout: 10_000 });
+
+    await mockGoogle({ delayMs: 5_000 });
+    const requests = await mockRequests();
+    const errorToasts = await recordErrorToasts(page);
+    await selectText(serviceWorker, 'A selection still waiting for the engine.');
+    await expect.poll(async () => (await requests()).google, { timeout: 10_000 }).toBe(1);
+    await expect(page.locator(`${TOAST}[data-state="pending"]`)).toHaveCount(1);
+
+    expect(await togglePage(serviceWorker)).toBe('restored');
+    await expect.poll(async () => (await requests()).googleAborted, { timeout: 3_000 }).toBe(1);
+    // 等待态不留在页面上，也不换成失败提示
+    await expect(page.locator(TOAST)).toHaveCount(0, { timeout: 3_000 });
+    await page.waitForTimeout(4_500);
+    expect(await errorToasts()).toEqual([]);
+  });
+
+  test('TC-E2E-223: 划词被后发一轮顶掉 —— 前一轮不弹错误提示，提示显示后一轮的译文', async ({
+    page, serviceWorker, mockGoogle, mockRequests, gotoFixture, seedSettings,
+  }) => {
+    await seedSettings({});
+    await mockGoogle({ delayMs: 3_000 });
+    await gotoFixture('basic');
+    await waitForBall(page);
+    const requests = await mockRequests();
+    const errorToasts = await recordErrorToasts(page);
+
+    await selectText(serviceWorker, 'The first selection that will be superseded.');
+    await expect.poll(async () => (await requests()).google, { timeout: 10_000 }).toBe(1);
+    await selectText(serviceWorker, 'The second selection that the user actually wants.');
+    await expect.poll(async () => (await requests()).googleAborted, { timeout: 3_000 }).toBe(1);
+    // 前一轮在被顶掉那一刻就有了结果：从头到后一轮译文出来，一条错误提示都没出现过
+    await expect(page.locator(TOAST)).toContainText('【译】The second selection', { // cjk-ok: 替身回显的译文前缀
+      timeout: 10_000,
+    });
+    expect(await errorToasts()).toEqual([]);
+  });
+
+  test('TC-E2E-224: 引擎真的失败 —— 逐段与划词仍然弹“翻译失败”', async ({ // cjk-ok: 用例标题
+    page, serviceWorker, mockGoogle, gotoFixture, seedSettings,
+  }) => {
+    await seedSettings({ showParagraphBtn: true });
+    await mockGoogle({ fail: true });
+    await gotoFixture('basic');
+    await waitForBall(page);
+    const failText = await serviceWorker.evaluate(() => chrome.i18n.getMessage('toastTranslateFail'));
+    const error = page.locator(`${TOAST}[data-kind="error"]`);
+
+    // 逐段
+    const paraBtn = page.locator('#pt-host-para-btn .pt-para-btn');
+    await page.locator('body > p').nth(0).hover();
+    await paraBtn.click();
+    await expect(error).toHaveText(failText, { timeout: 10_000 });
+    await expect(error).toHaveCount(0, { timeout: 5_000 });
+
+    // 划词
+    await selectText(serviceWorker, 'A selection the engine fails on.');
+    await expect(error).toHaveText(failText, { timeout: 10_000 });
   });
 });
