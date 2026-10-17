@@ -27,6 +27,12 @@
  * #892 之后，取样阶段除了全页样本，还把按文字长度排在最前面的若干个单元
  * 各自送去识别。全页样本仍是第一次调用；单元那几次的个数与每次的文字量
  * 都有上限，同样不随页面变大。
+ *
+ * #1056：译好的单元要像真实渲染那样落上 data-pt="done"。#1013 起整页翻译之后
+ * 还有补采集（最多 3 轮、轮间等 1500 毫秒）：替身不落标记时，每一轮都把全部
+ * 单元当成新单元重采重发，十次 togglePage 白等二十次 1500 毫秒，覆盖率下这条
+ * 用例因此贴到 120 秒上限。量的是点下去到第一个请求，补采集不在量的范围里；
+ * 页面翻完之后补采集第 1 轮采不到新单元，就此结束 —— 与真实页面一致。
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
@@ -115,15 +121,17 @@ interface Measure {
 async function measure(n: number): Promise<Measure> {
   buildPage(n);
   const collectItems = (mode?: { readOnly: boolean }) =>
-    collect(document.body, undefined, mode).map((el, i) => ({ text: el.textContent!, ctx: i }));
+    collect(document.body, undefined, mode).map((el) => ({ text: el.textContent!, ctx: el }));
   let detectAt = 0;
   let sentAt = 0;
   let atDetect = { ...counts };
   let atSend = { ...counts };
   const inputs: string[] = [];
+  let sentUnits = 0;
   const send = vi.fn(async (req: { texts: string[] }) => {
     if (!sentAt) atSend = { ...counts };
     sentAt ||= performance.now();
+    sentUnits += req.texts.length;
     return { ok: true, data: { translations: req.texts.map((t) => `[译] ${t}`) } };
   });
   const detect = vi.fn(async (sample: string): Promise<ContentLang> => {
@@ -139,6 +147,10 @@ async function measure(n: number): Promise<Measure> {
     hasTranslated: () => false,
     pushStatus: () => {},
     detectContentLang: detect,
+    // #1056：与真实渲染一样，译好的单元落上完成标记，补采集据此不再重采
+    onBatchResult: (_i: number, batch: { ctx: unknown }[], r: { ok: boolean }) => {
+      if (r.ok) for (const it of batch) (it.ctx as Element).setAttribute('data-pt', 'done');
+    },
   } as Parameters<typeof createOrchestrator>[0]);
   orch.start();
   counts.visits = 0;
@@ -147,6 +159,8 @@ async function measure(n: number): Promise<Measure> {
   const result = await orch.togglePage(collectItems, 'auto', 'zh-CN');
   orch.stop();
   expect(result.status).toBe('translated');
+  // #1056：每段只发一次 —— 补采集没有把翻好的段落当成新单元再发
+  expect(sentUnits).toBe(n);
   const [sample, ...units] = inputs;
   return {
     sampleChars: sample!.length,
