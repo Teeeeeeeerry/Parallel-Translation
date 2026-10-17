@@ -605,6 +605,9 @@ describe('失败提示语义映射（#313）', () => {
     expect(displayDecision(undefined, undefined)).toEqual({
       showRealReason: false,
     });
+    // #1053：已中止不是失败 —— 不提示，与原因文案无关
+    expect(displayDecision('aborted', '已中止')).toEqual({ silent: true, showRealReason: false });
+    expect(displayDecision('aborted', undefined)).toEqual({ silent: true, showRealReason: false });
   });
 });
 

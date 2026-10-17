@@ -94,6 +94,9 @@ export function createSelectionTranslator(
     if (result.admission !== 'allowed') return;
 
     if (!result.ok) {
+      // #1053：被放弃（还原整页）不提示，等待态由收尾收掉。被后发一轮顶掉
+      // 的那一轮到不了这里，序号已经先把它丢了
+      if (result.display?.silent) return;
       // #313: key 无效 / 配额展示真实原因，瞬时故障展示泛化文案
       if (result.display?.showRealReason && result.error) {
         toast(result.error, failure);

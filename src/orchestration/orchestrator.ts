@@ -129,6 +129,11 @@ export interface SingleTextResult {
  * 模块不触碰任何 UI，提示的渲染仍由调用方完成。
  */
 export interface FailureDisplay {
+  /**
+   * #1053：被放弃（类别 aborted），不是失败 —— 调用方不提示。与整页入口
+   * “判到中止就直接返回”同一口径：页面还原、划词被后发一轮顶掉都走这里。
+   */
+  silent?: boolean;
   /** true：展示真实原因（key 无效 / 配额耗尽）；false：展示泛化文案（瞬时）。 */
   showRealReason: boolean;
   /** 引擎给出的原因文本（showRealReason=true 时）。 */
@@ -137,12 +142,14 @@ export interface FailureDisplay {
 
 /**
  * 失败类别 → 提示语义映射（#313）。
- * key 无效 / 配额耗尽 → 展示真实原因；瞬时故障 → 泛化文案。
+ * key 无效 / 配额耗尽 → 展示真实原因；瞬时故障 → 泛化文案；
+ * 已中止 → 不提示（#1053）。
  */
 export function displayDecision(
   category: FailureCategory | undefined,
   error: string | undefined,
 ): FailureDisplay {
+  if (category === 'aborted') return { silent: true, showRealReason: false };
   if (category === 'invalid-key' || category === 'quota') {
     return { showRealReason: true, reason: error };
   }
@@ -898,7 +905,14 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // #1044：这一条被放弃时通知后台中止，与整页批次同一条路（#1001）——
       // 中止信号交给消息层，消息层把这次发送的批次身份发给后台。放弃有两种：
       // 页面还原（纪元递增，keepOnRestore 的不算）与调用方自己的信号
-      if (textOpts?.signal?.aborted) return { admission, ok: false, category: 'aborted' };
+      // #1053：放弃与引擎失败同样带提示语义，调用方按 display 一处判定
+      const abandoned = (): SingleTextResult => ({
+        admission,
+        ok: false,
+        category: 'aborted',
+        display: displayDecision('aborted', undefined),
+      });
+      if (textOpts?.signal?.aborted) return abandoned();
       const followsRestore = !textOpts?.keepOnRestore;
       const abandon = new AbortController();
       const onAbandon = () => abandon.abort();
@@ -923,7 +937,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
 
       // 在飞期间被放弃（还原递增纪元、调用方中止）—— 不返回译文
       if ((followsRestore && epoch !== epochAtStart) || textOpts?.signal?.aborted) {
-        return { admission, ok: false, category: 'aborted' };
+        return abandoned();
       }
 
       if (result.ok) {

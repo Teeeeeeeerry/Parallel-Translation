@@ -535,3 +535,38 @@ describe('后发一轮顶掉先发的一轮时通知中止（#1044）', () => {
     expect(signals[1]!.aborted).toBe(false);
   });
 });
+
+describe('被放弃的这一轮不算失败（#1053）', () => {
+  test('最新一轮报 aborted（页面还原）→ 不弹任何提示，等待态收掉', async () => {
+    const e = engine();
+    const run = translator(e.translateText)('Hello world');
+    const rec = recordShown();
+    vi.advanceTimersByTime(SLOW);
+    e.calls[0]!.resolve({
+      admission: 'allowed',
+      ok: false,
+      category: 'aborted',
+      display: { silent: true, showRealReason: false },
+    });
+    await settle(run);
+    rec.stop();
+    expect(toasts()).toHaveLength(0);
+    expect(rec.seen.some((t) => t.includes(chrome.i18n.getMessage('toastTranslateFail')))).toBe(false);
+  });
+
+  test('真失败（瞬时故障）仍就地换成“翻译失败”', async () => {
+    const e = engine();
+    const run = translator(e.translateText)('Hello world');
+    vi.advanceTimersByTime(SLOW);
+    e.calls[0]!.resolve({
+      admission: 'allowed',
+      ok: false,
+      category: 'transient',
+      error: 'HTTP 503',
+      display: { showRealReason: false },
+    });
+    await settle(run);
+    expect(shown()).toEqual([chrome.i18n.getMessage('toastTranslateFail')]);
+    expect(toasts()[0]!.dataset.kind).toBe('error');
+  });
+});
