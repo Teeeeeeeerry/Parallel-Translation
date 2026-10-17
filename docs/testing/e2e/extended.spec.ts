@@ -29,7 +29,7 @@
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
 import fs from 'fs';
-import { test, expect, fixtureFileUrl, fixtureUrl, waitForBall } from './fixtures';
+import { test, expect, fixtureFileUrl, fixtureUrl, waitForBall, clickInputDot } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /** OpenAI 的对话端点：替身由 mockChat 按这个 URL 登记（#766） */
@@ -2680,14 +2680,8 @@ test.describe('单文本入口放弃时后台中止（#1044） @extended', () =>
     const box = page.locator('#reply');
     await box.click();
     await page.keyboard.type('你好世界'); // cjk-ok: 用例输入的文字
-    await expect(box).toHaveValue('你好世界'); // cjk-ok: 用例输入的文字
-    // 圆点停手后才挪到文字末尾（#670，#1048）：挪到位再点
-    const dot = page.locator('#pt-host-input-dot .pt-input-dot');
-    const field = (await box.boundingBox())!;
-    await expect
-      .poll(async () => (await dot.boundingBox())?.x ?? Infinity)
-      .toBeLessThan(field.x + field.width / 2);
-    await dot.click();
+    // 圆点停手后才挪到文字末尾（#670）：字进了框、挪到位再点（#1048）
+    await clickInputDot(page.locator('#pt-host-input-dot .pt-input-dot'), box, '你好世界'); // cjk-ok: 用例输入的原文，断言字进了框
     await expect.poll(async () => (await requests()).google, { timeout: 10_000 }).toBe(1);
 
     // 输入翻译在飞时还原整页：页面回到原文，这一条照常翻完、写回框里
