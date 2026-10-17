@@ -5793,7 +5793,15 @@ test.describe('划词翻译的提示（#726）', () => {
     const toast = page.locator(TOAST);
     await expect(toast).toContainText('【译】Another paragraph', { timeout: 20_000 }); // cjk-ok: 替身回显的译文
 
-    const seq = (await page.evaluate(() => (window as unknown as { __ptSeq: string[] }).__ptSeq))
+    const readSeq = () => page.evaluate(() => (window as unknown as { __ptSeq: string[] }).__ptSeq);
+    // #1050：Playwright 看到译文时，页内 10 毫秒一拍的采样器可能还没记下这一拍，
+    // 序列最后一项仍是“翻译中”带转圈。取序列前先等采样器记下译文、转圈没了的那一拍
+    await expect
+      .poll(async () => (await readSeq()).at(-1)?.split('|').slice(2).join('|'), {
+        message: '采样器记下译文那一拍', // cjk-ok: 断言说明，不是界面文案
+      })
+      .toMatch(/^\|.*【译】Another paragraph/); // cjk-ok: 替身回显的译文
+    const seq = (await readSeq())
       .map((e) => e.split('|'))
       .filter(([count]) => count !== '0');
     // 同一时刻至多一条，而且自始至终是同一条提示
