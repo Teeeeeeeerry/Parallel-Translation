@@ -12,6 +12,8 @@ import { mountIsolated, unmountIsolated } from './mount';
 import { textRects } from './text-rects';
 import { closestUnit } from '../dom/classify';
 import { tf } from '../i18n';
+// #1080：悬停意图延迟与间隙在中立模块，输入翻译圆点沿用同一个口径
+import { GAP, SHOW_DELAY } from './float-common';
 
 type TranslateOneFn = (el: Element) => Promise<void>;
 type RestoreOneFn = (el: Element) => void;
@@ -35,20 +37,6 @@ interface ParaBtnHandlers {
   hideDelay: () => number;
 }
 
-/**
- * 悬停意图延迟：指针在同一段落上停住这么久才浮出按钮。
- *
- * 没有这道闸门时，mouseover 一命中段落就立刻浮出并重定位 —— 鼠标从文章
- * 上方扫到下方，按钮会挨个段落跳几十次，看起来就是不停闪。隐藏延迟
- * 越长这个现象越显眼，因为按钮全程挂着而不是跳完就消失。
- *
- * 140ms 略低于人眼把“停顿”与“路过”区分开的阈值，有意停留时几乎无感，
- * 单纯划过则完全不触发。输入翻译圆点停手后对齐沿用同一个口径（#670）。
- */
-export const SHOW_DELAY = 140;
-
-/** 按钮与段落边缘的间隙；输入翻译圆点与光标之间沿用同一个口径（#667）。 */
-export const GAP = 4;
 /** 钳制到视口内时留的边距 */
 const MARGIN = 4;
 

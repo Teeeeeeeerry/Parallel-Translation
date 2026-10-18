@@ -13,7 +13,7 @@ import { decideInputTarget } from './input-target-lang';
 import { decideWriteBack } from './input-writeback';
 import { replaceInputText } from './input-replace';
 import { inputMaxLength, inputText, type TextInput } from './input-eligibility';
-import { deepActiveElement } from './input-dot';
+import { deepActiveElement } from './float-common';
 import { toast } from './toast';
 import { tf } from '../i18n';
 
