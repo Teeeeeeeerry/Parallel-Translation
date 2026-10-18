@@ -114,9 +114,10 @@ function harness(extra: HarnessOptions = {}) {
     },
   });
   Object.defineProperty(page, 'collects', { get: () => collects });
+  // #1079：悬浮球的状态从整页翻译的状态流来
+  page.subscribe((st) => events.push(`push:${st}`));
   const orch = createOrchestrator({
     send,
-    pushStatus: (s) => events.push(`push:${s}`),
     sleep: async () => {},
     ...opts,
   });
@@ -792,5 +793,53 @@ describe('会话的采集一轮：只交出新出现、没交出过的单元（#
     expect(page.begin().collectRound().map((it) => (it.ctx as Element).id)).toEqual(['a']);
     page.restore();
     expect(page.begin().collectRound().map((it) => (it.ctx as Element).id)).toEqual(['a']);
+  });
+});
+
+describe('悬浮球订阅整页翻译的状态流（#1079）', () => {
+  test('补采集没做完时是进行中，补完才报完成；之后还原立即回到空闲', async () => {
+    addParas('a', 3);
+    const states: string[] = [];
+    let seenWhileRecollecting: string | undefined;
+    const h = harness({
+      onSend: (n) => {
+        if (n === 1) addParas('new', 2);
+        if (n === 2) seenWhileRecollecting = states.at(-1);
+      },
+    });
+    h.page.subscribe((st) => states.push(st));
+    expect((await h.orch.togglePage(session(), 'en', 'zh-CN')).status).toBe('translated');
+    expect(seenWhileRecollecting).toBe('loading');
+    expect(states).toEqual(['loading', 'done']);
+    const restoring = h.orch.togglePage(session(), 'en', 'zh-CN');
+    // 还原是同步完成的：状态流在开关返回之前就报了空闲
+    expect(states.at(-1)).toBe('idle');
+    expect((await restoring).status).toBe('restored');
+    expect(states).toEqual(['loading', 'done', 'idle']);
+  });
+
+  test('首轮全部失败报失败；页面级闸门拦下报空闲（不是完成）', async () => {
+    addParas('a', 2);
+    const failing = harness({ send: vi.fn(async () => ({ ok: false, error: 'HTTP 503', category: 'transient' })) });
+    const a: string[] = [];
+    failing.page.subscribe((st) => a.push(st));
+    await failing.orch.togglePage(session(), 'en', 'zh-CN');
+    expect(a).toEqual(['loading', 'error']);
+
+    const gated = harness({ getPageLang: () => 'zh-CN' });
+    const b: string[] = [];
+    gated.page.subscribe((st) => b.push(st));
+    expect((await gated.orch.togglePage(session(), 'en', 'zh-CN')).status).toBe('same-language');
+    expect(b).toEqual(['idle']);
+  });
+
+  test('退订之后不再收到', async () => {
+    addParas('a', 2);
+    const h = harness();
+    const states: string[] = [];
+    const off = h.page.subscribe((st) => states.push(st));
+    off();
+    await h.orch.togglePage(session(), 'en', 'zh-CN');
+    expect(states).toEqual([]);
   });
 });

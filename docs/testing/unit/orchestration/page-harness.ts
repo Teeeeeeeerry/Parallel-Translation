@@ -15,6 +15,7 @@ import {
   type OrchestratorOptions,
   type TranslateItem,
   type TranslationOrchestrator,
+  type PageToggleVisual,
 } from '~/src/orchestration/orchestrator';
 import { createPageTranslation, type PageTranslation } from '~/src/orchestration/page-session';
 import { collect, type SkipCategory } from '~/src/dom/walker';
@@ -36,6 +37,12 @@ export interface PageHooks {
   onObserverStop?: () => void;
   /** 为真时每个单元都被渲染层拒绝（#327） */
   allRenderRejected?: () => boolean;
+}
+
+/** 旧装配里写在编排模块选项上的状态推送（#1079 起是整页翻译会话的状态流）。 */
+export interface StatusHooks {
+  /** 悬浮球该显示的状态；isMainFrame 为假时不推（子框架不显示，#327） */
+  pushStatus?: (status: PageToggleVisual) => void;
 }
 
 const isPage = (x: unknown): x is PageTranslation =>
@@ -96,13 +103,22 @@ export function domPage(
  * 这一次的翻译项；传的已经是整页翻译对象时原样交给编排模块。
  */
 export function createOrchestrator(
-  opts: OrchestratorOptions & PageHooks,
+  opts: OrchestratorOptions & PageHooks & StatusHooks,
 ): Omit<TranslationOrchestrator, 'togglePage'> & {
   togglePage(items: ItemsSource | PageTranslation, from: string, to: string): ReturnType<TranslationOrchestrator['togglePage']>;
 } {
-  const { hasTranslated, restore, onObserverStart, onObserverStop, allRenderRejected, ...rest } = opts;
+  const { hasTranslated, restore, onObserverStart, onObserverStop, allRenderRejected, pushStatus, ...rest } = opts;
   const orch = createRealOrchestrator(rest);
   const page = itemsPage([], { hasTranslated, restore, onObserverStart, onObserverStop, allRenderRejected });
+  // #1079：状态流由整页翻译发出；与 content 一样只在主框架订阅
+  const subscribed = new WeakSet<PageTranslation>();
+  const watch = (p: PageTranslation) => {
+    if (!pushStatus || subscribed.has(p)) return;
+    subscribed.add(p);
+    p.subscribe((s) => {
+      if (opts.isMainFrame?.() !== false) pushStatus(s);
+    });
+  };
   return {
     start: () => orch.start(),
     stop: () => orch.stop(),
@@ -111,9 +127,9 @@ export function createOrchestrator(
     translateText: (...args) => orch.translateText(...args),
     detectedLang: () => orch.detectedLang(),
     togglePage(items, from, to) {
-      if (isPage(items)) return orch.togglePage(items, from, to);
-      page.setSource(items);
-      return orch.togglePage(page, from, to);
+      const target = isPage(items) ? items : (page.setSource(items), page);
+      watch(target);
+      return orch.togglePage(target, from, to);
     },
   };
 }

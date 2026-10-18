@@ -9,7 +9,8 @@
 | **逐段翻译** | 逐段翻译 / Translate on hover | `showParagraphBtn`(设置项)、`paraBtnSize`(按钮大小)、`paraBtnHideDelay`(鼠标离开段落后按钮停留)、`translateOne()`(翻译入口)、`createParaBtn()`(悬停按钮注入) |
 | **悬浮球** | 悬浮球 / Floating ball | `showFloatingBall`(设置项)、`floatingBallSize`(悬浮球大小)、`createBall()`(注入)、`pt-ball-pos:<主机名>`(每站位置,storage.local) |
 | **悬浮 UI 尺寸** | 悬浮球大小、逐段翻译按钮大小、输入翻译圆点大小 / Floating ball size, Translate on hover button size, Translate input dot size | 设置项 `floatingBallSize`、`paraBtnSize`、`inputDotSize`,写入口 `clampWriteEntry()` 钳制 → `floatingUiVars()`(纯函数,设置映射成 `--pt-*` 变量)→ `applySettings()` 写到文档根 → `src/styles/injected.css` 的 `var()`;设置页滑块 `createSliderRow()`、预览 `createFloatingPreview()` 读同一个纯函数 |
-| 全页翻译 | 翻译整页 | `togglePage()` |
+| 全页翻译 | 翻译整页 | 编排模块的整页开关入口 `togglePage(page)`;内容脚本的 `togglePage()`(悬浮球、快捷键、popup 三条触发路径共用) |
+| **整页翻译会话** | （界面不出现） | `src/orchestration/page-session.ts`:`createPageTranslation()` 一个页面一个,持有翻译态查询、闸门取样、还原与状态流(`subscribe()`,悬浮球只订阅它);每次全页翻译 `begin()` 一个会话:采集去重、按轮统计、渲染、补采集、到顶交接、观察器启停与隐藏单元缓冲;内容脚本只注入 DOM 原语(`PageDom`) |
 | **翻译运行** | （界面不出现） | `src/orchestration/translation-run.ts`:`createTranslationRuns()` 持有页面根(还原整页时中止并换新根)与输入根(不随还原);`begin(root, signal?)` 派生一次运行的中止信号,交给切批重试与发送层;失效以 `RunInvalidated` 中止本次运行;对外结果里“被放弃”只有 `abandoned`(整页汇总、单文本结果)与状态 `'abandoned'` |
 | 划词翻译 | 翻译选中文本 | `translateSelection()` |
 | **更新提示** | 更新内容 / What's New | `src/changelog/`(数据与渲染)、`pt-changelog`(storage key) |

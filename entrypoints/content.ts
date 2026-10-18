@@ -440,10 +440,6 @@ export default defineContentScript({
         pathWatch?.check();
         return domainChoice;
       },
-      // #327: 悬浮球视觉状态由模块单向推送（子框架不推送）
-      pushStatus: (status) => {
-        if (isMainFrame) setBallState(status);
-      },
       isMainFrame: () => isMainFrame,
       // #792：页面级闸门读本 frame 的语言声明
       getPageLang: () => document.documentElement.getAttribute('lang'),
@@ -500,6 +496,9 @@ export default defineContentScript({
           translateIncremental(els).catch((e) => console.error('[PT] 增量补翻失败:', e));
         }),
     });
+    // #327/#1079：悬浮球只订阅整页翻译会话的状态流 —— 进行中、完成（补采集结束
+    // 之后）、已还原、失败；子框架不显示
+    if (isMainFrame) page.subscribe(setBallState);
 
     /**
      * 增量补翻那一路的渲染（#1077）：同一个渲染原语，统计记在 renderStats。
