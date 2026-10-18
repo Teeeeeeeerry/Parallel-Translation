@@ -5,11 +5,8 @@
  * 发送回调次数 = 批次数、单测不触碰 chrome。
  */
 import { describe, test, expect, vi } from 'vitest';
-import {
-  createOrchestrator,
-  splitBatches,
-  FULL_PAGE_BATCH_LIMITS,
-} from '~/src/orchestration/orchestrator';
+import { splitBatches, FULL_PAGE_BATCH_LIMITS } from '~/src/orchestration/orchestrator';
+import { createOrchestrator } from './page-harness';
 import { displayDecision } from '~/src/orchestration/text-notice';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import type { TranslateRequest } from '~/src/engines/types';
@@ -1027,31 +1024,36 @@ describe('观察器启停时机（#328）', () => {
 
     expect(firstResult.status).toBe('abandoned');
     expect(start).not.toHaveBeenCalled();
-    expect(stop).toHaveBeenCalledTimes(1);
+    // #1078：观察器由整页翻译会话持有，没启动过就没有可停的
+    expect(stop).not.toHaveBeenCalled();
     orch.stop();
   });
 
-  test('还原后观察器被停止，重复还原停止幂等（钩子每次调用、注册表保证幂等）', async () => {
+  test('还原后观察器被停止，重复还原不再停（#1078：观察器由整页翻译会话持有，停过就没有了）', async () => {
+    const start = vi.fn();
     const stop = vi.fn();
-    let translated = true;
+    let translated = false;
     const orch = createOrchestrator({
-      send: vi.fn(),
+      send: vi.fn(async () => ({ ok: true, data: { translations: ['译'] } })),
       hasTranslated: () => translated,
       restore: () => {
         translated = false;
       },
+      onObserverStart: start,
       onObserverStop: stop,
     });
     orch.start();
 
     await orch.togglePage(items(1), 'en', 'zh-CN');
-    expect(stop).toHaveBeenCalledTimes(1);
-
-    // 重复还原（例如快捷键连按）：停止钩子再次调用，
-    // 幂等性由生命周期注册表保证（ensure(false) 为空操作）
+    expect(start).toHaveBeenCalledTimes(1);
     translated = true;
     await orch.togglePage(items(1), 'en', 'zh-CN');
-    expect(stop).toHaveBeenCalledTimes(2);
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    // 重复还原（例如快捷键连按）：观察器已经停了，不再停一次
+    translated = true;
+    await orch.togglePage(items(1), 'en', 'zh-CN');
+    expect(stop).toHaveBeenCalledTimes(1);
     orch.stop();
   });
 

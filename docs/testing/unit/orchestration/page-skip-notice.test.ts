@@ -10,18 +10,14 @@
  */
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
-import { createPageCollector } from '~/src/dom/page-collect';
 import { collect } from '~/src/dom/walker';
-import { createOrchestrator, type PageToggleResult } from '~/src/orchestration/orchestrator';
+import { type PageToggleResult } from '~/src/orchestration/orchestrator';
+import { createOrchestrator, domPage } from './page-harness';
 import {
-  allRenderBlocked,
-  countRender,
-  countSkip,
   emptyRenderStats,
   emptySkipStats,
   pageNotice,
 } from '~/src/orchestration/page-summary';
-import { render } from '~/src/dom/renderer';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
 
 const tooLong = (id: string) => `<p id="${id}">${'This sentence keeps going on and on. '.repeat(100)}</p>`;
@@ -50,36 +46,23 @@ afterEach(() => {
  */
 async function translatePage(html: string, { countSkips = true } = {}) {
   document.body.innerHTML = html;
-  const stats = emptyRenderStats();
-  const skips = emptySkipStats();
   const send = vi.fn(async (req: { texts: string[] }) => ({
     ok: true,
     data: { translations: req.texts.map((t) => `[译] ${t}`) },
   }));
   const orch = createOrchestrator({
     send,
-    hasTranslated: () => document.querySelector('[data-pt="done"]') !== null,
-    allRenderRejected: () => allRenderBlocked(stats),
-    onBatchResult: (_i, batch, res) => {
-      if (!res.ok || !res.data) return;
-      batch.forEach((item, j) => {
-        countRender(stats, render(item.ctx as Element, res.data!.translations[j]!, 'page', item.text));
-      });
-    },
   } as Parameters<typeof createOrchestrator>[0]);
   orch.start();
-  // 与 content 同一个采集器（#1011）：首轮与补采集共用，同一元素只交出一次、跳过只计一次
-  const page = createPageCollector(
-    (onSkip) => collect(document.body, undefined, { onSkip }),
-    countSkips ? (_el, c) => countSkip(skips, c) : undefined,
-  );
+  // 与 content 同一口径的整页翻译会话（#1077、#1078）：首轮与补采集共用，同一元素只交出一次、跳过只计一次
+  const page = domPage();
   const result: PageToggleResult = await orch.togglePage(
-    () => page().map((el) => ({ text: el.textContent!, ctx: el })),
+    page,
     'auto',
     'zh-CN',
   );
   orch.stop();
-  return { result, notice: pageNotice(result, stats, skips), send, page: document.body.innerHTML };
+  return { result, notice: pageNotice(result, page.current()?.totals() ?? emptyRenderStats(), countSkips ? (page.current()?.skips() ?? emptySkipStats()) : emptySkipStats()), send, page: document.body.innerHTML };
 }
 
 describe('有被跳过的单元时弹一条带数量的提示（#758）', () => {

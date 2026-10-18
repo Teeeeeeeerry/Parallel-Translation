@@ -7,7 +7,8 @@
  * 后台没理会信号、照样把译文送回来时，结果仍按这次运行的信号丢弃（#1001 的兜底）。
  */
 import { describe, test, expect, vi } from 'vitest';
-import { createOrchestrator, type TranslateItem } from '~/src/orchestration/orchestrator';
+import { type TranslateItem } from '~/src/orchestration/orchestrator';
+import { createOrchestrator } from './page-harness';
 import type { TranslateRequest } from '~/src/engines/types';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 import { pageNotice, emptyRenderStats } from '~/src/orchestration/page-summary';

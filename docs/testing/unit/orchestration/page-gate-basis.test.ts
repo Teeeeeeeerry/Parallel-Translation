@@ -19,7 +19,7 @@ import {
   type PageGateDecision,
   type PageGateInput,
 } from '~/src/orchestration/page-gate';
-import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { createOrchestrator } from './page-harness';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 
 const reliable = (...languages: [string, number][]): ContentLang => ({

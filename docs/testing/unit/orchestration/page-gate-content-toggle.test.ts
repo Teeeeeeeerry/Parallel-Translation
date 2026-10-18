@@ -10,7 +10,7 @@
  * 取样页面不动、等识别算在飞、识别期间还原、悬浮球状态。
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
-import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { createOrchestrator } from './page-harness';
 import { CONTENT_DETECT_TIMEOUT_MS } from '~/src/orchestration/page-gate';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import {

@@ -21,7 +21,7 @@ import {
   hasBlockTextChildren,
   restorePreserves,
 } from '~/src/dom/text';
-import { startObserver, type ObserverHandle } from '~/src/dom/observer';
+import { startObserver } from '~/src/dom/observer';
 import { walkShadowTree } from '~/src/dom/shadow-walk';
 import { render, unrender, applyMode, applyStyle, type RenderResult } from '~/src/dom/renderer';
 import { unsplitChunks } from '~/src/dom/chunk-split';
@@ -43,11 +43,12 @@ import {
   type PageToggleResult,
 } from '~/src/orchestration/orchestrator';
 import type { TranslateItem, TranslateBatchResult } from '~/src/orchestration/orchestrator';
-import { createPageSession, type PageSession } from '~/src/orchestration/page-session';
+import { createPageTranslation, type PageSession } from '~/src/orchestration/page-session';
 import {
   allFailedNotice,
   countRender,
   emptyRenderStats,
+  emptySkipStats,
   framePageNotice,
   partialFailNotice,
   resetRenderStats,
@@ -302,50 +303,6 @@ export default defineContentScript({
     });
     registry.ensure('drag', true);
 
-    // ── 增量补翻 observer ──
-    // #255: observer 经注册表启停 —— 整页翻译完成时启动，还原时停止；
-    // 启停幂等，不再手写 stopObserving 判空
-    //
-    // #331/#332: 隐藏单元登记能力从观察器句柄取得（模块顶层不再导出
-    // 登记函数）。整页翻译的 collect 先于观察器启动（翻译成功后
-    // ensure('observer', true)），期间的登记进 preStartHidden 缓冲
-    // （WeakRef，#330 弱引用语义），句柄创建时补挂 —— 首轮翻译期间
-    // 采集到的隐藏单元因此不丢失。
-    const preStartHidden = new Set<WeakRef<Element>>();
-    let observerHandle: ObserverHandle | null = null;
-
-    /** 整页翻译 collect 的隐藏单元回调：句柄存在则直登，否则进缓冲。 */
-    function registerHiddenForObserver(el: Element): void {
-      if (observerHandle) {
-        observerHandle.registerHidden(el);
-        return;
-      }
-      preStartHidden.add(new WeakRef(el));
-    }
-
-    registry.register('observer', {
-      create: () => {
-        const handle = startObserver((els) => {
-          translateIncremental(els).catch((e) =>
-            console.error('[PT] 增量补翻失败:', e),
-          );
-        });
-        observerHandle = handle;
-        // 补挂启动前登记的隐藏单元（死亡引用直接丢弃）
-        for (const ref of preStartHidden) {
-          const el = ref.deref();
-          if (el) handle.registerHidden(el);
-        }
-        preStartHidden.clear();
-        return handle;
-      },
-      // #331: startObserver 返回句柄，stop 经句柄执行（幂等）
-      stop: (handle) => {
-        handle.stop();
-        observerHandle = null;
-      },
-    });
-
     /**
      * #632：当前站点是否获得准入 —— 复用站点名单判定，与编排模块的准入
      * （整页、逐段、划词翻译）同一个口径、同一个主机名。鼠标路过就浮出的
@@ -483,9 +440,6 @@ export default defineContentScript({
         pathWatch?.check();
         return domainChoice;
       },
-      // #325: 翻译态查询与还原动作经注入 —— 模块不直接访问 DOM
-      hasTranslated,
-      restore: doRestore,
       // #327: 悬浮球视觉状态由模块单向推送（子框架不推送）
       pushStatus: (status) => {
         if (isMainFrame) setBallState(status);
@@ -497,11 +451,6 @@ export default defineContentScript({
       detectContentLang: langDetector.distribution,
       // #857：闸门每判一次就记一笔，带依据，排查时看得出走的是哪一级
       onGateDecision: (decision) => console.debug('[PT] 页面级闸门：' + describePageGate(decision)),
-      // #328: 增量补翻观察器启停经钩子接线到生命周期注册表（幂等）
-      onObserverStart: () => registry.ensure('observer', true),
-      onObserverStop: () => registry.ensure('observer', false),
-      // 增量补翻（观察器）的渲染：与整页翻译会话同一个渲染原语，统计记在这里
-      onBatchResult: (_i, batch, result) => incrementalSession.onBatchResult(batch, result),
     });
     // #261/#265: 启动编排 —— 未启动时翻译入口拒绝执行；设置变更
     // 订阅随 start 建立
@@ -527,24 +476,30 @@ export default defineContentScript({
     }
 
     /**
-     * 整页翻译会话（#1077）：每次整页翻译新建一个 —— 采集去重、按轮统计、渲染
-     * 都在会话里，内容脚本只给 DOM 原语。
+     * 整页翻译（#1077、#1078）：采集去重、按轮统计、渲染、补采集、到顶交接、
+     * 观察器启停与隐藏单元缓冲、还原都在整页翻译会话里，内容脚本只给 DOM 原语。
+     * 每次整页翻译从它新建一个会话，还原时结束。
      */
-    function newPageSession(): PageSession<PageItemCtx> {
-      return createPageSession<PageItemCtx>({
-        collect: (onSkip) => {
-          try {
-            return collect(document.body, registerHiddenForObserver, { onSkip });
-          } catch (e) {
-            throw new Error(`[collect] ${e instanceof Error ? e.message : String(e)}`);
-          }
-        },
-        // #843：只读模式供闸门取样 —— 不切块、不登记隐藏单元，页面一个字不动
-        collectReadOnly: () => collect(document.body, undefined, { readOnly: true }),
-        build: buildPageItem,
-        render: renderPageItem,
-      });
-    }
+    const page = createPageTranslation<Element, PageItemCtx>({
+      collect: (onSkip, onHidden) => {
+        try {
+          return collect(document.body, onHidden, { onSkip });
+        } catch (e) {
+          throw new Error(`[collect] ${e instanceof Error ? e.message : String(e)}`);
+        }
+      },
+      // #843：只读模式供闸门取样 —— 不切块、不登记隐藏单元，页面一个字不动
+      collectReadOnly: () => collect(document.body, undefined, { readOnly: true }),
+      build: buildPageItem,
+      render: renderPageItem,
+      unrenderAll: doRestore,
+      hasTranslated,
+      // #255/#331: 增量补翻观察器 —— 整页翻译成功后由会话启动，还原时由会话停止
+      observe: () =>
+        startObserver((els) => {
+          translateIncremental(els).catch((e) => console.error('[PT] 增量补翻失败:', e));
+        }),
+    });
 
     /**
      * 增量补翻那一路的渲染（#1077）：同一个渲染原语，统计记在 renderStats。
@@ -584,12 +539,14 @@ export default defineContentScript({
       // 超长段落切成切块，页面就不是一个字不动了）
       // #1011/#1077：同一次整页翻译里首轮采集与补采集共用一个会话，同一个元素
       // 只交出一次、跳过的单元只计一次
-      const session = newPageSession();
+      const before = page.current();
 
-      const result = await orchestrator.togglePage(session, ns.from, ns.to);
+      const result = await orchestrator.togglePage(page, ns.from, ns.to);
 
+      // 这一次开始了新的整页翻译时才有它的统计（还原、闸门命中、准入拦截没有）
+      const session: PageSession | null = page.current() !== before ? page.current() : null;
       // #763：控制台按原因分组输出一行，零跳过时不输出
-      const skips = session.skips();
+      const skips = session?.skips() ?? emptySkipStats();
       const skipLine = skipConsoleLine(skips);
       if (skipLine) console.info(skipLine);
 
@@ -597,7 +554,7 @@ export default defineContentScript({
       // 同一时刻只显示一条提示，几种情况并存时给哪一条由汇总决定
       // #762：只有主文档弹，计数不跨 frame 汇总
       // #1077：这一次的汇总由会话合成（首轮与补采集各轮相加）
-      const notice = framePageNotice(result, session.totals(), skips, isMainFrame);
+      const notice = framePageNotice(result, session?.totals() ?? emptyRenderStats(), skips, isMainFrame);
       if (notice) toast(notice.message, { purpose: 'status', kind: notice.kind });
       return result;
     }
@@ -613,7 +570,9 @@ export default defineContentScript({
       if (items.length === 0) return;
       resetRenderStats(renderStats);
 
-      const summary = await orchestrator.translatePage(items, ns.from, ns.to);
+      const summary = await orchestrator.translatePage(items, ns.from, ns.to, {
+        onBatch: (batch, result) => incrementalSession.onBatchResult(batch, result),
+      });
 
       // 中止（还原）不算失败；失败提示与整页同口径
       if (summary.abandoned) return;
@@ -628,8 +587,8 @@ export default defineContentScript({
       // #253: 还原收集走统一遍历模块（shadow 穿透 + 集中式跳过规则）。
       // skipTranslated: false —— 嵌套在已翻译单元内的已翻译单元
       // （.pt-origin 搬移的既有译文）也要一并收集还原。
-      // #328: observer 停止与中止在飞翻译由编排模块的开关入口
-      // 统一执行，此处只做 DOM 还原
+      // #328/#1078: 观察器停止由整页翻译会话、中止在飞翻译由编排模块的
+      // 开关入口执行，此处只做 DOM 还原
       const els: Element[] = [];
       const splitContainers: Element[] = [];
       walkShadowTree(
