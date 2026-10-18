@@ -205,9 +205,6 @@ export const test = base.extend<
 
       // 启动之后的某一步卡住或出错：先关掉已经起来的浏览器再报错，不留孤儿进程
       try {
-        // #1048：每个 frame 里记下输入翻译圆点停手后的那一挪，供 clickInputDot 等它
-        await setup.step('装 init script', 10_000, () => context.addInitScript(recordInputDotMoves));
-
         // #1035：首装时 background 的 onInstalled 用 chrome.tabs.create 打开欢迎页，
         // 这一步是异步的 —— launchPersistentContext 返回时它多半还没建出来，直接扫
         // pages() 一张都关不掉，用例就带着它跑。所以先等到欢迎页本身（已在列表里，
@@ -446,89 +443,14 @@ export async function expectNoToastFor(
 }
 
 /**
- * 输入翻译圆点的挪位记录器（#1048），以 init script 装进每个页面的每个 frame。
+ * 点输入翻译圆点（#1034、#1048、#1082）。先断言字确实进了框，再等圆点报告“已就位”
+ * 才点 —— 不靠固定延时，也不在页内挂探针猜时序。
  *
  * 打字时圆点先放在回落位置（或停在上一次对齐的位置），停手 SHOW_DELAY 后才挪到
- * 文字末尾旁边（#670）。点击赶上这一挪，按下与抬起落在不同位置，click 不触发。
- * 记录器只看页面上看得见的两件事，不读产品内部状态：
- * - 编辑：焦点所在的框收到 input 事件，或焦点所在的 contenteditable 里有 DOM 变动
- *   （受控编辑器不发 input 事件，#656）；
- * - 挪位：圆点的 left / top 变了。
- * 与编辑同一个任务里的挪位是刚浮出时放到回落位置，不算；之后另一个任务里的挪位
- * 才是停手对齐。最后一次编辑之后对齐过，圆点就不会再自己挪，这时点它不会点空。
- *
- * 对齐的结果与当前位置相同时浏览器不产生变动记录，等不到 —— 那种情形圆点本来就不
- * 挪，没有竞态，调用方不用这个辅助函数，并在用例里写明原因。
- */
-function recordInputDotMoves(): void {
-  type Recorder = { settled(): boolean };
-  const w = window as unknown as { __ptInputDot?: Recorder };
-  if (w.__ptInputDot) return;
-  // 最后一次编辑之后还没挪过位：圆点还欠一次停手对齐
-  let pending = false;
-  let inEditTask = false;
-  let dot: HTMLElement | null = null;
-  let lastPos = '';
-  let editable: Element | null = null;
-  const pos = (el: HTMLElement) => `${el.style.left}|${el.style.top}`;
-  const mo = new MutationObserver((records) => handle(records));
-  /** 找到圆点并盯住它的 style。圆点宿主被站点移除后会重新挂一个，换了就重新找 */
-  const attach = () => {
-    if (dot?.isConnected) return;
-    dot =
-      document
-        .getElementById('pt-host-input-dot')
-        ?.shadowRoot?.querySelector<HTMLElement>('.pt-input-dot') ?? null;
-    if (!dot) return;
-    lastPos = pos(dot);
-    mo.observe(dot, { attributes: true, attributeFilter: ['style'] });
-  };
-  const markEdit = () => {
-    attach();
-    // 编辑时还没有圆点（站点未获准入等），这次编辑不会排下对齐
-    if (!dot) return;
-    pending = true;
-    if (!inEditTask) {
-      inEditTask = true;
-      setTimeout(() => (inEditTask = false), 0);
-    }
-  };
-  function handle(records: MutationRecord[]) {
-    for (const r of records) {
-      if (r.target === dot) {
-        const now = pos(dot);
-        if (now === lastPos) continue;
-        lastPos = now;
-        if (!inEditTask) pending = false;
-      } else if (editable?.contains(r.target)) {
-        markEdit();
-      }
-    }
-  }
-  /** 焦点换到别的元素：受控编辑器不发 input 事件，改盯它的 DOM 变动（#656） */
-  const focusOn = (target: Element | null) => {
-    handle(mo.takeRecords());
-    mo.disconnect();
-    dot = null;
-    attach();
-    editable = target instanceof HTMLElement && target.isContentEditable ? target : null;
-    if (editable) mo.observe(editable, { childList: true, characterData: true, subtree: true });
-  };
-  // 都挂在 window 的捕获阶段：先于内容脚本挂在 document 上的监听，编辑先记下，
-  // 随后同一任务里的回落放置才认得出来
-  window.addEventListener('focusin', (e) => focusOn((e.composedPath()[0] as Element) ?? null), true);
-  window.addEventListener('input', markEdit, true);
-  w.__ptInputDot = {
-    settled: () => {
-      attach();
-      return !!dot && dot.style.display === 'block' && !pending;
-    },
-  };
-}
-
-/**
- * 点输入翻译圆点（#1034、#1048）。先断言字确实进了框，再等圆点停手后挪到文字
- * 末尾旁边（记录器见 recordInputDotMoves），然后才点 —— 不靠固定延时。
+ * 文字末尾旁边（#670）；点击赶上这一挪，按下与抬起落在不同位置，click 不触发。
+ * 圆点自己把就位状态写在 data-placement 上（#1081）：打字期间与停手计时未到是
+ * following，对齐或回落之后是 settled。打字的 input 事件与它引起的状态切换在
+ * 同一个任务里，所以断言完框里文字再读，读到的一定是这次编辑之后的状态。
  *
  * text 是此刻框里应有的全部文字（contenteditable 里换行的写法因浏览器而异时传正则）。double 用双击；force 跳过 Playwright 的
  * 静止等待，用于进行中（转圈）时再点。
@@ -545,18 +467,7 @@ export async function clickInputDot(
   } else {
     await expect(box).toHaveValue(text);
   }
-  await expect
-    .poll(
-      () =>
-        dot.evaluate((el) => {
-          const r = (el.ownerDocument.defaultView as unknown as { __ptInputDot?: { settled(): boolean } })
-            .__ptInputDot;
-          if (!r) throw new Error('这个 frame 里没有圆点挪位记录器'); // cjk-ok: 断言说明，不是界面文案
-          return r.settled();
-        }),
-      { message: '圆点停手后挪到文字末尾旁边' }, // cjk-ok: 断言说明，不是界面文案
-    )
-    .toBe(true);
+  await expect(dot, '圆点停手后对齐到文字末尾（已就位）').toHaveAttribute('data-placement', 'settled'); // cjk-ok: 断言说明，不是界面文案
   if (double) await dot.dblclick({ force });
   else await dot.click({ force });
 }
