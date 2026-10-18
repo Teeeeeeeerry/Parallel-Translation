@@ -28,8 +28,9 @@ import { currentDomain } from '~/src/storage/domains';
 import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { isSiteBlocked } from '~/src/dom/site-filter';
 import { judgePage, type ContentLang, type PageGateDecision } from './page-gate';
-import { isPageSession, type PageSession } from './page-session';
-import { allRenderBlocked } from './page-summary';
+import type { PageTranslation } from './page-session';
+// #1078：补采集的轮数与间隔归整页翻译会话；这里转出，旧的引用不必改
+export { RECOLLECT_MAX_ROUNDS, RECOLLECT_INTERVAL_MS } from './page-session';
 import { normalizeLangCode } from './lang-code';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import {
@@ -168,6 +169,11 @@ export interface TranslationOrchestrator {
     items: TranslateItem<unknown>[],
     from: string,
     to: string,
+    /**
+     * #1078：onBatch 是这一次的渲染（增量补翻自己的统计）；onBatchResult 照常
+     * 收到每一批的通知
+     */
+    pageOpts?: { onBatch?: (batch: TranslateItem<unknown>[], result: TranslateBatchResult) => void },
   ): Promise<PageTranslateSummary>;
   /**
    * 单文本翻译入口（#312）—— 供逐段翻译与划词翻译使用。
@@ -193,27 +199,12 @@ export interface TranslationOrchestrator {
   detectedLang(): string | null;
   /**
    * 整页开关入口（#325）—— 一次调用完成「查询当前翻译态 → 决定
-   * 翻译还是还原 → 执行」。翻译态查询与还原动作以注入方式提供
-   * （OrchestratorOptions.hasTranslated / restore），模块不触碰 DOM。
-   * 翻译分支与 translatePage 同一条流水线（准入 / 批次 / 中止 / 提示语义）。
+   * 翻译还是还原 → 执行」。#1078：翻译态查询、还原、采集、渲染、补采集、
+   * 观察器都在整页翻译会话里（page），模块不触碰 DOM；这里保留在飞互斥、
+   * 准入、页面级闸门的调用、切批与发送。
    */
-  togglePage(items: PageItemsSource, from: string, to: string): Promise<PageToggleResult>;
+  togglePage(page: PageTranslation, from: string, to: string): Promise<PageToggleResult>;
 }
-
-/**
- * 整页开关入口的翻译项来源：现成的数组，或按需采集的函数（#792）。函数收到
- * `{ readOnly: true }` 时只读采集，供页面级闸门取样（#843）：不切块、不登记
- * 隐藏单元，页面一个字不动；不带参数时是照常翻译的那一次采集。
- */
-export type PageItemsSource =
-  | TranslateItem<unknown>[]
-  | ((mode?: { readOnly: boolean }) => TranslateItem<unknown>[])
-  /**
-   * 整页翻译会话（#1077）：采集去重、按轮统计、渲染都在会话里。传会话时批次
-   * 结果交给会话渲染，不走 onBatchResult；“所有渲染都被拒”读会话首轮的统计，
-   * 不走 allRenderRejected。
-   */
-  | PageSession;
 
 /** 单文本入口的选项（#659）。 */
 export interface SingleTextOptions {
@@ -281,7 +272,11 @@ export interface OrchestratorOptions {
   batchLimits?: BatchLimits;
   /** 注入 sleep 以便测试推进虚拟时钟；缺省共享实现。 */
   sleep?: (ms: number) => Promise<void>;
-  /** 渲染回调（#256 渐进渲染）：每批返回即触发，首屏不等待最慢段。 */
+  /**
+   * 每批结果的通知（#256 渐进渲染：每批返回即触发，首屏不等待最慢段）。#1078：
+   * 渲染在整页翻译会话与增量补翻各自的 onBatch 里做，这里只是通知；没传
+   * onBatch 的 translatePage 仍由它渲染。
+   */
   onBatchResult?: (
     batchIndex: number,
     batch: TranslateItem<unknown>[],
@@ -322,13 +317,6 @@ export interface OrchestratorOptions {
    */
   getDomainChoice?: () => DomainChoice;
   /**
-   * 翻译态查询（#325）：页面是否已有译文 —— 开关入口据此决定翻译
-   * 还是还原，模块不直接访问 DOM。
-   */
-  hasTranslated?: () => boolean;
-  /** 还原动作（#325）：开关入口在页面已有译文时调用（调用方实现 DOM 还原）。 */
-  restore?: () => void;
-  /**
    * 状态推送（#327）：悬浮球等视觉状态由模块单向推送 —— 模块不直接
    * 操作 UI。推送值见 PageToggleVisual；主框架标志为 false 时不推送。
    */
@@ -337,11 +325,6 @@ export interface OrchestratorOptions {
    * 主框架标志（#327）：子框架不推送状态、不产生提示，但照常执行翻译。
    */
   isMainFrame?: () => boolean;
-  /**
-   * 渲染结果查询（#327）：引擎返回结果但全部渲染被拒时，状态机不推送
-   * 已完成状态 —— 调用方经 onBatchResult 统计渲染成败后在此报告。
-   */
-  allRenderRejected?: () => boolean;
   /**
    * 本 frame 页面的语言声明（`<html lang>` 的原值，#792）：页面级闸门的
    * 取数之一，经注入读取 —— 模块不触碰 DOM。未注入或没有声明时为 null。
@@ -359,13 +342,6 @@ export interface OrchestratorOptions {
    * 拿来写控制台，排查时看得出走的是判定链的哪一级；不影响翻译流程。
    */
   onGateDecision?: (decision: PageGateDecision) => void;
-  /**
-   * 增量补翻观察器启动钩子（#328）：只在整页翻译成功后调用 ——
-   * 调用方接线到生命周期注册表（启停幂等，未启动为空操作）。
-   */
-  onObserverStart?: () => void;
-  /** 增量补翻观察器停止钩子（#328）：还原时调用，幂等。 */
-  onObserverStop?: () => void;
 }
 
 /**
@@ -414,15 +390,6 @@ export function splitBatches<T>(
   return batches;
 }
 
-
-/**
- * 补采集的轮数上限与轮间间隔（#1013）。间隔按实测定：翻译期间滚到底之后，
- * Reddit 列表 929、1243 毫秒出现下一批，dev.to 首页 390 到 788 毫秒出现、最慢
- * 一次 1429 毫秒才渲染完（docs/research/lazy-load-window-repro.md 第 6 节）。
- * 观察器的 300 毫秒防抖一次都接不住。
- */
-export const RECOLLECT_MAX_ROUNDS = 3;
-export const RECOLLECT_INTERVAL_MS = 1500;
 
 export function createOrchestrator(opts: OrchestratorOptions): TranslationOrchestrator {
   const batchLimits = opts.batchLimits ?? FULL_PAGE_BATCH_LIMITS;
@@ -599,42 +566,6 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     };
   };
 
-  /**
-   * 补采集（#1011）：再调一次整页入口的采集函数，交出来的单元走增量补翻那条
-   * 批次流水线。带完成标记的单元采集本身就跳过；首轮已交出过的单元（翻译失败
-   * 的、译文与原文相同没落标记的）由整页翻译会话去重（#1077），不在这里认元素。
-   * 还原：每轮开始前看运行的信号，每批放行时由闸门里的中止判定拦下（#1007）。补采集
-   * 自身的失败不回写整页的结论 —— 首轮已经成功的段落照常显示。
-   *
-   * #1013：补完一轮再查一次，有新的接着补，最多 RECOLLECT_MAX_ROUNDS 轮；某一轮
-   * 没有新单元就结束。第一轮紧接首轮，之后每轮先等 RECOLLECT_INTERVAL_MS，给
-   * 懒加载留出渲染下一批的时间。到顶之后剩下的交给观察器。
-   *
-   * #1036：返回是否补满了 RECOLLECT_MAX_ROUNDS 轮。补满时最后一轮采集之后、它
-   * 的译文回来之前进 DOM 的内容，补采集不再采、观察器启动前也看不到，由调用方
-   * 在启动观察器的同一刻再采一次接上；提前结束（某轮为空、中止、失效）时没有
-   * 这段窗口。
-   */
-  const recollect = async (
-    source: () => TranslateItem<unknown>[],
-    from: string,
-    to: string,
-    signal: AbortSignal,
-    onBatch: OrchestratorOptions['onBatchResult'],
-  ): Promise<boolean> => {
-    for (let round = 1; round <= RECOLLECT_MAX_ROUNDS; round++) {
-      // #1073：轮间等待可被还原打断
-      if (round > 1) await sleepUnlessAborted(RECOLLECT_INTERVAL_MS, signal, sleepFn);
-      if (signal.aborted) return false;
-      const more = source();
-      if (more.length === 0) return false;
-      console.info(`[PT] 补采集第 ${round} 轮：${more.length} 个新单元`);
-      const summary = await translatePageImpl(more, from, to, { admitted: true, signal, onBatch });
-      if (summary.abandoned || summary.invalidated) return false;
-    }
-    return true;
-  };
-
   // #327: 状态推送 —— 仅主框架推送（子框架不推送状态、不产生提示，
   // 但照常执行翻译）
   const pushVisual = (status: PageToggleVisual): void => {
@@ -642,27 +573,14 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     opts.pushStatus?.(status);
   };
 
-  // 整页开关的三种翻译项来源（#792、#1077）：现成的数组、采集函数、整页翻译会话
-  const readUnits = (items: PageItemsSource): string[] =>
-    isPageSession(items)
-      ? items.readUnits()
-      : (typeof items === 'function' ? items({ readOnly: true }) : items).map((item) => item.text);
-  const collectRound = (items: PageItemsSource): TranslateItem<unknown>[] =>
-    isPageSession(items) ? items.collectRound() : typeof items === 'function' ? items() : items;
-  /** 补采集再采一轮用什么；现成的数组没有可补的。 */
-  const recollectSource = (items: PageItemsSource): (() => TranslateItem<unknown>[]) | null =>
-    isPageSession(items) ? () => items.collectRound() : typeof items === 'function' ? () => items() : null;
-  const batchHandler = (items: PageItemsSource): OrchestratorOptions['onBatchResult'] =>
-    isPageSession(items) ? (_i, batch, result) => items.onBatchResult(batch, result) : onBatchResult;
-
   /**
-   * 整页开关的翻译分支（#325）：闸门识别 → 首轮 → 补采集 → 到顶交接。signal 是
-   * 这一次开关的运行（#1073），还原整页让它中止；中止时不再推状态 —— 还原那
-   * 一下已经推过空闲态、停了观察器。
+   * 整页开关的翻译分支（#325）：闸门识别 → 交给整页翻译会话（首轮、补采集、到顶
+   * 交接、观察器）。signal 是这一次开关的运行（#1073），还原整页让它中止；中止
+   * 时不再推状态 —— 还原那一下已经推过空闲态、停了观察器。
    */
   const translateToggle = async (
     signal: AbortSignal,
-    items: PageItemsSource,
+    page: PageTranslation,
     from: string,
     to: string,
     admission: Admission,
@@ -679,9 +597,9 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         to,
         detectedLang,
         pageLang: opts.getPageLang?.() ?? null,
-        // #843：样本取自同一个采集函数的只读模式 —— 照常翻译的那次采集会切块，
-        // 闸门命中时页面就不是一个字不动了
-        units: () => readUnits(items),
+        // #843：样本取自只读采集 —— 照常翻译的那次采集会切块，闸门命中时页面
+        // 就不是一个字不动了
+        units: () => page.readUnits(),
         ...(opts.detectContentLang && { detect: opts.detectContentLang }),
         signal,
       });
@@ -697,63 +615,27 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       return { status: 'same-language', admission, gate };
     }
 
-    // 采集可以按需进行（传函数）：闸门命中、准入拦截、还原时不采集
-    const list = collectRound(items);
-    if (list.length === 0) {
-      return { status: 'no-elements', admission };
-    }
-
+    // 闸门命中、准入拦截、还原时不采集；到这里才开始这一次整页翻译
+    const session = page.begin();
     toggleInFlight = true;
-    pushVisual('loading');
     try {
-      const onBatch = batchHandler(items);
-      const summary = await translatePageImpl(list, from, to, { signal, onBatch });
-      // #1077：会话读首轮自己的统计 —— 不被补翻、另一路增量补翻清零或叠加
-      const rejected = isPageSession(items) ? allRenderBlocked(items.roundStats(0)) : opts.allRenderRejected?.();
-      const status: PageToggleStatus = summary.abandoned
-        ? 'abandoned'
-        : summary.allFailed || rejected
-          ? 'error'
-          : 'translated';
-      // #327: 中止（还原）→ 空闲态；失败 → 错误态；成功 → 完成态。
-      // #1012：成功的完成态等补采集结束才推（见下）—— 先报完成、下半页却还在
-      // 翻，正是 #1003 最让人困惑的地方
-      if (status !== 'translated') {
-        pushVisual(status === 'error' ? 'error' : 'idle');
-        return { status, admission, summary };
-      }
-      // #1073：部分批次成功后判了失效（扩展上下文失效、配额耗尽）—— 已经翻好的
-      // 照常显示，失效原因由提示说明；不再补采集、不启动观察器，接着发只会再失效
-      if (summary.invalidated) {
-        pushVisual('done');
-        return { status, admission, summary };
-      }
-      // #1011：补采集一轮。采集只在开头做了一次，观察器又要等到这里才启动，
-      // 整页翻译跑的这十几秒里懒加载出来的内容两边都不管，永久漏翻（#1010
-      // 实测）。触发条件与观察器启动一致（只有判为成功才补），页面级闸门与
-      // 准入不重判；同一个采集函数，同一条增量补翻的批次流水线
-      const more = recollectSource(items);
-      const capped = more !== null && (await recollect(more, from, to, signal, onBatch));
-      // 补采集期间用户点了还原：还原分支已推空闲态、停了观察器，这里不再推
-      // 完成态、不再启动
-      if (signal.aborted) return { status: 'abandoned', admission, summary };
-      pushVisual('done');
-      // #1036：补满了轮数时，最后一轮在飞期间进 DOM 的内容两边都不管 —— 在启动
-      // 观察器的同一个同步段里再采一次，交给增量补翻。采集与启动之间没有 await，
-      // 页面脚本插不进来：这一刻之前进 DOM 的由这次采集接住，之后的由观察器接住，
-      // 同一个节点不会两边各翻一次。观察器的启动时机不变，仍在整页翻译成功之后
-      const handoff = capped && more ? more() : [];
-      // #328: 观察器启停时机 —— 只在整页翻译成功后启动恰好一次；
-      // 失败 / 中止（在飞还原）不启动。#1011：补采集结束之后才启动
-      opts.onObserverStart?.();
-      if (handoff.length > 0) {
-        console.info(`[PT] 补采集到顶，交给观察器补翻：${handoff.length} 个新单元`);
-        // 开关返回之后才翻完：不带这一次开关的信号，自己从页面根派生
-        translatePageImpl(handoff, from, to, { admitted: true, onBatch }).catch((e) =>
-          console.error('[PT] 补采集到顶后的补翻失败:', e),
-        );
-      }
-      return { status, admission, summary };
+      const outcome = await session.run({
+        translate: (items, { signal: s, onBatch, admitted }) =>
+          translatePageImpl(items, from, to, {
+            signal: s,
+            admitted,
+            onBatch: (i, batch, result) => {
+              onBatch(batch, result);
+              onBatchResult?.(i, batch, result);
+            },
+          }),
+        signal,
+        sleep: sleepFn,
+        onState: pushVisual,
+      });
+      return outcome.status === 'no-elements'
+        ? { status: 'no-elements', admission }
+        : { status: outcome.status, admission, summary: outcome.summary };
     } finally {
       toggleInFlight = false;
     }
@@ -785,17 +667,25 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       runs.restorePage();
     },
 
-    async translatePage(items, from, to): Promise<PageTranslateSummary> {
-      return translatePageImpl(items, from, to);
+    async translatePage(items, from, to, pageOpts): Promise<PageTranslateSummary> {
+      const onBatch = pageOpts?.onBatch;
+      return translatePageImpl(items, from, to, {
+        onBatch: onBatch
+          ? (i, batch, result) => {
+              onBatch(batch, result);
+              onBatchResult?.(i, batch, result);
+            }
+          : onBatchResult,
+      });
     },
 
-    async togglePage(items, from, to): Promise<PageToggleResult> {
+    async togglePage(page, from, to): Promise<PageToggleResult> {
       if (!started) throw new Error('[PT] 编排未启动');
 
       // #326: 在飞互斥 —— 在飞期间页面尚无译文时忽略新触发并返回
       // 忙碌状态（忙碌不是错误，调用方不应当作失败）；已有译文则
       // 放行还原（下方还原分支中止在飞批次）
-      if (toggleInFlight && !opts.hasTranslated?.()) {
+      if (toggleInFlight && !page.hasTranslated()) {
         return { status: 'busy', admission: 'allowed' };
       }
 
@@ -809,15 +699,14 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       }
 
       // #325: 翻译态查询经注入 —— 页面已有译文则还原，否则翻译
-      if (opts.hasTranslated?.()) {
+      if (page.hasTranslated()) {
         // #326: 还原中止在飞批次（页面根中止，在飞翻译放弃重试与渲染）；
         // #1001：在飞的批次通知后台中止，不翻完再丢
         runs.restorePage();
-        opts.restore?.();
+        // #328/#1078: 整页翻译会话停观察器、撤回页面上全部渲染
+        page.restore();
         // #327: 还原后推送空闲态（不是错误）
         pushVisual('idle');
-        // #328: 还原时停止增量补翻观察器（幂等 —— 重复还原为空操作）
-        opts.onObserverStop?.();
         return { status: 'restored', admission };
       }
 
@@ -835,7 +724,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // 到顶交接在开关返回之后才翻完，自己从页面根派生
       const run = runs.begin('page');
       try {
-        return await translateToggle(run.signal, items, from, to, admission);
+        return await translateToggle(run.signal, page, from, to, admission);
       } finally {
         run.end();
       }

@@ -35,7 +35,7 @@
  * 页面翻完之后补采集第 1 轮采不到新单元，就此结束 —— 与真实页面一致。
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
-import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { createOrchestrator } from './page-harness';
 import {
   CONTENT_SAMPLE_MAX_CHARS,
   UNIT_DETECT_COUNT,

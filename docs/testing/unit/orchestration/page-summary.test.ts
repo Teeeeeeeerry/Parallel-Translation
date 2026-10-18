@@ -6,16 +6,13 @@
  * 汇总提示说了什么。同一时刻只显示一条提示，所以汇总只给出一条。
  */
 import { describe, test, expect, vi, beforeEach } from 'vitest';
-import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { createOrchestrator, domPage } from './page-harness';
 import type { PageToggleResult, TranslateItem } from '~/src/orchestration/orchestrator';
 import {
-  allRenderBlocked,
-  countRender,
   emptyRenderStats,
   pageNotice,
   type RenderStats,
 } from '~/src/orchestration/page-summary';
-import { render } from '~/src/dom/renderer';
 import { toast } from '~/src/ui/toast';
 import { unmountIsolated } from '~/src/ui/mount';
 
@@ -38,29 +35,19 @@ async function translatePage(
   const root = document.createElement('div');
   root.innerHTML = html;
   document.body.appendChild(root);
-  const stats = emptyRenderStats();
   const pushes: string[] = [];
   const orch = createOrchestrator({
     send: vi.fn(async (req: { texts: string[] }) => ({
       ok: true,
       data: { translations: req.texts.map(reply) },
     })),
-    hasTranslated: () => root.querySelector('[data-pt="done"]') !== null,
     pushStatus: (s) => pushes.push(s),
-    allRenderRejected: () => allRenderBlocked(stats),
-    onBatchResult: (_i, batch, res) => {
-      if (!res.ok || !res.data) return;
-      batch.forEach((item, j) => {
-        countRender(stats, render(item.ctx as Element, res.data!.translations[j]!, 'page', item.text));
-      });
-    },
   } as Parameters<typeof createOrchestrator>[0]);
   orch.start();
-  const items: TranslateItem<Element>[] = [...root.querySelectorAll('p, li')].map((el) => ({
-    text: el.textContent!,
-    ctx: el,
-  }));
-  const result = await orch.togglePage(items, 'auto', 'zh-CN');
+  // 与 content 同一口径的整页翻译会话：真实渲染、渲染结果计入会话的统计（#1077）
+  const page = domPage({ collect: () => [...root.querySelectorAll('p, li')] });
+  const result = await orch.togglePage(page, 'auto', 'zh-CN');
+  const stats = page.current()?.totals() ?? emptyRenderStats();
   orch.stop();
   return { root, result, stats, pushes };
 }

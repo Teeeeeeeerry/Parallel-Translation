@@ -14,11 +14,9 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { MAX_TEXT, closestUnit } from '~/src/dom/classify';
 import { collect, type SkipCategory } from '~/src/dom/walker';
-import { createPageCollector } from '~/src/dom/page-collect';
-import { render } from '~/src/dom/renderer';
 import { hasBlockTextChildren, unitTextEx } from '~/src/dom/text';
-import { createOrchestrator } from '~/src/orchestration/orchestrator';
-import { countRender, countSkip, emptyRenderStats, emptySkipStats, pageNotice } from '~/src/orchestration/page-summary';
+import { createOrchestrator, domPage } from '../orchestration/page-harness';
+import { emptyRenderStats, emptySkipStats, pageNotice } from '~/src/orchestration/page-summary';
 import { brLines, collectUnits, fakeTranslate, isOverLimit, line, restorePage, translatePage } from './br-split-harness';
 
 /** 一整句不断行、比长度上限还长的一行。 */
@@ -111,8 +109,6 @@ describe('单行仍超过上限：该行不成切块，其余行照常（#710）
 
 describe('整页翻译：其余行有译文，汇总报出被跳过的这一行（#710）', () => {
   async function togglePage() {
-    const stats = emptyRenderStats();
-    const skips = emptySkipStats();
     const sent: string[] = [];
     const restoreRects = mockAllBoundingRects();
     const orch = createOrchestrator({
@@ -120,31 +116,17 @@ describe('整页翻译：其余行有译文，汇总报出被跳过的这一行�
         sent.push(...req.texts);
         return { ok: true, data: { translations: req.texts.map(fakeTranslate) } };
       }),
-      hasTranslated: () => document.querySelector('[data-pt="done"]') !== null,
-      onBatchResult: (_i, batch, res) => {
-        if (!res.ok || !res.data) return;
-        batch.forEach((item, j) => {
-          countRender(stats, render(item.ctx as Element, res.data!.translations[j]!, 'page', item.text));
-        });
-      },
     } as Parameters<typeof createOrchestrator>[0]);
     orch.start();
-    // 与 content 同一个采集器（#1011）：首轮与补采集共用，同一元素只交出一次、跳过只计一次
-    const page = createPageCollector(
-      (onSkip) => collect(document.body, undefined, { onSkip }),
-      (_el, c) => countSkip(skips, c),
-    );
-    const result = await orch.togglePage(
-      () =>
-        page().map((el) => ({
-          text: unitTextEx(el, { shallow: hasBlockTextChildren(el) }).text,
-          ctx: el,
-        })),
-      'auto',
-      'zh-CN',
-    );
+    // 与 content 同一口径的整页翻译会话（#1077、#1078）：首轮与补采集共用，同一元素只交出一次、跳过只计一次
+    const page = domPage({
+      build: (el) => ({ text: unitTextEx(el, { shallow: hasBlockTextChildren(el) }).text, ctx: el }),
+    });
+    const result = await orch.togglePage(page, 'auto', 'zh-CN');
     orch.stop();
     restoreRects();
+    const stats = page.current()?.totals() ?? emptyRenderStats();
+    const skips = page.current()?.skips() ?? emptySkipStats();
     return { result, notice: pageNotice(result, stats, skips), skips, sent };
   }
 

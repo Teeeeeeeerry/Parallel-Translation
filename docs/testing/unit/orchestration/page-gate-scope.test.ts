@@ -6,7 +6,7 @@
  * 就是目标语言的文字走 #787 的说明，不是被闸门拦住。
  */
 import { describe, test, expect, vi, afterEach, afterAll } from 'vitest';
-import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { createOrchestrator } from './page-harness';
 import { pageNotice, emptyRenderStats } from '~/src/orchestration/page-summary';
 import { paraNotice, selectionNotice } from '~/src/orchestration/text-notice';
 import { render } from '~/src/dom/renderer';

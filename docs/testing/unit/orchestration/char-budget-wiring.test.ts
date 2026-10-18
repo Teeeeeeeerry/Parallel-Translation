@@ -11,12 +11,8 @@
  * 断言比较新旧两种切法，不写死批次条数：预算由 #1006 实测调整时这里不该红。
  */
 import { describe, test, expect, vi } from 'vitest';
-import {
-  createOrchestrator,
-  splitBatches,
-  FULL_PAGE_BATCH_LIMITS,
-  type TranslateItem,
-} from '~/src/orchestration/orchestrator';
+import { splitBatches, FULL_PAGE_BATCH_LIMITS, type TranslateItem } from '~/src/orchestration/orchestrator';
+import { createOrchestrator } from './page-harness';
 import type { TranslateRequest } from '~/src/engines/types';
 
 /** 改动前的切法：15 个单元一批，与长短无关 */

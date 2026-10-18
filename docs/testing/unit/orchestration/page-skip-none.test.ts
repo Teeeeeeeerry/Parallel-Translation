@@ -14,18 +14,13 @@
 import { describe, test, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import fs from 'fs';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
-import { createPageCollector } from '~/src/dom/page-collect';
 import { collect } from '~/src/dom/walker';
-import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { createOrchestrator, domPage } from './page-harness';
 import {
-  allRenderBlocked,
-  countRender,
-  countSkip,
   emptyRenderStats,
   emptySkipStats,
   pageNotice,
 } from '~/src/orchestration/page-summary';
-import { render } from '~/src/dom/renderer';
 import { toast } from '~/src/ui/toast';
 import { unmountIsolated } from '~/src/ui/mount';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
@@ -89,35 +84,22 @@ async function translateFixture(file: string): Promise<string[]> {
   const hostRoot = document.getElementById('pt-host-toast')?.shadowRoot;
   if (hostRoot) mo.observe(hostRoot, { childList: true, subtree: true, characterData: true });
 
-  const stats = emptyRenderStats();
-  const skips = emptySkipStats();
   const orch = createOrchestrator({
     send: vi.fn(async (req: { texts: string[] }) => ({
       ok: true,
       data: { translations: req.texts.map((t) => `[译] ${t}`) },
     })),
-    hasTranslated: () => document.querySelector('[data-pt="done"]') !== null,
-    allRenderRejected: () => allRenderBlocked(stats),
-    onBatchResult: (_i, batch, res) => {
-      if (!res.ok || !res.data) return;
-      batch.forEach((item, j) => {
-        countRender(stats, render(item.ctx as Element, res.data!.translations[j]!, 'page', item.text));
-      });
-    },
   } as Parameters<typeof createOrchestrator>[0]);
   orch.start();
-  // 与 content 同一个采集器（#1011）：首轮与补采集共用，同一元素只交出一次、跳过只计一次
-  const page = createPageCollector(
-    (onSkip) => collect(document.body, undefined, { onSkip }),
-    (_el, c) => countSkip(skips, c),
-  );
+  // 与 content 同一口径的整页翻译会话（#1077、#1078）：首轮与补采集共用，同一元素只交出一次、跳过只计一次
+  const page = domPage();
   const result = await orch.togglePage(
-    () => page().map((el) => ({ text: el.textContent!, ctx: el })),
+    page,
     'auto',
     'zh-CN',
   );
   orch.stop();
-  const notice = pageNotice(result, stats, skips);
+  const notice = pageNotice(result, page.current()?.totals() ?? emptyRenderStats(), page.current()?.skips() ?? emptySkipStats());
   if (notice) toast(notice.message, { purpose: 'status', kind: notice.kind });
   record();
   mo.takeRecords();

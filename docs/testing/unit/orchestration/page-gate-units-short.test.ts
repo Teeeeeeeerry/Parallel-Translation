@@ -15,7 +15,7 @@
  * 给定；不调真实识别器（#851：可靠标记会在两次调用之间翻转）。
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
-import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { createOrchestrator } from './page-harness';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import {
   type ContentLang,

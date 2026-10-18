@@ -5,7 +5,8 @@
  * 补翻的观察器不启动。经整页开关入口 togglePage 断言，假消息层数请求条数。
  */
 import { describe, test, expect, vi } from 'vitest';
-import { createOrchestrator, splitBatches, FULL_PAGE_BATCH_LIMITS } from '~/src/orchestration/orchestrator';
+import { splitBatches, FULL_PAGE_BATCH_LIMITS } from '~/src/orchestration/orchestrator';
+import { createOrchestrator } from './page-harness';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import { collect } from '~/src/dom/walker';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
@@ -176,7 +177,7 @@ describe('不命中：整页翻译行为与改动前完全一致（#792）', () 
   });
 
   test('按需采集的形式：不命中时采集一次，照常翻译；翻完再补采集一次（#1011）', async () => {
-    // 真实的采集器补采集时只交出新出现的单元（src/dom/page-collect.ts），这里没有新单元
+    // 真实的整页翻译会话补采集时只交出新出现的单元（src/orchestration/page-session.ts），这里没有新单元
     const collectItems = vi.fn().mockReturnValueOnce(items(2)).mockReturnValue([]);
     const { orch, send } = setup({ pageLang: 'en' });
 
