@@ -618,7 +618,7 @@ export default defineContentScript({
       const summary = await orchestrator.translatePage(items, ns.from, ns.to);
 
       // 中止（还原）不算失败；失败提示与整页同口径
-      if (summary.aborted) return;
+      if (summary.abandoned) return;
       const notice = summary.allFailed
         ? allFailedNotice(summary.display)
         : partialFailNotice(renderStats, summary.display);
@@ -630,7 +630,7 @@ export default defineContentScript({
       // #253: 还原收集走统一遍历模块（shadow 穿透 + 集中式跳过规则）。
       // skipTranslated: false —— 嵌套在已翻译单元内的已翻译单元
       // （.pt-origin 搬移的既有译文）也要一并收集还原。
-      // #328: observer 停止与还原纪元（epoch++）由编排模块的开关入口
+      // #328: observer 停止与中止在飞翻译由编排模块的开关入口
       // 统一执行，此处只做 DOM 还原
       const els: Element[] = [];
       const splitContainers: Element[] = [];
@@ -712,7 +712,7 @@ export default defineContentScript({
       if (!result.ok) {
         // #313: 展示决策由编排模块给出 —— key 无效 / 配额展示真实
         // 原因，瞬时故障展示泛化文案；#1053：被放弃（还原整页）不提示
-        if (result.display?.silent) return;
+        if (result.abandoned) return;
         if (result.display?.showRealReason && result.error) {
           toast(result.error, { purpose: 'status', kind: 'error' });
         } else {

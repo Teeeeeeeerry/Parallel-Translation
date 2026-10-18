@@ -3,7 +3,7 @@
  *
  * 逐段、划词、输入翻译共用编排模块的 translateText。经它的外部行为断言：发送
  * 层收到的中止信号在什么时候触发、这一次报什么。口径：
- * - 逐段与划词（默认）：页面还原（纪元递增）算放弃 —— 信号触发，报 aborted；
+ * - 逐段与划词（默认）：页面还原算放弃 —— 信号触发，报 abandoned；
  * - 划词：调用方自己的信号（后发一轮顶掉）算放弃；
  * - 输入翻译（从输入根派生，#1072 前是 keepOnRestore）：页面还原不算 —— 信号不触发，照常返回译文。
  * 信号之后怎么变成一条 pt:cancel-batches 消息由消息层负责，见 messaging 的用例。
@@ -29,7 +29,7 @@ function slowSend() {
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe('单文本入口放弃时通知后台中止（#1044）', () => {
-  test('逐段 / 划词：在飞时页面还原 → 发送层的信号触发，这一次报 aborted', async () => {
+  test('逐段 / 划词：在飞时页面还原 → 发送层的信号触发，这一次报 abandoned', async () => {
     const s = slowSend();
     const orch = createOrchestrator({ send: s.send });
     orch.start();
@@ -39,7 +39,7 @@ describe('单文本入口放弃时通知后台中止（#1044）', () => {
     orch.abort();
     expect(s.signals[0]!.aborted).toBe(true);
     s.release();
-    expect(await pending).toMatchObject({ ok: false, category: 'aborted' });
+    expect(await pending).toMatchObject({ ok: false, abandoned: true });
   });
 
   test('输入翻译（输入根）：在飞时页面还原 → 信号不触发，照常返回译文', async () => {
@@ -54,7 +54,7 @@ describe('单文本入口放弃时通知后台中止（#1044）', () => {
     expect(await pending).toMatchObject({ ok: true, translation: 'T(你好)' });
   });
 
-  test('调用方自己的信号触发 → 发送层的信号跟着触发，这一次报 aborted', async () => {
+  test('调用方自己的信号触发 → 发送层的信号跟着触发，这一次报 abandoned', async () => {
     const s = slowSend();
     const orch = createOrchestrator({ send: s.send });
     orch.start();
@@ -64,7 +64,7 @@ describe('单文本入口放弃时通知后台中止（#1044）', () => {
     caller.abort();
     expect(s.signals[0]!.aborted).toBe(true);
     s.release();
-    expect(await pending).toMatchObject({ ok: false, category: 'aborted' });
+    expect(await pending).toMatchObject({ ok: false, abandoned: true });
   });
 
   test('输入翻译带了调用方信号时同样认它：输入根只是不随页面还原', async () => {
@@ -77,7 +77,7 @@ describe('单文本入口放弃时通知后台中止（#1044）', () => {
     caller.abort();
     expect(s.signals[0]!.aborted).toBe(true);
     s.release();
-    expect(await pending).toMatchObject({ ok: false, category: 'aborted' });
+    expect(await pending).toMatchObject({ ok: false, abandoned: true });
   });
 
   test('调用方的信号在发送前已触发 → 零请求', async () => {
@@ -88,7 +88,7 @@ describe('单文本入口放弃时通知后台中止（#1044）', () => {
     caller.abort();
     expect(await orch.translateText('Hello', 'en', 'zh-CN', { signal: caller.signal })).toMatchObject({
       ok: false,
-      category: 'aborted',
+      abandoned: true,
     });
     expect(s.send).not.toHaveBeenCalled();
   });
@@ -106,8 +106,8 @@ describe('单文本入口放弃时通知后台中止（#1044）', () => {
   });
 });
 
-describe('放弃不算失败：结果带“不提示”的语义（#1053）', () => {
-  test('在飞时页面还原 → aborted 且 display.silent', async () => {
+describe('放弃不算失败：结果只以 abandoned 表示（#1053、#1074）', () => {
+  test('在飞时页面还原 → abandoned', async () => {
     const s = slowSend();
     const orch = createOrchestrator({ send: s.send });
     orch.start();
@@ -115,10 +115,10 @@ describe('放弃不算失败：结果带“不提示”的语义（#1053）', ()
     await flush();
     orch.abort();
     s.release();
-    expect(await pending).toMatchObject({ ok: false, category: 'aborted', display: { silent: true } });
+    expect(await pending).toMatchObject({ ok: false, abandoned: true });
   });
 
-  test('调用方信号触发（划词被后发一轮顶掉）→ aborted 且 display.silent；发起前已触发的同样', async () => {
+  test('调用方信号触发（划词被后发一轮顶掉）→ abandoned；发起前已触发的同样', async () => {
     const s = slowSend();
     const orch = createOrchestrator({ send: s.send });
     orch.start();
@@ -127,11 +127,10 @@ describe('放弃不算失败：结果带“不提示”的语义（#1053）', ()
     await flush();
     caller.abort();
     s.release();
-    expect(await pending).toMatchObject({ ok: false, category: 'aborted', display: { silent: true } });
+    expect(await pending).toMatchObject({ ok: false, abandoned: true });
     expect(await orch.translateText('Hello', 'en', 'zh-CN', { signal: caller.signal })).toMatchObject({
       ok: false,
-      category: 'aborted',
-      display: { silent: true },
+      abandoned: true,
     });
   });
 
@@ -143,8 +142,10 @@ describe('放弃不算失败：结果带“不提示”的语义（#1053）', ()
         .mockResolvedValueOnce({ ok: false, category: 'transient', error: '已中止' }),
     });
     orch.start();
-    expect((await orch.translateText('a', 'en', 'zh-CN')).display).toEqual({ silent: true, showRealReason: false });
+    expect(await orch.translateText('a', 'en', 'zh-CN')).toEqual({ admission: 'allowed', ok: false, abandoned: true });
     // 文案恰好是“已中止”的瞬时故障仍是失败
-    expect((await orch.translateText('b', 'en', 'zh-CN')).display).toEqual({ showRealReason: false });
+    const b = await orch.translateText('b', 'en', 'zh-CN');
+    expect(b.abandoned).toBeUndefined();
+    expect(b.display).toEqual({ showRealReason: false });
   });
 });

@@ -327,7 +327,7 @@ describe('识别的回调永远不来：到时间上限就当拿不到，照常�
   });
 });
 
-describe('识别在飞时中止：纪元变了就丢弃识别结果（#862，#328 的中止纪元）', () => {
+describe('识别在飞时中止：这次运行已中止就丢弃识别结果（#862）', () => {
   /** 可控的识别替身：release 之前一直在飞。 */
   const pendingDetect = heldDetect;
 
@@ -375,18 +375,18 @@ describe('识别在飞时中止：纪元变了就丢弃识别结果（#862，#32
     page.translated = true;
     await orch.togglePage(STEAM, 'auto', 'zh-CN');
     expect(pushes).toEqual(['idle']);
-    // 识别说大半是英文：纪元没变的话这里会照常整页翻译
+    // 识别说大半是英文：没有中止的话这里会照常整页翻译
     release(reliable(['en', 76], ['zh', 23]));
 
     const result = await first;
-    expect(result.status).toBe('aborted');
+    expect(result.status).toBe('abandoned');
     expect(send).toHaveBeenCalledTimes(0);
     // 只有还原那一次推的 idle，识别回来之后什么都没推
     expect(pushes).toEqual(['idle']);
     orch.stop();
   });
 
-  test('abort 递增纪元（导航等中止）：识别回来不翻译也不推送；识别说是目标语言也不推未翻译态', async () => {
+  test('abort 中止页面根（导航等中止）：识别回来不翻译也不推送；识别说是目标语言也不推未翻译态', async () => {
     for (const verdict of [reliable(['en', 76], ['zh', 23]), reliable(['zh', 95], ['en', 5])]) {
       const { detect, release } = pendingDetect();
       const { orch, send, pushes } = setupWithPage('zh-cn', detect);
@@ -396,7 +396,7 @@ describe('识别在飞时中止：纪元变了就丢弃识别结果（#862，#32
       release(verdict);
 
       const result = await first;
-      expect(result.status).toBe('aborted');
+      expect(result.status).toBe('abandoned');
       expect(result.gate).toBeUndefined();
       expect(send).toHaveBeenCalledTimes(0);
       expect(pushes).toEqual([]);

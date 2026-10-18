@@ -140,7 +140,7 @@ describe('整页翻译完成后补采集一轮（#1011）', () => {
     h.orch.abort();
     release();
     const result = await pending;
-    expect(result.status).toBe('aborted');
+    expect(result.status).toBe('abandoned');
     expect(src.collects()).toBe(1);
     expect(h.events).not.toContain('observer:start');
   });
@@ -184,7 +184,7 @@ describe('整页翻译完成后补采集一轮（#1011）', () => {
     }
     const result = await pending;
     expect(sent.length).toBe(sentBeforeRestore);
-    expect(result.status).toBe('aborted');
+    expect(result.status).toBe('abandoned');
     expect(h.events).not.toContain('observer:start');
   });
 
@@ -219,7 +219,7 @@ describe('整页翻译完成后补采集一轮（#1011）', () => {
     expect(signals[1]!.aborted).toBe(true);
     // 后台没理会中止，照样把补采集这一批的译文送回来
     (replies.shift() as unknown as () => void)();
-    expect((await pending).status).toBe('aborted');
+    expect((await pending).status).toBe('abandoned');
     expect(rendered).toEqual(['a0', 'a1', 'a2']);
   });
 
@@ -344,7 +344,7 @@ describe('补采集没做完时悬浮球保持进行中（#1012）', () => {
     const restored = await h.orch.togglePage(src.fn, 'en', 'zh-CN');
     expect(restored.status).toBe('restored');
     await h.drain();
-    expect((await first).status).toBe('aborted');
+    expect((await first).status).toBe('abandoned');
     const pushes = h.events.filter((e) => e.startsWith('push:'));
     expect(pushes).toEqual(['push:loading', 'push:idle']);
   });
@@ -453,7 +453,7 @@ describe('补采集最多补几轮（#1013）', () => {
     expect(restored.status).toBe('restored');
     wake();
     const result = await pending;
-    expect(result.status).toBe('aborted');
+    expect(result.status).toBe('abandoned');
     expect(src.collects()).toBe(2);
     expect(h.sent).not.toContain('late0');
     expect(h.events).not.toContain('observer:start');

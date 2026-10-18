@@ -529,7 +529,7 @@ describe('后发一轮顶掉先发的一轮时通知中止（#1044）', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(signals[0]!.aborted).toBe(true);
     expect(signals[1]!.aborted).toBe(false);
-    releases[0]!({ admission: 'allowed', ok: false, category: 'aborted' });
+    releases[0]!({ admission: 'allowed', ok: false, abandoned: true });
     releases[1]!({ admission: 'allowed', ok: true, translation: 'T(second)' });
     await settle(Promise.all([first, second]).then(() => {}));
     expect(signals[1]!.aborted).toBe(false);
@@ -537,7 +537,7 @@ describe('后发一轮顶掉先发的一轮时通知中止（#1044）', () => {
 });
 
 describe('被放弃的这一轮不算失败（#1053）', () => {
-  test('最新一轮报 aborted（页面还原）→ 不弹任何提示，等待态收掉', async () => {
+  test('最新一轮报 abandoned（页面还原）→ 不弹任何提示，等待态收掉', async () => {
     const e = engine();
     const run = translator(e.translateText)('Hello world');
     const rec = recordShown();
@@ -545,8 +545,7 @@ describe('被放弃的这一轮不算失败（#1053）', () => {
     e.calls[0]!.resolve({
       admission: 'allowed',
       ok: false,
-      category: 'aborted',
-      display: { silent: true, showRealReason: false },
+      abandoned: true,
     });
     await settle(run);
     rec.stop();
