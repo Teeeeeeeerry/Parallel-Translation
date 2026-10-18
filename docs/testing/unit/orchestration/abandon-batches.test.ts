@@ -4,7 +4,7 @@
  * 编排模块放弃一次整页翻译（用户点还原、某一批判了失效）时，交给发送层的
  * 中止信号触发；发送层据此通知后台中止那几批的引擎调用（见 messaging 的用例）。
  * 这里只断言外部行为：发出去的批次手里的信号什么时候触发、什么时候不触发；
- * 后台没理会信号、照样把译文送回来时，结果仍按纪元丢弃（回到原来的行为）。
+ * 后台没理会信号、照样把译文送回来时，结果仍按这次运行的信号丢弃（#1001 的兜底）。
  */
 import { describe, test, expect, vi } from 'vitest';
 import { createOrchestrator, type TranslateItem } from '~/src/orchestration/orchestrator';
@@ -68,11 +68,11 @@ describe('放弃的批次通知后台中止（#1001）', () => {
 
     // 后台中止了引擎调用，这一批回“已中止”
     h.replies[1]!({ ok: false, error: '已中止', category: 'aborted', aborted: true });
-    expect((await pending).status).toBe('aborted');
+    expect((await pending).status).toBe('abandoned');
     expect(h.rendered).toHaveLength(20);
   });
 
-  test('中止消息丢了、后台照样翻完送回来：结果仍按纪元丢弃，回到原来的行为', async () => {
+  test('中止消息丢了、后台照样翻完送回来：结果仍被丢弃（#1001 的兜底）', async () => {
     const h = harness();
     const pending = h.orch.togglePage(items('a', 40), 'en', 'zh-CN');
     await flush();
@@ -81,7 +81,7 @@ describe('放弃的批次通知后台中止（#1001）', () => {
     await h.orch.togglePage(items('a', 40), 'en', 'zh-CN');
     // 无视信号，正常回译文
     h.replies[1]!(h.ok(h.send.mock.calls[1]![0]));
-    expect((await pending).status).toBe('aborted');
+    expect((await pending).status).toBe('abandoned');
     expect(h.rendered).toHaveLength(20);
   });
 
@@ -103,7 +103,7 @@ describe('放弃的批次通知后台中止（#1001）', () => {
     h.orch.abort();
     expect(h.signals[0]!.aborted).toBe(true);
     h.replies[0]!({ ok: false, error: '已中止', category: 'aborted', aborted: true });
-    expect((await pending).aborted).toBe(true);
+    expect((await pending).abandoned).toBe(true);
   });
 
   test('正常翻完：没有任何一批的信号触发', async () => {
@@ -135,7 +135,7 @@ describe('放弃的批次通知后台中止（#1001）', () => {
     expect(send).toHaveBeenCalledTimes(1);
     orch.abort();
     const summary = await pending;
-    expect(summary.aborted).toBe(true);
+    expect(summary.abandoned).toBe(true);
     expect(send).toHaveBeenCalledTimes(1);
   });
 });
@@ -154,7 +154,7 @@ describe('失效不是放弃（#1073）', () => {
     orch.start();
     const result = await orch.togglePage(items('a', 3), 'en', 'zh-CN');
     expect(result.status).toBe('error');
-    expect(result.summary).toMatchObject({ aborted: false, invalidated: true });
+    expect(result.summary).toMatchObject({ abandoned: false, invalidated: true });
     expect(pushed.at(-1)).toBe('error');
     expect(pageNotice(result, emptyRenderStats())).toEqual({ message: CTX, kind: 'error' });
   });
@@ -163,7 +163,7 @@ describe('失效不是放弃（#1073）', () => {
     const orch = createOrchestrator({ send: async () => invalid });
     orch.start();
     const summary = await orch.translatePage(items('a', 3), 'en', 'zh-CN');
-    expect(summary).toMatchObject({ aborted: false, invalidated: true, allFailed: true });
+    expect(summary).toMatchObject({ abandoned: false, invalidated: true, allFailed: true });
   });
 
   test('首批成功、后一批失效：已翻好的照常，报完成；不再补采集、不启动观察器', async () => {
@@ -187,7 +187,7 @@ describe('失效不是放弃（#1073）', () => {
     orch.start();
     const result = await orch.togglePage(collect, 'en', 'zh-CN');
     expect(result.status).toBe('translated');
-    expect(result.summary).toMatchObject({ aborted: false, invalidated: true, allFailed: false });
+    expect(result.summary).toMatchObject({ abandoned: false, invalidated: true, allFailed: false });
     expect(collect.mock.calls.filter((c) => !c[0]?.readOnly)).toHaveLength(1);
     expect(events).toEqual(['loading', 'done']);
   });
@@ -209,6 +209,6 @@ describe('失效不是放弃（#1073）', () => {
     translated = true;
     expect((await orch.togglePage(items('a', 3), 'en', 'zh-CN')).status).toBe('restored');
     reply(invalid);
-    expect((await pending).status).toBe('aborted');
+    expect((await pending).status).toBe('abandoned');
   });
 });

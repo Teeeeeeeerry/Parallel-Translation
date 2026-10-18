@@ -248,7 +248,7 @@ export function pageNotice(
     // 还原、在飞忙碌、翻译中被还原中止、总开关关闭：都不提示
     case 'restored':
     case 'busy':
-    case 'aborted':
+    case 'abandoned':
     case 'disabled':
       return null;
   }

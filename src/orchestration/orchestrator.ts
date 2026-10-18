@@ -7,14 +7,15 @@
 // 翻译编排模块 —— #221 架构评审候选 1。
 //
 // content 入口（约 585 行）一个闭包同时承担：翻译编排（批次拆分、
-// epoch 中止、渐进渲染）、UI 生命周期、消息路由 —— 编排逻辑完全
+// 中止、渐进渲染）、UI 生命周期、消息路由 —— 编排逻辑完全
 // 没有单元测试，e2e 之外无法触达。本模块把编排收在小 interface
 // 后面（启动 / 停止 / 翻译入口），消息发送与渲染以回调注入，不直接
 // 触碰 chrome 全局，测试用假消息层即可断言批次拆分、回调次数与
 // 渐进渲染节奏。
 //
 // 演进：骨架与批次拆分（#245）→ 渐进渲染回调（#256）→ content
-// 装配切换（#261）→ epoch 中止语义迁入（#262）。
+// 装配切换（#261）→ epoch 中止语义迁入（#262）→ 放弃收进“翻译运行”
+// 模块，纪元计数删除（#1066）。
 
 import type {
   TranslateRequest,
@@ -96,8 +97,11 @@ export interface PageTranslateSummary {
   admission: Admission;
   /** 是否所有非中止批次均失败。 */
   allFailed: boolean;
-  /** 是否有批次被中止（还原 / 导航）。 */
-  aborted: boolean;
+  /**
+   * 这一次被放弃（还原整页、外层运行中止，#1074）—— 不是失败，调用方不提示。
+   * 失效（上下文失效、配额耗尽）不算放弃，看 invalidated。
+   */
+  abandoned: boolean;
   /** 上下文 / 配额失效（全局短路）。 */
   invalidated: boolean;
   /** 全失败时的致命原因（失效 / 类别化错误），供 toast 展示。 */
@@ -120,6 +124,11 @@ export interface SingleTextResult {
   admission: Admission;
   /** 是否成功。 */
   ok: boolean;
+  /**
+   * 这一次被放弃（#1074）：页面还原、调用方中止（划词被后发一轮顶掉），或后台
+   * 报了已中止。不是失败，调用方不提示；此时不带类别与提示语义。
+   */
+  abandoned?: true;
   /** 译文（成功时）—— 引擎结果逐字透传，模块不改写。 */
   translation?: string;
   /** 失败类别（失败时）。 */
@@ -136,11 +145,6 @@ export interface SingleTextResult {
  * 模块不触碰任何 UI，提示的渲染仍由调用方完成。
  */
 export interface FailureDisplay {
-  /**
-   * #1053：被放弃（类别 aborted），不是失败 —— 调用方不提示。与整页入口
-   * “判到中止就直接返回”同一口径：页面还原、划词被后发一轮顶掉都走这里。
-   */
-  silent?: boolean;
   /** true：展示真实原因（key 无效 / 配额耗尽）；false：展示泛化文案（瞬时）。 */
   showRealReason: boolean;
   /** 引擎给出的原因文本（showRealReason=true 时）。 */
@@ -149,14 +153,13 @@ export interface FailureDisplay {
 
 /**
  * 失败类别 → 提示语义映射（#313）。
- * key 无效 / 配额耗尽 → 展示真实原因；瞬时故障 → 泛化文案；
- * 已中止 → 不提示（#1053）。
+ * key 无效 / 配额耗尽 → 展示真实原因；瞬时故障 → 泛化文案。
+ * 被放弃不经过这里：结果另以 abandoned 表示（#1074）。
  */
 export function displayDecision(
   category: FailureCategory | undefined,
   error: string | undefined,
 ): FailureDisplay {
-  if (category === 'aborted') return { silent: true, showRealReason: false };
   if (category === 'invalid-key' || category === 'quota') {
     return { showRealReason: true, reason: error };
   }
@@ -171,13 +174,13 @@ export interface TranslationOrchestrator {
   /** 停止编排（清理订阅与在飞状态）。 */
   stop(): void;
   /**
-   * 中止在途翻译（#262）—— 递增还原纪元：在飞批次的尝试、重试与
+   * 中止在途翻译（#262）—— 中止页面根（#1066）：在飞批次的尝试、重试与
    * 渲染回调全部放弃，过期译文不落 DOM；新翻译不受旧批次干扰。
    */
   abort(): void;
   /**
    * 全页翻译入口：按批次拆分发送，每批返回即触发渲染回调（#256）；
-   * 批次级失败有界重试、失效全局短路、epoch 中止判定都在模块内
+   * 批次级失败有界重试、失效全局短路、放弃判定都在模块内
    * （#261 / #262）。
    */
   translatePage(
@@ -246,7 +249,7 @@ export interface SingleTextOptions {
   root?: RunRoot;
   /**
    * 调用方自己的放弃信号（#1044）：划词又发起了新一轮，旧一轮的结果整条丢弃，
-   * 由它通知后台中止。叠加在根上，任一中止这一次就报 aborted。
+   * 由它通知后台中止。叠加在根上，任一中止这一次就报 abandoned。
    */
   signal?: AbortSignal;
 }
@@ -268,7 +271,7 @@ export interface PageToggleResult {
  *   - translated：整页翻译完成
  *   - restored：已还原
  *   - disabled / blocked：准入拦截（零请求）
- *   - aborted：翻译中还原（中止不计失败）
+ *   - abandoned：翻译中被放弃（还原整页；不计失败，#1074 前叫 aborted）
  *   - error：全部引擎失败
  *   - no-elements：本页没有可翻译的内容
  *   - same-language：页面级闸门命中，本页已经是目标语言（#792，零请求）
@@ -279,7 +282,7 @@ export type PageToggleStatus =
   | 'disabled'
   | 'blocked'
   | 'busy'
-  | 'aborted'
+  | 'abandoned'
   | 'error'
   | 'no-elements'
   | 'same-language';
@@ -452,18 +455,11 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   const sleepFn = opts.sleep ?? defaultSleep;
   const onBatchResult = opts.onBatchResult;
   let started = false;
-  // #262: 还原纪元在模块内 —— abort() 递增，在飞翻译据此放弃
-  // 尝试、重试与渲染；新翻译快照新纪元，不受旧批次干扰
-  let epoch = 0;
-  // #1001：纪元递增（还原）时要通知的在飞整页翻译 —— 各自中止自己发出的批次。
-  // 只是通知，纪元本身的判定（isAborted、闸门放行）一行没动
-  const onEpochBump = new Set<() => void>();
-  // #1072：翻译运行 —— 单文本入口从它派生信号；还原整页中止页面根
+  // #1066：翻译运行 —— 整页、补采集、到顶交接、逐段、划词从页面根派生信号，
+  // 输入翻译从输入根派生。还原整页中止页面根：在飞翻译据此放弃尝试、重试与
+  // 渲染，并通知后台中止（#1001）；之后的新翻译从新的页面根派生，不受旧批次
+  // 干扰（取代 #262 的纪元计数）
   const runs = createTranslationRuns();
-  const abandonInFlight = (): void => {
-    runs.restorePage();
-    for (const f of [...onEpochBump]) f();
-  };
   // #326: 整页开关入口在飞互斥 —— 在飞期间页面尚无译文时忽略新触发
   let toggleInFlight = false;
   // #1007: content 侧在飞批次闸门 —— 同时在飞的批次不超过并发数设置。原先所有
@@ -559,7 +555,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       return {
         admission,
         allFailed: false,
-        aborted: false,
+        abandoned: false,
         invalidated: false,
         fatalError: null,
         display: { showRealReason: false },
@@ -665,16 +661,16 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
 
     run.end();
     // #1073：失效不算放弃 —— 失效原因要提示给用户（扩展上下文失效提示刷新页面、
-    // 配额耗尽显示引擎原因）。此前失效与放弃共用一个谓词，汇总同时报 aborted，
+    // 配额耗尽显示引擎原因）。此前失效与放弃共用一个谓词，汇总同时报放弃，
     // 切换入口按放弃收尾、一个字都不提示。#157: 还原恰在最后一批与返回之间
-    // 发生 —— 信号已中止，同样报 aborted
+    // 发生 —— 信号已中止，同样报放弃
     const invalidated = run.signal.reason instanceof RunInvalidated;
-    const aborted = !invalidated && (sawAborted || run.signal.aborted);
+    const abandoned = !invalidated && (sawAborted || run.signal.aborted);
 
     return {
       admission: 'allowed',
       allFailed,
-      aborted,
+      abandoned,
       invalidated,
       fatalError,
       // #313: 全失败时是否展示真实原因（失效原因也算真实原因）
@@ -689,7 +685,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
    * 补采集（#1011）：再调一次整页入口的采集函数，交出来的单元走增量补翻那条
    * 批次流水线。带完成标记的单元采集本身就跳过；首轮已交出过的单元（翻译失败
    * 的、译文与原文相同没落标记的）由调用方的采集函数自己去重，不在这里认元素。
-   * 还原：每轮开始前看纪元，每批放行时由闸门里的中止判定拦下（#1007）。补采集
+   * 还原：每轮开始前看运行的信号，每批放行时由闸门里的中止判定拦下（#1007）。补采集
    * 自身的失败不回写整页的结论 —— 首轮已经成功的段落照常显示。
    *
    * #1013：补完一轮再查一次，有新的接着补，最多 RECOLLECT_MAX_ROUNDS 轮；某一轮
@@ -715,7 +711,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       if (more.length === 0) return false;
       console.info(`[PT] 补采集第 ${round} 轮：${more.length} 个新单元`);
       const summary = await translatePageImpl(more, from, to, { admitted: true, signal });
-      if (summary.aborted || summary.invalidated) return false;
+      if (summary.abandoned || summary.invalidated) return false;
     }
     return true;
   };
@@ -752,7 +748,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       } finally {
         toggleInFlight = false;
       }
-      if (signal.aborted) return { status: 'aborted', admission };
+      if (signal.aborted) return { status: 'abandoned', admission };
     }
 
     const gate = decidePageGate({
@@ -780,8 +776,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     pushVisual('loading');
     try {
       const summary = await translatePageImpl(list, from, to, { signal });
-      const status: PageToggleStatus = summary.aborted
-        ? 'aborted'
+      const status: PageToggleStatus = summary.abandoned
+        ? 'abandoned'
         : summary.allFailed || opts.allRenderRejected?.()
           ? 'error'
           : 'translated';
@@ -805,7 +801,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       const capped = typeof items === 'function' && (await recollect(items, from, to, signal));
       // 补采集期间用户点了还原：还原分支已推空闲态、停了观察器，这里不再推
       // 完成态、不再启动
-      if (signal.aborted) return { status: 'aborted', admission, summary };
+      if (signal.aborted) return { status: 'abandoned', admission, summary };
       pushVisual('done');
       // #1036：补满了轮数时，最后一轮在飞期间进 DOM 的内容两边都不管 —— 在启动
       // 观察器的同一个同步段里再采一次，交给增量补翻。采集与启动之间没有 await，
@@ -851,8 +847,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     },
 
     abort(): void {
-      epoch++;
-      abandonInFlight();
+      runs.restorePage();
     },
 
     async translatePage(items, from, to): Promise<PageTranslateSummary> {
@@ -880,10 +875,9 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
 
       // #325: 翻译态查询经注入 —— 页面已有译文则还原，否则翻译
       if (opts.hasTranslated?.()) {
-        // #326: 还原中止在飞批次（epoch 递增，在飞翻译放弃重试与渲染）
-        epoch++;
+        // #326: 还原中止在飞批次（页面根中止，在飞翻译放弃重试与渲染）；
         // #1001：在飞的批次通知后台中止，不翻完再丢
-        abandonInFlight();
+        runs.restorePage();
         opts.restore?.();
         // #327: 还原后推送空闲态（不是错误）
         pushVisual('idle');
@@ -935,13 +929,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // #1044：这一条被放弃时通知后台中止，与整页批次同一条路（#1001）——
       // 中止信号交给消息层，消息层把这次发送的批次身份发给后台。#1072：放弃
       // 只看这次运行的信号 —— 页面还原（从页面根派生时）与调用方自己的信号
-      // #1053：放弃与引擎失败同样带提示语义，调用方按 display 一处判定
-      const abandoned = (): SingleTextResult => ({
-        admission,
-        ok: false,
-        category: 'aborted',
-        display: displayDecision('aborted', undefined),
-      });
+      // #1053/#1074：被放弃只有一种表示（abandoned），调用方据此不提示
+      const abandoned = (): SingleTextResult => ({ admission, ok: false, abandoned: true });
       const run = runs.begin(textOpts?.root ?? 'page', textOpts?.signal);
       if (run.signal.aborted) {
         run.end();
@@ -965,7 +954,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
 
       // 在飞期间被放弃（页面还原、调用方中止）—— 不返回译文。后台没理会中止、
       // 照样送回译文时同样丢弃（#1001 的兜底）
-      if (run.signal.aborted) return abandoned();
+      // 后台报了已中止（中止消息之外的途径）同样是放弃，不是失败
+      if (run.signal.aborted || result.category === 'aborted') return abandoned();
 
       if (result.ok) {
         if (textOpts?.recordDetectedLang) recordDetectedLang(result.data?.detectedFrom);

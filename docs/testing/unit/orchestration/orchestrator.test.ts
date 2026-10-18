@@ -179,13 +179,13 @@ describe('渐进渲染回调注入（#256）', () => {
     orch.start();
     await expect(orch.translatePage(items(16), 'en', 'zh')).resolves.toMatchObject({
       allFailed: false,
-      aborted: false,
+      abandoned: false,
     });
     expect(send).toHaveBeenCalledTimes(2);
   });
 });
 
-describe('epoch 中止语义（#262）', () => {
+describe('还原中止在飞翻译（#262，#1066 起由翻译运行表达）', () => {
   test('abort 后：在飞批次完成也不触发渲染回调，汇总报 aborted', async () => {
     const order: number[] = [];
     let resolveSlow!: () => void;
@@ -217,7 +217,7 @@ describe('epoch 中止语义（#262）', () => {
     resolveSlow();
 
     const summary = await pending;
-    expect(summary.aborted).toBe(true);
+    expect(summary.abandoned).toBe(true);
     // 中止后回调不再触发 —— 慢批完成但不渲染（过期译文丢弃）
     expect(order).toEqual([1]);
   });
@@ -250,7 +250,7 @@ describe('epoch 中止语义（#262）', () => {
 
     // 新翻译开始 —— 不受旧批次干扰
     const newSummary = await orch.translatePage(items(16), 'en', 'zh');
-    expect(newSummary.aborted).toBe(false);
+    expect(newSummary.abandoned).toBe(false);
     expect(newSummary.allFailed).toBe(false);
     // 新翻译的批次全部渲染
     expect(order).toEqual([1, 0, 1]);
@@ -258,7 +258,7 @@ describe('epoch 中止语义（#262）', () => {
     // 旧翻译收尾：aborted，不渲染
     resolveOld();
     const oldSummary = await oldPending;
-    expect(oldSummary.aborted).toBe(true);
+    expect(oldSummary.abandoned).toBe(true);
     expect(order).toEqual([1, 0, 1]);
   });
 });
@@ -473,7 +473,7 @@ describe('单文本翻译入口（#312）', () => {
     orch.stop();
   });
 
-  test('在飞期间被中止（还原递增纪元）→ 不返回译文', async () => {
+  test('在飞期间被中止（还原整页）→ 不返回译文', async () => {
     let resolveSend!: (v: unknown) => void;
     const send = vi.fn(
       () => new Promise((r) => (resolveSend = r)),
@@ -482,12 +482,12 @@ describe('单文本翻译入口（#312）', () => {
     orch.start();
 
     const pending = orch.translateText('Hello', 'en', 'zh-CN');
-    orch.abort(); // 还原：递增纪元
+    orch.abort(); // 还原整页
     resolveSend({ ok: true, data: { translations: ['你好'] } });
 
     const result = await pending;
     expect(result.ok).toBe(false);
-    expect(result.category).toBe('aborted');
+    expect(result.abandoned).toBe(true);
     expect(result.translation).toBeUndefined();
     orch.stop();
   });
@@ -605,9 +605,6 @@ describe('失败提示语义映射（#313）', () => {
     expect(displayDecision(undefined, undefined)).toEqual({
       showRealReason: false,
     });
-    // #1053：已中止不是失败 —— 不提示，与原因文案无关
-    expect(displayDecision('aborted', '已中止')).toEqual({ silent: true, showRealReason: false });
-    expect(displayDecision('aborted', undefined)).toEqual({ silent: true, showRealReason: false });
   });
 });
 
@@ -833,7 +830,7 @@ describe('在飞互斥（#326）', () => {
     // 在飞批次被中止：首轮返回 aborted，不产生译文
     resolveSend({ ok: true, data: { translations: ['译'] } });
     const firstResult = await first;
-    expect(firstResult.status).toBe('aborted');
+    expect(firstResult.status).toBe('abandoned');
     orch.stop();
   });
 
@@ -896,7 +893,7 @@ describe('状态推送与中止记账（#327）', () => {
     const firstResult = await first;
 
     // 首轮被中止：不产生错误，推送空闲而非错误
-    expect(firstResult.status).toBe('aborted');
+    expect(firstResult.status).toBe('abandoned');
     expect(pushes).toEqual(['loading', 'idle', 'idle']);
     expect(pushes).not.toContain('error');
     orch.stop();
@@ -922,7 +919,7 @@ describe('状态推送与中止记账（#327）', () => {
     restore();
 
     const firstResult = await first;
-    expect(firstResult.status).toBe('aborted');
+    expect(firstResult.status).toBe('abandoned');
     expect(pushes).toEqual(['loading', 'idle']);
     orch.stop();
   });
@@ -1065,7 +1062,7 @@ describe('观察器启停时机（#328）', () => {
     resolveSend({ ok: true, data: { translations: ['译'] } });
     const firstResult = await first;
 
-    expect(firstResult.status).toBe('aborted');
+    expect(firstResult.status).toBe('abandoned');
     expect(start).not.toHaveBeenCalled();
     expect(stop).toHaveBeenCalledTimes(1);
     orch.stop();

@@ -117,7 +117,7 @@ describe('content 侧在飞批次闸门（#1007）', () => {
     h.orch.abort();
     await h.drain();
     const summary = await done;
-    expect(summary.aborted).toBe(true);
+    expect(summary.abandoned).toBe(true);
     // 排队的那些一批都没发出去
     expect(h.sent).toHaveLength(2);
   });

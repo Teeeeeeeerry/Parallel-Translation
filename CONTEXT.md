@@ -10,6 +10,7 @@
 | **悬浮球** | 悬浮球 / Floating ball | `showFloatingBall`(设置项)、`floatingBallSize`(悬浮球大小)、`createBall()`(注入)、`pt-ball-pos:<主机名>`(每站位置,storage.local) |
 | **悬浮 UI 尺寸** | 悬浮球大小、逐段翻译按钮大小、输入翻译圆点大小 / Floating ball size, Translate on hover button size, Translate input dot size | 设置项 `floatingBallSize`、`paraBtnSize`、`inputDotSize`,写入口 `clampWriteEntry()` 钳制 → `floatingUiVars()`(纯函数,设置映射成 `--pt-*` 变量)→ `applySettings()` 写到文档根 → `src/styles/injected.css` 的 `var()`;设置页滑块 `createSliderRow()`、预览 `createFloatingPreview()` 读同一个纯函数 |
 | 全页翻译 | 翻译整页 | `togglePage()` |
+| **翻译运行** | （界面不出现） | `src/orchestration/translation-run.ts`:`createTranslationRuns()` 持有页面根(还原整页时中止并换新根)与输入根(不随还原);`begin(root, signal?)` 派生一次运行的中止信号,交给切批重试与发送层;失效以 `RunInvalidated` 中止本次运行;对外结果里“被放弃”只有 `abandoned`(整页汇总、单文本结果)与状态 `'abandoned'` |
 | 划词翻译 | 翻译选中文本 | `translateSelection()` |
 | **更新提示** | 更新内容 / What's New | `src/changelog/`(数据与渲染)、`pt-changelog`(storage key) |
 | **领域** | 翻译领域 | `Domain`、`src/storage/domains.ts`(生效领域列表、`currentDomain()` 当前领域解析)、`src/storage/builtin-domains.ts`(内置领域数据)、`TranslateRequest.domainId` |
