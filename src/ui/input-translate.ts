@@ -90,20 +90,10 @@ export function createInputTranslator(deps: InputTranslatorDeps): (el: TextInput
       root: 'input',
     });
 
-    // 准入拦截：与逐段 / 划词翻译一致的提示，零请求
-    if (result.admission === 'blocked') {
-      toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), { purpose: 'status', kind: 'error' });
-      return;
-    }
-    if (result.admission !== 'allowed') return;
-
+    // #1075：没拿到译文时显示入口给出的提示，与逐段、划词同一口径：准入拦截、
+    // 失败原因照常提示；被放弃、总开关关闭不提示（此前这里缺“放弃不提示”）
     if (!result.ok) {
-      // #313: key 无效 / 配额展示真实原因，瞬时故障展示泛化文案
-      if (result.display?.showRealReason && result.error) {
-        toast(result.error, { purpose: 'status', kind: 'error' });
-      } else {
-        toast(tf('toastTranslateFail', '翻译失败'), { purpose: 'status', kind: 'error' });
-      }
+      if (result.notice) toast(result.notice.message, result.notice);
       return;
     }
 
@@ -112,14 +102,14 @@ export function createInputTranslator(deps: InputTranslatorDeps): (el: TextInput
       current: inputText(el),
       focused: deepActiveElement() === el,
       // #654：长度上限装不下译文时不写回 —— 原生插入会静默截断
-      translation: result.translation!,
+      translation: result.translation,
       maxLength: inputMaxLength(el),
     });
-    if (!writeBack.write || !(await replaceInputText(el, result.translation!))) {
+    if (!writeBack.write || !(await replaceInputText(el, result.translation))) {
       // #751：交出的译文是用户要读完、多半还要复制走的内容，按内容类显示 ——
       // 停留时长随长度、悬停不计时、有关闭按钮。只有这一条是内容类：上面的
       // 失败、超长、同语言不替换、判不出目标语言、站点禁用仍是状态类
-      toast(result.translation!, { purpose: 'content' });
+      toast(result.translation, { purpose: 'content' });
     }
   };
 }

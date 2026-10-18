@@ -13,6 +13,12 @@ import { render } from '~/src/dom/renderer';
 import { toast, toastPending } from '~/src/ui/toast';
 import { unmountIsolated } from '~/src/ui/mount';
 
+/** 成功结果里的译文（#1075：结果二选一）。 */
+function translationOf(r: { ok: boolean; translation?: string }): string {
+  if (!r.ok || r.translation === undefined) throw new Error('单文本入口没有给出译文');
+  return r.translation;
+}
+
 function toasts(): HTMLElement[] {
   const root = document.getElementById('pt-host-toast')?.shadowRoot;
   return root ? Array.from(root.querySelectorAll<HTMLElement>('.pt-toast')) : [];
@@ -52,9 +58,9 @@ describe('闸门命中的页面上，逐段与划词照常工作（#794）', () 
     const source = p.textContent!;
 
     const result = await orch.translateText(source, 'auto', 'zh-CN', { recordDetectedLang: true });
-    const notice = paraNotice(render(p, result.translation!, 'para', source));
+    const notice = paraNotice(render(p, translationOf(result), 'para', source));
 
-    expect(result.admission).toBe('allowed');
+    expect(result.ok).toBe(true);
     expect(send).toHaveBeenCalledTimes(1);
     expect(p.querySelector('.pt-trans')!.textContent).toBe(`[译] ${source}`);
     expect(p.getAttribute('data-pt')).toBe('done');
@@ -68,7 +74,7 @@ describe('闸门命中的页面上，逐段与划词照常工作（#794）', () 
     const pending = toastPending(chrome.i18n.getMessage('toastTranslating'));
 
     const result = await orch.translateText(text, 'auto', 'zh-CN');
-    const notice = selectionNotice(text, result.translation!);
+    const notice = selectionNotice(text, translationOf(result));
     toast(notice.message, notice);
     pending.dismiss();
 
@@ -85,12 +91,12 @@ describe('闸门命中的页面上，逐段与划词照常工作（#794）', () 
     const pending = toastPending(chrome.i18n.getMessage('toastTranslating'));
 
     const result = await orch.translateText(text, 'auto', 'zh-CN');
-    const notice = selectionNotice(text, result.translation!);
+    const notice = selectionNotice(text, translationOf(result));
     toast(notice.message, notice);
     pending.dismiss();
 
     // 单文本入口不判页面级闸门：照常送翻，由单元级兜底判断
-    expect(result.admission).toBe('allowed');
+    expect(result.ok).toBe(true);
     expect(send).toHaveBeenCalledTimes(1);
     const [t] = toasts();
     expect(toasts()).toHaveLength(1);

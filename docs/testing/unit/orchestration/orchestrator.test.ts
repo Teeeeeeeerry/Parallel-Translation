@@ -8,9 +8,9 @@ import { describe, test, expect, vi } from 'vitest';
 import {
   createOrchestrator,
   splitBatches,
-  displayDecision,
   FULL_PAGE_BATCH_LIMITS,
 } from '~/src/orchestration/orchestrator';
+import { displayDecision } from '~/src/orchestration/text-notice';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import type { TranslateRequest } from '~/src/engines/types';
 import type { Settings } from '~/src/storage/schema';
@@ -402,8 +402,7 @@ describe('单文本翻译入口（#312）', () => {
 
     const result = await orch.translateText('Hello, World!', 'en', 'zh-CN');
 
-    expect(result.ok).toBe(true);
-    expect(result.translation).toBe('  你好，世界！  ');
+    expect(result).toEqual({ ok: true, translation: '  你好，世界！  ' });
     // #1044：第二个参数是放弃时通知后台中止的信号
     expect(send).toHaveBeenCalledWith(
       {
@@ -432,8 +431,11 @@ describe('单文本翻译入口（#312）', () => {
     const result = await orch.translateText('Hello', 'en', 'zh-CN');
 
     expect(send).not.toHaveBeenCalled();
-    expect(result.admission).toBe('blocked');
-    expect(result.ok).toBe(false);
+    // #1075：直接给出要显示的提示
+    expect(result).toEqual({
+      ok: false,
+      notice: { message: chrome.i18n.getMessage('toastSiteBlocked'), purpose: 'status', kind: 'error' },
+    });
     orch.stop();
   });
 
@@ -450,12 +452,12 @@ describe('单文本翻译入口（#312）', () => {
     const result = await orch.translateText('Hello', 'en', 'zh-CN');
 
     expect(send).not.toHaveBeenCalled();
-    expect(result.admission).toBe('disabled');
-    expect(result.ok).toBe(false);
+    // 总开关关闭：安静，不提示
+    expect(result).toEqual({ ok: false, notice: null });
     orch.stop();
   });
 
-  test('失败时携带类别与原因', async () => {
+  test('失败时给出带引擎原因的提示（key 无效）', async () => {
     const send = vi.fn(async () => ({
       ok: false,
       category: 'invalid-key',
@@ -467,9 +469,7 @@ describe('单文本翻译入口（#312）', () => {
 
     const result = await orch.translateText('Hello', 'en', 'zh-CN');
 
-    expect(result.ok).toBe(false);
-    expect(result.category).toBe('invalid-key');
-    expect(result.error).toBe('API key 无效');
+    expect(result).toEqual({ ok: false, notice: { message: 'API key 无效', purpose: 'status', kind: 'error' } });
     orch.stop();
   });
 
@@ -486,71 +486,14 @@ describe('单文本翻译入口（#312）', () => {
     resolveSend({ ok: true, data: { translations: ['你好'] } });
 
     const result = await pending;
-    expect(result.ok).toBe(false);
-    expect(result.abandoned).toBe(true);
-    expect(result.translation).toBeUndefined();
+    // 不返回译文，也不提示
+    expect(result).toEqual({ ok: false, notice: null, abandoned: true });
     orch.stop();
   });
 });
 
 describe('失败提示语义映射（#313）', () => {
-  test('单文本：key 无效 → 展示真实原因并携带引擎原因文本', async () => {
-    const send = vi.fn(async () => ({
-      ok: false,
-      category: 'invalid-key',
-      error: 'API key 无效',
-      retryable: false,
-    }));
-    const orch = createOrchestrator({ send });
-    orch.start();
-
-    const result = await orch.translateText('Hello', 'en', 'zh-CN');
-
-    expect(result.ok).toBe(false);
-    expect(result.display).toEqual({
-      showRealReason: true,
-      reason: 'API key 无效',
-    });
-    orch.stop();
-  });
-
-  test('单文本：配额耗尽 → 展示真实原因并携带引擎原因文本', async () => {
-    const send = vi.fn(async () => ({
-      ok: false,
-      category: 'quota',
-      error: '配额已用尽',
-      retryable: false,
-      invalidated: true,
-    }));
-    const orch = createOrchestrator({ send });
-    orch.start();
-
-    const result = await orch.translateText('Hello', 'en', 'zh-CN');
-
-    expect(result.ok).toBe(false);
-    expect(result.display).toEqual({
-      showRealReason: true,
-      reason: '配额已用尽',
-    });
-    orch.stop();
-  });
-
-  test('单文本：瞬时故障 → 泛化文案', async () => {
-    const send = vi.fn(async () => ({
-      ok: false,
-      category: 'transient',
-      error: 'HTTP 503',
-      retryable: true,
-    }));
-    const orch = createOrchestrator({ send });
-    orch.start();
-
-    const result = await orch.translateText('Hello', 'en', 'zh-CN');
-
-    expect(result.ok).toBe(false);
-    expect(result.display).toEqual({ showRealReason: false });
-    orch.stop();
-  });
+  // 单文本入口的提示（每类一条）见 single-text-notice.test.ts（#1075）
 
   test('整页：全部引擎 key 无效 → 汇总展示真实原因', async () => {
     const send = vi.fn(async () => ({
@@ -609,13 +552,12 @@ describe('失败提示语义映射（#313）', () => {
 });
 
 describe('跨三条路径的失败提示契约（#316）', () => {
-  // 三条翻译路径（整页 / 逐段 / 划词）最终都消费编排模块的
-  // display 决策；本契约断言两个模块入口对同一失败类别产出同一决策，
-  // 内容脚本侧只是渲染该决策（#313 边界：模块不触碰 UI）。
+  // 三条翻译路径（整页 / 逐段 / 划词）对同一失败类别口径一致：整页汇总给出
+  // display 决策，单文本入口直接给出提示（#1075），二者同一份真实原因判定。
   const CATEGORIES = ['invalid-key', 'quota', 'transient'] as const;
 
   for (const category of CATEGORIES) {
-    test(`失败类别 ${category}：整页入口与单文本入口产出同一提示决策`, async () => {
+    test(`失败类别 ${category}：整页入口与单文本入口口径一致`, async () => {
       const send = vi.fn(async () => ({
         ok: false,
         category,
@@ -628,10 +570,13 @@ describe('跨三条路径的失败提示契约（#316）', () => {
       const page = await orch.translatePage(items(2), 'en', 'zh-CN');
       const single = await orch.translateText('Hello', 'en', 'zh-CN');
 
-      expect(page.display).toEqual(single.display);
+      expect(single.ok).toBe(false);
+      const message = single.ok ? null : single.notice?.message;
       if (category === 'transient') {
         expect(page.display).toEqual({ showRealReason: false });
+        expect(message).toBe(chrome.i18n.getMessage('toastTranslateFail'));
       } else {
+        expect(message).toBe('引擎给出的原因');
         expect(page.display).toEqual({
           showRealReason: true,
           reason: '引擎给出的原因',
@@ -644,8 +589,8 @@ describe('跨三条路径的失败提示契约（#316）', () => {
 
 describe('输入翻译的四类失败与另三条入口同一口径（#641）', () => {
   // 输入翻译走同一个单文本入口（#639），只是目标语言取源语言、不走缓存
-  // （#642）。失败提示由内容脚本照编排模块的 display 决策渲染：真实原因直接
-  // 展示，其余展示泛化文案“翻译失败”（toastTranslateFail）。
+  // （#642）。失败提示由单文本入口直接给出（#1075）：真实原因直接展示，其余
+  // 展示泛化文案“翻译失败”（toastTranslateFail）。
   const FAILURES = [
     { kind: '瞬时故障', category: 'transient', error: 'HTTP 503', real: false },
     { kind: '超时', category: 'transient', error: '请求超时（30000ms）', real: false },
@@ -654,7 +599,7 @@ describe('输入翻译的四类失败与另三条入口同一口径（#641）', 
   ] as const;
 
   for (const f of FAILURES) {
-    test(`${f.kind}：${f.real ? '展示引擎给出的真实原因' : '展示泛化文案，不带引擎原因'}，与划词翻译的决策相同`, async () => {
+    test(`${f.kind}：${f.real ? '展示引擎给出的真实原因' : '展示泛化文案，不带引擎原因'}，与划词翻译的提示相同`, async () => {
       const send = vi.fn(async (_req: TranslateRequest) => ({ ok: false, category: f.category, error: f.error }));
       const orch = createOrchestrator({ send });
       orch.start();
@@ -662,9 +607,15 @@ describe('输入翻译的四类失败与另三条入口同一口径（#641）', 
       const input = await orch.translateText('我写的一段话', 'auto', 'en', { noCache: true });
       const selection = await orch.translateText('Selected words', 'en', 'zh-CN');
 
-      expect(input.ok).toBe(false);
-      expect(input.display).toEqual(f.real ? { showRealReason: true, reason: f.error } : { showRealReason: false });
-      expect(input.display).toEqual(selection.display);
+      expect(input).toEqual({
+        ok: false,
+        notice: {
+          message: f.real ? f.error : chrome.i18n.getMessage('toastTranslateFail'),
+          purpose: 'status',
+          kind: 'error',
+        },
+      });
+      expect(input).toEqual(selection);
       // 输入翻译确实只发了一次，失败不重试 —— 重试会多花一份配额
       expect(send.mock.calls.filter(([req]) => req.noCache === true)).toHaveLength(1);
       orch.stop();

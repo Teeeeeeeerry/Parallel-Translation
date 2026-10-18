@@ -46,6 +46,12 @@ import {
   type RunRoot,
 } from '~/src/orchestration/translation-run';
 import { sleepUnlessAborted } from '~/src/runtime/sleep';
+import {
+  displayDecision,
+  singleTextMissNotice,
+  type SingleTextMiss,
+  type TextNotice,
+} from '~/src/orchestration/text-notice';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
 import { createGate } from '~/src/queue/concurrency';
 
@@ -118,26 +124,24 @@ export interface PageTranslateSummary {
  */
 export type Admission = 'allowed' | 'disabled' | 'blocked';
 
-/** 单文本翻译结果（#312）—— 逐段翻译 / 划词翻译共用。 */
-export interface SingleTextResult {
-  /** 准入结果：未通过准入时零请求。 */
-  admission: Admission;
-  /** 是否成功。 */
-  ok: boolean;
-  /**
-   * 这一次被放弃（#1074）：页面还原、调用方中止（划词被后发一轮顶掉），或后台
-   * 报了已中止。不是失败，调用方不提示；此时不带类别与提示语义。
-   */
-  abandoned?: true;
-  /** 译文（成功时）—— 引擎结果逐字透传，模块不改写。 */
-  translation?: string;
-  /** 失败类别（失败时）。 */
-  category?: FailureCategory;
-  /** 失败原因文本（引擎给出的真实原因）。 */
-  error?: string;
-  /** 提示语义（#313）：失败时展示真实原因还是泛化文案。 */
-  display?: FailureDisplay;
-}
+/**
+ * 单文本翻译结果（#312）—— 逐段、划词、输入翻译共用。#1075：二选一 —— 成功带
+ * 译文；没拿到译文时带要显示的提示，或 null（不提示）。提示怎么定见
+ * text-notice 的 singleTextMissNotice，调用方原样显示。
+ */
+export type SingleTextResult =
+  | {
+      ok: true;
+      /** 译文 —— 引擎结果逐字透传，模块不改写。 */
+      translation: string;
+    }
+  | {
+      ok: false;
+      /** 要显示的提示；null 时不提示（总开关关闭、被放弃、子框架里的站点禁用）。 */
+      notice: TextNotice | null;
+      /** 这一次被放弃（#1074）：页面还原、调用方中止，或后台报了已中止。 */
+      abandoned?: true;
+    };
 
 /**
  * 失败提示语义（#313）——「展示引擎给出的真实原因，还是展示泛化文案」
@@ -150,22 +154,6 @@ export interface FailureDisplay {
   /** 引擎给出的原因文本（showRealReason=true 时）。 */
   reason?: string;
 }
-
-/**
- * 失败类别 → 提示语义映射（#313）。
- * key 无效 / 配额耗尽 → 展示真实原因；瞬时故障 → 泛化文案。
- * 被放弃不经过这里：结果另以 abandoned 表示（#1074）。
- */
-export function displayDecision(
-  category: FailureCategory | undefined,
-  error: string | undefined,
-): FailureDisplay {
-  if (category === 'invalid-key' || category === 'quota') {
-    return { showRealReason: true, reason: error };
-  }
-  return { showRealReason: false };
-}
-
 
 /** 翻译编排模块 —— 小 interface：启动 / 停止 / 翻译入口（#221）。 */
 export interface TranslationOrchestrator {
@@ -917,8 +905,15 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       if (!started) throw new Error('[PT] 编排未启动');
 
       // #311: 与整页入口同一份准入判定 —— 拦截时零请求
+      // #1075：没拿到译文时直接给出要显示的提示（或不提示），判定在 text-notice
+      const miss = (m: SingleTextMiss, abandoned?: true): SingleTextResult => ({
+        ok: false,
+        notice: singleTextMissNotice(m),
+        ...(abandoned && { abandoned }),
+      });
       const admission = admissionFrom(opts);
-      if (admission !== 'allowed') return { admission, ok: false };
+      if (admission === 'blocked') return miss({ kind: 'blocked', mainFrame: opts.isMainFrame?.() !== false });
+      if (admission === 'disabled') return miss({ kind: 'disabled' });
       // #794：这里不判页面级闸门。逐段与划词是用户点名要翻的一段，中文页面
       // 上划中一段英文引文单独翻译完全合理；目标语言的文字由渲染层与划词
       // 共用的单元级兜底（#783、#786、#787）各自说明
@@ -929,8 +924,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // #1044：这一条被放弃时通知后台中止，与整页批次同一条路（#1001）——
       // 中止信号交给消息层，消息层把这次发送的批次身份发给后台。#1072：放弃
       // 只看这次运行的信号 —— 页面还原（从页面根派生时）与调用方自己的信号
-      // #1053/#1074：被放弃只有一种表示（abandoned），调用方据此不提示
-      const abandoned = (): SingleTextResult => ({ admission, ok: false, abandoned: true });
+      // #1053/#1074：被放弃只有一种表示（abandoned），不提示
+      const abandoned = (): SingleTextResult => miss({ kind: 'abandoned' }, true);
       const run = runs.begin(textOpts?.root ?? 'page', textOpts?.signal);
       if (run.signal.aborted) {
         run.end();
@@ -960,20 +955,16 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       if (result.ok) {
         if (textOpts?.recordDetectedLang) recordDetectedLang(result.data?.detectedFrom);
         // 译文逐字透传引擎结果，模块不改写（#312）
-        return {
-          admission,
-          ok: true,
-          translation: result.data?.translations?.[0],
-        };
+        return { ok: true, translation: result.data?.translations?.[0] ?? '' };
       }
-      return {
-        admission,
-        ok: false,
+      // #313: key 无效 / 配额展示真实原因，瞬时故障展示泛化文案（与整页入口同一份）；
+      // 失效与整页汇总同样展示真实原因
+      return miss({
+        kind: 'failed',
         category: result.category,
         error: result.error,
-        // #313: 失败提示语义由类别映射（与整页入口同一份）
-        display: displayDecision(result.category, result.error),
-      };
+        invalidated: result.invalidated,
+      });
     },
   };
 }

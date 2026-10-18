@@ -4,9 +4,15 @@
 // 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
-// 逐段翻译与划词翻译拿到译文之后弹哪条提示 —— 输入全部显式传入，从
+// 单文本入口（逐段、划词、输入翻译）该弹哪条提示 —— 输入全部显式传入，从
 // content script 的副作用里摘出来单测。
+//
+// #1075：没拿到译文时提示什么也在这里定，只写一处：准入拦截、放弃、失效、
+// 配额、真实原因、泛化失败。编排模块的单文本入口据此直接给出“要显示的提示”
+// 或“不提示”，三个调用点只负责显示；整页翻译的汇总也用同一份真实原因判定。
 
+import type { FailureCategory } from '../engines/types';
+import type { FailureDisplay } from './orchestrator';
 import type { RenderResult } from '../dom/renderer';
 import { checkTranslation } from '../dom/translation-check';
 import type { ToastOptions } from '../ui/toast';
@@ -15,6 +21,50 @@ import { tf } from '../i18n';
 /** 提示的文字与选项，原样交给 toast()。 */
 export interface TextNotice extends ToastOptions {
   message: string;
+}
+
+/**
+ * 失败类别 → 提示语义（#313）：key 无效 / 配额耗尽展示真实原因，其余展示泛化
+ * 文案。整页翻译的汇总也用它；被放弃不经过这里（#1074）。
+ */
+export function displayDecision(
+  category: FailureCategory | undefined,
+  error: string | undefined,
+): FailureDisplay {
+  if (category === 'invalid-key' || category === 'quota') {
+    return { showRealReason: true, reason: error };
+  }
+  return { showRealReason: false };
+}
+
+/** 单文本入口没给出译文的缘由（#1075），由编排模块按准入与发送结果给出。 */
+export type SingleTextMiss =
+  /** 站点被名单禁用；mainFrame 为假时是子框架（#327：子框架不产生提示）。 */
+  | { kind: 'blocked'; mainFrame: boolean }
+  /** 总开关关闭：安静。 */
+  | { kind: 'disabled' }
+  /** 被放弃（页面还原、调用方中止）：安静，不是失败（#1053）。 */
+  | { kind: 'abandoned' }
+  /**
+   * 发出去了、引擎没给出译文。invalidated 是失效（扩展上下文失效、配额耗尽）：
+   * 与整页汇总同一口径，展示真实原因（上下文失效时是“请刷新页面后重试”）。
+   */
+  | { kind: 'failed'; category?: FailureCategory; error?: string; invalidated?: boolean };
+
+/** 单文本入口没给出译文时要显示的提示；null 为不提示。 */
+export function singleTextMissNotice(miss: SingleTextMiss): TextNotice | null {
+  const error = (message: string): TextNotice => ({ message, purpose: 'status', kind: 'error' });
+  switch (miss.kind) {
+    case 'blocked':
+      return miss.mainFrame ? error(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译')) : null;
+    case 'disabled':
+    case 'abandoned':
+      return null;
+    case 'failed': {
+      const real = miss.invalidated || displayDecision(miss.category, miss.error).showRealReason;
+      return real && miss.error ? error(miss.error) : error(tf('toastTranslateFail', '翻译失败'));
+    }
+  }
 }
 
 /**

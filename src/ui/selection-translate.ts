@@ -27,8 +27,6 @@ export interface SelectionTranslatorDeps {
   ): Promise<SingleTextResult>;
   /** 发起时读当前设置的源语言与目标语言。 */
   getLangs(): { from: string; to: string };
-  /** 子 frame 不弹站点禁用提示。 */
-  isMainFrame: boolean;
 }
 
 export function createSelectionTranslator(
@@ -81,34 +79,20 @@ export function createSelectionTranslator(
 
   /** 划词翻译的结果提示。 */
   function showResult(text: string, result: SingleTextResult): void {
+    // #1075：没拿到译文时显示入口给出的提示（准入拦截、失败原因；被放弃、
+    // 总开关关闭不提示）。#1053：被放弃时等待态由收尾收掉；被后发一轮顶掉
+    // 的那一轮到不了这里，序号已经先把它丢了。
     // #748：失败与站点禁用同样就地替换等待态 —— 不先摘掉转圈再弹一条，
     // 中间没有两条都不在的瞬间。替换之后仍是状态类：错误样式、固定时长、
     // 没有关闭按钮，不跟着内容类按长度延长
-    const failure = { purpose: 'status', kind: 'error', replacePending: true } as const;
-
-    // 准入拦截：与逐段 / 整页翻译一致的提示
-    if (result.admission === 'blocked') {
-      if (deps.isMainFrame) toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), failure);
-      return;
-    }
-    if (result.admission !== 'allowed') return;
-
     if (!result.ok) {
-      // #1053：被放弃（还原整页）不提示，等待态由收尾收掉。被后发一轮顶掉
-      // 的那一轮到不了这里，序号已经先把它丢了
-      if (result.abandoned) return;
-      // #313: key 无效 / 配额展示真实原因，瞬时故障展示泛化文案
-      if (result.display?.showRealReason && result.error) {
-        toast(result.error, failure);
-      } else {
-        toast(tf('toastTranslateFail', '翻译失败'), failure);
-      }
+      if (result.notice) toast(result.notice.message, { ...result.notice, replacePending: true });
       return;
     }
 
     // #787：划中的已经是目标语言时说明是同语言，不把原文当译文弹出来；
     // 否则译文走内容类（#738）
-    const notice = selectionNotice(text, result.translation!);
+    const notice = selectionNotice(text, result.translation);
     toast(notice.message, notice);
   }
 }

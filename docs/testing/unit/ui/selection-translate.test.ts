@@ -22,7 +22,11 @@
  */
 import { describe, test, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import { createSelectionTranslator } from '~/src/ui/selection-translate';
-import type { SingleTextResult } from '~/src/orchestration/orchestrator';
+import { createOrchestrator, type SingleTextResult } from '~/src/orchestration/orchestrator';
+import { singleTextMissNotice, type SingleTextMiss } from '~/src/orchestration/text-notice';
+
+/** 入口没给出译文时的结果：提示由入口那一处判定给出（#1075），这里只看划词怎么显示它。 */
+const fail = (miss: SingleTextMiss): SingleTextResult => ({ ok: false, notice: singleTextMissNotice(miss) });
 import { toast } from '~/src/ui/toast';
 import { unmountIsolated } from '~/src/ui/mount';
 
@@ -70,7 +74,7 @@ function engine() {
         calls.push({ text, resolve });
       }),
   );
-  const ok = (translation: string): SingleTextResult => ({ admission: 'allowed', ok: true, translation });
+  const ok = (translation: string): SingleTextResult => ({ ok: true, translation });
   return { calls, translateText, ok };
 }
 
@@ -78,7 +82,6 @@ function translator(translateText: (text: string) => Promise<SingleTextResult>) 
   return createSelectionTranslator({
     translateText: (text) => translateText(text),
     getLangs: () => ({ from: 'auto', to: 'zh-CN' }),
-    isMainFrame: true,
   });
 }
 
@@ -194,7 +197,7 @@ describe('并发只认最后一次（#750）', () => {
     void translate('Second sentence');
     const rec = recordShown();
 
-    e.calls[0]!.resolve({ admission: 'allowed', ok: false, error: 'timeout', display: { showRealReason: false } } as SingleTextResult);
+    e.calls[0]!.resolve(fail({ kind: 'failed', category: 'transient', error: 'timeout' }));
     await first;
     await flush();
     rec.stop();
@@ -250,7 +253,7 @@ describe('状态类不受影响（#750）', () => {
   });
 
   test('经划词入口弹出的失败与站点禁用仍是状态类', async () => {
-    const blocked = translator(async () => ({ admission: 'blocked', ok: false }));
+    const blocked = translator(async () => fail({ kind: 'blocked', mainFrame: true }));
     await settle(blocked('Hello'));
     expect(shown()).toEqual([chrome.i18n.getMessage('toastSiteBlocked')]);
     expect(toasts()[0]!.dataset.purpose).toBe('status');
@@ -258,12 +261,7 @@ describe('状态类不受影响（#750）', () => {
     vi.advanceTimersByTime(3000);
     expect(shown()).toEqual([]);
 
-    const quota = translator(async () => ({
-      admission: 'allowed',
-      ok: false,
-      error: 'DeepL 返回 456：本月配额已用完。',
-      display: { showRealReason: true },
-    }) as SingleTextResult);
+    const quota = translator(async () => fail({ kind: 'failed', category: 'quota', error: 'DeepL 返回 456：本月配额已用完。' }));
     await settle(quota('Hello'));
     expect(shown()).toEqual(['DeepL 返回 456：本月配额已用完。']);
     expect(toasts()[0]!.dataset.purpose).toBe('status');
@@ -277,40 +275,22 @@ describe('失败到达时就地替换等待态（#748）', () => {
   const cases: { name: string; result: SingleTextResult; text: () => string }[] = [
     {
       name: 'key 无效：展示真实原因',
-      result: {
-        admission: 'allowed',
-        ok: false,
-        category: 'invalid-key',
-        error: 'DeepL 返回 403：key 无效',
-        display: { showRealReason: true, reason: 'DeepL 返回 403：key 无效' },
-      },
+      result: fail({ kind: 'failed', category: 'invalid-key', error: 'DeepL 返回 403：key 无效' }),
       text: () => 'DeepL 返回 403：key 无效',
     },
     {
       name: '配额：展示真实原因，长原因也按状态类计时',
-      result: {
-        admission: 'allowed',
-        ok: false,
-        category: 'quota',
-        error: longReason,
-        display: { showRealReason: true, reason: longReason },
-      },
+      result: fail({ kind: 'failed', category: 'quota', error: longReason }),
       text: () => longReason,
     },
     {
       name: '瞬时故障：展示泛化文案，不露出引擎原因',
-      result: {
-        admission: 'allowed',
-        ok: false,
-        category: 'transient',
-        error: 'HTTP 503',
-        display: { showRealReason: false },
-      },
+      result: fail({ kind: 'failed', category: 'transient', error: 'HTTP 503' }),
       text: () => chrome.i18n.getMessage('toastTranslateFail'),
     },
     {
       name: '站点禁用：固定文案',
-      result: { admission: 'blocked', ok: false },
+      result: fail({ kind: 'blocked', mainFrame: true }),
       text: () => chrome.i18n.getMessage('toastSiteBlocked'),
     },
   ];
@@ -374,10 +354,10 @@ describe('失败到达时就地替换等待态（#748）', () => {
   });
 
   test('子 frame 的站点禁用不弹提示，等待态照常收掉', async () => {
+    // 子框架里入口给出“不提示”（#327），划词照它办
     const sub = createSelectionTranslator({
-      translateText: async () => ({ admission: 'blocked', ok: false }),
+      translateText: async () => fail({ kind: 'blocked', mainFrame: false }),
       getLangs: () => ({ from: 'auto', to: 'zh-CN' }),
-      isMainFrame: false,
     });
     await settle(sub('Hello'));
     expect(shown()).toEqual([]);
@@ -401,14 +381,8 @@ describe('状态类不受影响（#748）', () => {
 });
 
 describe('等待态的最短显示时间（#749）', () => {
-  const ok: SingleTextResult = { admission: 'allowed', ok: true, translation: '你好世界' };
-  const fail: SingleTextResult = {
-    admission: 'allowed',
-    ok: false,
-    category: 'transient',
-    error: 'HTTP 503',
-    display: { showRealReason: false },
-  };
+  const ok: SingleTextResult = { ok: true, translation: '你好世界' };
+  const failed: SingleTextResult = fail({ kind: 'failed', category: 'transient', error: 'HTTP 503' });
 
   /** 引擎在 after 毫秒时返回 result；返回从发起到等待态被替换经过了多久（10 毫秒一步）。 */
   async function replacedAt(after: number, result: SingleTextResult): Promise<number> {
@@ -429,7 +403,7 @@ describe('等待态的最短显示时间（#749）', () => {
 
   for (const [name, result] of [
     ['译文', ok],
-    ['失败', fail],
+    ['失败', failed],
   ] as const) {
     test(`${name}：引擎很快返回时等满再替换 —— 替换时刻与引擎多快无关`, async () => {
       const at0 = await replacedAt(0, result);
@@ -520,8 +494,7 @@ describe('后发一轮顶掉先发的一轮时通知中止（#1044）', () => {
           releases.push(r);
         }),
       getLangs: () => ({ from: 'en', to: 'zh-CN' }),
-      isMainFrame: true,
-    });
+      });
     const first = translate('first');
     await vi.advanceTimersByTimeAsync(0);
     expect(signals[0]!.aborted).toBe(false);
@@ -529,8 +502,8 @@ describe('后发一轮顶掉先发的一轮时通知中止（#1044）', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(signals[0]!.aborted).toBe(true);
     expect(signals[1]!.aborted).toBe(false);
-    releases[0]!({ admission: 'allowed', ok: false, abandoned: true });
-    releases[1]!({ admission: 'allowed', ok: true, translation: 'T(second)' });
+    releases[0]!({ ok: false, notice: null, abandoned: true });
+    releases[1]!({ ok: true, translation: 'T(second)' });
     await settle(Promise.all([first, second]).then(() => {}));
     expect(signals[1]!.aborted).toBe(false);
   });
@@ -542,11 +515,7 @@ describe('被放弃的这一轮不算失败（#1053）', () => {
     const run = translator(e.translateText)('Hello world');
     const rec = recordShown();
     vi.advanceTimersByTime(SLOW);
-    e.calls[0]!.resolve({
-      admission: 'allowed',
-      ok: false,
-      abandoned: true,
-    });
+    e.calls[0]!.resolve({ ok: false, notice: null, abandoned: true });
     await settle(run);
     rec.stop();
     expect(toasts()).toHaveLength(0);
@@ -557,15 +526,29 @@ describe('被放弃的这一轮不算失败（#1053）', () => {
     const e = engine();
     const run = translator(e.translateText)('Hello world');
     vi.advanceTimersByTime(SLOW);
-    e.calls[0]!.resolve({
-      admission: 'allowed',
-      ok: false,
-      category: 'transient',
-      error: 'HTTP 503',
-      display: { showRealReason: false },
-    });
+    e.calls[0]!.resolve(fail({ kind: 'failed', category: 'transient', error: 'HTTP 503' }));
     await settle(run);
     expect(shown()).toEqual([chrome.i18n.getMessage('toastTranslateFail')]);
     expect(toasts()[0]!.dataset.kind).toBe('error');
+  });
+});
+
+describe('还原整页导致的放弃不提示：接真实的编排模块（#1053、#1075）', () => {
+  test('在飞时还原：等待态收掉，不弹“翻译失败”', async () => {
+    let reply: (v: unknown) => void = () => {};
+    const orch = createOrchestrator({ send: () => new Promise((r) => (reply = r)) });
+    orch.start();
+    const rec = recordShown();
+    const run = createSelectionTranslator({
+      translateText: (text, from, to, opts) => orch.translateText(text, from, to, opts),
+      getLangs: () => ({ from: 'en', to: 'zh-CN' }),
+    })('Hello world');
+    vi.advanceTimersByTime(SLOW);
+    orch.abort();
+    reply({ ok: false, error: '已中止', category: 'aborted', aborted: true });
+    await settle(run);
+    rec.stop();
+    expect(toasts()).toHaveLength(0);
+    expect(rec.seen.some((t) => t.includes(chrome.i18n.getMessage('toastTranslateFail')))).toBe(false);
   });
 });

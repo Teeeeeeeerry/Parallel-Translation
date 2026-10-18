@@ -296,7 +296,6 @@ export default defineContentScript({
         const ns = getSettings();
         return { from: ns.from, to: ns.to };
       },
-      isMainFrame,
     });
 
     // ── 划词拖动 ──
@@ -700,30 +699,16 @@ export default defineContentScript({
         recordDetectedLang: true,
       });
 
-      // 准入拦截：与整页翻译一致的提示（站点被屏蔽 toast；总开关
-      // 关闭静默）
-      if (result.admission === 'blocked') {
-        if (isMainFrame)
-          toast(tf('toastSiteBlocked', '该站点已在站点名单中被禁用翻译'), { purpose: 'status', kind: 'error' });
-        return;
-      }
-      if (result.admission !== 'allowed') return;
-
+      // #1075：没拿到译文时显示入口给出的提示（准入拦截、失败原因；被放弃、
+      // 总开关关闭不提示），判定只在编排模块那一处
       if (!result.ok) {
-        // #313: 展示决策由编排模块给出 —— key 无效 / 配额展示真实
-        // 原因，瞬时故障展示泛化文案；#1053：被放弃（还原整页）不提示
-        if (result.abandoned) return;
-        if (result.display?.showRealReason && result.error) {
-          toast(result.error, { purpose: 'status', kind: 'error' });
-        } else {
-          toast(tf('toastTranslateFail', '翻译失败'), { purpose: 'status', kind: 'error' });
-        }
+        if (result.notice) toast(result.notice.message, result.notice);
         return;
       }
 
       // #58：将占位符替换回原文
       const restored = restorePreserves(
-        result.translation!,
+        result.translation,
         preserves,
         text,
       );
