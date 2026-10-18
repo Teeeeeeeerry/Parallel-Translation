@@ -5,7 +5,7 @@
  * 层收到的中止信号在什么时候触发、这一次报什么。口径：
  * - 逐段与划词（默认）：页面还原（纪元递增）算放弃 —— 信号触发，报 aborted；
  * - 划词：调用方自己的信号（后发一轮顶掉）算放弃；
- * - 输入翻译（keepOnRestore）：页面还原不算 —— 信号不触发，照常返回译文。
+ * - 输入翻译（从输入根派生，#1072 前是 keepOnRestore）：页面还原不算 —— 信号不触发，照常返回译文。
  * 信号之后怎么变成一条 pt:cancel-batches 消息由消息层负责，见 messaging 的用例。
  */
 import { describe, test, expect, vi } from 'vitest';
@@ -42,11 +42,11 @@ describe('单文本入口放弃时通知后台中止（#1044）', () => {
     expect(await pending).toMatchObject({ ok: false, category: 'aborted' });
   });
 
-  test('输入翻译（keepOnRestore）：在飞时页面还原 → 信号不触发，照常返回译文', async () => {
+  test('输入翻译（输入根）：在飞时页面还原 → 信号不触发，照常返回译文', async () => {
     const s = slowSend();
     const orch = createOrchestrator({ send: s.send });
     orch.start();
-    const pending = orch.translateText('你好', 'auto', 'en', { noCache: true, keepOnRestore: true });
+    const pending = orch.translateText('你好', 'auto', 'en', { noCache: true, root: 'input' });
     await flush();
     orch.abort();
     expect(s.signals[0]!.aborted).toBe(false);
@@ -67,12 +67,12 @@ describe('单文本入口放弃时通知后台中止（#1044）', () => {
     expect(await pending).toMatchObject({ ok: false, category: 'aborted' });
   });
 
-  test('输入翻译带了调用方信号时同样认它：keepOnRestore 只管页面还原', async () => {
+  test('输入翻译带了调用方信号时同样认它：输入根只是不随页面还原', async () => {
     const s = slowSend();
     const orch = createOrchestrator({ send: s.send });
     orch.start();
     const caller = new AbortController();
-    const pending = orch.translateText('你好', 'auto', 'en', { keepOnRestore: true, signal: caller.signal });
+    const pending = orch.translateText('你好', 'auto', 'en', { root: 'input', signal: caller.signal });
     await flush();
     caller.abort();
     expect(s.signals[0]!.aborted).toBe(true);
