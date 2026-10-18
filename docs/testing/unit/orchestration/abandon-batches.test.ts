@@ -10,6 +10,7 @@ import { describe, test, expect, vi } from 'vitest';
 import { createOrchestrator, type TranslateItem } from '~/src/orchestration/orchestrator';
 import type { TranslateRequest } from '~/src/engines/types';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
+import { pageNotice, emptyRenderStats } from '~/src/orchestration/page-summary';
 
 const items = (tag: string, n: number): TranslateItem<string>[] =>
   Array.from({ length: n }, (_, i) => ({ text: `${tag}${i}`, ctx: `${tag}${i}` }));
@@ -136,5 +137,78 @@ describe('放弃的批次通知后台中止（#1001）', () => {
     const summary = await pending;
     expect(summary.aborted).toBe(true);
     expect(send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('失效不是放弃（#1073）', () => {
+  const CTX = '[PT] 扩展上下文已失效（扩展已更新或重载），请刷新页面后重试';
+  const invalid = { ok: false, error: CTX, invalidated: true, contextInvalidated: true, category: 'transient' };
+
+  test('整页开关全部批次失效：报错误态而不是中止，提示里是失效原因', async () => {
+    const pushed: string[] = [];
+    const orch = createOrchestrator({
+      send: async () => invalid,
+      hasTranslated: () => false,
+      pushStatus: (s) => pushed.push(s),
+    });
+    orch.start();
+    const result = await orch.togglePage(items('a', 3), 'en', 'zh-CN');
+    expect(result.status).toBe('error');
+    expect(result.summary).toMatchObject({ aborted: false, invalidated: true });
+    expect(pushed.at(-1)).toBe('error');
+    expect(pageNotice(result, emptyRenderStats())).toEqual({ message: CTX, kind: 'error' });
+  });
+
+  test('增量补翻判了失效：汇总不报中止（调用方据此提示真实原因）', async () => {
+    const orch = createOrchestrator({ send: async () => invalid });
+    orch.start();
+    const summary = await orch.translatePage(items('a', 3), 'en', 'zh-CN');
+    expect(summary).toMatchObject({ aborted: false, invalidated: true, allFailed: true });
+  });
+
+  test('首批成功、后一批失效：已翻好的照常，报完成；不再补采集、不启动观察器', async () => {
+    const events: string[] = [];
+    let n = 0;
+    let translated = false;
+    const collect = vi.fn((mode?: { readOnly: boolean }) => (mode?.readOnly ? [] : items(`r${n++}`, 40)));
+    const orch = createOrchestrator({
+      send: async (req) =>
+        req.texts[0] === 'r00' ? { ok: true, data: { translations: req.texts } } : invalid,
+      hasTranslated: () => translated,
+      onBatchResult: (_i, _b, r) => {
+        if (r.ok) translated = true;
+      },
+      pushStatus: (s) => events.push(s),
+      onObserverStart: () => events.push('observer:start'),
+      getSettings: () => ({ ...DEFAULT_SETTINGS, maxConcurrency: 1 }),
+      getHostname: () => 'example.com',
+      sleep: async () => {},
+    });
+    orch.start();
+    const result = await orch.togglePage(collect, 'en', 'zh-CN');
+    expect(result.status).toBe('translated');
+    expect(result.summary).toMatchObject({ aborted: false, invalidated: true, allFailed: false });
+    expect(collect.mock.calls.filter((c) => !c[0]?.readOnly)).toHaveLength(1);
+    expect(events).toEqual(['loading', 'done']);
+  });
+
+  test('还原之后在飞的批次才回失效：按还原报中止', async () => {
+    let reply: (v: unknown) => void = () => {};
+    let translated = true;
+    const orch = createOrchestrator({
+      send: () => new Promise((r) => (reply = r)),
+      hasTranslated: () => translated,
+      restore: () => {
+        translated = false;
+      },
+    });
+    orch.start();
+    translated = false;
+    const pending = orch.togglePage(items('a', 3), 'en', 'zh-CN');
+    await flush();
+    translated = true;
+    expect((await orch.togglePage(items('a', 3), 'en', 'zh-CN')).status).toBe('restored');
+    reply(invalid);
+    expect((await pending).status).toBe('aborted');
   });
 });

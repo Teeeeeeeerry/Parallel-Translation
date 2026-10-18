@@ -157,11 +157,11 @@ describe('attemptBatchWithRetry — 上下文失效立即失败（#111/#116）',
 });
 
 describe('attemptBatchWithRetry — 中止（还原 / 全局短路）', () => {
-  test('shouldAbort 在发送前命中 → aborted，不发送', async () => {
+  test('信号在发送前已中止 → aborted，不发送', async () => {
+    const ctrl = new AbortController();
+    ctrl.abort();
     const send = vi.fn(async () => ({ ok: true, data: TRANSLATED }));
-    const result = await attemptBatchWithRetry(send, {
-      shouldAbort: () => true,
-    });
+    const result = await attemptBatchWithRetry(send, { signal: ctrl.signal });
 
     expect(result).toEqual({
       ok: false,
@@ -172,31 +172,28 @@ describe('attemptBatchWithRetry — 中止（还原 / 全局短路）', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  test('shouldAbort 在发送后命中 → aborted，不渲染、不再重试', async () => {
-    const send = vi.fn(async () => ({ ok: false, error: '引擎失败' }));
-    let calls = 0;
-    const result = await attemptBatchWithRetry(send, {
-      sleep: noopSleep,
-      shouldAbort: () => ++calls > 1, // 第一次尝试前不中止，发送后中止
+  test('信号在发送期间中止 → aborted，不渲染、不再重试', async () => {
+    const ctrl = new AbortController();
+    const send = vi.fn(async () => {
+      ctrl.abort();
+      return { ok: false, error: '引擎失败' };
     });
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep, signal: ctrl.signal });
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.aborted).toBe(true);
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  test('重试预算耗尽后的最后一次失败也查中止（#157 边界）', async () => {
-    // 还原恰在「最后一次尝试失败」与「返回」之间发生：shouldAbort
-    // 前 BATCH_RETRY_LIMIT+1 次（每次尝试的前/后检查）都返回 false，
-    // 最后一次失败后才变 true —— 必须报 aborted 而不是 failed
-    const send = vi.fn(async () => ({ ok: false, error: '引擎失败' }));
+  test('重试预算耗尽的最后一次失败期间中止也报 aborted（#157 边界）', async () => {
+    // 还原恰在最后一次尝试在飞时发生：必须报 aborted 而不是 failed
+    const ctrl = new AbortController();
     let calls = 0;
-    const result = await attemptBatchWithRetry(send, {
-      sleep: noopSleep,
-      // 每次尝试有前/后两次检查：(LIMIT+1) 次尝试共 6 次检查全放行，
-      // 第 7 次（预算耗尽后的最终返回检查）才命中 —— 证明该边界
-      shouldAbort: () => ++calls > (BATCH_RETRY_LIMIT + 1) * 2,
+    const send = vi.fn(async () => {
+      if (++calls === BATCH_RETRY_LIMIT + 1) ctrl.abort();
+      return { ok: false, error: '引擎失败' };
     });
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep, signal: ctrl.signal });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {

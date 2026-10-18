@@ -12,14 +12,30 @@
 // 任一来源中止，这次运行就中止。信号往下交给发送层，后台据此中止引擎调用。
 //
 // 运行结束要调 end()：从根上摘掉监听，根活得比运行久，不摘会越挂越多。
+//
+// #1073：运行也可以自己中止（abort），带上原因。某一批判了失效（扩展上下文
+// 失效、配额耗尽）时，这次运行以 RunInvalidated 中止 —— 别的批次据此不再发出；
+// 汇总按原因区分“失效”（要提示真实原因）与“放弃”（不提示）。
 
 /** 运行从哪个根派生：page 随还原中止，input 不随还原。 */
 export type RunRoot = 'page' | 'input';
+
+/** 运行因失效而中止的原因（#1073）：不是放弃，失效原因要进汇总与提示。 */
+export class RunInvalidated {
+  constructor(readonly error: string) {}
+}
+
+/** 这次运行是否被放弃：已中止，且不是因为失效（#1073）。 */
+export function isAbandoned(signal: AbortSignal): boolean {
+  return signal.aborted && !(signal.reason instanceof RunInvalidated);
+}
 
 /** 一次翻译运行。 */
 export interface TranslationRun {
   /** 这次运行的中止信号：根或叠加的调用方信号中止时中止。 */
   readonly signal: AbortSignal;
+  /** 由运行自己中止，带上原因（#1073）；已中止时不改原因。 */
+  abort(reason?: unknown): void;
   /** 运行结束：摘掉监听。之后根再中止，这次运行不再跟着中止。 */
   end(): void;
 }
@@ -45,7 +61,7 @@ export function createTranslationRuns(): TranslationRuns {
       };
       if (sources.some((s) => s.aborted)) own.abort();
       else for (const s of sources) s.addEventListener('abort', onAbort, { once: true });
-      return { signal: own.signal, end };
+      return { signal: own.signal, abort: (reason) => own.abort(reason), end };
     },
 
     restorePage() {
