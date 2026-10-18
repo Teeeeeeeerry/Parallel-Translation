@@ -29,7 +29,7 @@
 // 直接交给调用方展示真实原因。
 
 import type { TranslateResponse, FailureCategory } from '~/src/engines/types';
-import { sleep as defaultSleep } from '~/src/runtime/sleep';
+import { sleep as defaultSleep, sleepUnlessAborted } from '~/src/runtime/sleep';
 
 /** #91: 批次级引擎失败最大重试次数。 */
 export const BATCH_RETRY_LIMIT = 2;
@@ -56,6 +56,11 @@ export interface BatchRetryOptions {
   sleep?: (ms: number) => Promise<void>;
   /** 每次尝试前后检查；返回 true 则立即中止剩余重试。 */
   shouldAbort?: () => boolean;
+  /**
+   * #1065：调用方的中止信号。与 shouldAbort 同样在每次尝试前后检查；重试之间
+   * 的 1 秒、3 秒等待可被它打断，不必睡醒才发现被放弃。
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -103,16 +108,19 @@ export async function attemptBatchWithRetry(
   }>,
   opts: BatchRetryOptions = {},
 ): Promise<BatchRetryResult> {
-  const sleep = opts.sleep ?? defaultSleep;
+  const sleep = (ms: number) => sleepUnlessAborted(ms, opts.signal, opts.sleep ?? defaultSleep);
+  const isAborted = () => opts.signal?.aborted === true || opts.shouldAbort?.() === true;
   let lastError = '未知错误';
   /** #416: 前几次尝试里已成功的段落；failedIndices 为仍待补齐的段落。 */
   let partial: TranslateResponse | null = null;
   for (let attempt = 0; ; attempt++) {
-    if (opts.shouldAbort?.()) {
+    if (isAborted()) {
       return { ok: false, invalidated: false, aborted: true, error: '' };
     }
     const resp = await send();
-    if (opts.shouldAbort?.()) {
+    // 这一批自己判了失效时，信号往往正是因它而中止（编排模块据此拦下别的批次）——
+    // 它照旧报失效，失效原因要进汇总
+    if (opts.shouldAbort?.() || (opts.signal?.aborted && !resp?.invalidated)) {
       return { ok: false, invalidated: false, aborted: true, error: '' };
     }
     if (resp?.ok && resp.data) {
@@ -174,7 +182,7 @@ export async function attemptBatchWithRetry(
   return {
     ok: false,
     invalidated: false,
-    aborted: opts.shouldAbort?.() ?? false,
+    aborted: isAborted(),
     error: lastError,
   };
 }

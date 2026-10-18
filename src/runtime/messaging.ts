@@ -28,13 +28,17 @@
 // 失效），就把这个身份发给后台（pt:cancel-batches），后台中止对应的引擎调用。
 // 中止消息发出去就算数：不等回复、不重试，后台没收到只是回到原来的行为
 // （后台把这一批翻完，结果没人要）。
+//
+// #1065：传输重试也认调用方的中止信号。每次发送前查一次，已中止就不再生成新的
+// 批次身份、以放弃结束；退避等待可被打断。等后台就绪（ping）阶段同样如此。
+// 已经发出、正在等回复的那一次不被打断：它交给后台中止，回复照旧等。
 
 import type {
   TranslateRequest,
   TranslateResponse,
   FailureCategory,
 } from '~/src/engines/types';
-import { sleep } from '~/src/runtime/sleep';
+import { sleepUnlessAborted } from '~/src/runtime/sleep';
 
 export type TranslateResult =
   | { ok: true; data: TranslateResponse }
@@ -126,6 +130,14 @@ function newBatchId(): string {
   return `${BATCH_ID_PREFIX}-${++batchSeq}`;
 }
 
+/** 调用方中止了（#1065）：传输重试在发送前或退避中发现，不再发下一条。 */
+class SendAbortedError extends Error {
+  constructor() {
+    super('已中止');
+    this.name = 'SendAbortedError';
+  }
+}
+
 /**
  * 通知后台这些批次不用再翻了（#1001）。发出去就算数：不等回复，发送失败
  * （上下文已失效、后台没在听）一律吞掉 —— 后台没收到只是回到原来的行为。
@@ -150,6 +162,7 @@ export function cancelBatches(ids: string[]): void {
 async function sendWithTransportRetry(
   makeMsg: () => unknown,
   budgetMs: number,
+  signal: AbortSignal | undefined,
   onAbandon?: (msg: unknown) => void,
 ): Promise<unknown> {
   const deadline = Date.now() + budgetMs;
@@ -161,6 +174,8 @@ async function sendWithTransportRetry(
     if (isContextInvalidated()) {
       throw new ContextInvalidatedError();
     }
+    // #1065：调用方已放弃 —— 不再生成新消息（也就没有新的批次身份）
+    if (signal?.aborted) throw new SendAbortedError();
 
     // 单次最长等待 = 剩余预算与响应级超时的较小者（#154）
     const remaining = deadline - Date.now();
@@ -187,7 +202,7 @@ async function sendWithTransportRetry(
     }
     if (resp !== undefined) return resp;
     if (Date.now() >= deadline) break;
-    await sleep(delay);
+    await sleepUnlessAborted(delay, signal);
     delay = Math.min(delay * 2, BACKOFF_MAX_MS);
   }
 
@@ -212,7 +227,7 @@ export async function translateViaBackground(
   ctl?.signal?.addEventListener('abort', onAbort);
   try {
     // 1) SW 就绪等待：任何 ping 响应都证明消息通道已注册监听器。
-    await sendWithTransportRetry(() => ({ type: 'pt:ping' }), READY_BUDGET_MS);
+    await sendWithTransportRetry(() => ({ type: 'pt:ping' }), READY_BUDGET_MS, ctl?.signal);
 
     // 2) 发送翻译消息，传输层失败重试。每次发送一个新的批次身份；
     // 这一次不再等（超时、连接被拒）时通知后台中止它
@@ -222,6 +237,7 @@ export async function translateViaBackground(
         return { type: 'pt:translate', payload: { ...payload, batchId: current } };
       },
       SEND_BUDGET_MS,
+      ctl?.signal,
       (msg) => {
         const id = (msg as { payload: { batchId: string } }).payload.batchId;
         if (current === id) current = null;
@@ -248,6 +264,9 @@ export async function translateViaBackground(
       aborted: resp?.aborted ?? false,
     };
   } catch (e) {
+    if (e instanceof SendAbortedError) {
+      return { ok: false, error: e.message, invalidated: false, category: 'aborted', aborted: true };
+    }
     // #116: 上下文失效以类型化标志透出，调用方无需匹配文案
     const contextInvalidated = e instanceof ContextInvalidatedError;
     return {

@@ -118,4 +118,23 @@ describe('放弃的批次通知后台中止（#1001）', () => {
     h.orch.abort();
     expect(h.signals.map((s) => s.aborted)).toEqual([false, false]);
   });
+
+  test('批次在重试等待（1 秒）期间被中止：立即结束，不睡满、不再发（#1065）', async () => {
+    const send = vi.fn(async () => ({ ok: false, error: '引擎失败', category: 'transient' }));
+    const orch = createOrchestrator({
+      send,
+      getSettings: () => ({ ...DEFAULT_SETTINGS, maxConcurrency: 2 }),
+      getHostname: () => 'example.com',
+      // 虚拟时钟：重试等待永远不会自己醒
+      sleep: () => new Promise<void>(() => {}),
+    });
+    orch.start();
+    const pending = orch.translatePage(items('a', 20), 'en', 'zh-CN');
+    await flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    orch.abort();
+    const summary = await pending;
+    expect(summary.aborted).toBe(true);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
 });

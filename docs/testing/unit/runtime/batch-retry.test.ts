@@ -207,6 +207,80 @@ describe('attemptBatchWithRetry — 中止（还原 / 全局短路）', () => {
   });
 });
 
+describe('attemptBatchWithRetry — 中止信号打断重试等待（#1065）', () => {
+  // 虚拟时钟：sleep 只在推进假定时器时醒来，中止发生时时钟一拍都不推
+  const virtualSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+  test('第 1 秒的等待期间中止 → 立即返回 aborted，不等满 1 秒、不再发送', async () => {
+    vi.useFakeTimers();
+    try {
+      const ctrl = new AbortController();
+      const send = vi.fn(async () => ({ ok: false, error: '引擎失败' }));
+      const pending = attemptBatchWithRetry(send, { sleep: virtualSleep, signal: ctrl.signal });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(send).toHaveBeenCalledTimes(1);
+      ctrl.abort();
+      let settled = false;
+      void pending.then(() => (settled = true));
+      // 只冲一下微任务，时钟不动
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(true);
+      expect(await pending).toMatchObject({ ok: false, aborted: true, invalidated: false });
+      await vi.advanceTimersByTimeAsync(BATCH_RETRY_DELAYS_MS[0]! + BATCH_RETRY_DELAYS_MS[1]!);
+      expect(send).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('第 3 秒的等待期间中止（部分成功之后）→ 立即返回 aborted，不返回部分结果', async () => {
+    vi.useFakeTimers();
+    try {
+      const ctrl = new AbortController();
+      const send = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, error: '引擎失败' })
+        .mockResolvedValue({ ok: true, data: { translations: ['你好', ''], failedIndices: [1] } });
+      const pending = attemptBatchWithRetry(send, { sleep: virtualSleep, signal: ctrl.signal });
+      await vi.advanceTimersByTimeAsync(BATCH_RETRY_DELAYS_MS[0]!);
+      expect(send).toHaveBeenCalledTimes(2);
+      ctrl.abort();
+      let settled = false;
+      void pending.then(() => (settled = true));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(true);
+      expect(await pending).toMatchObject({ ok: false, aborted: true });
+      await vi.advanceTimersByTimeAsync(BATCH_RETRY_DELAYS_MS[1]!);
+      expect(send).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('信号因这一批自己判了失效而中止 → 这一批仍报失效（原因要进汇总）', async () => {
+    const ctrl = new AbortController();
+    const send = vi.fn(async () => {
+      ctrl.abort();
+      return { ok: false, error: '配额已用尽', invalidated: true, category: 'quota' as const };
+    });
+    const result = await attemptBatchWithRetry(send, { sleep: noopSleep, signal: ctrl.signal });
+    expect(result).toMatchObject({ ok: false, invalidated: true, aborted: false, error: '配额已用尽' });
+  });
+
+  test('信号在开始前已中止 → aborted，不发送', async () => {
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const send = vi.fn(async () => ({ ok: true, data: TRANSLATED }));
+    expect(await attemptBatchWithRetry(send, { signal: ctrl.signal })).toEqual({
+      ok: false,
+      invalidated: false,
+      aborted: true,
+      error: '',
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
 describe('attemptBatchWithRetry — 新字段优先（#246）', () => {
   test('category=invalid-key（新字段）→ 立即失败，0 次重试', async () => {
     const send = vi.fn(async () => ({
