@@ -188,6 +188,41 @@ describe('整页翻译完成后补采集一轮（#1011）', () => {
     expect(h.events).not.toContain('observer:start');
   });
 
+  test('补采集在飞时点还原：在飞的补采集批次收到中止，回来的译文不渲染（#1073）', async () => {
+    const replies: ((v: unknown) => void)[] = [];
+    const signals: AbortSignal[] = [];
+    const rendered: string[] = [];
+    let translated = false;
+    const send = vi.fn(
+      (req: TranslateRequest, ctl?: { signal: AbortSignal }) =>
+        new Promise((r) => {
+          signals.push(ctl!.signal);
+          replies.push(() => r({ ok: true, data: { translations: req.texts.map((t) => `T(${t})`) } }));
+        }),
+    );
+    const h = harness({
+      send: send as OrchestratorOptions['send'],
+      hasTranslated: () => translated,
+      onBatchResult: (_i, batch) => {
+        translated = true;
+        rendered.push(...batch.map((b) => String(b.ctx)));
+      },
+    });
+    const src = source(items('a', 3), items('new', 3));
+    const pending = h.orch.togglePage(src.fn, 'en', 'zh-CN');
+    await flush();
+    (replies.shift() as unknown as () => void)(); // 首轮返回
+    await flush();
+    expect(signals).toHaveLength(2);
+    expect(signals[1]!.aborted).toBe(false);
+    expect((await h.orch.togglePage(src.fn, 'en', 'zh-CN')).status).toBe('restored');
+    expect(signals[1]!.aborted).toBe(true);
+    // 后台没理会中止，照样把补采集这一批的译文送回来
+    (replies.shift() as unknown as () => void)();
+    expect((await pending).status).toBe('aborted');
+    expect(rendered).toEqual(['a0', 'a1', 'a2']);
+  });
+
   test('准入不重判：首轮之后用户关了总开关，这一次的补采集照常补完', async () => {
     // 准入在整页入口判过一次，补采集是这一次整页翻译的延续；关掉总开关管的是
     // 之后的入口（下一次整页、逐段、观察器的增量补翻），不回头拦这一次

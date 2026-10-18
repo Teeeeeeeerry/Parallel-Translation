@@ -54,11 +54,9 @@ export type BatchRetryResult =
 export interface BatchRetryOptions {
   /** 注入 sleep 以便测试推进虚拟时钟（#136）；默认 src/runtime/sleep 共享实现。 */
   sleep?: (ms: number) => Promise<void>;
-  /** 每次尝试前后检查；返回 true 则立即中止剩余重试。 */
-  shouldAbort?: () => boolean;
   /**
-   * #1065：调用方的中止信号。与 shouldAbort 同样在每次尝试前后检查；重试之间
-   * 的 1 秒、3 秒等待可被它打断，不必睡醒才发现被放弃。
+   * 调用方的中止信号（#1065；#1073 起取代 shouldAbort 轮询）。每次尝试前后检查，
+   * 已中止就不再重试；重试之间的 1 秒、3 秒等待可被它打断。
    */
   signal?: AbortSignal;
 }
@@ -109,7 +107,7 @@ export async function attemptBatchWithRetry(
   opts: BatchRetryOptions = {},
 ): Promise<BatchRetryResult> {
   const sleep = (ms: number) => sleepUnlessAborted(ms, opts.signal, opts.sleep ?? defaultSleep);
-  const isAborted = () => opts.signal?.aborted === true || opts.shouldAbort?.() === true;
+  const isAborted = () => opts.signal?.aborted === true;
   let lastError = '未知错误';
   /** #416: 前几次尝试里已成功的段落；failedIndices 为仍待补齐的段落。 */
   let partial: TranslateResponse | null = null;
@@ -120,7 +118,7 @@ export async function attemptBatchWithRetry(
     const resp = await send();
     // 这一批自己判了失效时，信号往往正是因它而中止（编排模块据此拦下别的批次）——
     // 它照旧报失效，失效原因要进汇总
-    if (opts.shouldAbort?.() || (opts.signal?.aborted && !resp?.invalidated)) {
+    if (isAborted() && !resp?.invalidated) {
       return { ok: false, invalidated: false, aborted: true, error: '' };
     }
     if (resp?.ok && resp.data) {
@@ -176,7 +174,7 @@ export async function attemptBatchWithRetry(
     await sleep(BATCH_RETRY_DELAYS_MS[attempt]!);
   }
   if (partial) return { ok: true, data: partial };
-  // #157: 最后一次尝试失败后、返回前再查一次中止 —— 还原（纪元递增）
+  // #157: 最后一次尝试失败后、返回前再查一次中止 —— 还原（信号中止）
   // 恰在最后失败与返回之间发生时，也必须报 aborted 而不是 failed，
   // 否则调用方把它记成真失败（allFailed/错误 toast 误报）
   return {

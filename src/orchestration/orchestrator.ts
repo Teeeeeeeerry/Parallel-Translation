@@ -38,7 +38,13 @@ import {
 } from './page-gate';
 import { normalizeLangCode } from './lang-code';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
-import { createTranslationRuns, type RunRoot } from '~/src/orchestration/translation-run';
+import {
+  createTranslationRuns,
+  isAbandoned,
+  RunInvalidated,
+  type RunRoot,
+} from '~/src/orchestration/translation-run';
+import { sleepUnlessAborted } from '~/src/runtime/sleep';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
 import { createGate } from '~/src/queue/concurrency';
 
@@ -541,7 +547,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     from: string,
     to: string,
     // #1011：补采集是整页翻译的延续，准入在整页入口已经判过，不重判
-    { admitted = false }: { admitted?: boolean } = {},
+    // #1073：signal 是外层运行（整页开关的这一次）的信号；没有时从页面根派生
+    { admitted = false, signal }: { admitted?: boolean; signal?: AbortSignal } = {},
   ): Promise<PageTranslateSummary> => {
     if (!started) throw new Error('[PT] 编排未启动');
 
@@ -559,7 +566,6 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       };
     }
 
-    const epochAtStart = epoch;
     const maxConcurrency = opts.getSettings?.()?.maxConcurrency;
     if (maxConcurrency !== undefined) sendGate.setMax(maxConcurrency);
     // 批次拆分（#245、#1005）：字符预算与个数上限双闸，每批独立发送
@@ -568,35 +574,30 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     const domainId = currentDomainIdFrom(opts, to);
 
     let allFailed = true;
-    let aborted = false;
+    // 有批次报了“已中止”（后台按信号中止了引擎调用）
+    let sawAborted = false;
     // #111/#247: 失效 / 类别化致命原因 —— 全失败时优先展示
-    let invalidated = false;
     let fatalError: string | null = null;
     // #313: 真实原因提示决策（key 无效 / 配额 → 展示真实原因）
     let realReason: string | null = null;
 
-    // #262: 中止谓词 —— 还原（abort 递增纪元）或他批已判失效
-    const isAborted = (): boolean =>
-      invalidated || epoch !== epochAtStart;
-    // #1007: 某一批的响应已是失效（见闸门里的放行判定）
-    let invalidationSeen = false;
-    // #1001：这一次整页翻译放弃了（还原、失效短路）—— 在飞的批次通知后台中止，
-    // 不翻完再丢。结果照旧按 isAborted 记账
-    const abandon = new AbortController();
-    const onBump = () => abandon.abort();
-    onEpochBump.add(onBump);
+    // #1073：这一次的运行。还原整页（页面根中止）与外层运行中止都会让它中止；
+    // 某一批判了失效时由这里以 RunInvalidated 中止它（#111 的全局短路）。信号
+    // 交给发送层（#1001：在飞的批次通知后台中止，不翻完再丢）与切批重试，结果
+    // 回来时再看一次，中止了就不渲染
+    const run = runs.begin('page', signal);
 
     await Promise.all(
       batches.map(async (batch, i) => {
         // 批次级失败有界重试（#91 语义由 batch-retry 承接）：
-        // 失效全局短路 + epoch 中止在每次尝试前后检查
+        // 运行的信号在每次尝试前后检查（还原、失效短路）
         // #1007: 每次尝试都过闸门（重试退避期间不占名额）。放行的那一刻重判
         // 中止：批次可能在队列里待了十几秒，期间用户点了还原、或别的批次判了
         // 失效 —— 这时直接作废，消息一条都不发
         const result = await attemptBatchWithRetry(
           () =>
             sendGate(async (): Promise<TranslateBatchResult> => {
-              if (isAborted() || invalidationSeen) return { ok: false, aborted: true };
+              if (run.signal.aborted) return { ok: false, aborted: true };
               const resp = (await opts.send(
                 {
                   texts: batch.map((item) => item.text),
@@ -604,33 +605,27 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
                   to,
                   ...(domainId !== undefined && { domainId }),
                 },
-                { signal: abandon.signal },
+                { signal: run.signal },
               )) as TranslateBatchResult;
-              // 失效要在让出名额之前记下：名额一让出，队首的批次在同一轮里就被
-              // 放行，等这一批的记账（下面的 invalidated = true）走到，它已经发出去了。
-              // 单独一个标志只拦排队的批次，不改这一批自己的结果（它仍报失效）
-              if (resp?.invalidated) {
-                invalidationSeen = true;
-                // #1001：别的在飞批次的结果反正要作废，通知后台中止它们
-                abandon.abort();
-              }
+              // 失效要在让出名额之前中止运行：名额一让出，队首的批次在同一轮里
+              // 就被放行，等这一批的记账走到，它已经发出去了。这一批自己的结果
+              // 不受影响（切批重试照旧报失效）；#1001：别的在飞批次的结果反正要
+              // 作废，信号一中止，发送层通知后台中止它们
+              if (resp?.invalidated) run.abort(new RunInvalidated(resp.error ?? ''));
               return resp;
             }),
           {
             sleep: sleepFn,
-            shouldAbort: isAborted,
             // #1065：重试之间的等待可被还原、失效短路打断
-            signal: abandon.signal,
+            signal: run.signal,
           },
         );
 
         if (result.ok) {
-          // #157: 本批在飞期间用户已还原（纪元递增）—— 放弃渲染，
-          // 否则还原后会把内容翻回来（#91 的渲染侧补漏）
-          if (isAborted()) {
-            aborted = true;
-            return;
-          }
+          // #157: 本批在飞期间被放弃或别的批次判了失效 —— 不渲染，否则还原后
+          // 会把内容翻回来（#91 的渲染侧补漏）；后台没理会中止、照样送回译文
+          // 时同样丢弃（#1001 的兜底）
+          if (run.signal.aborted) return;
           allFailed = false;
           // #659: 记下引擎报告的检测语言（引擎不提供时不动）
           recordDetectedLang(result.data.detectedFrom);
@@ -644,7 +639,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         } else {
           // #157: 中止（还原）与失败分开记账 —— 中止不算失败
           if (result.aborted) {
-            aborted = true;
+            sawAborted = true;
             return;
           }
           // #579: 扩展上下文失效是预期情况（提示已让用户刷新页面），
@@ -652,11 +647,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
           if (result.error && !result.contextInvalidated) {
             console.error('[PT] 批次翻译失败:', result.error);
           }
-          // 失效（上下文/配额）→ 全局短路，其余批次放弃尝试
-          if (result.invalidated) {
-            invalidated = true;
-            fatalError = result.error;
-          }
+          // 失效（上下文/配额）→ 全局短路（运行已在闸门里中止），失效原因进汇总
+          if (result.invalidated) fatalError = result.error;
           // #313: 提示语义映射（整页与单文本共用同一份）——
           // key 无效 / 配额耗尽展示真实原因，瞬时故障展示泛化文案
           const decision = displayDecision(result.category, result.error);
@@ -671,9 +663,13 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       }),
     );
 
-    onEpochBump.delete(onBump);
-    // #157: 还原恰在最后一批与返回之间发生 —— 也报 aborted
-    if (isAborted()) aborted = true;
+    run.end();
+    // #1073：失效不算放弃 —— 失效原因要提示给用户（扩展上下文失效提示刷新页面、
+    // 配额耗尽显示引擎原因）。此前失效与放弃共用一个谓词，汇总同时报 aborted，
+    // 切换入口按放弃收尾、一个字都不提示。#157: 还原恰在最后一批与返回之间
+    // 发生 —— 信号已中止，同样报 aborted
+    const invalidated = run.signal.reason instanceof RunInvalidated;
+    const aborted = !invalidated && (sawAborted || run.signal.aborted);
 
     return {
       admission: 'allowed',
@@ -709,15 +705,16 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     source: (mode?: { readOnly: boolean }) => TranslateItem<unknown>[],
     from: string,
     to: string,
+    signal: AbortSignal,
   ): Promise<boolean> => {
-    const epochAtStart = epoch;
     for (let round = 1; round <= RECOLLECT_MAX_ROUNDS; round++) {
-      if (round > 1) await sleepFn(RECOLLECT_INTERVAL_MS);
-      if (epoch !== epochAtStart) return false;
+      // #1073：轮间等待可被还原打断
+      if (round > 1) await sleepUnlessAborted(RECOLLECT_INTERVAL_MS, signal, sleepFn);
+      if (signal.aborted) return false;
       const more = source();
       if (more.length === 0) return false;
       console.info(`[PT] 补采集第 ${round} 轮：${more.length} 个新单元`);
-      const summary = await translatePageImpl(more, from, to, { admitted: true });
+      const summary = await translatePageImpl(more, from, to, { admitted: true, signal });
       if (summary.aborted || summary.invalidated) return false;
     }
     return true;
@@ -728,6 +725,107 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   const pushVisual = (status: PageToggleVisual): void => {
     if (opts.isMainFrame?.() === false) return;
     opts.pushStatus?.(status);
+  };
+
+  /**
+   * 整页开关的翻译分支（#325）：闸门识别 → 首轮 → 补采集 → 到顶交接。signal 是
+   * 这一次开关的运行（#1073），还原整页让它中止；中止时不再推状态 —— 还原那
+   * 一下已经推过空闲态、停了观察器。
+   */
+  const translateToggle = async (
+    signal: AbortSignal,
+    items: PageItemsSource,
+    from: string,
+    to: string,
+    admission: Admission,
+  ): Promise<PageToggleResult> => {
+    let contentLang: ContentLang | null = null;
+    let contentUnits: UnitLang[] | null = null;
+    if (opts.detectContentLang) {
+      // #862：等识别的这段时间里用户可以还原（逐段翻译过一段之后再点，
+      // 还原分支不受在飞互斥拦）或被 abort 中止，两者都中止这次运行。识别
+      // 回来时已中止，这次判定就作废：不判闸门、不翻译、不推送状态。中止
+      // 不算失败，不提示
+      toggleInFlight = true;
+      try {
+        ({ contentLang, contentUnits } = await detectContent(items));
+      } finally {
+        toggleInFlight = false;
+      }
+      if (signal.aborted) return { status: 'aborted', admission };
+    }
+
+    const gate = decidePageGate({
+      to,
+      detectedLang,
+      pageLang: opts.getPageLang?.() ?? null,
+      contentLang,
+      contentUnits,
+    });
+    opts.onGateDecision?.(gate);
+    if (!gate.translate) {
+      // #793：悬浮球推到未翻译态 —— 推成完成态是在骗人，用户再点一次
+      // 也会困惑。子框架不推（pushVisual 已按 #327 拦下）
+      pushVisual('idle');
+      return { status: 'same-language', admission, gate };
+    }
+
+    // 采集可以按需进行（传函数）：闸门命中、准入拦截、还原时不采集
+    const list = typeof items === 'function' ? items() : items;
+    if (list.length === 0) {
+      return { status: 'no-elements', admission };
+    }
+
+    toggleInFlight = true;
+    pushVisual('loading');
+    try {
+      const summary = await translatePageImpl(list, from, to, { signal });
+      const status: PageToggleStatus = summary.aborted
+        ? 'aborted'
+        : summary.allFailed || opts.allRenderRejected?.()
+          ? 'error'
+          : 'translated';
+      // #327: 中止（还原）→ 空闲态；失败 → 错误态；成功 → 完成态。
+      // #1012：成功的完成态等补采集结束才推（见下）—— 先报完成、下半页却还在
+      // 翻，正是 #1003 最让人困惑的地方
+      if (status !== 'translated') {
+        pushVisual(status === 'error' ? 'error' : 'idle');
+        return { status, admission, summary };
+      }
+      // #1073：部分批次成功后判了失效（扩展上下文失效、配额耗尽）—— 已经翻好的
+      // 照常显示，失效原因由提示说明；不再补采集、不启动观察器，接着发只会再失效
+      if (summary.invalidated) {
+        pushVisual('done');
+        return { status, admission, summary };
+      }
+      // #1011：补采集一轮。采集只在开头做了一次，观察器又要等到这里才启动，
+      // 整页翻译跑的这十几秒里懒加载出来的内容两边都不管，永久漏翻（#1010
+      // 实测）。触发条件与观察器启动一致（只有判为成功才补），页面级闸门与
+      // 准入不重判；同一个采集函数，同一条增量补翻的批次流水线
+      const capped = typeof items === 'function' && (await recollect(items, from, to, signal));
+      // 补采集期间用户点了还原：还原分支已推空闲态、停了观察器，这里不再推
+      // 完成态、不再启动
+      if (signal.aborted) return { status: 'aborted', admission, summary };
+      pushVisual('done');
+      // #1036：补满了轮数时，最后一轮在飞期间进 DOM 的内容两边都不管 —— 在启动
+      // 观察器的同一个同步段里再采一次，交给增量补翻。采集与启动之间没有 await，
+      // 页面脚本插不进来：这一刻之前进 DOM 的由这次采集接住，之后的由观察器接住，
+      // 同一个节点不会两边各翻一次。观察器的启动时机不变，仍在整页翻译成功之后
+      const handoff = capped && typeof items === 'function' ? items() : [];
+      // #328: 观察器启停时机 —— 只在整页翻译成功后启动恰好一次；
+      // 失败 / 中止（在飞还原）不启动。#1011：补采集结束之后才启动
+      opts.onObserverStart?.();
+      if (handoff.length > 0) {
+        console.info(`[PT] 补采集到顶，交给观察器补翻：${handoff.length} 个新单元`);
+        // 开关返回之后才翻完：不带这一次开关的信号，自己从页面根派生
+        translatePageImpl(handoff, from, to, { admitted: true }).catch((e) =>
+          console.error('[PT] 补采集到顶后的补翻失败:', e),
+        );
+      }
+      return { status, admission, summary };
+    } finally {
+      toggleInFlight = false;
+    }
   };
 
   return {
@@ -807,86 +905,13 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // 照常翻译的那次采集会切块，闸门命中时页面就不是一个字不动了。识别是
       // 异步的：等它的这段时间已经算在飞，否则连点两下会各自开一轮翻译
       // （#326）；没注入识别就不等，时序与改动前一致
-      let contentLang: ContentLang | null = null;
-      let contentUnits: UnitLang[] | null = null;
-      if (opts.detectContentLang) {
-        // #862：等识别的这段时间里用户可以还原（逐段翻译过一段之后再点，
-        // 还原分支不受在飞互斥拦）或被 abort 中止，两者都递增纪元（#262、
-        // #328）。识别回来时纪元变了，这次判定已经作废：不判闸门、不翻译、
-        // 不推送状态 —— 还原那一下已经推过未翻译态。中止不算失败，不提示
-        const epochAtToggle = epoch;
-        toggleInFlight = true;
-        try {
-          ({ contentLang, contentUnits } = await detectContent(items));
-        } finally {
-          toggleInFlight = false;
-        }
-        if (epoch !== epochAtToggle) return { status: 'aborted', admission };
-      }
-      const gate = decidePageGate({
-        to,
-        detectedLang,
-        pageLang: opts.getPageLang?.() ?? null,
-        contentLang,
-        contentUnits,
-      });
-      opts.onGateDecision?.(gate);
-      if (!gate.translate) {
-        // #793：悬浮球推到未翻译态 —— 推成完成态是在骗人，用户再点一次
-        // 也会困惑。子框架不推（pushVisual 已按 #327 拦下）
-        pushVisual('idle');
-        return { status: 'same-language', admission, gate };
-      }
-
-      // 采集可以按需进行（传函数）：闸门命中、准入拦截、还原时不采集
-      const list = typeof items === 'function' ? items() : items;
-      if (list.length === 0) {
-        return { status: 'no-elements', admission };
-      }
-
-      toggleInFlight = true;
-      pushVisual('loading');
+      // #1073：这一次整页开关的运行，从页面根派生 —— 识别、首轮、补采集共用；
+      // 到顶交接在开关返回之后才翻完，自己从页面根派生
+      const run = runs.begin('page');
       try {
-        const summary = await translatePageImpl(list, from, to);
-        const status: PageToggleStatus = summary.aborted
-          ? 'aborted'
-          : summary.allFailed || opts.allRenderRejected?.()
-            ? 'error'
-            : 'translated';
-        // #327: 中止（还原）→ 空闲态；失败 → 错误态；成功 → 完成态。
-        // #1012：成功的完成态等补采集结束才推（见下）—— 先报完成、下半页却还在
-        // 翻，正是 #1003 最让人困惑的地方
-        if (status !== 'translated') {
-          pushVisual(status === 'error' ? 'error' : 'idle');
-          return { status, admission, summary };
-        }
-        // #1011：补采集一轮。采集只在开头做了一次，观察器又要等到这里才启动，
-        // 整页翻译跑的这十几秒里懒加载出来的内容两边都不管，永久漏翻（#1010
-        // 实测）。触发条件与观察器启动一致（只有判为成功才补），页面级闸门与
-        // 准入不重判；同一个采集函数，同一条增量补翻的批次流水线
-        const epochAtDone = epoch;
-        const capped = typeof items === 'function' && (await recollect(items, from, to));
-        // 补采集期间用户点了还原：还原分支已推空闲态、停了观察器，这里不再推
-        // 完成态、不再启动
-        if (epoch !== epochAtDone) return { status: 'aborted', admission, summary };
-        pushVisual('done');
-        // #1036：补满了轮数时，最后一轮在飞期间进 DOM 的内容两边都不管 —— 在启动
-        // 观察器的同一个同步段里再采一次，交给增量补翻。采集与启动之间没有 await，
-        // 页面脚本插不进来：这一刻之前进 DOM 的由这次采集接住，之后的由观察器接住，
-        // 同一个节点不会两边各翻一次。观察器的启动时机不变，仍在整页翻译成功之后
-        const handoff = capped && typeof items === 'function' ? items() : [];
-        // #328: 观察器启停时机 —— 只在整页翻译成功后启动恰好一次；
-        // 失败 / 中止（在飞还原）不启动。#1011：补采集结束之后才启动
-        opts.onObserverStart?.();
-        if (handoff.length > 0) {
-          console.info(`[PT] 补采集到顶，交给观察器补翻：${handoff.length} 个新单元`);
-          translatePageImpl(handoff, from, to, { admitted: true }).catch((e) =>
-            console.error('[PT] 补采集到顶后的补翻失败:', e),
-          );
-        }
-        return { status, admission, summary };
+        return await translateToggle(run.signal, items, from, to, admission);
       } finally {
-        toggleInFlight = false;
+        run.end();
       }
     },
 
