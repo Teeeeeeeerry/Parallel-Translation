@@ -17,6 +17,7 @@ import {
   type Worker,
 } from '@playwright/test';
 import fs from 'fs';
+import { SetupTimeline } from './setup-steps';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
 
@@ -166,46 +167,68 @@ export const test = base.extend<
         '.output/.playwright-profiles',
         testInfo.testId,
       );
+      // #1061：建 context 分步计时，每一步各自一个上限。卡住时报的是具体哪一步、
+      // 等了多久、前面各步的耗时（启动那一步还有 Playwright 自己的 call log），而不是整条用例的 180 秒
+      // 被吃光后的一句“setting up context 超时”。各步上限加起来远小于 180 秒
+      const setup = new SetupTimeline();
 
       // 每次启动前清空 profile：testId 跨运行稳定，上次运行留下的
       // profile 里缓存着旧版 service worker 脚本 —— Chrome 会直接
       // 复用旧脚本，扩展改动在本地迭代时“假失败”（SW 里查不到新
       // 加的全局函数）。清空保证每个用例都从干净的扩展状态出发。
-      fs.rmSync(userDataDir, { recursive: true, force: true });
+      // 同步删除没法中途打断，这一步只记耗时
+      await setup.step('清 profile', 30_000, () =>
+        fs.rmSync(userDataDir, { recursive: true, force: true }),
+      );
 
-      const context = await chromium.launchPersistentContext(userDataDir, {
-        headless: true,
-        executablePath: chromium.executablePath(),
-        viewport: { width: 1280, height: 720 },
-        // #469: 固定界面语言。首装时 background 按界面语言推导目标语言，
-        // 推导结果不是 zh-CN 就写一次设置；这次写入时机不定，晚于 seedSettings
-        // 落盘时会把种子设置整份覆盖回默认值。界面语言为 zh-CN 时首装不写设置。
-        // 只传 --lang 不够，Chromium 的界面语言仍会随机落到 en-US
-        locale: 'zh-CN',
-        args: [
-          `--disable-extensions-except=${EXTENSION_PATH}`,
-          `--load-extension=${EXTENSION_PATH}`,
-          '--disable-features=DialMediaRouteProvider',
-          ...(process.env.CI ? ['--no-sandbox'] : []),
-        ],
-      });
+      // 启动的上限交给 Playwright 自己（它超时会收拾掉浏览器进程），外面这一层
+      // 比它多留 5 秒，只在 Playwright 自己也没返回时兜底报出这一步
+      const context = await setup.step('启动浏览器', 65_000, () =>
+        chromium.launchPersistentContext(userDataDir, {
+          headless: true,
+          executablePath: chromium.executablePath(),
+          viewport: { width: 1280, height: 720 },
+          // #469: 固定界面语言。首装时 background 按界面语言推导目标语言，
+          // 推导结果不是 zh-CN 就写一次设置；这次写入时机不定，晚于 seedSettings
+          // 落盘时会把种子设置整份覆盖回默认值。界面语言为 zh-CN 时首装不写设置。
+          // 只传 --lang 不够，Chromium 的界面语言仍会随机落到 en-US
+          locale: 'zh-CN',
+          args: [
+            `--disable-extensions-except=${EXTENSION_PATH}`,
+            `--load-extension=${EXTENSION_PATH}`,
+            '--disable-features=DialMediaRouteProvider',
+            ...(process.env.CI ? ['--no-sandbox'] : []),
+          ],
+          timeout: 60_000,
+        }),
+      );
 
-      // #1035：首装时 background 的 onInstalled 用 chrome.tabs.create 打开欢迎页，
-      // 这一步是异步的 —— launchPersistentContext 返回时它多半还没建出来，直接扫
-      // pages() 一张都关不掉，用例就带着它跑。所以先等到欢迎页本身（已在列表里，
-      // 或等它的 page 事件），再由下面的循环关掉扩展页。每个用例的 profile 都是
-      // 清空的，必然是首装，等不到就是首装流程变了，直接报错而不是静默跳过
-      // #1048：每个 frame 里记下输入翻译圆点停手后的那一挪，供 clickInputDot 等它
-      await context.addInitScript(recordInputDotMoves);
+      // 启动之后的某一步卡住或出错：先关掉已经起来的浏览器再报错，不留孤儿进程
+      try {
+        // #1048：每个 frame 里记下输入翻译圆点停手后的那一挪，供 clickInputDot 等它
+        await setup.step('装 init script', 10_000, () => context.addInitScript(recordInputDotMoves));
 
-      const isWelcome = (p: Page) => p.url().endsWith('/welcome.html');
-      if (!context.pages().some(isWelcome)) {
-        await context.waitForEvent('page', { predicate: isWelcome, timeout: 10_000 });
-      }
-      for (const p of context.pages()) {
-        if (p.url().startsWith('chrome-extension://')) {
-          await p.close().catch(() => {});
-        }
+        // #1035：首装时 background 的 onInstalled 用 chrome.tabs.create 打开欢迎页，
+        // 这一步是异步的 —— launchPersistentContext 返回时它多半还没建出来，直接扫
+        // pages() 一张都关不掉，用例就带着它跑。所以先等到欢迎页本身（已在列表里，
+        // 或等它的 page 事件），再由下面的循环关掉扩展页。每个用例的 profile 都是
+        // 清空的，必然是首装，等不到就是首装流程变了，直接报错而不是静默跳过
+        const isWelcome = (p: Page) => p.url().endsWith('/welcome.html');
+        await setup.step('等欢迎页', 10_000, async () => {
+          if (!context.pages().some(isWelcome)) {
+            await context.waitForEvent('page', { predicate: isWelcome });
+          }
+        });
+        await setup.step('关扩展页', 10_000, async () => {
+          for (const p of context.pages()) {
+            if (p.url().startsWith('chrome-extension://')) {
+              await p.close().catch(() => {});
+            }
+          }
+        });
+      } catch (e) {
+        await context.close().catch(() => {});
+        throw e;
       }
 
       await use(context);
