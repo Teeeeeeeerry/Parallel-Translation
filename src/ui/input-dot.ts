@@ -39,7 +39,7 @@
 
 import { mountIsolated, unmountIsolated } from './mount';
 import { measureEditableEnd, measureFieldEnd, type TextEnd } from './input-measure';
-import { GAP, SHOW_DELAY } from './paragraph-btn';
+import { GAP, SHOW_DELAY, deepActiveElement } from './float-common';
 import { tf } from '../i18n';
 import { inputDotHitSize } from './floating-ui-size';
 import { decideInputEligibility, inputText, type TextInput } from './input-eligibility';
@@ -101,13 +101,6 @@ function unfit(dot: HTMLElement): void {
 
 /** 回落位置离框内侧边缘的距离。 */
 const INSET = 6;
-
-/** 沿 shadow root 往下找真正持有焦点的元素。 */
-export function deepActiveElement(): Element | null {
-  let el: Element | null = document.activeElement;
-  while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
-  return el;
-}
 
 function eligible(el: Element | null): el is TextInput {
   return decideInputEligibility(el).eligible;

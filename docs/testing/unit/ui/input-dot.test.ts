@@ -25,7 +25,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createLifecycleRegistry, type LifecycleRegistry } from '~/src/ui/lifecycle-registry';
 import { createInputDot } from '~/src/ui/input-dot';
 import { mockBoundingRect } from '~/docs/testing/setup';
-import { SHOW_DELAY } from '~/src/ui/paragraph-btn';
+import { SHOW_DELAY } from '~/src/ui/float-common';
 
 let registry: LifecycleRegistry;
 let translate: ReturnType<typeof vi.fn>;
