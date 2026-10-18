@@ -13,7 +13,6 @@
 import '~/src/styles/tokens.css';
 import '~/src/styles/presets.css';
 import { collect } from '~/src/dom/walker';
-import { createPageCollector } from '~/src/dom/page-collect';
 import { closestUnit } from '~/src/dom/classify';
 import {
   translatableText,
@@ -24,7 +23,7 @@ import {
 } from '~/src/dom/text';
 import { startObserver, type ObserverHandle } from '~/src/dom/observer';
 import { walkShadowTree } from '~/src/dom/shadow-walk';
-import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
+import { render, unrender, applyMode, applyStyle, type RenderResult } from '~/src/dom/renderer';
 import { unsplitChunks } from '~/src/dom/chunk-split';
 import { applyCustomCss } from '~/src/styles/custom';
 import { createBall, setBallState } from '~/src/ui/floating-ball';
@@ -43,18 +42,15 @@ import {
   createOrchestrator,
   type PageToggleResult,
 } from '~/src/orchestration/orchestrator';
-import type { TranslateItem } from '~/src/orchestration/orchestrator';
+import type { TranslateItem, TranslateBatchResult } from '~/src/orchestration/orchestrator';
+import { createPageSession, type PageSession } from '~/src/orchestration/page-session';
 import {
   allFailedNotice,
-  allRenderBlocked,
   countRender,
   emptyRenderStats,
   framePageNotice,
   partialFailNotice,
   resetRenderStats,
-  emptySkipStats,
-  resetSkipStats,
-  countSkip,
   skipConsoleLine,
 } from '~/src/orchestration/page-summary';
 import { describePageGate } from '~/src/orchestration/page-gate';
@@ -456,10 +452,11 @@ export default defineContentScript({
       rawText: string;
     }
 
-    /** 渲染统计（每次整页翻译与增量补翻开始时清零），各项含义见 RenderStats。 */
+    /**
+     * 增量补翻的渲染统计（每次开始时清零），各项含义见 RenderStats。#1077：整页
+     * 翻译的统计归整页翻译会话，按轮各记各的，不与这里共用。
+     */
     const renderStats = emptyRenderStats();
-    // #727：整页翻译那一次采集里被跳过的单元，按原因分组
-    const skipStats = emptySkipStats();
 
     // #852：浏览器自带的本地语言识别，不发网络请求。页面级闸门取各语言占比
     // （#843），输入翻译取单一可靠结果（#661）
@@ -494,9 +491,6 @@ export default defineContentScript({
         if (isMainFrame) setBallState(status);
       },
       isMainFrame: () => isMainFrame,
-      // #327: 引擎返回结果但全部渲染被拒 → 错误态（不点亮完成）
-      // #416: 有段落翻译失败时不算“全部被拒”，失败另行提示
-      allRenderRejected: () => allRenderBlocked(renderStats),
       // #792：页面级闸门读本 frame 的语言声明
       getPageLang: () => document.documentElement.getAttribute('lang'),
       // #843：页面级闸门的第一级 —— 浏览器自带的语言识别，零网络请求
@@ -506,7 +500,58 @@ export default defineContentScript({
       // #328: 增量补翻观察器启停经钩子接线到生命周期注册表（幂等）
       onObserverStart: () => registry.ensure('observer', true),
       onObserverStop: () => registry.ensure('observer', false),
-      onBatchResult: (_i, batch, result) => {
+      // 增量补翻（观察器）的渲染：与整页翻译会话同一个渲染原语，统计记在这里
+      onBatchResult: (_i, batch, result) => incrementalSession.onBatchResult(batch, result),
+    });
+    // #261/#265: 启动编排 —— 未启动时翻译入口拒绝执行；设置变更
+    // 订阅随 start 建立
+    orchestrator.start();
+
+    /**
+     * 构建翻译项（DOM 职责，#329 内容脚本保留的部分）：
+     * 归一化内部空白、混合内容提取、占位符映射全部在此。
+     */
+    function buildPageItem(el: Element): TranslateItem<PageItemCtx> {
+      const { text, preserves } = unitTextEx(el, { shallow: hasBlockTextChildren(el) });
+      return { text, ctx: { target: el, preserves, rawText: text } };
+    }
+
+    /** 渲染一个单元（DOM 职责）：占位符换回原文后插入译文。 */
+    function renderPageItem(item: TranslateItem<PageItemCtx>, translation: string): RenderResult {
+      const ctx = item.ctx;
+      // #58：将占位符替换回原文（用户名等标识符不翻译但保留）
+      const restored = restorePreserves(translation, ctx.preserves, ctx.rawText);
+      // #783：译文与送去翻译的原文比对，原文里的占位符同样换回
+      const source = restorePreserves(ctx.rawText, ctx.preserves, ctx.rawText);
+      return render(ctx.target, restored, 'page', source);
+    }
+
+    /**
+     * 整页翻译会话（#1077）：每次整页翻译新建一个 —— 采集去重、按轮统计、渲染
+     * 都在会话里，内容脚本只给 DOM 原语。
+     */
+    function newPageSession(): PageSession<PageItemCtx> {
+      return createPageSession<PageItemCtx>({
+        collect: (onSkip) => {
+          try {
+            return collect(document.body, registerHiddenForObserver, { onSkip });
+          } catch (e) {
+            throw new Error(`[collect] ${e instanceof Error ? e.message : String(e)}`);
+          }
+        },
+        // #843：只读模式供闸门取样 —— 不切块、不登记隐藏单元，页面一个字不动
+        collectReadOnly: () => collect(document.body, undefined, { readOnly: true }),
+        build: buildPageItem,
+        render: renderPageItem,
+      });
+    }
+
+    /**
+     * 增量补翻那一路的渲染（#1077）：同一个渲染原语，统计记在 renderStats。
+     * 只用到它的 onBatchResult —— 增量补翻的单元来自观察器，不经会话采集。
+     */
+    const incrementalSession = {
+      onBatchResult(batch: TranslateItem<unknown>[], result: TranslateBatchResult): void {
         if (!result.ok || !result.data) {
           renderStats.failed += batch.length;
           return;
@@ -519,42 +564,14 @@ export default defineContentScript({
             renderStats.failed++;
             continue;
           }
-          const ctx = batch[j]!.ctx as PageItemCtx;
           try {
-            // #58：将占位符替换回原文（用户名等标识符不翻译但保留）
-            const restored = restorePreserves(
-              translations[j]!,
-              ctx.preserves,
-              ctx.rawText,
-            );
-            // #783：译文与送去翻译的原文比对，原文里的占位符同样换回
-            const source = restorePreserves(ctx.rawText, ctx.preserves, ctx.rawText);
-            countRender(renderStats, render(ctx.target, restored, 'page', source));
+            countRender(renderStats, renderPageItem(batch[j] as TranslateItem<PageItemCtx>, translations[j]!));
           } catch (e) {
-            throw new Error(
-              `[render idx=${j}] ${e instanceof Error ? e.message : String(e)}`,
-            );
+            throw new Error(`[render idx=${j}] ${e instanceof Error ? e.message : String(e)}`);
           }
         }
       },
-    });
-    // #261/#265: 启动编排 —— 未启动时翻译入口拒绝执行；设置变更
-    // 订阅随 start 建立
-    orchestrator.start();
-
-    /**
-     * 构建翻译项（DOM 职责，#329 内容脚本保留的部分）：
-     * 归一化内部空白、混合内容提取、占位符映射全部在此。
-     */
-    function buildPageItems(targets: Element[]): TranslateItem<PageItemCtx>[] {
-      return targets.map((el, i) => {
-        const { text, preserves } = unitTextEx(el, { shallow: hasBlockTextChildren(el) });
-        return {
-          text,
-          ctx: { target: targets[i]!, preserves, rawText: text },
-        };
-      });
-    }
+    };
 
     /**
      * 整页开关入口（#329）—— 悬浮球、快捷键、popup 消息三条触发路径
@@ -565,40 +582,22 @@ export default defineContentScript({
       const ns = getSettings();
       // #792：按需采集 —— 页面级闸门命中、准入拦截、还原时不采集（采集会把
       // 超长段落切成切块，页面就不是一个字不动了）
-      // #843：只读模式供闸门取样 —— 不切块、不登记隐藏单元，页面一个字不动
-      // #1011：同一次整页翻译里首轮采集与补采集共用一个，同一个元素只交出
-      // 一次、跳过的单元只计一次
-      const collectPage = createPageCollector(
-        (onSkip) => collect(document.body, registerHiddenForObserver, { onSkip }),
-        (_el, category) => countSkip(skipStats, category),
-      );
-      const collectItems = (mode?: { readOnly: boolean }): TranslateItem<PageItemCtx>[] => {
-        try {
-          if (mode?.readOnly) {
-            return buildPageItems(collect(document.body, undefined, { readOnly: true }));
-          }
-          // #727：整页翻译这一次采集顺带记下被跳过的单元。闸门取样（上面的
-          // 只读采集）不计，否则同一页算两遍
-          return buildPageItems(collectPage());
-        } catch (e) {
-          throw new Error(
-            `[collect] ${e instanceof Error ? e.message : String(e)}`,
-          );
-        }
-      };
-      resetRenderStats(renderStats);
-      resetSkipStats(skipStats);
+      // #1011/#1077：同一次整页翻译里首轮采集与补采集共用一个会话，同一个元素
+      // 只交出一次、跳过的单元只计一次
+      const session = newPageSession();
 
-      const result = await orchestrator.togglePage(collectItems, ns.from, ns.to);
+      const result = await orchestrator.togglePage(session, ns.from, ns.to);
 
       // #763：控制台按原因分组输出一行，零跳过时不输出
-      const skipLine = skipConsoleLine(skipStats);
+      const skips = session.skips();
+      const skipLine = skipConsoleLine(skips);
       if (skipLine) console.info(skipLine);
 
       // ── 提示渲染（DOM 职责；视觉状态已由模块推送）──
       // 同一时刻只显示一条提示，几种情况并存时给哪一条由汇总决定
       // #762：只有主文档弹，计数不跨 frame 汇总
-      const notice = framePageNotice(result, renderStats, skipStats, isMainFrame);
+      // #1077：这一次的汇总由会话合成（首轮与补采集各轮相加）
+      const notice = framePageNotice(result, session.totals(), skips, isMainFrame);
       if (notice) toast(notice.message, { purpose: 'status', kind: notice.kind });
       return result;
     }
@@ -610,7 +609,7 @@ export default defineContentScript({
      */
     async function translateIncremental(elements: Element[]): Promise<void> {
       const ns = getSettings();
-      const items = buildPageItems(elements);
+      const items = elements.map(buildPageItem);
       if (items.length === 0) return;
       resetRenderStats(renderStats);
 
