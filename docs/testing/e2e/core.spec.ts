@@ -460,9 +460,10 @@ test.describe('Fixture: spa', () => {
     // 切换到 page 2 — 等待 observer 自动补翻新视图
     await page.click('a[href="#page2"]');
 
-    // SPA 路由切换后 DOM 应已更新
+    // SPA 路由切换后 DOM 应已更新。用包含而不是相等：观察器可能在第一次取值之前
+    // 就把它补翻好了（文字变成“原文 + 译文”），那同样说明路由已经切过去
     const h1 = page.locator('#view h1');
-    await expect(h1).toHaveText('Page 2');
+    await expect(h1).toContainText('Page 2');
 
     // 新内容的 3 个翻译单元（h1 + 2p）应被 observer 自动补翻
     await expect(page.locator('#view [data-pt="done"]')).toHaveCount(3, { timeout: 15_000 });
@@ -3559,7 +3560,9 @@ test.describe('输入翻译：点圆点翻译', () => {
     // 圆点在转圈，Playwright 会等元素静止才点 —— force 跳过这条等待，
     // 让点击真的落在进行中
     await clickInputDot(dot, box, '你好世界', { double: true, force: true }); // cjk-ok: 用例输入的原文，断言字进了框
-    await clickInputDot(dot, box, '你好世界', { force: true }); // cjk-ok: 用例输入的原文，断言字进了框
+    // 在飞时再点一次（#1064）：在飞期间没有编辑，圆点不挪，不用等就位；直接点，
+    // 不让断言框里文字、等就位这几步吃掉替身撑出的在飞窗口
+    await dot.click({ force: true });
     // 进行中框里不插入任何占位或提示文字
     await expect(box).toHaveValue('你好世界'); // cjk-ok: 用例输入的原文，断言它没被改动
     // 请求经后台到替身要走一段消息，点完立刻读会读到空（#1048 记下的命中）：等它
@@ -3765,8 +3768,9 @@ test.describe('输入翻译：点圆点翻译', () => {
     await clickInputDot(dot, editor, '你好世界'); // cjk-ok: 用例输入的原文，断言字进了框
     // #648：进行中变灰转圈
     await expect(dot).toHaveAttribute('data-state', 'busy');
-    // #647：进行中再点不发第二次请求，编辑器里一个字不动（转圈中的元素不等它静止）
-    await clickInputDot(dot, editor, '你好世界', { force: true }); // cjk-ok: 用例输入的原文，断言字进了框
+    // #647：进行中再点不发第二次请求，编辑器里一个字不动（转圈中的元素不等它静止）。
+    // 在飞期间没有编辑、圆点不挪，直接点，不吃掉在飞窗口（#1064）
+    await dot.click({ force: true });
     expect(await model()).toBe('你好世界'); // cjk-ok: 用例输入的原文，断言它没被改动
 
     // #646：送翻后又打了字 → 不覆盖，译文出现在提示条里
