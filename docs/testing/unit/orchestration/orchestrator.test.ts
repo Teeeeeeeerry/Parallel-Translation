@@ -747,6 +747,8 @@ describe('在飞互斥（#326）', () => {
     orch.start();
 
     const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    // #1076：闸门判定是异步的，冲一下让首轮批次发出去（真正在飞）
+    await flush();
     const second = await orch.togglePage(items(1), 'en', 'zh-CN');
 
     expect(send).toHaveBeenCalledTimes(1);
@@ -771,6 +773,8 @@ describe('在飞互斥（#326）', () => {
     orch.start();
 
     const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    // #1076：闸门判定是异步的，冲一下让首轮批次发出去（真正在飞）
+    await flush();
     // 首批在飞期间译文已落 DOM（渲染回调置位）→ 再次触发放行还原
     translated = true;
     const second = await orch.togglePage(items(1), 'en', 'zh-CN');
@@ -792,6 +796,8 @@ describe('在飞互斥（#326）', () => {
     orch.start();
 
     const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    // #1076：闸门判定是异步的，冲一下让首轮批次发出去（真正在飞）
+    await flush();
     const second = await orch.togglePage(items(1), 'en', 'zh-CN');
 
     expect(second.status).toBe('busy');
@@ -836,6 +842,8 @@ describe('状态推送与中止记账（#327）', () => {
     orch.start();
 
     const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    // #1076：闸门判定是异步的，冲一下让首轮批次发出去（真正在飞）
+    await flush();
     translated = true; // 在飞期间首批已渲染
     const second = await orch.togglePage(items(1), 'en', 'zh-CN');
     expect(second.status).toBe('restored');
@@ -864,6 +872,8 @@ describe('状态推送与中止记账（#327）', () => {
     orch.start();
 
     const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    // #1076：闸门判定是异步的，冲一下让首轮批次发出去（真正在飞）
+    await flush();
     // 批次已 resolve（最后一批返回），但整体返回前用户还原
     resolveSend({ ok: true, data: { translations: ['译'] } });
     orch.abort();
@@ -1008,6 +1018,8 @@ describe('观察器启停时机（#328）', () => {
     orch.start();
 
     const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    // #1076：闸门判定是异步的，冲一下让首轮批次发出去（真正在飞）
+    await flush();
     translated = true;
     await orch.togglePage(items(1), 'en', 'zh-CN'); // 在飞还原
     resolveSend({ ok: true, data: { translations: ['译'] } });

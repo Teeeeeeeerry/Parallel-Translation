@@ -467,3 +467,128 @@ function contentLanguage(
     [...same].sort((a, b) => b.percentage - a.percentage).map((l) => l.raw),
   );
 }
+
+/**
+ * 页面级闸门等本地内容识别的时间上限（毫秒，#866）。识别是纯本地的 CPU 操作，
+ * 在 Chrome 上实测（2200 字符的中英混排样本，连跑 30 次）中位 0.9 毫秒、最慢
+ * 1.1 毫秒，样本上限 4000 字符也只是几毫秒。这个上限是给“回调永远不来”兜底，
+ * 不是给“识别慢”兜底，所以取得短：比实测高出两到三个数量级，挂死时用户最多
+ * 多等一秒，随后照常翻译。
+ *
+ * #892：这一秒是整个识别阶段共用的，不是每次识别各一秒。全页样本与单元级
+ * 识别（最多 UNIT_DETECT_COUNT 个单元）同时发出，共用同一个截止时刻：到点还
+ * 没回来的那几次当拿不到，已经回来的照用。最坏情况仍是一秒，不是单元数
+ * 乘一秒。#904 让短单元也进来之后仍是这样：个数上限不变，同一个截止时刻。
+ */
+export const CONTENT_DETECT_TIMEOUT_MS = 1000;
+
+/** 异步判定入口的取证（#1076）：判定链的取数，加上内容识别要用的单元来源与识别器。 */
+export interface PageGateEvidence {
+  /** 目标语言设置 */
+  to: string;
+  /** 本页翻译时引擎报告的检测语言；还没有时为 null */
+  detectedLang: string | null;
+  /** 页面的语言声明（`<html lang>` 的原值）；没有声明时为 null */
+  pageLang: string | null;
+  /**
+   * 只读的单元来源：交出这一页翻译单元的文字，页面一个字不动（#843 的只读
+   * 采集）。只在有识别器时调用；抛错当没做识别
+   */
+  units: () => readonly string[];
+  /** 本地内容识别（#843）；没有时不取样，走检测语言与声明的链条 */
+  detect?: (sample: string) => Promise<ContentLang | null>;
+  /** 识别阶段共用的时间上限，缺省 CONTENT_DETECT_TIMEOUT_MS */
+  timeoutMs?: number;
+  /** 识别期间被放弃（#862：还原、导航）时中止；中止后以 'abandoned' 结束 */
+  signal?: AbortSignal;
+}
+
+/**
+ * 页面级闸门的异步判定入口（#1076）：取样、取最长单元、超时竞速、识别、纯判定
+ * 一次做完，给出“翻”或“不翻（带原因与依据）”。识别期间被放弃时立即以
+ * 'abandoned' 结束，不等识别回来。判据不变（冻结在 2.1.114）。
+ */
+export async function judgePage(evidence: PageGateEvidence): Promise<PageGateDecision | 'abandoned'> {
+  const { signal } = evidence;
+  if (signal?.aborted) return 'abandoned';
+  const content = await detectContent(evidence);
+  if (content === 'abandoned' || signal?.aborted) return 'abandoned';
+  return decidePageGate({
+    to: evidence.to,
+    detectedLang: evidence.detectedLang,
+    pageLang: evidence.pageLang,
+    ...content,
+  });
+}
+
+/**
+ * 内容识别那一步（#843）。没给识别器就不取样；取样出错当没做识别，闸门回落到
+ * 检测语言与声明 —— 一个可选能力出错不该让整页翻译坏掉。
+ * - #866：识别超过时间上限当拿不到结果。识别的回调不来时，没有上限的等待会让
+ *   整页翻译永远停在在飞，再点只返回忙碌，只能刷新页面
+ * - #889：送去识别却没拿到结果（给不出、出错、超时）与识别器说拿不准同等对待，
+ *   闸门照常翻译，不回落到声明
+ * - #892：除了全页样本，再把按文字长度排在最前面的若干个单元各自送去识别
+ *   （#891 的“够长的外文单元”），走同一个识别器。单元识别拿不到结果时这个
+ *   单元不算外文块，不影响全页样本那一边
+ * - #904：不到外文块下限的单元也送去识别，给 #903“最长的若干个单元都是目标
+ *   语言就拦下”那一级用。个数上限不变（UNIT_DETECT_COUNT），拿不到结果的单元
+ *   在那一级算证据不足，不拦
+ */
+async function detectContent(
+  evidence: PageGateEvidence,
+): Promise<{ contentLang: ContentLang | null; contentUnits: UnitLang[] | null } | 'abandoned'> {
+  const none = { contentLang: null, contentUnits: null };
+  const { detect, signal } = evidence;
+  if (!detect) return none;
+  let texts: string[];
+  try {
+    texts = [...evidence.units()];
+  } catch {
+    return none;
+  }
+  const sample = sampleUnitTexts(texts);
+  // #859：样本太短时占比不稳，不送去识别，当没做识别。单元也不送：全页
+  // 文字不到一百个字符，谈不上哪一块是成块的外文正文
+  if (sample.length < CONTENT_SAMPLE_MIN_CHARS) return none;
+  const units = longestUnitTexts(texts);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), evidence.timeoutMs ?? CONTENT_DETECT_TIMEOUT_MS);
+  });
+  const once = async (text: string): Promise<ContentLang | null> => {
+    try {
+      return await Promise.race([detect(text), deadline]);
+    } catch {
+      return null;
+    }
+  };
+  // #862：识别期间被放弃，不等识别回来
+  let onAbort: (() => void) | undefined;
+  const abandoned = new Promise<'abandoned'>((resolve) => {
+    onAbort = () => resolve('abandoned');
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    const all = Promise.all([once(sample), ...units.map((u) => once(u.text))]);
+    const settled = await Promise.race([all, abandoned]);
+    if (settled === 'abandoned') return 'abandoned';
+    const [whole, ...each] = settled;
+    return {
+      contentLang: whole ?? CONTENT_UNDETERMINED,
+      contentUnits: units.map((u, i) => {
+        const result = each[i];
+        const top = result?.languages[0];
+        return {
+          chars: u.chars,
+          letters: u.letters,
+          lang: top?.lang ?? null,
+          reliable: Boolean(result?.reliable && top),
+        };
+      }),
+    };
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener('abort', onAbort);
+  }
+}

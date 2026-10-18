@@ -27,16 +27,7 @@ import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 import { currentDomain } from '~/src/storage/domains';
 import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { isSiteBlocked } from '~/src/dom/site-filter';
-import {
-  decidePageGate,
-  sampleUnitTexts,
-  longestUnitTexts,
-  CONTENT_SAMPLE_MIN_CHARS,
-  CONTENT_UNDETERMINED,
-  type ContentLang,
-  type UnitLang,
-  type PageGateDecision,
-} from './page-gate';
+import { judgePage, type ContentLang, type PageGateDecision } from './page-gate';
 import { normalizeLangCode } from './lang-code';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import {
@@ -415,19 +406,6 @@ export function splitBatches<T>(
   return batches;
 }
 
-/**
- * 页面级闸门等本地内容识别的时间上限（毫秒，#866）。识别是纯本地的 CPU 操作，
- * 在 Chrome 上实测（2200 字符的中英混排样本，连跑 30 次）中位 0.9 毫秒、最慢
- * 1.1 毫秒，样本上限 4000 字符也只是几毫秒。这个上限是给“回调永远不来”兜底，
- * 不是给“识别慢”兜底，所以取得短：比实测高出两到三个数量级，挂死时用户最多
- * 多等一秒，随后照常翻译。
- *
- * #892：这一秒是整个识别阶段共用的，不是每次识别各一秒。全页样本与单元级
- * 识别（最多 UNIT_DETECT_COUNT 个单元）同时发出，共用同一个截止时刻：到点还
- * 没回来的那几次当拿不到，已经回来的照用。最坏情况仍是一秒，不是单元数
- * 乘一秒。#904 让短单元也进来之后仍是这样：个数上限不变，同一个截止时刻。
- */
-export const CONTENT_DETECT_TIMEOUT_MS = 1000;
 
 /**
  * 补采集的轮数上限与轮间间隔（#1013）。间隔按实测定：翻译期间滚到底之后，
@@ -462,67 +440,6 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   let detectedLang: string | null = null;
   const recordDetectedLang = (raw: string | undefined): void => {
     detectedLang = normalizeLangCode(raw) ?? detectedLang;
-  };
-
-  // #843：页面级闸门的内容识别。没注入识别就不取样；取样出错当没做识别，
-  // 闸门回落到检测语言与声明 —— 一个可选能力出错不该让整页翻译坏掉
-  // #866：识别超过时间上限当拿不到结果。识别的回调不来时，没有上限的等待会
-  // 让整页翻译永远停在在飞，再点只返回忙碌，只能刷新页面
-  // #889：送去识别却没拿到结果（给不出、出错、超时）与识别器说拿不准同等
-  // 对待，闸门照常翻译，不回落到声明
-  // #892：除了全页样本，再把按文字长度排在最前面的若干个单元各自送去识别
-  // （#891 的“够长的外文单元”），走同一个注入的识别函数。单元识别拿不到
-  // 结果时这个单元不算外文块，不影响全页样本那一边
-  // #904：不到外文块下限的单元也送去识别，给 #903“最长的若干个单元都是目标
-  // 语言就拦下”那一级用。个数上限不变（UNIT_DETECT_COUNT），拿不到结果的
-  // 单元在那一级算证据不足，不拦
-  const detectContent = async (
-    items: PageItemsSource,
-  ): Promise<{ contentLang: ContentLang | null; contentUnits: UnitLang[] | null }> => {
-    const none = { contentLang: null, contentUnits: null };
-    const detect = opts.detectContentLang;
-    if (!detect) return none;
-    let texts: string[];
-    try {
-      const list = typeof items === 'function' ? items({ readOnly: true }) : items;
-      texts = list.map((item) => item.text);
-    } catch {
-      return none;
-    }
-    const sample = sampleUnitTexts(texts);
-    // #859：样本太短时占比不稳，不送去识别，当没做识别。单元也不送：全页
-    // 文字不到一百个字符，谈不上哪一块是成块的外文正文
-    if (sample.length < CONTENT_SAMPLE_MIN_CHARS) return none;
-    const units = longestUnitTexts(texts);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), CONTENT_DETECT_TIMEOUT_MS);
-    });
-    const once = async (text: string): Promise<ContentLang | null> => {
-      try {
-        return await Promise.race([detect(text), deadline]);
-      } catch {
-        return null;
-      }
-    };
-    try {
-      const [whole, ...each] = await Promise.all([once(sample), ...units.map((u) => once(u.text))]);
-      return {
-        contentLang: whole ?? CONTENT_UNDETERMINED,
-        contentUnits: units.map((u, i) => {
-          const result = each[i];
-          const top = result?.languages[0];
-          return {
-            chars: u.chars,
-            letters: u.letters,
-            lang: top?.lang ?? null,
-            reliable: Boolean(result?.reliable && top),
-          };
-        }),
-      };
-    } finally {
-      clearTimeout(timer);
-    }
   };
 
   // #325: 全页翻译流水线本体（translatePage 与 togglePage 共用）
@@ -723,29 +640,28 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     to: string,
     admission: Admission,
   ): Promise<PageToggleResult> => {
-    let contentLang: ContentLang | null = null;
-    let contentUnits: UnitLang[] | null = null;
-    if (opts.detectContentLang) {
-      // #862：等识别的这段时间里用户可以还原（逐段翻译过一段之后再点，
-      // 还原分支不受在飞互斥拦）或被 abort 中止，两者都中止这次运行。识别
-      // 回来时已中止，这次判定就作废：不判闸门、不翻译、不推送状态。中止
-      // 不算失败，不提示
-      toggleInFlight = true;
-      try {
-        ({ contentLang, contentUnits } = await detectContent(items));
-      } finally {
-        toggleInFlight = false;
-      }
-      if (signal.aborted) return { status: 'abandoned', admission };
+    // #862：等识别的这段时间里用户可以还原（逐段翻译过一段之后再点，还原分支
+    // 不受在飞互斥拦）或被 abort 中止，两者都中止这次运行，闸门以“被放弃”结束：
+    // 不翻译、不推送状态 —— 还原那一下已经推过未翻译态。中止不算失败，不提示。
+    // #1076：取样、超时竞速、识别都在闸门模块里，这里只调用一次。等它的这段
+    // 时间算在飞（#326），否则连点两下会各自开一轮翻译
+    toggleInFlight = true;
+    let gate: PageGateDecision | 'abandoned';
+    try {
+      gate = await judgePage({
+        to,
+        detectedLang,
+        pageLang: opts.getPageLang?.() ?? null,
+        // #843：样本取自同一个采集函数的只读模式 —— 照常翻译的那次采集会切块，
+        // 闸门命中时页面就不是一个字不动了
+        units: () => (typeof items === 'function' ? items({ readOnly: true }) : items).map((item) => item.text),
+        ...(opts.detectContentLang && { detect: opts.detectContentLang }),
+        signal,
+      });
+    } finally {
+      toggleInFlight = false;
     }
-
-    const gate = decidePageGate({
-      to,
-      detectedLang,
-      pageLang: opts.getPageLang?.() ?? null,
-      contentLang,
-      contentUnits,
-    });
+    if (gate === 'abandoned') return { status: 'abandoned', admission };
     opts.onGateDecision?.(gate);
     if (!gate.translate) {
       // #793：悬浮球推到未翻译态 —— 推成完成态是在骗人，用户再点一次
@@ -883,10 +799,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // 命中闸门时它不启动，后来的新节点不会被补翻。
       // 检测语言不随还原清掉：换了目标语言再点，闸门可能按检测语言命中，
       // 这一页确实就是新目标语言
-      // #843：第一级是本地内容识别。样本取自同一个采集函数的只读模式 ——
-      // 照常翻译的那次采集会切块，闸门命中时页面就不是一个字不动了。识别是
-      // 异步的：等它的这段时间已经算在飞，否则连点两下会各自开一轮翻译
-      // （#326）；没注入识别就不等，时序与改动前一致
+      // #843：第一级是本地内容识别，取样与识别都在闸门模块里（#1076）
       // #1073：这一次整页开关的运行，从页面根派生 —— 识别、首轮、补采集共用；
       // 到顶交接在开关返回之后才翻完，自己从页面根派生
       const run = runs.begin('page');

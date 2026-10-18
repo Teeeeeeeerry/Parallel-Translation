@@ -5,16 +5,17 @@
  * 识别，结果交给闸门的纯判定（#891）。经整页开关入口 togglePage 断言：假消息
  * 层数请求条数，识别替身数调用次数与喂进去的文字，真实 DOM 看页面变没变。
  *
+ * #1076：判定、识别次数上限与一秒上限在闸门的判定入口上测，见
+ * page-gate-judge.test.ts；这里只留接线（送出的请求与改动前相同、真实 DOM
+ * 判定阶段页面不动）。
+ *
  * 识别替身按文字本身给结论（汉字过半就是中文，否则是英文），不调真实识别器：
  * 真实识别器的可靠标记会在两次调用之间翻转（#851）。
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
-import { createOrchestrator, CONTENT_DETECT_TIMEOUT_MS } from '~/src/orchestration/orchestrator';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import {
-  CONTENT_SAMPLE_MAX_CHARS,
-  UNIT_DETECT_COUNT,
-  UNIT_DETECT_MAX_CHARS,
   type ContentLang,
 } from '~/src/orchestration/page-gate';
 import { collect } from '~/src/dom/walker';
@@ -93,21 +94,6 @@ afterEach(() => {
 });
 
 describe('有够长的外文单元：照常翻译，与改动前的整页翻译完全一致', () => {
-  test('中文界面加英文介绍，全页样本却是中文占优、可靠：照常翻译', async () => {
-    // 全页样本给成 zh 70：占比按字节算，中文界面一个字算三份，只看占比会拦下
-    const detect = vi.fn(sampleSays({ reliable: true, languages: [{ lang: 'zh', percentage: 70 }] }));
-    const { orch, send, pushes } = setup('zh-cn', detect);
-
-    const result = await orch.togglePage(STEAM, 'auto', 'zh-CN');
-
-    expect(result.status).toBe('translated');
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(pushes).toEqual(['loading', 'done']);
-    // 英文介绍单独送去识别过
-    expect(detect.mock.calls.map((c) => c[0])).toContain(DESC);
-    orch.stop();
-  });
-
   test('送出去的请求与没注入识别、声明是外文时逐条相同', async () => {
     const a = setup('zh-cn', sampleSays({ reliable: true, languages: [{ lang: 'zh', percentage: 70 }] }));
     await a.orch.togglePage(STEAM, 'auto', 'zh-CN');
@@ -121,19 +107,6 @@ describe('有够长的外文单元：照常翻译，与改动前的整页翻译�
 });
 
 describe('没有够长的外文单元、全页目标语言占优：拦下', () => {
-  test('纯中文页面：零请求，带同语言原因', async () => {
-    const detect = vi.fn(byText());
-    const { orch, send, pushes } = setup('en', detect);
-
-    const result = await orch.togglePage(ZH, 'auto', 'zh-CN');
-
-    expect(result.status).toBe('same-language');
-    expect(result.gate).toMatchObject({ translate: false, reason: 'same-language', lang: 'zh-CN' });
-    expect(send).toHaveBeenCalledTimes(0);
-    expect(pushes).toEqual(['idle']);
-    orch.stop();
-  });
-
   test('真实 DOM：中文页夹几行短英文，判定阶段页面一个字不动，零请求', async () => {
     document.body.innerHTML =
       '<h1>免费的编程中文书籍索引</h1>' +
@@ -159,98 +132,3 @@ describe('没有够长的外文单元、全页目标语言占优：拦下', () =
   });
 });
 
-describe('识别调用次数与喂进去的文字量有上限，不随单元数增长', () => {
-  /** n 段一样长的英文正文（每段都超过单元的识别上限），开头是中文导航。 */
-  const page = (n: number) =>
-    items([
-      '商店',
-      '社区',
-      ...Array.from({ length: n }, () => 'Explore a vast open world full of secrets. '.repeat(25)),
-    ]);
-
-  test('段落数 200、800、3200：识别次数相同且不超过 1 加单元上限，每次喂进去的不超过各自上限', async () => {
-    const calls: number[] = [];
-    const fed: number[] = [];
-    for (const n of [200, 800, 3200]) {
-      const detect = vi.fn(byText());
-      const { orch } = setup('zh-CN', detect);
-      expect((await orch.togglePage(page(n), 'auto', 'zh-CN')).status).toBe('translated');
-      orch.stop();
-      const inputs = detect.mock.calls.map((c) => c[0]);
-      calls.push(inputs.length);
-      fed.push(inputs.reduce((sum, t) => sum + t.length, 0));
-      // 全页样本一次，其余是单元
-      expect(inputs.filter((t) => t.length > UNIT_DETECT_MAX_CHARS)).toHaveLength(1);
-      for (const t of inputs) expect(t.length).toBeLessThanOrEqual(CONTENT_SAMPLE_MAX_CHARS);
-    }
-    expect(new Set(calls).size).toBe(1);
-    expect(calls[0]).toBe(1 + UNIT_DETECT_COUNT);
-    expect(new Set(fed).size).toBe(1);
-    expect(fed[0]).toBeLessThanOrEqual(CONTENT_SAMPLE_MAX_CHARS + UNIT_DETECT_COUNT * UNIT_DETECT_MAX_CHARS);
-  });
-
-  test('闸门命中时：识别照样有上限，翻译请求一个都不发', async () => {
-    const zhPage = items(
-      Array.from({ length: 500 }, (_, i) => `第 ${i} 段：排版完成后记得在手机上预览一遍，确认图片与段落间距都正常再发布，引用别人的内容请注明出处。`),
-    );
-    const detect = vi.fn(byText());
-    const { orch, send } = setup('en', detect);
-
-    expect((await orch.togglePage(zhPage, 'auto', 'zh-CN')).status).toBe('same-language');
-    expect(detect.mock.calls.length).toBeLessThanOrEqual(1 + UNIT_DETECT_COUNT);
-    expect(send).toHaveBeenCalledTimes(0);
-    orch.stop();
-  });
-});
-
-describe('一秒上限（#866）是整个识别阶段共用的，不是每次一秒', () => {
-  const hang: Detect = () => new Promise<ContentLang | null>(() => {});
-
-  test('全部识别都挂住：到一秒就判，不是单元数乘一秒', async () => {
-    vi.useFakeTimers();
-    const detect = vi.fn(hang);
-    const { orch, send } = setup('en', detect);
-
-    const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
-    await vi.advanceTimersByTimeAsync(CONTENT_DETECT_TIMEOUT_MS - 1);
-    expect(send).toHaveBeenCalledTimes(0);
-    await vi.advanceTimersByTimeAsync(1);
-
-    expect((await first).status).toBe('translated');
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(detect.mock.calls.length).toBeGreaterThan(1);
-    orch.stop();
-  });
-
-  test('只有英文介绍那个单元挂住：到一秒判，它不算外文块，按全页样本拦下', async () => {
-    vi.useFakeTimers();
-    const share: ContentLang = { reliable: true, languages: [{ lang: 'zh', percentage: 70 }] };
-    const ok = sampleSays(share);
-    const detect = vi.fn<Detect>((text) => (text === DESC ? hang(text) : ok(text)));
-    const { orch, send } = setup('zh-cn', detect);
-
-    const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
-    await vi.advanceTimersByTimeAsync(CONTENT_DETECT_TIMEOUT_MS);
-
-    expect((await first).status).toBe('same-language');
-    expect(send).toHaveBeenCalledTimes(0);
-    orch.stop();
-  });
-
-  test('单元识别出错（reject、同步抛错）：不算外文块，不影响全页样本的结论', async () => {
-    const share: ContentLang = { reliable: true, languages: [{ lang: 'zh', percentage: 70 }] };
-    const ok = sampleSays(share);
-    for (const bad of [
-      () => Promise.reject(new Error('boom')),
-      () => {
-        throw new Error('boom');
-      },
-    ]) {
-      const detect = vi.fn<Detect>((text) => (text === DESC ? bad() : ok(text)));
-      const { orch, send } = setup('zh-cn', detect);
-      expect((await orch.togglePage(STEAM, 'auto', 'zh-CN')).status).toBe('same-language');
-      expect(send).toHaveBeenCalledTimes(0);
-      orch.stop();
-    }
-  });
-});
