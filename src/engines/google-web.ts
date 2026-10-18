@@ -60,9 +60,14 @@ export const googleWeb: TranslateEngine = {
   // #386: “不翻译”术语走占位符
   masksNoTranslate: true,
 
-  async translate({ texts, from, to, signal }) {
+  async translate({ texts, from, to, signal, onGateStart }) {
     const results = await Promise.allSettled(
-      texts.map((text) => getGate()(() => fetchOne(text, from, to, signal))),
+      texts.map((text) =>
+        getGate()(() => {
+          onGateStart?.();
+          return fetchOne(text, from, to, signal);
+        }),
+      ),
     );
     // #1001：调用方中止了这一批 —— 不按“全部失败”报瞬时故障
     if (signal?.aborted) throw new EngineError('google-web', false, '已中止', 'aborted', false, true);

@@ -40,10 +40,28 @@ import type {
 } from '~/src/engines/types';
 import { sleepUnlessAborted } from '~/src/runtime/sleep';
 
+/**
+ * 一批的耗时（#1083，观测用）：后台排队与引擎调用两段来自后台的回复；messaging
+ * 记下这一批在消息层的总耗时、发了几次、其中几次是单次响应超时。
+ */
+export interface BatchTiming {
+  /** 从开始等后台就绪到拿到回复（含传输重试），毫秒 */
+  sendMs: number;
+  /** pt:translate 发了几次（传输重试会重发） */
+  attempts: number;
+  /** 其中单次响应超时（MESSAGE_TIMEOUT_MS）的次数 */
+  timeouts: number;
+  /** 后台：开始路由到第一次拿到引擎闸门许可；没拿到回复时没有 */
+  bgQueueMs?: number;
+  /** 后台：第一次拿到许可到引擎调用结束 */
+  engineMs?: number;
+}
+
 export type TranslateResult =
-  | { ok: true; data: TranslateResponse }
+  | { ok: true; data: TranslateResponse; timing?: BatchTiming }
   | {
       ok: false;
+      timing?: BatchTiming;
       error: string;
       invalidated: boolean;
       /** #236: 类型化失败类别 —— 语义判定只在引擎处做一次，原样透传。 */
@@ -164,6 +182,7 @@ async function sendWithTransportRetry(
   budgetMs: number,
   signal: AbortSignal | undefined,
   onAbandon?: (msg: unknown) => void,
+  stats?: { attempts: number; timeouts: number },
 ): Promise<unknown> {
   const deadline = Date.now() + budgetMs;
   let delay = BACKOFF_INITIAL_MS;
@@ -184,6 +203,7 @@ async function sendWithTransportRetry(
 
     let resp: unknown;
     const msg = makeMsg();
+    if (stats) stats.attempts++;
     try {
       resp = await withTimeout(
         chrome.runtime.sendMessage(msg),
@@ -198,6 +218,7 @@ async function sendWithTransportRetry(
         throw new ContextInvalidatedError();
       }
       lastError = e instanceof Error ? e.message : String(e);
+      if (stats && lastError.startsWith('响应超时')) stats.timeouts++;
       resp = undefined;
     }
     if (resp !== undefined) return resp;
@@ -217,10 +238,20 @@ async function sendWithTransportRetry(
  */
 export async function translateViaBackground(
   payload: TranslateRequest,
-  ctl?: { signal?: AbortSignal },
+  /** timing：结果里带上这一批的耗时（#1083，调试日志开着时才要） */
+  ctl?: { signal?: AbortSignal; timing?: boolean },
 ): Promise<TranslateResult> {
   // #1001：正在等的那一次的批次身份；调用方中止时通知后台中止它
   let current: string | null = null;
+  // #1083：观测用的计数，随结果带回
+  const startedAt = performance.now();
+  const stats = { attempts: 0, timeouts: 0 };
+  const timingOf = (resp?: { timing?: { bgQueueMs?: number; engineMs?: number } }): BatchTiming => ({
+    sendMs: Math.round(performance.now() - startedAt),
+    ...stats,
+    ...(typeof resp?.timing?.bgQueueMs === 'number' && { bgQueueMs: resp.timing.bgQueueMs }),
+    ...(typeof resp?.timing?.engineMs === 'number' && { engineMs: resp.timing.engineMs }),
+  });
   const onAbort = () => {
     if (current) cancelBatches([current]);
   };
@@ -243,6 +274,7 @@ export async function translateViaBackground(
         if (current === id) current = null;
         cancelBatches([id]);
       },
+      stats,
     )) as {
       ok?: boolean;
       data?: TranslateResponse;
@@ -250,10 +282,11 @@ export async function translateViaBackground(
       category?: FailureCategory;
       invalidated?: boolean;
       aborted?: boolean;
+      timing?: { bgQueueMs?: number; engineMs?: number };
     };
 
     if (resp?.ok === true && resp.data) {
-      return { ok: true, data: resp.data };
+      return { ok: true, data: resp.data, ...(ctl?.timing && { timing: timingOf(resp) }) };
     }
     return {
       ok: false,
@@ -262,6 +295,7 @@ export async function translateViaBackground(
       // #263: 类型化字段原样透传，缺省按瞬时处理；不再转述 retryable
       category: resp?.category ?? 'transient',
       aborted: resp?.aborted ?? false,
+      ...(ctl?.timing && { timing: timingOf(resp) }),
     };
   } catch (e) {
     if (e instanceof SendAbortedError) {
@@ -276,6 +310,8 @@ export async function translateViaBackground(
       category: 'transient',
       aborted: false,
       ...(contextInvalidated && { contextInvalidated: true }),
+      // #1083：预算耗尽（多半是单次响应超时）同样带上发了几次、几次超时
+      ...(ctl?.timing && { timing: timingOf() }),
     };
   } finally {
     current = null;

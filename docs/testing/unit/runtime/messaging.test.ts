@@ -463,4 +463,38 @@ describe('放弃的批次通知后台中止（#1001）', () => {
     expect(sendMessage).not.toHaveBeenCalled();
     expect(result).toMatchObject({ ok: false, aborted: true, category: 'aborted' });
   });
+
+  test('要耗时时（#1083）：带回后台两段、发了几次、几次单次响应超时；不要时不带', async () => {
+    vi.useFakeTimers();
+    let translates = 0;
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return { ok: true };
+      if (m.type === 'pt:cancel-batches') return undefined;
+      if (++translates === 1) return new Promise(() => {});
+      return { ok: true, data: { translations: ['你好'] }, timing: { bgQueueMs: 4, engineMs: 20 } };
+    });
+    const pending = translateViaBackground(PAYLOAD, { timing: true });
+    await vi.advanceTimersByTimeAsync(31_000);
+    const result = await pending;
+    expect(result).toMatchObject({ ok: true, timing: { attempts: 2, timeouts: 1, bgQueueMs: 4, engineMs: 20 } });
+
+    translates = 1;
+    const plain = await translateViaBackground(PAYLOAD);
+    expect(plain).toEqual({ ok: true, data: { translations: ['你好'] } });
+  });
+
+  test('预算耗尽（每次都响应超时）：同样带回发了几次、几次超时（#1083）', async () => {
+    vi.useFakeTimers();
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return { ok: true };
+      if (m.type === 'pt:cancel-batches') return undefined;
+      return new Promise(() => {});
+    });
+    const pending = translateViaBackground(PAYLOAD, { timing: true });
+    await vi.advanceTimersByTimeAsync(50_000);
+    const result = await pending;
+    expect(result).toMatchObject({ ok: false, timing: { attempts: 2, timeouts: 2 } });
+  });
 });

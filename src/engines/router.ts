@@ -157,6 +157,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
         to: req.to,
         ...(batchTerms.length > 0 && { terms: batchTerms }),
         ...(req.signal && { signal: req.signal }),
+        ...(req.onGateStart && { onGateStart: req.onGateStart }),
       };
       const resp = await engine.translate(subReq);
 
@@ -200,6 +201,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
             from: req.from,
             to: req.to,
             ...(req.signal && { signal: req.signal }),
+            ...(req.onGateStart && { onGateStart: req.onGateStart }),
           });
           retried = corrupted.map((_, k) =>
             retry.failedIndices?.includes(k) ? undefined : (retry.translations[k] ?? undefined),

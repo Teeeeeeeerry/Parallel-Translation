@@ -33,9 +33,10 @@ export const bingEdge: TranslateEngine = {
   // #387: “不翻译”术语走占位符
   masksNoTranslate: true,
 
-  async translate({ texts, from, to, signal }) {
+  async translate({ texts, from, to, signal, onGateStart }) {
     // #159: 整个请求过闸门，限制并发在飞请求数
     return getGate()(async () => {
+      onGateStart?.();
       // auto → 空字符串（Bing 不接受 'auto' 字面量）
       const fromParam = from === 'auto' ? '' : from;
 
