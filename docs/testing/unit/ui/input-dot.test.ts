@@ -671,3 +671,23 @@ describe('打字期间不重算位置，停手后对齐一次（#670）', () => 
     expect(top()).toBeGreaterThan(250);
   });
 });
+
+describe('圆点在页面上报告就位状态（#1081）', () => {
+  test('聚焦即已就位；打字期间跟随中，停手后已就位；失焦后属性去掉', () => {
+    vi.useFakeTimers();
+    try {
+      registry.ensure('input-dot', true);
+      const ta = textarea('hello');
+      ta.focus();
+      expect(dot()!.dataset.placement).toBe('settled');
+      type(ta, 'hello world');
+      expect(dot()!.dataset.placement).toBe('following');
+      vi.advanceTimersByTime(SHOW_DELAY);
+      expect(dot()!.dataset.placement).toBe('settled');
+      ta.blur();
+      expect(dot()!.dataset.placement).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

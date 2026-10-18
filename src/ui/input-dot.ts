@@ -38,69 +38,15 @@
 // 不另养镜像；钳边、停手对齐、测不出回落三条规则与文本框同一套。
 
 import { mountIsolated, unmountIsolated } from './mount';
-import { measureEditableEnd, measureFieldEnd, type TextEnd } from './input-measure';
-import { GAP, SHOW_DELAY, deepActiveElement } from './float-common';
+import { deepActiveElement } from './float-common';
+import { createDotPlacer, type DotPlacement } from './input-dot-place';
 import { tf } from '../i18n';
-import { inputDotHitSize } from './floating-ui-size';
 import { decideInputEligibility, inputText, type TextInput } from './input-eligibility';
 
 const HOST_ID = 'input-dot';
 
 /** 框里至少有这么多字符才浮出 —— 空的搜索框上不该无故冒出一个点。 */
 const MIN_CHARS = 2;
-
-/** 圆点直径的缺省值，与 injected.css 里 .pt-input-dot 的回落值一致。 */
-const DEFAULT_SIZE = 14;
-
-/**
- * 圆点直径与可点区边长（#987）。直径读圆点自己的布局宽度 —— 由设置经文档根上的
- * 变量给出，CSS 是唯一来源，这里不另读设置；隐藏时量不到，回落缺省值。可点区
- * （#638）边长与 CSS 同一个换算：随直径等比放大、不小于逐段翻译按钮的 24px
- * 下限。可见圆点不直接撑大成可点区 —— 那样会挡住文字（ADR-0006）。
- */
-interface DotDims {
-  size: number;
-  hit: number;
-}
-function dotDims(dot: HTMLElement): DotDims {
-  const size = dot.offsetWidth || DEFAULT_SIZE;
-  return { size, hit: inputDotHitSize(size) };
-}
-/**
- * 多行的框里收小圆点（#997）。圆点竖直居中在末尾那一行，字形盒在行盒里上下
- * 对称，所以居中的圆点碰不到上一行字形的条件是：直径 ≤ 2 × 行高 − 字形高。
- * 行高紧凑的框（聊天、评论框常见 1.0–1.2）里设置的直径超过它时，按这个上限
- * 收小可见直径，宁可小一点也不压住文字（ADR-0006）；可点区按收小后的直径换算，
- * 仍不低于 24px。
- *
- * 上限写成圆点自己的 max-width / max-height，不覆盖直径变量：设置里再改直径时
- * 圆点照常变化，上面的直径观察器照常重新摆放。单行框上下没有别的行，不收。
- * 行高是 normal 时按字形高算（normal 的行盒约等于字形盒）。
- */
-function fitLine(dot: HTMLElement, el: HTMLElement, end: TextEnd): DotDims {
-  const d = dotDims(dot);
-  if (el instanceof HTMLInputElement) return d;
-  // #1017：contenteditable 读末尾那一行文字自己的行高，内层段落可能比宿主紧
-  const lh = end.lineHeight ?? parseFloat(getComputedStyle(el).lineHeight);
-  const cap = Math.floor(2 * (Number.isFinite(lh) ? lh : end.height) - end.height);
-  if (d.size <= cap) return d;
-  const size = Math.max(MIN_FIT_SIZE, cap);
-  dot.style.maxWidth = dot.style.maxHeight = `${size}px`;
-  dot.style.setProperty('--pt-input-dot-hit', `${inputDotHitSize(size)}px`);
-  return { size, hit: inputDotHitSize(size) };
-}
-
-/** 收小的下限：再小就只剩描边，看不出是个按钮。行高低到要收到这以下时宁可压一点。 */
-const MIN_FIT_SIZE = 8;
-
-/** 撤掉上一次的收小，回到设置给的直径与可点区。 */
-function unfit(dot: HTMLElement): void {
-  dot.style.maxWidth = dot.style.maxHeight = '';
-  dot.style.removeProperty('--pt-input-dot-hit');
-}
-
-/** 回落位置离框内侧边缘的距离。 */
-const INSET = 6;
 
 function eligible(el: Element | null): el is TextInput {
   return decideInputEligibility(el).eligible;
@@ -110,175 +56,15 @@ function hasEnoughText(el: TextInput): boolean {
   return inputText(el).trim().length >= MIN_CHARS;
 }
 
-/** 框的可见区域（视口坐标）：边框以内、滚动条以外。 */
-interface InnerBox {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-}
-
-/**
- * 框的可见区域。内侧边缘优先用 clientWidth / clientHeight（不含滚动条），
- * 量不到时退回边框盒减边框。
- *
- * client* 是没缩放的排版尺寸，getBoundingClientRect 是屏幕上的尺寸：祖先带
- * transform 缩放时（#668）按两者之比换算，否则回落位置会落到框外。
- */
-function innerBox(el: HTMLElement): InnerBox {
-  const r = el.getBoundingClientRect();
-  const cs = getComputedStyle(el);
-  const sx = el.offsetWidth > 0 ? r.width / el.offsetWidth : 1;
-  const sy = el.offsetHeight > 0 ? r.height / el.offsetHeight : 1;
-  const borderR = (parseFloat(cs.borderRightWidth) || 0) * sx;
-  const borderB = (parseFloat(cs.borderBottomWidth) || 0) * sy;
-  return {
-    left: r.left + el.clientLeft * sx,
-    top: r.top + el.clientTop * sy,
-    right: el.clientWidth > 0 ? r.left + (el.clientLeft + el.clientWidth) * sx : r.right - borderR,
-    bottom:
-      el.clientHeight > 0 ? r.top + (el.clientTop + el.clientHeight) * sy : r.bottom - borderB,
-  };
-}
-
-/** 文字末尾在圆点的哪一侧（#638）：扩出的那一圈不往这一侧伸。 */
-type EndSide = 'left' | 'right' | 'top' | 'bottom';
-
-/**
- * 可点区在一条轴上相对可见圆点的偏移（#638）：可点区是 hit 见方、把圆点
- * 包在里面的透明一圈，偏移取 [size - hit, 0]。guardMin / guardMax 是文字
- * 末尾给出的硬边界；框的可见区域是软边界，框装得下这一圈时才收进去；
- * 其余情况居中。
- */
-function hitAxis(
-  dot: number,
-  boxLo: number,
-  boxHi: number,
-  guardMin: number,
-  guardMax: number,
-  { size, hit }: DotDims,
-): number {
-  let min = Math.max(size - hit, guardMin);
-  let max = Math.min(0, guardMax);
-  const inMin = Math.max(min, boxLo - dot);
-  const inMax = Math.min(max, boxHi - hit - dot);
-  if (inMin <= inMax) {
-    min = inMin;
-    max = inMax;
-  }
-  return Math.min(max, Math.max(min, (size - hit) / 2));
-}
-
-/**
- * 摆放可点区（#638）。圆点贴在文字末尾旁边，扩出的那一圈要是对称地往外长，
- * 就会盖住末尾字符与光标，用户想点回文字里接着写时点中的是圆点。所以：
- * 1. 不往文字末尾那一侧伸，与末尾至少隔开 1px —— 末尾字符与光标仍是输入框的；
- * 2. 尽量不出框的可见区域 —— 滚动条、边框、拖拽手柄仍是输入框的；
- * 3. 其余情况居中。
- * 量不出末尾（回落位置）时没有第 1 条。
- */
-function placeHit(
-  dot: HTMLElement,
-  left: number,
-  top: number,
-  box: InnerBox,
-  d: DotDims,
-  end?: { side: EndSide; at: TextEnd },
-): void {
-  const spare = d.size - d.hit;
-  let xMin = spare, xMax = 0, yMin = spare, yMax = 0;
-  if (end?.side === 'left') xMin = Math.min(0, end.at.x + 1 - left);
-  if (end?.side === 'right') xMax = Math.max(spare, end.at.x - 1 - d.hit - left);
-  if (end?.side === 'top') yMin = Math.min(0, end.at.y + end.at.height + 1 - top);
-  if (end?.side === 'bottom') yMax = Math.max(spare, end.at.y - 1 - d.hit - top);
-  dot.style.setProperty('--pt-hit-x', `${hitAxis(left, box.left, box.right, xMin, xMax, d)}px`);
-  dot.style.setProperty('--pt-hit-y', `${hitAxis(top, box.top, box.bottom, yMin, yMax, d)}px`);
-}
-
-/** 回落位置：框内侧右下角（ADR-0006）。 */
-function placeFallback(dot: HTMLElement, el: HTMLElement): void {
-  const box = innerBox(el);
-  const d = dotDims(dot);
-  const left = box.right - INSET - d.size;
-  const top = box.bottom - INSET - d.size;
-  dot.style.left = `${left}px`;
-  dot.style.top = `${top}px`;
-  placeHit(dot, left, top, box, d);
-}
-
-/**
- * 把圆点钳在框的可见区域里（#669，ADR-0006）：文字末尾滚出可见区域时，
- * 圆点停在离它最近的可见边缘，不隐藏、也不换样式 —— 长文本恰恰是最想
- * 翻译的那种，圆点消失会被当成功能坏了。框比圆点还小时贴左上。
- */
-function clampToBox(
-  left: number,
-  top: number,
-  box: InnerBox,
-  size: number,
-): { left: number; top: number } {
-  return {
-    left: Math.max(box.left, Math.min(left, box.right - size)),
-    top: Math.max(box.top, Math.min(top, box.bottom - size)),
-  };
-}
-
-/**
- * 圆点放在文字末尾旁边（#667）。末尾也是光标所在，两者并排而不重叠，否则
- * 圆点会被当成光标的一部分：
- * - 默认在末尾之后（LTR 右侧、RTL 左侧，#666），留 GAP 的间隙，竖直居中于
- *   末尾那一行；
- * - 那一侧放不下（窄框、末尾顶到内边缘）时换到末尾那一行的下方，再不行
- *   上方，横向贴那一侧的内边缘 —— 不在这一行上，就碰不到光标；
- * - 上下也没地方（单行文本框）时放到光标的另一侧，同样留 GAP。
- */
-function besideEnd(
-  end: TextEnd,
-  box: InnerBox,
-  rtl: boolean,
-  size: number,
-): { left: number; top: number; side: EndSide } {
-  const centered = end.y + end.height / 2 - size / 2;
-  const after = rtl ? end.x - GAP - size : end.x + GAP;
-  const before = rtl ? end.x + GAP : end.x - GAP - size;
-  if (after >= box.left && after + size <= box.right) {
-    return { left: after, top: centered, side: rtl ? 'right' : 'left' };
-  }
-  const left = rtl ? box.left : box.right - size;
-  const below = end.y + end.height;
-  if (below + size <= box.bottom) return { left, top: below, side: 'top' };
-  const above = end.y - size;
-  if (above >= box.top) return { left, top: above, side: 'bottom' };
-  return { left: before, top: centered, side: rtl ? 'left' : 'right' };
-}
-
-/**
- * 圆点位置（ADR-0006）：多行（#665）、单行（#666）文本框与 contenteditable
- * （#671）贴文字末尾，与光标并排（#667），并钳在框的可见区域里（#669）；量不
- * 出来时回落框内侧右下角 —— 圆点是唯一入口，量不出来只换位置，绝不不显示。
- */
-function place(dot: HTMLElement, el: HTMLElement, shadow: ShadowRoot): void {
-  const end =
-    el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement
-      ? measureFieldEnd(el, shadow)
-      : measureEditableEnd(el);
-  unfit(dot);
-  if (!end) {
-    placeFallback(dot, el);
-    return;
-  }
-  const box = innerBox(el);
-  const d = fitLine(dot, el, end);
-  const beside = besideEnd(end, box, getComputedStyle(el).direction === 'rtl', d.size);
-  const { left, top } = clampToBox(beside.left, beside.top, box, d.size);
-  dot.style.left = `${left}px`;
-  dot.style.top = `${top}px`;
-  placeHit(dot, left, top, box, d, { side: beside.side, at: end });
-}
 
 /** 圆点的回调：点击时拿到当前输入框。 */
 interface InputDotHandlers {
   translate: (el: TextInput) => Promise<void>;
+  /**
+   * 就位状态的变化（#1081）：跟随中 / 已就位；圆点隐藏时为 null。页面上同时
+   * 写在圆点的 data-placement 属性上。
+   */
+  onPlacement?: (state: DotPlacement | null) => void;
 }
 
 export function createInputDot(handlers: InputDotHandlers): () => void {
@@ -314,19 +100,9 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
     }
   };
 
-  /** 停手后对齐的计时器（#670）；有值表示还在等停手。 */
-  let settleTimer: ReturnType<typeof setTimeout> | undefined;
-  const cancelAlign = (): void => {
-    clearTimeout(settleTimer);
-    settleTimer = undefined;
-  };
-  const alignAfterTyping = (): void => {
-    cancelAlign();
-    settleTimer = setTimeout(() => {
-      settleTimer = undefined;
-      if (target) place(dot, target, shadow);
-    }, SHOW_DELAY);
-  };
+  // #1081：测量、收小、回落、停手对齐与就位状态在定位模块
+  const placer = createDotPlacer(dot, shadow);
+  if (handlers.onPlacement) placer.subscribe(handlers.onPlacement);
 
   /**
    * 盯住当前输入框的样式与尺寸（#668）：站点改了它的行内样式、class，或者
@@ -370,7 +146,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
   };
 
   const hide = (): void => {
-    cancelAlign();
+    placer.reset();
     watch(null);
     dot.style.display = 'none';
     target = null;
@@ -392,13 +168,8 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
     watch(el);
     syncState();
     dot.style.display = 'block';
-    if (!typing) {
-      cancelAlign();
-      place(dot, el, shadow);
-      return;
-    }
-    if (!wasShown) placeFallback(dot, el);
-    alignAfterTyping();
+    if (!typing) placer.settle(el);
+    else placer.follow(el, !wasShown);
   };
 
   /**
@@ -439,7 +210,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
   // 或尺寸变了（#668）同样重新对齐
   // 还在等停手时不量：打字引起的框内滚动、自动增高交给停手后的那次对齐
   function onReflow(): void {
-    if (target && settleTimer === undefined) place(dot, target, shadow);
+    if (target && !placer.waiting()) placer.settle(target);
   }
 
   // 按下时阻止默认行为：不夺走输入框的焦点，光标与选区都还在
@@ -471,7 +242,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
   sync(deepActiveElement());
 
   return () => {
-    cancelAlign();
+    placer.reset();
     document.removeEventListener('focusin', onFocusIn, true);
     document.removeEventListener('focusout', onFocusOut, true);
     document.removeEventListener('input', onInput, true);
