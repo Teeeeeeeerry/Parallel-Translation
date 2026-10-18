@@ -7,17 +7,17 @@
  * 最长的单元只有 49 字。经整页开关入口 togglePage 断言：假消息层数请求条数，
  * 识别替身数调用次数与喂进去的文字，真实 DOM 看页面变没变。
  *
+ * #1076：判定、识别次数上限与一秒上限在闸门的判定入口上测，见
+ * page-gate-judge.test.ts；这里只留接线（不命中时送出的请求与改动前相同、真实
+ * DOM 判定阶段页面不动）。
+ *
  * 识别替身按文字本身给结论（汉字过半就是中文，否则是英文），全页样本另行
  * 给定；不调真实识别器（#851：可靠标记会在两次调用之间翻转）。
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
-import { createOrchestrator, CONTENT_DETECT_TIMEOUT_MS } from '~/src/orchestration/orchestrator';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import {
-  CONTENT_SAMPLE_MAX_CHARS,
-  FOREIGN_BLOCK_MIN_CHARS,
-  UNIT_DETECT_COUNT,
-  UNIT_DETECT_MAX_CHARS,
   type ContentLang,
   type PageGateDecision,
 } from '~/src/orchestration/page-gate';
@@ -81,41 +81,6 @@ afterEach(() => {
 });
 
 describe('不到外文块下限的单元也送去识别，接上“最长的几个单元”那一级', () => {
-  test('短单元的中文页，全页识别拿不准：最长的三个单元都是中文，拦下，零请求', async () => {
-    for (const u of BLOG) expect(u.text.length).toBeLessThan(FOREIGN_BLOCK_MIN_CHARS);
-    const detect = vi.fn(sampleUnsure());
-    const { orch, send, pushes, decisions } = setup('zh-CN', detect);
-
-    const result = await orch.togglePage(BLOG, 'auto', 'zh-CN');
-
-    expect(result.status).toBe('same-language');
-    expect(result.gate).toEqual({ translate: false, reason: 'same-language', lang: 'zh-CN', basis: 'longest-units' });
-    expect(decisions).toEqual([result.gate]);
-    expect(send).toHaveBeenCalledTimes(0);
-    expect(pushes).toEqual(['idle']);
-    // 全页样本一次，六个单元各一次
-    expect(detect).toHaveBeenCalledTimes(1 + BLOG.length);
-    orch.stop();
-  });
-
-  test('短单元的外文内容页（中文界面、英文标题），全页识别拿不准：不拦，照常翻译', async () => {
-    // YouTube 大模型入门第二遍的形状（#902）：最长的单元都是 60 到 80 字符的英文标题
-    const page = items([
-      '首页',
-      'Intro to Large Language Models',
-      'Let us build GPT: from scratch, in code, spelled out. Neural networks: zero to hero',
-      'The spelled-out intro to neural networks and backpropagation: building micrograd',
-      'Deep Dive into LLMs like ChatGPT, a general audience deep dive into the technology',
-      '订阅',
-    ]);
-    const { orch, send, decisions } = setup('zh-Hans-CN', vi.fn(sampleUnsure()));
-
-    expect((await orch.togglePage(page, 'auto', 'zh-CN')).status).toBe('translated');
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(decisions).toEqual([{ translate: true, basis: 'pass' }]);
-    orch.stop();
-  });
-
   test('不命中时整页翻译与没注入识别时完全一致：送出的请求逐条相同', async () => {
     const page = items([
       '首页',
@@ -158,75 +123,3 @@ describe('不到外文块下限的单元也送去识别，接上“最长的几�
   });
 });
 
-describe('识别次数的上限：短单元也进来之后，仍不随单元数增长（#867）', () => {
-  /** n 段一样长、不到外文块下限的英文短段，开头是中文导航。 */
-  const page = (n: number) =>
-    items([
-      '商店',
-      '社区',
-      ...Array.from({ length: n }, (_, i) => `Item ${String(i).padStart(4, '0')}: explore a vast open world full of secrets and hidden rooms.`),
-    ]);
-
-  test('段落数 200、800、3200：识别都是 1 加单元上限次，喂进去的文字量相同', async () => {
-    const calls: number[] = [];
-    const fed: number[] = [];
-    for (const n of [200, 800, 3200]) {
-      expect(page(n)[2]!.text.length).toBeLessThan(FOREIGN_BLOCK_MIN_CHARS);
-      const detect = vi.fn(sampleUnsure());
-      const { orch } = setup('zh-CN', detect);
-      expect((await orch.togglePage(page(n), 'auto', 'zh-CN')).status).toBe('translated');
-      orch.stop();
-      const inputs = detect.mock.calls.map((c) => c[0]);
-      calls.push(inputs.length);
-      fed.push(inputs.reduce((sum, t) => sum + t.length, 0));
-      for (const t of inputs) expect(t.length).toBeLessThanOrEqual(CONTENT_SAMPLE_MAX_CHARS);
-    }
-    expect(calls).toEqual([1 + UNIT_DETECT_COUNT, 1 + UNIT_DETECT_COUNT, 1 + UNIT_DETECT_COUNT]);
-    expect(new Set(fed).size).toBe(1);
-    expect(fed[0]).toBeLessThanOrEqual(CONTENT_SAMPLE_MAX_CHARS + UNIT_DETECT_COUNT * UNIT_DETECT_MAX_CHARS);
-  });
-
-  test('单元少于上限时，每个单元各识别一次，不重复', async () => {
-    const detect = vi.fn(sampleUnsure());
-    const { orch } = setup('zh-CN', detect);
-    await orch.togglePage(BLOG, 'auto', 'zh-CN');
-    const units = detect.mock.calls.map((c) => c[0]).filter((t) => !t.includes('\n'));
-    expect(units.sort()).toEqual(BLOG.map((u) => u.text).sort());
-    orch.stop();
-  });
-});
-
-describe('一秒上限（#866）仍是整个识别阶段共用', () => {
-  const hang: Detect = () => new Promise<ContentLang | null>(() => {});
-
-  test('短单元的识别全部挂住：到一秒就判，证据不足照常翻译，不是单元数乘一秒', async () => {
-    vi.useFakeTimers();
-    const detect = vi.fn<Detect>((text) => (text.includes('\n') ? Promise.resolve(UNSURE) : hang(text)));
-    const { orch, send } = setup('zh-CN', detect);
-
-    const first = orch.togglePage(BLOG, 'auto', 'zh-CN');
-    await vi.advanceTimersByTimeAsync(CONTENT_DETECT_TIMEOUT_MS - 1);
-    expect(send).toHaveBeenCalledTimes(0);
-    await vi.advanceTimersByTimeAsync(1);
-
-    expect((await first).status).toBe('translated');
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(detect).toHaveBeenCalledTimes(1 + BLOG.length);
-    orch.stop();
-  });
-
-  test('最长的三个里有一个挂住：到一秒判，那一个当拿不到，不拦', async () => {
-    vi.useFakeTimers();
-    const longest = [...BLOG].sort((a, b) => b.text.length - a.text.length)[0]!.text;
-    const ok = sampleUnsure();
-    const detect = vi.fn<Detect>((text) => (text === longest ? hang(text) : ok(text)));
-    const { orch, send } = setup('zh-CN', detect);
-
-    const first = orch.togglePage(BLOG, 'auto', 'zh-CN');
-    await vi.advanceTimersByTimeAsync(CONTENT_DETECT_TIMEOUT_MS);
-
-    expect((await first).status).toBe('translated');
-    expect(send).toHaveBeenCalledTimes(1);
-    orch.stop();
-  });
-});
