@@ -15,6 +15,7 @@
 import { describe, test, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import { createInputTranslator, type InputTranslatorDeps } from '~/src/ui/input-translate';
 import type { SingleTextResult } from '~/src/orchestration/orchestrator';
+import { singleTextMissNotice, type SingleTextMiss } from '~/src/orchestration/text-notice';
 import { MAX_TEXT } from '~/src/dom/classify';
 import { unmountIsolated } from '~/src/ui/mount';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
@@ -39,7 +40,9 @@ function lifetime(): number {
   return elapsed;
 }
 
-const ok = (translation: string): SingleTextResult => ({ admission: 'allowed', ok: true, translation });
+const ok = (translation: string): SingleTextResult => ({ ok: true, translation });
+/** 入口没给出译文时的结果：提示由入口那一处判定给出（#1075），这里只看输入翻译怎么显示它。 */
+const fail = (miss: SingleTextMiss): SingleTextResult => ({ ok: false, notice: singleTextMissNotice(miss) });
 
 let box: HTMLTextAreaElement;
 /** 浏览器原生插入的替身：true 时照常写回，false 时拒绝。 */
@@ -181,8 +184,7 @@ describe('输入翻译其余的提示仍是状态类（#751 反向）', () => {
     {
       name: '翻译失败（瞬时故障，泛化文案）',
       deps: {
-        translateText: async () =>
-          ({ admission: 'allowed', ok: false, category: 'transient', error: 'HTTP 503', display: { showRealReason: false } }) as SingleTextResult,
+        translateText: async () => fail({ kind: 'failed', category: 'transient', error: 'HTTP 503' }),
       },
       expected: () => chrome.i18n.getMessage('toastTranslateFail'),
     },
@@ -190,13 +192,7 @@ describe('输入翻译其余的提示仍是状态类（#751 反向）', () => {
       name: '翻译失败（配额，真实原因）',
       deps: {
         translateText: async () =>
-          ({
-            admission: 'allowed',
-            ok: false,
-            category: 'quota',
-            error: 'DeepL 返回 456：本月配额已用完。'.repeat(10),
-            display: { showRealReason: true },
-          }) as SingleTextResult,
+          fail({ kind: 'failed', category: 'quota', error: 'DeepL 返回 456：本月配额已用完。'.repeat(10) }),
       },
       expected: () => 'DeepL 返回 456：本月配额已用完。'.repeat(10),
     },
@@ -219,7 +215,7 @@ describe('输入翻译其余的提示仍是状态类（#751 反向）', () => {
     },
     {
       name: '站点禁用',
-      deps: { translateText: async () => ({ admission: 'blocked', ok: false }) },
+      deps: { translateText: async () => fail({ kind: 'blocked', mainFrame: true }) },
       expected: () => chrome.i18n.getMessage('toastSiteBlocked'),
     },
   ];
@@ -263,5 +259,18 @@ describe('输入翻译不随页面还原作废（#1044、#1072）', () => {
     reply({ ok: true, data: { translations: ['Hello, nice to meet you.'] } });
     await pending;
     expect(box.value).toBe('Hello, nice to meet you.');
+  });
+});
+
+describe('输入翻译被放弃时不提示（#1075，此前这里缺这一句）', () => {
+  test('后台报了已中止：接真实的编排模块，不弹“翻译失败”，框里文字不动', async () => {
+    const orch = createOrchestrator({
+      send: async () => ({ ok: false, error: '已中止', category: 'aborted', aborted: true }),
+    });
+    orch.start();
+    const before = box.value;
+    await translator({ translateText: orch.translateText })(box);
+    expect(shown()).toEqual([]);
+    expect(box.value).toBe(before);
   });
 });

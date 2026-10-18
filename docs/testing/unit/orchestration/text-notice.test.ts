@@ -11,6 +11,12 @@ import { render } from '~/src/dom/renderer';
 import { toast, toastPending } from '~/src/ui/toast';
 import { unmountIsolated } from '~/src/ui/mount';
 
+/** 成功结果里的译文（#1075：结果二选一）。 */
+function translationOf(r: { ok: boolean; translation?: string }): string {
+  if (!r.ok || r.translation === undefined) throw new Error('单文本入口没有给出译文');
+  return r.translation;
+}
+
 /** 页面上当前的提示（挂在隔离的 shadow root 里）。 */
 function toasts(): HTMLElement[] {
   const root = document.getElementById('pt-host-toast')?.shadowRoot;
@@ -44,7 +50,7 @@ describe('逐段翻译命中兜底（#786）', () => {
   async function translateParagraph(p: Element, reply: (t: string) => string): Promise<void> {
     const source = p.textContent!;
     const result = await translateText(source, reply);
-    const notice = paraNotice(render(p, result.translation!, 'para', source));
+    const notice = paraNotice(render(p, translationOf(result), 'para', source));
     if (notice) toast(notice.message, notice);
   }
 
@@ -93,7 +99,7 @@ describe('划词翻译命中兜底（#787）', () => {
     const pending = toastPending(chrome.i18n.getMessage('toastTranslating'));
     try {
       const result = await translateText(text, reply);
-      const notice = selectionNotice(text, result.translation!);
+      const notice = selectionNotice(text, translationOf(result));
       toast(notice.message, notice);
     } finally {
       pending.dismiss();
@@ -116,7 +122,7 @@ describe('划词翻译命中兜底（#787）', () => {
     const pending = toastPending(chrome.i18n.getMessage('toastTranslating'));
     const [waiting] = toasts();
     const result = await translateText('回收站', (t) => t);
-    const notice = selectionNotice('回收站', result.translation!);
+    const notice = selectionNotice('回收站', translationOf(result));
     toast(notice.message, notice);
     pending.dismiss();
 

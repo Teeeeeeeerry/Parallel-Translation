@@ -142,10 +142,11 @@ describe('放弃不算失败：结果只以 abandoned 表示（#1053、#1074）'
         .mockResolvedValueOnce({ ok: false, category: 'transient', error: '已中止' }),
     });
     orch.start();
-    expect(await orch.translateText('a', 'en', 'zh-CN')).toEqual({ admission: 'allowed', ok: false, abandoned: true });
+    expect(await orch.translateText('a', 'en', 'zh-CN')).toEqual({ ok: false, notice: null, abandoned: true });
     // 文案恰好是“已中止”的瞬时故障仍是失败
-    const b = await orch.translateText('b', 'en', 'zh-CN');
-    expect(b.abandoned).toBeUndefined();
-    expect(b.display).toEqual({ showRealReason: false });
+    expect(await orch.translateText('b', 'en', 'zh-CN')).toEqual({
+      ok: false,
+      notice: { message: chrome.i18n.getMessage('toastTranslateFail'), purpose: 'status', kind: 'error' },
+    });
   });
 });
