@@ -227,13 +227,31 @@ export default defineBackground(() => {
     const { batchId, ...payload } = msg.payload ?? {};
     const key = typeof batchId === 'string' ? inFlightKey(sender.tab?.id, sender.frameId, batchId) : null;
     const signal = key ? inFlight.start(key) : undefined;
+    // #1083：这一批在后台的两段耗时 —— 从开始路由到第一次拿到引擎闸门许可是
+    // “后台排队”，之后到结束是“引擎调用”。随回复带回，content 只在开了调试
+    // 日志时记下。一批里有多个请求（google-web 一条文本一个）时按第一次许可分界
+    let routedAt = 0;
+    let gateAt: number | undefined;
+    const onGateStart = () => {
+      gateAt ??= performance.now();
+    };
+    const timing = () => {
+      const end = performance.now();
+      return {
+        bgQueueMs: Math.round((gateAt ?? end) - routedAt),
+        engineMs: gateAt === undefined ? 0 : Math.round(end - gateAt),
+      };
+    };
     try {
       settingsReady()
         // #90：路由前确保 E2E mock 已从 storage 安装 —— SW 实例被替换后，
         // 实例内存里的 stub 消失，此步让 mock 随每次翻译自愈
         .then(() => ensureE2EMock())
-        .then(() => route(signal ? { ...payload, signal } : payload))
-        .then((r) => sendResponse({ ok: true, data: r }))
+        .then(() => {
+          routedAt = performance.now();
+          return route({ ...payload, ...(signal && { signal }), onGateStart });
+        })
+        .then((r) => sendResponse({ ok: true, data: r, timing: timing() }))
         .catch((e) => {
           // #263: 纯透传 —— background 不再重算可重试性；引擎产出的
           // 类型化字段（category / retryable / invalidated / aborted）
@@ -245,6 +263,7 @@ export default defineBackground(() => {
             category: e instanceof EngineError ? e.category : 'transient',
             invalidated: e instanceof EngineError ? e.invalidated : false,
             aborted: e instanceof EngineError ? e.aborted : false,
+            ...(routedAt > 0 && { timing: timing() }),
           });
         })
         .finally(() => {

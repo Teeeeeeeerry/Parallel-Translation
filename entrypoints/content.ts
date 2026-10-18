@@ -75,6 +75,9 @@ import { isSiteBlocked } from '~/src/dom/site-filter';
 import { decideShow } from '~/src/changelog/decide';
 import { clearSeen } from '~/src/changelog/state';
 
+/** #1083：批次耗时调试日志的开关（storage.local），默认没有。 */
+const DEBUG_BATCH_TIMING_KEY = 'pt-debug-batch-timing';
+
 /**
  * 子 frame 取顶层页面的主机名（#471）。跨域时读不到 window.top.location，
  * Firefox 也没有 location.ancestorOrigins，改由 background 按消息发送方
@@ -419,10 +422,22 @@ export default defineContentScript({
     // （#843），输入翻译取单一可靠结果（#661）
     const langDetector = createLangDetector();
 
+    // #1083：批次耗时的调试日志，默认不开。在扩展的 service worker 控制台里执行
+    // chrome.storage.local.set({ 'pt-debug-batch-timing': true }) 打开，刷新页面后
+    // 生效；每批每次尝试打一行“[PT] 批次耗时 {…}”：content 侧发送闸门排队、后台
+    // 引擎闸门排队、引擎调用三段与是否超时。关着时一点不测
+    const debugBatchTiming = await chrome.storage.local
+      .get(DEBUG_BATCH_TIMING_KEY)
+      .then((r) => r[DEBUG_BATCH_TIMING_KEY] === true)
+      .catch(() => false);
+
     // #261: 编排模块 —— 全页翻译的批次流水线在模块内，
     // 渲染回调按批触发（#256 渐进渲染，首屏不等最慢段）
     const orchestrator = createOrchestrator({
       send: translateViaBackground,
+      ...(debugBatchTiming && {
+        onBatchTiming: (record) => console.info('[PT] 批次耗时 ' + JSON.stringify(record)),
+      }),
       // #265: 设置变更订阅由模块持有（start 订阅 / stop 退订），
       // 响应走统一入口 applySettings（初始化与变更共用）。
       // #310: 载荷类型收紧为真实 Settings，此处不再需要强制转型

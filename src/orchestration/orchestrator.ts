@@ -76,7 +76,32 @@ export interface TranslateItem<TCtx> {
  * 消息发送层。#1001：第二个参数带一个中止信号，编排模块放弃这一批（还原、
  * 失效短路）时触发，发送层据此通知后台中止对应的引擎调用。
  */
-export type SendTranslate = (req: TranslateRequest, ctl?: { signal: AbortSignal }) => Promise<unknown>;
+export type SendTranslate = (
+  req: TranslateRequest,
+  /** timing：要发送层把这一批的耗时带回来（#1083，只在注入了 onBatchTiming 时为真） */
+  ctl?: { signal: AbortSignal; timing?: boolean },
+) => Promise<unknown>;
+
+/**
+ * 一批一次尝试的耗时（#1083，观测用，毫秒）：content 侧发送闸门排队、后台引擎闸门
+ * 排队、引擎调用三段，加上消息层的总耗时、发了几次、几次单次响应超时。后两段与
+ * 消息层的数字由发送层带回，发送层不给时没有。
+ */
+export interface BatchTimingRecord {
+  /** 第几批（0 起）与第几次尝试（0 是首发，之后是切批重试） */
+  batch: number;
+  attempt: number;
+  items: number;
+  chars: number;
+  /** 进 content 侧发送闸门到被放行 */
+  contentQueueMs: number;
+  ok: boolean;
+  sendMs?: number;
+  attempts?: number;
+  timeouts?: number;
+  bgQueueMs?: number;
+  engineMs?: number;
+}
 
 /** 单批发送结果（#256）：渲染层按批消费，批次间不互相等待。 */
 export interface TranslateBatchResult {
@@ -338,6 +363,11 @@ export interface OrchestratorOptions {
    * 拿来写控制台，排查时看得出走的是判定链的哪一级；不影响翻译流程。
    */
   onGateDecision?: (decision: PageGateDecision) => void;
+  /**
+   * 每批每次尝试的耗时（#1083）：注入了才测，调用方拿来写调试日志，不影响翻译
+   * 流程。没注入时发送层不带耗时，结果与改动前一致。
+   */
+  onBatchTiming?: (record: BatchTimingRecord) => void;
 }
 
 /**
@@ -471,10 +501,16 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         // #1007: 每次尝试都过闸门（重试退避期间不占名额）。放行的那一刻重判
         // 中止：批次可能在队列里待了十几秒，期间用户点了还原、或别的批次判了
         // 失效 —— 这时直接作废，消息一条都不发
+        // #1083：观测每次尝试在 content 侧闸门里排了多久
+        const timed = opts.onBatchTiming;
+        let attempt = 0;
         const result = await attemptBatchWithRetry(
-          () =>
-            sendGate(async (): Promise<TranslateBatchResult> => {
+          () => {
+            const enqueuedAt = timed ? performance.now() : 0;
+            const thisAttempt = attempt++;
+            return sendGate(async (): Promise<TranslateBatchResult> => {
               if (run.signal.aborted) return { ok: false, aborted: true };
+              const contentQueueMs = timed ? Math.round(performance.now() - enqueuedAt) : 0;
               const resp = (await opts.send(
                 {
                   texts: batch.map((item) => item.text),
@@ -482,15 +518,25 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
                   to,
                   ...(domainId !== undefined && { domainId }),
                 },
-                { signal: run.signal },
-              )) as TranslateBatchResult;
+                timed ? { signal: run.signal, timing: true } : { signal: run.signal },
+              )) as TranslateBatchResult & { timing?: Partial<BatchTimingRecord> };
+              timed?.({
+                batch: i,
+                attempt: thisAttempt,
+                items: batch.length,
+                chars: batch.reduce((n, item) => n + item.text.length, 0),
+                contentQueueMs,
+                ok: resp?.ok === true,
+                ...resp?.timing,
+              });
               // 失效要在让出名额之前中止运行：名额一让出，队首的批次在同一轮里
               // 就被放行，等这一批的记账走到，它已经发出去了。这一批自己的结果
               // 不受影响（切批重试照旧报失效）；#1001：别的在飞批次的结果反正要
               // 作废，信号一中止，发送层通知后台中止它们
               if (resp?.invalidated) run.abort(new RunInvalidated(resp.error ?? ''));
               return resp;
-            }),
+            });
+          },
           {
             sleep: sleepFn,
             // #1065：重试之间的等待可被还原、失效短路打断

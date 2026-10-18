@@ -39,6 +39,12 @@ export interface TranslateRequest {
    * 引擎把它接到 fetch 上；中止后排队中的请求不再发出，在飞的 fetch 被取消。
    */
   signal?: AbortSignal;
+  /**
+   * 拿到引擎闸门许可时调用（#1083，观测用）：后台据此把一批的耗时分成“后台引擎
+   * 闸门排队”与“引擎调用”两段。与 signal 一样只在后台内部传；一批里有多个请求
+   * （google-web 一条文本一个）时每拿到一次许可调一次。
+   */
+  onGateStart?: () => void;
 }
 
 export interface TranslateResponse {

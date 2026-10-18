@@ -76,6 +76,7 @@ export function createByokEngine(spec: ByokEngineSpec): TranslateEngine {
     async translate(req) {
       // #333: 闸门保持在最外层 —— 整个请求体（含取 key）都在闸门内
       return getGate()(async () => {
+        req.onGateStart?.();
         const key = await getKey(spec.id);
         if (!key)
           throw new EngineError(
