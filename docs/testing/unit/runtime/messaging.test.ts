@@ -387,4 +387,80 @@ describe('放弃的批次通知后台中止（#1001）', () => {
     ctrl.abort();
     expect(sent().filter((m) => m.type === 'pt:cancel-batches')).toEqual([]);
   });
+
+  test('退避等待期间中止：之后不再发任何翻译消息，也不再生成新的批次身份（#1065）', async () => {
+    vi.useFakeTimers();
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return { ok: true };
+      if (m.type === 'pt:cancel-batches') return undefined;
+      // 每一次都是后台监听器没注册
+      throw new Error('Could not establish connection. Receiving end does not exist.');
+    });
+    const ctrl = new AbortController();
+    const pending = translateViaBackground(PAYLOAD, { signal: ctrl.signal });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent().filter((m) => m.type === 'pt:translate')).toHaveLength(1);
+    // 第一次失败后在退避里（250ms）中止
+    ctrl.abort();
+    let settled = false;
+    void pending.then(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(0);
+    // 等待被打断：时钟没动就已结束
+    expect(settled).toBe(true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(sent().filter((m) => m.type === 'pt:translate')).toHaveLength(1);
+    expect(await pending).toMatchObject({ ok: false, aborted: true, category: 'aborted' });
+  });
+
+  test('等后台就绪期间中止（ping 在退避里）：翻译消息不发出（#1065）', async () => {
+    vi.useFakeTimers();
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      // 后台刚被唤醒，ping 一直没人回
+      if (m.type === 'pt:ping') return undefined;
+      return { ok: true, data: { translations: ['你好'] } };
+    });
+    const ctrl = new AbortController();
+    const pending = translateViaBackground(PAYLOAD, { signal: ctrl.signal });
+    await vi.advanceTimersByTimeAsync(0);
+    ctrl.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    // 中止后后台就绪了，也不该再发
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return { ok: true };
+      return { ok: true, data: { translations: ['你好'] } };
+    });
+    await vi.advanceTimersByTimeAsync(15_000);
+    const result = await pending;
+    expect(sent().filter((m) => m.type === 'pt:translate')).toEqual([]);
+    expect(result).toMatchObject({ ok: false, aborted: true, category: 'aborted' });
+  });
+
+  test('ping 在飞时中止：ping 回来之后翻译消息不发出（#1065）', async () => {
+    let pong: (v: unknown) => void = () => {};
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return new Promise<unknown>((r) => (pong = r as (v: unknown) => void));
+      return { ok: true, data: { translations: ['你好'] } };
+    });
+    const ctrl = new AbortController();
+    const pending = translateViaBackground(PAYLOAD, { signal: ctrl.signal });
+    await vi.waitFor(() => expect(sent().some((m) => m.type === 'pt:ping')).toBe(true));
+    ctrl.abort();
+    pong({ ok: true });
+    const result = await pending;
+    expect(sent().filter((m) => m.type === 'pt:translate')).toEqual([]);
+    expect(result).toMatchObject({ ok: false, aborted: true, category: 'aborted' });
+  });
+
+  test('信号在调用前已中止：一条消息都不发（#1065）', async () => {
+    sendMessage.mockImplementation(async () => ({ ok: true }));
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const result = await translateViaBackground(PAYLOAD, { signal: ctrl.signal });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ ok: false, aborted: true, category: 'aborted' });
+  });
 });

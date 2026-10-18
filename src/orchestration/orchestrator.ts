@@ -615,6 +615,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
           {
             sleep: sleepFn,
             shouldAbort: isAborted,
+            // #1065：重试之间的等待可被还原、失效短路打断
+            signal: abandon.signal,
           },
         );
 
