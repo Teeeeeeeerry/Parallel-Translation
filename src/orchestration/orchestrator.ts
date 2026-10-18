@@ -28,6 +28,8 @@ import { currentDomain } from '~/src/storage/domains';
 import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { isSiteBlocked } from '~/src/dom/site-filter';
 import { judgePage, type ContentLang, type PageGateDecision } from './page-gate';
+import { isPageSession, type PageSession } from './page-session';
+import { allRenderBlocked } from './page-summary';
 import { normalizeLangCode } from './lang-code';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import {
@@ -205,7 +207,13 @@ export interface TranslationOrchestrator {
  */
 export type PageItemsSource =
   | TranslateItem<unknown>[]
-  | ((mode?: { readOnly: boolean }) => TranslateItem<unknown>[]);
+  | ((mode?: { readOnly: boolean }) => TranslateItem<unknown>[])
+  /**
+   * 整页翻译会话（#1077）：采集去重、按轮统计、渲染都在会话里。传会话时批次
+   * 结果交给会话渲染，不走 onBatchResult；“所有渲染都被拒”读会话首轮的统计，
+   * 不走 allRenderRejected。
+   */
+  | PageSession;
 
 /** 单文本入口的选项（#659）。 */
 export interface SingleTextOptions {
@@ -449,7 +457,12 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     to: string,
     // #1011：补采集是整页翻译的延续，准入在整页入口已经判过，不重判
     // #1073：signal 是外层运行（整页开关的这一次）的信号；没有时从页面根派生
-    { admitted = false, signal }: { admitted?: boolean; signal?: AbortSignal } = {},
+    // #1077：onBatch 是这一次的渲染回调（整页翻译会话），缺省 onBatchResult
+    {
+      admitted = false,
+      signal,
+      onBatch = onBatchResult,
+    }: { admitted?: boolean; signal?: AbortSignal; onBatch?: OrchestratorOptions['onBatchResult'] } = {},
   ): Promise<PageTranslateSummary> => {
     if (!started) throw new Error('[PT] 编排未启动');
 
@@ -560,7 +573,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         }
 
         // #256 渐进渲染：每批返回即触发渲染回调，互不等待
-        onBatchResult?.(i, batch, result);
+        onBatch?.(i, batch, result);
       }),
     );
 
@@ -589,7 +602,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   /**
    * 补采集（#1011）：再调一次整页入口的采集函数，交出来的单元走增量补翻那条
    * 批次流水线。带完成标记的单元采集本身就跳过；首轮已交出过的单元（翻译失败
-   * 的、译文与原文相同没落标记的）由调用方的采集函数自己去重，不在这里认元素。
+   * 的、译文与原文相同没落标记的）由整页翻译会话去重（#1077），不在这里认元素。
    * 还原：每轮开始前看运行的信号，每批放行时由闸门里的中止判定拦下（#1007）。补采集
    * 自身的失败不回写整页的结论 —— 首轮已经成功的段落照常显示。
    *
@@ -603,10 +616,11 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
    * 这段窗口。
    */
   const recollect = async (
-    source: (mode?: { readOnly: boolean }) => TranslateItem<unknown>[],
+    source: () => TranslateItem<unknown>[],
     from: string,
     to: string,
     signal: AbortSignal,
+    onBatch: OrchestratorOptions['onBatchResult'],
   ): Promise<boolean> => {
     for (let round = 1; round <= RECOLLECT_MAX_ROUNDS; round++) {
       // #1073：轮间等待可被还原打断
@@ -615,7 +629,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       const more = source();
       if (more.length === 0) return false;
       console.info(`[PT] 补采集第 ${round} 轮：${more.length} 个新单元`);
-      const summary = await translatePageImpl(more, from, to, { admitted: true, signal });
+      const summary = await translatePageImpl(more, from, to, { admitted: true, signal, onBatch });
       if (summary.abandoned || summary.invalidated) return false;
     }
     return true;
@@ -627,6 +641,19 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     if (opts.isMainFrame?.() === false) return;
     opts.pushStatus?.(status);
   };
+
+  // 整页开关的三种翻译项来源（#792、#1077）：现成的数组、采集函数、整页翻译会话
+  const readUnits = (items: PageItemsSource): string[] =>
+    isPageSession(items)
+      ? items.readUnits()
+      : (typeof items === 'function' ? items({ readOnly: true }) : items).map((item) => item.text);
+  const collectRound = (items: PageItemsSource): TranslateItem<unknown>[] =>
+    isPageSession(items) ? items.collectRound() : typeof items === 'function' ? items() : items;
+  /** 补采集再采一轮用什么；现成的数组没有可补的。 */
+  const recollectSource = (items: PageItemsSource): (() => TranslateItem<unknown>[]) | null =>
+    isPageSession(items) ? () => items.collectRound() : typeof items === 'function' ? () => items() : null;
+  const batchHandler = (items: PageItemsSource): OrchestratorOptions['onBatchResult'] =>
+    isPageSession(items) ? (_i, batch, result) => items.onBatchResult(batch, result) : onBatchResult;
 
   /**
    * 整页开关的翻译分支（#325）：闸门识别 → 首轮 → 补采集 → 到顶交接。signal 是
@@ -654,7 +681,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         pageLang: opts.getPageLang?.() ?? null,
         // #843：样本取自同一个采集函数的只读模式 —— 照常翻译的那次采集会切块，
         // 闸门命中时页面就不是一个字不动了
-        units: () => (typeof items === 'function' ? items({ readOnly: true }) : items).map((item) => item.text),
+        units: () => readUnits(items),
         ...(opts.detectContentLang && { detect: opts.detectContentLang }),
         signal,
       });
@@ -671,7 +698,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     }
 
     // 采集可以按需进行（传函数）：闸门命中、准入拦截、还原时不采集
-    const list = typeof items === 'function' ? items() : items;
+    const list = collectRound(items);
     if (list.length === 0) {
       return { status: 'no-elements', admission };
     }
@@ -679,10 +706,13 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     toggleInFlight = true;
     pushVisual('loading');
     try {
-      const summary = await translatePageImpl(list, from, to, { signal });
+      const onBatch = batchHandler(items);
+      const summary = await translatePageImpl(list, from, to, { signal, onBatch });
+      // #1077：会话读首轮自己的统计 —— 不被补翻、另一路增量补翻清零或叠加
+      const rejected = isPageSession(items) ? allRenderBlocked(items.roundStats(0)) : opts.allRenderRejected?.();
       const status: PageToggleStatus = summary.abandoned
         ? 'abandoned'
-        : summary.allFailed || opts.allRenderRejected?.()
+        : summary.allFailed || rejected
           ? 'error'
           : 'translated';
       // #327: 中止（还原）→ 空闲态；失败 → 错误态；成功 → 完成态。
@@ -702,7 +732,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // 整页翻译跑的这十几秒里懒加载出来的内容两边都不管，永久漏翻（#1010
       // 实测）。触发条件与观察器启动一致（只有判为成功才补），页面级闸门与
       // 准入不重判；同一个采集函数，同一条增量补翻的批次流水线
-      const capped = typeof items === 'function' && (await recollect(items, from, to, signal));
+      const more = recollectSource(items);
+      const capped = more !== null && (await recollect(more, from, to, signal, onBatch));
       // 补采集期间用户点了还原：还原分支已推空闲态、停了观察器，这里不再推
       // 完成态、不再启动
       if (signal.aborted) return { status: 'abandoned', admission, summary };
@@ -711,14 +742,14 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // 观察器的同一个同步段里再采一次，交给增量补翻。采集与启动之间没有 await，
       // 页面脚本插不进来：这一刻之前进 DOM 的由这次采集接住，之后的由观察器接住，
       // 同一个节点不会两边各翻一次。观察器的启动时机不变，仍在整页翻译成功之后
-      const handoff = capped && typeof items === 'function' ? items() : [];
+      const handoff = capped && more ? more() : [];
       // #328: 观察器启停时机 —— 只在整页翻译成功后启动恰好一次；
       // 失败 / 中止（在飞还原）不启动。#1011：补采集结束之后才启动
       opts.onObserverStart?.();
       if (handoff.length > 0) {
         console.info(`[PT] 补采集到顶，交给观察器补翻：${handoff.length} 个新单元`);
         // 开关返回之后才翻完：不带这一次开关的信号，自己从页面根派生
-        translatePageImpl(handoff, from, to, { admitted: true }).catch((e) =>
+        translatePageImpl(handoff, from, to, { admitted: true, onBatch }).catch((e) =>
           console.error('[PT] 补采集到顶后的补翻失败:', e),
         );
       }
