@@ -17,6 +17,7 @@ import { createInputTranslator, type InputTranslatorDeps } from '~/src/ui/input-
 import type { SingleTextResult } from '~/src/orchestration/orchestrator';
 import { MAX_TEXT } from '~/src/dom/classify';
 import { unmountIsolated } from '~/src/ui/mount';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
 
 function toasts(): HTMLElement[] {
   const root = document.getElementById('pt-host-toast')?.shadowRoot;
@@ -240,4 +241,27 @@ describe('输入翻译其余的提示仍是状态类（#751 反向）', () => {
       expect(toasts()).toHaveLength(0);
     });
   }
+});
+
+describe('输入翻译不随页面还原作废（#1044、#1072）', () => {
+  test('在飞时还原整页：接真实的编排模块，译文照常写回框里', async () => {
+    let reply: (v: unknown) => void = () => {};
+    const signals: AbortSignal[] = [];
+    const orch = createOrchestrator({
+      send: (_req, ctl) =>
+        new Promise((r) => {
+          signals.push(ctl!.signal);
+          reply = r;
+        }),
+    });
+    orch.start();
+    const pending = translator({ translateText: orch.translateText })(box);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(signals).toHaveLength(1);
+    orch.abort();
+    expect(signals[0]!.aborted).toBe(false);
+    reply({ ok: true, data: { translations: ['Hello, nice to meet you.'] } });
+    await pending;
+    expect(box.value).toBe('Hello, nice to meet you.');
+  });
 });

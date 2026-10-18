@@ -38,6 +38,7 @@ import {
 } from './page-gate';
 import { normalizeLangCode } from './lang-code';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
+import { createTranslationRuns, type RunRoot } from '~/src/orchestration/translation-run';
 import { sleep as defaultSleep } from '~/src/runtime/sleep';
 import { createGate } from '~/src/queue/concurrency';
 
@@ -232,14 +233,14 @@ export interface SingleTextOptions {
    */
   noCache?: boolean;
   /**
-   * 不跟着页面还原放弃（#1044）。输入翻译声明为 true —— 用户在输入框里点的
-   * 翻译与页面的翻译态无关，点悬浮球还原整页时它照常翻完、照常写回；逐段与
-   * 划词不声明，还原时在飞的那一条作废，并通知后台中止。
+   * 这次运行从哪个根派生（#1072，取代 #1044 的 keepOnRestore）。缺省 page：
+   * 逐段与划词随页面还原作废，并通知后台中止。输入翻译声明 input —— 用户在
+   * 输入框里点的翻译与页面的翻译态无关，还原整页时它照常翻完、照常写回。
    */
-  keepOnRestore?: boolean;
+  root?: RunRoot;
   /**
    * 调用方自己的放弃信号（#1044）：划词又发起了新一轮，旧一轮的结果整条丢弃，
-   * 由它通知后台中止。触发后这一次报 aborted。
+   * 由它通知后台中止。叠加在根上，任一中止这一次就报 aborted。
    */
   signal?: AbortSignal;
 }
@@ -451,7 +452,10 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
   // #1001：纪元递增（还原）时要通知的在飞整页翻译 —— 各自中止自己发出的批次。
   // 只是通知，纪元本身的判定（isAborted、闸门放行）一行没动
   const onEpochBump = new Set<() => void>();
+  // #1072：翻译运行 —— 单文本入口从它派生信号；还原整页中止页面根
+  const runs = createTranslationRuns();
   const abandonInFlight = (): void => {
+    runs.restorePage();
     for (const f of [...onEpochBump]) f();
   };
   // #326: 整页开关入口在飞互斥 —— 在飞期间页面尚无译文时忽略新触发
@@ -902,11 +906,10 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
 
       // 单文本单请求，与整页入口共用注入的消息层（#312）。逐段翻译与
       // 划词翻译同样携带当前领域，术语译法与全页翻译一致（#383/#384）
-      const epochAtStart = epoch;
       const domainId = currentDomainIdFrom(opts, to);
       // #1044：这一条被放弃时通知后台中止，与整页批次同一条路（#1001）——
-      // 中止信号交给消息层，消息层把这次发送的批次身份发给后台。放弃有两种：
-      // 页面还原（纪元递增，keepOnRestore 的不算）与调用方自己的信号
+      // 中止信号交给消息层，消息层把这次发送的批次身份发给后台。#1072：放弃
+      // 只看这次运行的信号 —— 页面还原（从页面根派生时）与调用方自己的信号
       // #1053：放弃与引擎失败同样带提示语义，调用方按 display 一处判定
       const abandoned = (): SingleTextResult => ({
         admission,
@@ -914,12 +917,11 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         category: 'aborted',
         display: displayDecision('aborted', undefined),
       });
-      if (textOpts?.signal?.aborted) return abandoned();
-      const followsRestore = !textOpts?.keepOnRestore;
-      const abandon = new AbortController();
-      const onAbandon = () => abandon.abort();
-      if (followsRestore) onEpochBump.add(onAbandon);
-      textOpts?.signal?.addEventListener('abort', onAbandon);
+      const run = runs.begin(textOpts?.root ?? 'page', textOpts?.signal);
+      if (run.signal.aborted) {
+        run.end();
+        return abandoned();
+      }
       let result: TranslateBatchResult;
       try {
         result = (await opts.send(
@@ -930,17 +932,15 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
             ...(domainId !== undefined && { domainId }),
             ...(textOpts?.noCache && { noCache: true }),
           },
-          { signal: abandon.signal },
+          { signal: run.signal },
         )) as TranslateBatchResult;
       } finally {
-        onEpochBump.delete(onAbandon);
-        textOpts?.signal?.removeEventListener('abort', onAbandon);
+        run.end();
       }
 
-      // 在飞期间被放弃（还原递增纪元、调用方中止）—— 不返回译文
-      if ((followsRestore && epoch !== epochAtStart) || textOpts?.signal?.aborted) {
-        return abandoned();
-      }
+      // 在飞期间被放弃（页面还原、调用方中止）—— 不返回译文。后台没理会中止、
+      // 照样送回译文时同样丢弃（#1001 的兜底）
+      if (run.signal.aborted) return abandoned();
 
       if (result.ok) {
         if (textOpts?.recordDetectedLang) recordDetectedLang(result.data?.detectedFrom);
