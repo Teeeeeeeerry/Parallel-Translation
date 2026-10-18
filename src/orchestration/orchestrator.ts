@@ -317,12 +317,8 @@ export interface OrchestratorOptions {
    */
   getDomainChoice?: () => DomainChoice;
   /**
-   * 状态推送（#327）：悬浮球等视觉状态由模块单向推送 —— 模块不直接
-   * 操作 UI。推送值见 PageToggleVisual；主框架标志为 false 时不推送。
-   */
-  pushStatus?: (status: PageToggleVisual) => void;
-  /**
-   * 主框架标志（#327）：子框架不推送状态、不产生提示，但照常执行翻译。
+   * 主框架标志（#327）：子框架不产生提示，但照常执行翻译。#1079：悬浮球的状态
+   * 不再经编排模块推送，由内容脚本订阅整页翻译会话的状态流。
    */
   isMainFrame?: () => boolean;
   /**
@@ -345,7 +341,7 @@ export interface OrchestratorOptions {
 }
 
 /**
- * 整页开关的视觉状态（#327）—— 经 pushStatus 注入回调推送：
+ * 整页开关的视觉状态（#327）—— #1079 起由整页翻译会话的状态流发出：
  *   - idle：空闲（还原完成 / 中止后回到空闲，不是错误）
  *   - loading：翻译在飞
  *   - done：已完成
@@ -566,13 +562,6 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     };
   };
 
-  // #327: 状态推送 —— 仅主框架推送（子框架不推送状态、不产生提示，
-  // 但照常执行翻译）
-  const pushVisual = (status: PageToggleVisual): void => {
-    if (opts.isMainFrame?.() === false) return;
-    opts.pushStatus?.(status);
-  };
-
   /**
    * 整页开关的翻译分支（#325）：闸门识别 → 交给整页翻译会话（首轮、补采集、到顶
    * 交接、观察器）。signal 是这一次开关的运行（#1073），还原整页让它中止；中止
@@ -609,9 +598,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     if (gate === 'abandoned') return { status: 'abandoned', admission };
     opts.onGateDecision?.(gate);
     if (!gate.translate) {
-      // #793：悬浮球推到未翻译态 —— 推成完成态是在骗人，用户再点一次
-      // 也会困惑。子框架不推（pushVisual 已按 #327 拦下）
-      pushVisual('idle');
+      // #793：悬浮球回到未翻译态（会话的状态流报空闲）
+      page.decline();
       return { status: 'same-language', admission, gate };
     }
 
@@ -631,7 +619,6 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
           }),
         signal,
         sleep: sleepFn,
-        onState: pushVisual,
       });
       return outcome.status === 'no-elements'
         ? { status: 'no-elements', admission }
@@ -703,10 +690,9 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         // #326: 还原中止在飞批次（页面根中止，在飞翻译放弃重试与渲染）；
         // #1001：在飞的批次通知后台中止，不翻完再丢
         runs.restorePage();
-        // #328/#1078: 整页翻译会话停观察器、撤回页面上全部渲染
+        // #328/#1078: 整页翻译会话停观察器、撤回页面上全部渲染；#327/#1079：
+        // 状态流报空闲
         page.restore();
-        // #327: 还原后推送空闲态（不是错误）
-        pushVisual('idle');
         return { status: 'restored', admission };
       }
 

@@ -26,6 +26,8 @@
 //   增量补翻；这一次翻译被等待（#1078，此前是没等待的调用）。
 // - 观察器启停与观察器启动前的隐藏单元缓冲（#255、#331、#332）。
 // - 还原：停观察器、撤回页面上全部渲染。
+// - 状态流（#1079）：悬浮球该显示什么 —— 进行中、完成、已还原（空闲）、失败 ——
+//   由这里发出，悬浮球只订阅它。补采集真正结束后才报完成（#1012）。
 
 import type { RenderResult } from '../dom/renderer';
 import type { SkipCategory } from '../dom/walker';
@@ -100,9 +102,14 @@ export interface PageRunContext {
   /** 这一次整页开关的运行（#1073）：还原整页让它中止 */
   signal: AbortSignal;
   sleep: (ms: number) => Promise<void>;
-  /** 悬浮球该显示什么（#327、#1012） */
-  onState: (state: PageToggleVisual) => void;
 }
+
+/**
+ * 整页翻译的状态（#1079）：idle 空闲（没翻、已还原、翻译中被放弃，不是错误），
+ * loading 进行中，done 完成（补采集结束之后），error 失败（全部引擎失败、全部
+ * 渲染被拒）。
+ */
+export type PageState = PageToggleVisual;
 
 /** 一次整页翻译的结局。 */
 export type PageRunOutcome =
@@ -134,28 +141,49 @@ export interface PageTranslation {
   restore(): void;
   /** 最近一次 begin() 的会话；还原之后、或从没开始过时为 null。 */
   current(): PageSession | null;
+  /** 订阅状态流（#1079）：悬浮球据此显示进度与完成。返回退订函数。 */
+  subscribe(listener: (state: PageState) => void): () => void;
+  /** 这一次不翻（页面级闸门判定本页已是目标语言，#793）：报空闲。 */
+  decline(): void;
 }
 
 export function createPageTranslation<U extends object, Ctx>(dom: PageDom<U, Ctx>): PageTranslation {
   let current: (PageSession<Ctx> & { end(): void }) | null = null;
+  const listeners = new Set<(state: PageState) => void>();
+  const emit = (state: PageState) => {
+    for (const l of [...listeners]) l(state);
+  };
   return {
     hasTranslated: () => dom.hasTranslated(),
     readUnits: () => dom.collectReadOnly().map((u) => dom.build(u).text),
     begin() {
       current?.end();
-      current = createSession(dom);
+      current = createSession(dom, emit);
       return current;
     },
     restore() {
       current?.end();
       current = null;
       dom.unrenderAll();
+      // #327: 还原后报空闲（不是错误）
+      emit('idle');
     },
     current: () => current,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    decline() {
+      // #793：推成完成态是在骗人，用户再点一次也会困惑
+      emit('idle');
+    },
   };
 }
 
-function createSession<U extends object, Ctx>(dom: PageDom<U, Ctx>): PageSession<Ctx> & { end(): void } {
+function createSession<U extends object, Ctx>(
+  dom: PageDom<U, Ctx>,
+  emit: (state: PageState) => void,
+): PageSession<Ctx> & { end(): void } {
   const skips = emptySkipStats();
   const handedOut = new WeakSet<U>();
   const reported = new WeakSet<U>();
@@ -258,7 +286,7 @@ function createSession<U extends object, Ctx>(dom: PageDom<U, Ctx>): PageSession
     async run(ctx) {
       const list = collectRound();
       if (list.length === 0) return { status: 'no-elements' };
-      ctx.onState('loading');
+      emit('loading');
       const summary = await ctx.translate(list, { signal: ctx.signal, onBatch });
       // #1077：读首轮自己的统计 —— 不被补翻、另一路增量补翻清零或叠加
       // #327/#416: 引擎返回结果但全部渲染被拒 → 错误态；有段落失败时不算
@@ -270,13 +298,13 @@ function createSession<U extends object, Ctx>(dom: PageDom<U, Ctx>): PageSession
       // #327: 中止（还原）→ 空闲态；失败 → 错误态。#1012：成功的完成态等补采集
       // 结束才推 —— 先报完成、下半页却还在翻，正是 #1003 最让人困惑的地方
       if (status !== 'translated') {
-        ctx.onState(status === 'error' ? 'error' : 'idle');
+        emit(status === 'error' ? 'error' : 'idle');
         return { status, summary };
       }
       // #1073：部分批次成功后判了失效 —— 已经翻好的照常显示，失效原因由提示
       // 说明；不再补采集、不启动观察器，接着发只会再失效
       if (summary.invalidated) {
-        ctx.onState('done');
+        emit('done');
         return { status, summary };
       }
       // #1011：补采集。触发条件与观察器启动一致（只有判为成功才补），页面级
@@ -285,7 +313,7 @@ function createSession<U extends object, Ctx>(dom: PageDom<U, Ctx>): PageSession
       // 补采集期间用户点了还原：还原已经推过空闲态、停了观察器，这里不再推
       // 完成态、不再启动
       if (ctx.signal.aborted) return { status: 'abandoned', summary };
-      ctx.onState('done');
+      emit('done');
       // #1036：补满了轮数时在启动观察器的同一个同步段里再采一次，交给增量补翻。
       // 采集与启动之间没有 await，页面脚本插不进来：这一刻之前进 DOM 的由这次
       // 采集接住，之后的由观察器接住，同一个节点不会两边各翻一次
