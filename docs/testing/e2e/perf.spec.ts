@@ -64,8 +64,8 @@ test.describe('性能基准 @perf', () => {
 
 /**
  * #1083（父 #1071）：观测每批在三层的耗时 —— content 侧发送闸门排队、后台引擎
- * 闸门排队、引擎调用 —— 以及单次响应超时（30 秒）的次数，确认“排队时间吃掉超时
- * 预算”是否仍会出现。只观测，不加断言；默认跳过，PT_BATCH_TIMING=1 时才跑：
+ * 闸门排队、引擎调用 —— 以及超时次数（content 的单次响应超时与后台的引擎时段
+ * 超时，#1071），确认“排队时间吃掉超时预算”是否仍会出现。只观测，不加断言；默认跳过，PT_BATCH_TIMING=1 时才跑：
  *
  *   PT_BATCH_TIMING=1 pnpm exec playwright test --config docs/testing/playwright.config.ts --grep PERF-04
  *

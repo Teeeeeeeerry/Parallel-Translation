@@ -87,8 +87,14 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
   for (const id of enginePriority) {
     const engine = REGISTRY[id];
     if (!engine) continue;
-    // #1001：content 放弃了这一批 —— 不再换下一个引擎、不再发请求
-    if (req.signal?.aborted) throw abortedByCaller();
+    // #1001：content 放弃了这一批 —— 不再换下一个引擎、不再发请求。#1071：已有
+    // 段落译好时（后台的引擎时段超时到点）照 #440 随部分结果返回，失败段落由
+    // 批次重试补齐；一段都没有才抛
+    if (req.signal?.aborted) {
+      if (translations.every((t) => t === null)) throw abortedByCaller();
+      fatal = abortedByCaller();
+      break;
+    }
 
     // #175: BYOK 引擎的模型名参与缓存 key —— 切换模型后不命中旧译文
     const model = getSettings().models?.[id] ?? DEFAULT_MODELS[id] ?? '';

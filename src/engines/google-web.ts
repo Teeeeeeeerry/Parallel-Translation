@@ -69,8 +69,12 @@ export const googleWeb: TranslateEngine = {
         }),
       ),
     );
-    // #1001：调用方中止了这一批 —— 不按“全部失败”报瞬时故障
-    if (signal?.aborted) throw new EngineError('google-web', false, '已中止', 'aborted', false, true);
+    // #1001：调用方中止了这一批 —— 不按“全部失败”报瞬时故障。#1071：已有条目译好
+    // 时（后台的引擎时段超时到点，一批只差最后几条）照常返回它们，其余进 failedIndices，
+    // 由 router 写缓存、交回批次重试补齐，不整批作废
+    if (signal?.aborted && results.every((r) => r.status === 'rejected')) {
+      throw new EngineError('google-web', false, '已中止', 'aborted', false, true);
+    }
 
     const translations: string[] = [];
     const failedIndices: number[] = [];

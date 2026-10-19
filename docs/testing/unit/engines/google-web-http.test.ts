@@ -133,6 +133,44 @@ describe('google-web HTTP 路径', () => {
     ).rejects.toMatchObject({ retryable: true, category: 'transient', message: '全部 2 条翻译失败' });
   });
 
+  test('中止时已有条目译好（#1071）：返回已译好的，其余进 failedIndices，不整批抛“已中止”', async () => {
+    const ctrl = new AbortController();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        const q = new URL(String(url)).searchParams.get('q');
+        if (q === 'Hello') return Promise.resolve(okResponse([['你好', '', null, null, 1]]));
+        // 第二条迟迟不回，直到这一批被中止（后台的引擎时段超时到点）
+        return new Promise((_, reject) =>
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))),
+        );
+      }),
+    );
+    const { googleWeb } = await import('~/src/engines/google-web');
+    const pending = googleWeb.translate({ texts: ['Hello', 'World'], from: 'auto', to: 'zh-CN', signal: ctrl.signal });
+    await new Promise((r) => setTimeout(r, 0));
+    ctrl.abort();
+    await expect(pending).resolves.toEqual({ translations: ['你好', ''], failedIndices: [1] });
+  });
+
+  test('中止时一条都没译好：照旧抛“已中止”（#1001）', async () => {
+    const ctrl = new AbortController();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(
+        (_url: string, init?: RequestInit) =>
+          new Promise((_, reject) =>
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))),
+          ),
+      ),
+    );
+    const { googleWeb } = await import('~/src/engines/google-web');
+    const pending = googleWeb.translate({ texts: ['Hello', 'World'], from: 'auto', to: 'zh-CN', signal: ctrl.signal });
+    await new Promise((r) => setTimeout(r, 0));
+    ctrl.abort();
+    await expect(pending).rejects.toMatchObject({ category: 'aborted', aborted: true });
+  });
+
   test('并发闸门：maxConcurrency 生效（设置读取于首次翻译）', async () => {
     const { getSettings } = await import('~/src/storage/settings');
     vi.mocked(getSettings).mockReturnValue({ maxConcurrency: 2 } as never);

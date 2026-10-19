@@ -327,6 +327,21 @@ describe('route', () => {
     expect(mockBingTranslate).not.toHaveBeenCalled();
   });
 
+  test('引擎带着部分译文回来时已中止（#1071）：返回已译好的段落并带“已中止”原因，不换下一个引擎', async () => {
+    const ctrl = new AbortController();
+    mockGoogleTranslate.mockImplementation(async () => {
+      ctrl.abort();
+      return { translations: ['你好', ''], failedIndices: [1] };
+    });
+    const res = await route({ texts: ['Hello', 'World'], from: 'auto', to: 'zh-CN', signal: ctrl.signal });
+    expect(res).toMatchObject({
+      translations: ['你好', ''],
+      failedIndices: [1],
+      failure: { category: 'aborted' },
+    });
+    expect(mockBingTranslate).not.toHaveBeenCalled();
+  });
+
   test('单引擎 non-retryable 失败 → 原样抛出不改写类别（#237）', async () => {
     vi.mocked(getSettings).mockReturnValue({
       ...vi.mocked(getSettings)(),

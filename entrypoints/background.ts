@@ -12,7 +12,7 @@ import { getKey, setKey, removeKey } from '~/src/storage/keys';
 import { settingsReady, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import { route } from '~/src/engines/router';
 import { EngineError } from '~/src/engines/types';
-import { createInFlightTable, inFlightKey } from '~/src/runtime/inflight';
+import { createInFlightTable, inFlightKey, runEngineCall } from '~/src/runtime/inflight';
 import { ensureE2EMock, applyE2EMock, getE2EMockStats } from '~/src/engines/e2e-mock';
 import { initContextMenu } from '~/src/ui/context-menu';
 import { claimShow, markFreshInstall } from '~/src/changelog/claim';
@@ -232,14 +232,13 @@ export default defineBackground(() => {
     // 日志时记下。一批里有多个请求（google-web 一条文本一个）时按第一次许可分界
     let routedAt = 0;
     let gateAt: number | undefined;
-    const onGateStart = () => {
-      gateAt ??= performance.now();
-    };
+    let timedOut = false;
     const timing = () => {
       const end = performance.now();
       return {
         bgQueueMs: Math.round((gateAt ?? end) - routedAt),
         engineMs: gateAt === undefined ? 0 : Math.round(end - gateAt),
+        ...(timedOut && { timedOut: true }),
       };
     };
     try {
@@ -249,7 +248,24 @@ export default defineBackground(() => {
         .then(() => ensureE2EMock())
         .then(() => {
           routedAt = performance.now();
-          return route({ ...payload, ...(signal && { signal }), onGateStart });
+          // #1071：引擎超时从这一批第一次拿到引擎许可起计，排队不算（inflight.ts）
+          return runEngineCall(
+            (ctl) =>
+              route({
+                ...payload,
+                signal: ctl.signal,
+                onGateStart: () => {
+                  gateAt ??= performance.now();
+                  ctl.onGateStart();
+                },
+              }),
+            {
+              ...(signal && { signal }),
+              onTimeout: () => {
+                timedOut = true;
+              },
+            },
+          );
         })
         .then((r) => sendResponse({ ok: true, data: r, timing: timing() }))
         .catch((e) => {
