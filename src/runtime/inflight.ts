@@ -19,6 +19,7 @@
 // 重试的瞬时超时。content 那一侧的单次响应超时因此只作兜底（messaging.ts）。
 
 import { EngineError, type TranslateResponse } from '~/src/engines/types';
+import { FETCH_TIMEOUT_MS } from '~/src/engines/fetch-timeout';
 
 /** 在飞表的键：同一个批次身份在不同标签页、不同 frame 里互不相干。 */
 export function inFlightKey(tabId: number | undefined, frameId: number | undefined, batchId: string): string {
@@ -61,7 +62,7 @@ export function createInFlightTable(): InFlightTable {
 }
 
 /** 引擎时段超时（#1071）：从这一批第一次拿到引擎许可起计。与单个请求的 fetch 超时同值。 */
-export const ENGINE_PHASE_TIMEOUT_MS = 30_000;
+export const ENGINE_PHASE_TIMEOUT_MS = FETCH_TIMEOUT_MS;
 
 /**
  * 带引擎时段超时跑一次引擎调用（#1071）。call 拿到的 signal 在超时到点、或
@@ -75,12 +76,10 @@ export async function runEngineCall(
   call: (ctl: { signal: AbortSignal; onGateStart: () => void }) => Promise<TranslateResponse>,
   opts: {
     signal?: AbortSignal;
-    timeoutMs?: number;
     /** 超时到点时调用（#1083 的观测据此计数） */
     onTimeout?: () => void;
   } = {},
 ): Promise<TranslateResponse> {
-  const timeoutMs = opts.timeoutMs ?? ENGINE_PHASE_TIMEOUT_MS;
   const ctrl = new AbortController();
   const onCancel = () => ctrl.abort();
   if (opts.signal?.aborted) ctrl.abort();
@@ -89,10 +88,12 @@ export async function runEngineCall(
   let timedOut = false;
   const onGateStart = () => {
     timer ??= setTimeout(() => {
+      // content 已经放弃了这一批：结果没人要，不算超时
+      if (opts.signal?.aborted) return;
       timedOut = true;
       opts.onTimeout?.();
       ctrl.abort();
-    }, timeoutMs);
+    }, ENGINE_PHASE_TIMEOUT_MS);
   };
   try {
     const resp = await call({ signal: ctrl.signal, onGateStart });
@@ -102,7 +103,7 @@ export async function runEngineCall(
     }
     return resp;
   } catch (e) {
-    if (timedOut) throw new EngineError('router', true, `引擎响应超时（${timeoutMs}ms）`);
+    if (timedOut) throw new EngineError('router', true, `引擎响应超时（${ENGINE_PHASE_TIMEOUT_MS}ms）`);
     throw e;
   } finally {
     clearTimeout(timer);
