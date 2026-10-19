@@ -14,8 +14,9 @@
 //
 // #154：sendMessage 在 SW 挂起时永不 settle（响应级超时前的原实现
 // 只 await 不设限），deadline 检查走不到，预算形同虚设。现在每次发送
-// 都套 withTimeout —— 单次最长等 MESSAGE_TIMEOUT_MS（与引擎 fetch
-// 超时对齐），超时视为一次传输层失败进入重试，预算真正封顶总耗时。
+// 都套 withTimeout —— 单次最长等 MESSAGE_TIMEOUT_MS，超时视为一次传输层
+// 失败进入重试，预算真正封顶总耗时。#1071 起它只是兜底：引擎超时由后台
+// 从这一批拿到引擎许可时起计，见 inflight.ts。
 //
 // translateViaBackground 是 content script 三个翻译入口共用的通道：
 // 1. 先 ping（pt:ping）确认 SW 消息通道就绪，有界重试
@@ -49,7 +50,10 @@ export interface BatchTiming {
   sendMs: number;
   /** pt:translate 发了几次（传输重试会重发） */
   attempts: number;
-  /** 其中单次响应超时（MESSAGE_TIMEOUT_MS）的次数 */
+  /**
+   * 超时次数：content 这一侧的单次响应超时（MESSAGE_TIMEOUT_MS，兜底），加上
+   * 后台报回的引擎时段超时（#1071，inflight 的 ENGINE_PHASE_TIMEOUT_MS）
+   */
   timeouts: number;
   /** 后台：开始路由到第一次拿到引擎闸门许可；没拿到回复时没有 */
   bgQueueMs?: number;
@@ -78,12 +82,18 @@ export type TranslateResult =
 /** SW 就绪等待预算（ping 阶段）。覆盖 CI 中 SW 冷启动的常见耗时。 */
 const READY_BUDGET_MS = 10_000;
 /**
- * 翻译消息总预算（含重试）。须 ≥ MESSAGE_TIMEOUT_MS 让单次完整
- * 引擎往返（30s fetch 超时 + SW 开销）能在预算内完成。
+ * 单次 sendMessage 响应级超时（#154）—— 只作兜底，防后台挂死、回复丢失。
+ *
+ * #1071：引擎超时归后台，从这一批第一次拿到引擎许可起计（inflight 的
+ * ENGINE_PHASE_TIMEOUT_MS）；排在别的批次后面的时间不算。这里原先是 30 秒，
+ * 排队时间全算在里面，慢网络下成批超时。现在留出几批引擎时段的排队余量。
  */
-const SEND_BUDGET_MS = 45_000;
-/** 单次 sendMessage 响应级超时 —— 与引擎 fetch 超时对齐（#154）。 */
-export const MESSAGE_TIMEOUT_MS = 30_000;
+export const MESSAGE_TIMEOUT_MS = 120_000;
+/**
+ * 翻译消息总预算（含重试）。比单次兜底多留一段，让兜底超时之后还能重发一次
+ * 拿到快速失败（连接被拒、监听器未注册）后的回复。
+ */
+export const SEND_BUDGET_MS = MESSAGE_TIMEOUT_MS + 15_000;
 /** 退避起点（毫秒），每次翻倍，上限 2s。 */
 const BACKOFF_INITIAL_MS = 250;
 const BACKOFF_MAX_MS = 2000;
@@ -246,9 +256,10 @@ export async function translateViaBackground(
   // #1083：观测用的计数，随结果带回
   const startedAt = performance.now();
   const stats = { attempts: 0, timeouts: 0 };
-  const timingOf = (resp?: { timing?: { bgQueueMs?: number; engineMs?: number } }): BatchTiming => ({
+  const timingOf = (resp?: { timing?: { bgQueueMs?: number; engineMs?: number; timedOut?: boolean } }): BatchTiming => ({
     sendMs: Math.round(performance.now() - startedAt),
     ...stats,
+    timeouts: stats.timeouts + (resp?.timing?.timedOut ? 1 : 0),
     ...(typeof resp?.timing?.bgQueueMs === 'number' && { bgQueueMs: resp.timing.bgQueueMs }),
     ...(typeof resp?.timing?.engineMs === 'number' && { engineMs: resp.timing.engineMs }),
   });
@@ -282,7 +293,7 @@ export async function translateViaBackground(
       category?: FailureCategory;
       invalidated?: boolean;
       aborted?: boolean;
-      timing?: { bgQueueMs?: number; engineMs?: number };
+      timing?: { bgQueueMs?: number; engineMs?: number; timedOut?: boolean };
     };
 
     if (resp?.ok === true && resp.data) {

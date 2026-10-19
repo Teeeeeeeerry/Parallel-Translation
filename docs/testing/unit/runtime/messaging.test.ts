@@ -12,7 +12,7 @@
  * 4. 预算耗尽返回 {ok:false} + 错误说明，永不抛出
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
-import { translateViaBackground } from '~/src/runtime/messaging';
+import { translateViaBackground, MESSAGE_TIMEOUT_MS, SEND_BUDGET_MS } from '~/src/runtime/messaging';
 
 const sendMessage = vi.mocked(chrome.runtime.sendMessage);
 
@@ -276,7 +276,7 @@ describe('translateViaBackground — 失败语义', () => {
     });
 
     const pending = translateViaBackground(PAYLOAD);
-    await vi.advanceTimersByTimeAsync(46_000);
+    await vi.advanceTimersByTimeAsync(SEND_BUDGET_MS + 1_000);
     const result = await pending;
 
     expect(result.ok).toBe(false);
@@ -296,10 +296,10 @@ describe('translateViaBackground — 失败语义', () => {
 
     const pending = translateViaBackground(PAYLOAD);
     await vi.advanceTimersByTimeAsync(0);
-    // 首次 translate 在 30s 响应级超时中断（而非无限挂起）
-    await vi.advanceTimersByTimeAsync(30_000);
-    // 预算（45s）耗尽 → 有界返回失败
-    await vi.advanceTimersByTimeAsync(16_000);
+    // 首次 translate 在响应级超时（兜底）中断（而非无限挂起）
+    await vi.advanceTimersByTimeAsync(MESSAGE_TIMEOUT_MS);
+    // 预算耗尽 → 有界返回失败
+    await vi.advanceTimersByTimeAsync(SEND_BUDGET_MS - MESSAGE_TIMEOUT_MS + 1_000);
     const result = await pending;
 
     expect(result.ok).toBe(false);
@@ -324,7 +324,7 @@ describe('放弃的批次通知后台中止（#1001）', () => {
       return { ok: true, data: { translations: ['你好'] } };
     });
     const pending = translateViaBackground(PAYLOAD);
-    await vi.advanceTimersByTimeAsync(31_000);
+    await vi.advanceTimersByTimeAsync(MESSAGE_TIMEOUT_MS + 1_000);
     const result = await pending;
     expect(result.ok).toBe(true);
 
@@ -475,7 +475,7 @@ describe('放弃的批次通知后台中止（#1001）', () => {
       return { ok: true, data: { translations: ['你好'] }, timing: { bgQueueMs: 4, engineMs: 20 } };
     });
     const pending = translateViaBackground(PAYLOAD, { timing: true });
-    await vi.advanceTimersByTimeAsync(31_000);
+    await vi.advanceTimersByTimeAsync(MESSAGE_TIMEOUT_MS + 1_000);
     const result = await pending;
     expect(result).toMatchObject({ ok: true, timing: { attempts: 2, timeouts: 1, bgQueueMs: 4, engineMs: 20 } });
 
@@ -493,8 +493,52 @@ describe('放弃的批次通知后台中止（#1001）', () => {
       return new Promise(() => {});
     });
     const pending = translateViaBackground(PAYLOAD, { timing: true });
-    await vi.advanceTimersByTimeAsync(50_000);
+    await vi.advanceTimersByTimeAsync(SEND_BUDGET_MS + 5_000);
     const result = await pending;
     expect(result).toMatchObject({ ok: false, timing: { attempts: 2, timeouts: 2 } });
+  });
+});
+
+describe('单次响应超时只作兜底（#1071 方案 A）', () => {
+  // 引擎超时归后台：从这一批第一次拿到引擎许可起计（见 inflight 的用例）。排在别的
+  // 批次后面的时间不算，content 这一侧只防后台挂死、消息丢失
+  test('后台排队 40 秒、引擎 1 秒返回：不报超时，只发一次', async () => {
+    vi.useFakeTimers();
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return { ok: true };
+      if (m.type === 'pt:cancel-batches') return undefined;
+      await new Promise((r) => setTimeout(r, 41_000));
+      return { ok: true, data: { translations: ['你好'] }, timing: { bgQueueMs: 40_000, engineMs: 1_000 } };
+    });
+
+    const pending = translateViaBackground(PAYLOAD, { timing: true });
+    await vi.advanceTimersByTimeAsync(41_000);
+    const result = await pending;
+
+    expect(result).toMatchObject({ ok: true, timing: { attempts: 1, timeouts: 0 } });
+    expect(sendMessage.mock.calls.filter(([m]) => (m as { type?: string }).type === 'pt:cancel-batches')).toHaveLength(0);
+  });
+
+  test('后台报引擎时段超时：算一次超时带回（#1083 的观测口径），失败原样交给批次重试', async () => {
+    sendMessage.mockImplementation(async (msg: unknown) => {
+      const m = msg as { type?: string };
+      if (m.type === 'pt:ping') return { ok: true };
+      return {
+        ok: false,
+        error: '引擎响应超时（30000ms）',
+        category: 'transient',
+        invalidated: false,
+        aborted: false,
+        timing: { bgQueueMs: 16_000, engineMs: 30_000, timedOut: true },
+      };
+    });
+    const result = await translateViaBackground(PAYLOAD, { timing: true });
+    expect(result).toMatchObject({
+      ok: false,
+      category: 'transient',
+      aborted: false,
+      timing: { attempts: 1, timeouts: 1, bgQueueMs: 16_000, engineMs: 30_000 },
+    });
   });
 });
