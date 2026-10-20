@@ -168,15 +168,16 @@ Everyone has their own habits when it comes to translation, so I've tried to let
 
 ### Ways to translate
 
-- **Floating button**: click once to translate the page, again to restore. Of course you can drag it wherever you like
+- **Floating button**: click once to translate the page, again to restore. Of course you can drag it wherever you like, and resize it in settings
 - **Toolbar button**: master switch, translate this page, current domain, engine, source and target language, display mode, style
 - **Keyboard shortcuts**: translate page `⇧⌘Y`, toggle side-by-side / translation-only `⇧⌘M`, translate the paragraph under the cursor `⇧⌘D`, master switch `⇧⌘E`; on Windows, replace `⌘` with `Ctrl`. All of them are customizable, and while recording you're warned about combinations the browser reserves and duplicate bindings (but does anyone actually use extension shortcuts? I don't, hehe)
-- **Single-paragraph translation**: a button appears at the end of the text when your cursor rests on it; click to translate or restore that paragraph
-- **Selection translation**: select text and translate it from the right-click menu (I doubt anyone uses this, since the browser's built-in one is usually enough, but I built it anyway)
+- **Single-paragraph translation**: a button appears at the end of the text when your cursor rests on it; click to translate or restore that paragraph. You can set the button's size and how long it stays after your mouse leaves
+- **Selection translation**: hold Alt, Ctrl or ⌘ and drag over text to translate it when you let go, or select text and use the right-click menu (I doubt anyone uses this, since the browser's built-in one is usually enough, but I built it anyway)
+- **Translate input**: write a paragraph in your own language in a text box, click the dot at the end of your text, and it's replaced with the other person's language; undo brings it back. It translates into the "Source language" in settings, and the toolbar panel lets you pick a language just for this time. Password fields never take part, and the extension never sends anything for you
 
 ### Page compatibility
 
-- **Text tucked away inside the page gets translated too**: whether the page puts text in separate self-contained blocks or in embedded frames from the same site, it's found and translated.
+- **Text tucked away inside the page gets translated too**: whether the page puts text in separate self-contained blocks or in embedded frames (including mail bodies in webmail and file previews), it's found and translated.
 - **New content is translated automatically**: content loaded as you scroll, new pages that appear without a reload, and text that changes in place all get translated.
 - **Page styles don't interfere**: the extension's own UI, like the floating button, and the page don't affect each other, so even unusual page styles won't break it, and the extension never translates its own button labels.
 
@@ -187,7 +188,7 @@ I don't really think this needs explaining, but just in case someone needs it, h
 <details>
 <summary><strong>Settings page</strong></summary>
 
-- **General**: on/off switch, languages, default display mode, floating UI
+- **General**: on/off switch, translation languages, extension language, default display mode, floating UI (switches, sizes and a live preview)
 - **Engines**: drag to reorder priority, enable and disable, your own keys, model names, test connection
 - **Appearance**: translation style, custom CSS with live preview
 - **Hotkeys**, **Sites** (blocklist or allowlist), **Advanced** (concurrency, cache, export and import settings, restore defaults)
@@ -197,7 +198,7 @@ I don't really think this needs explaining, but just in case someone needs it, h
 
 ### Odds and ends
 
-- **Three UI languages**: Simplified Chinese, Traditional Chinese, English, following your browser's UI language
+- **Three UI languages**: Simplified Chinese, Traditional Chinese, English. It follows your browser's UI language by default, or you can pick one under General in settings. This only changes the extension's own interface, not the translation direction
 - **Feedback**: one click at the bottom of the popup takes you to GitHub to report an issue
 
 ## Development
@@ -214,7 +215,7 @@ Stack: WXT + TypeScript + Vite.
 | `pnpm test:coverage` | Unit tests + coverage thresholds |
 | `pnpm test:e2e` / `test:e2e:core` | E2E tests (run `pnpm build` first) |
 
-Status: v2.0 is release-ready and still being improved. 1,300+ unit tests (with coverage thresholds) and 60+ core E2E tests run on every push in CI; 300+ issues completed so far.
+Status: v2.1 is released and still being improved. 2,400+ unit tests (with coverage thresholds) and 140+ core E2E tests run on every push in CI; 500+ issues completed so far.
 
 Conventions:
 
