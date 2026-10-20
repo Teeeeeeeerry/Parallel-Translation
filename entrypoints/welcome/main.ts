@@ -5,7 +5,7 @@
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
 import './welcome.css';
-import { applyI18n, tf } from '~/src/i18n';
+import { applyI18n, loadUiLocale, tf } from '~/src/i18n';
 import { detectOS, formatHotkey } from '~/src/hotkeys/platform';
 import { settingsReady, getSettings, patchSettings } from '~/src/storage/settings';
 import { DEFAULT_SETTINGS, LANG_LIST, type HotkeyAction } from '~/src/storage/schema';
@@ -80,6 +80,8 @@ function bindButtons(): void {
 async function init(): Promise<void> {
   await settingsReady();
   const settings = getSettings();
+  // #1100: 首装时还是跟随浏览器（不载入任何东西）；之后从设置页重开欢迎页按所选语言
+  await loadUiLocale(settings.uiLocale);
   const os = await detectOS();
 
   applyI18n();

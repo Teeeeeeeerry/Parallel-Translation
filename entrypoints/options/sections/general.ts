@@ -23,7 +23,7 @@ import {
   patchSettings,
   onSettingsChanged,
 } from '~/src/storage/settings';
-import { tf } from '~/src/i18n';
+import { tf, UI_LOCALES, type UiLocale, type UiLocaleChoice } from '~/src/i18n';
 import { createSliderRow } from '../slider-row';
 import { createFloatingPreview } from '../floating-preview';
 
@@ -41,10 +41,30 @@ function buildLangOptions(selected: string, includeAuto: boolean): string {
     .join('');
 }
 
+/**
+ * 扩展语言的选项文字（#1100）：三种语言各用自身文字显示，不随界面语言翻译，
+ * 看不懂当前界面的人也找得到自己的语言；只有“跟随浏览器”按当前界面语言显示。
+ */
+const UI_LOCALE_NAMES: Record<UiLocale, string> = {
+  en: 'English',
+  zh_CN: '简体中文',
+  zh_TW: '繁體中文',
+};
+
+function buildUiLocaleOptions(selected: UiLocaleChoice): string {
+  const option = (value: UiLocaleChoice, label: string, lang = '') =>
+    `<option value="${value}"${lang ? ` lang="${lang}"` : ''}${value === selected ? ' selected' : ''}>${label}</option>`;
+  return [
+    option('browser', tf('uiLocaleBrowser', '跟随浏览器')),
+    ...UI_LOCALES.map((l) => option(l, UI_LOCALE_NAMES[l], l.replace('_', '-'))),
+  ].join('');
+}
+
 export function initGeneral(): void {
   const toggleEnabled = document.getElementById('pt-toggle-enabled')!;
   const selectFrom = document.getElementById('pt-select-from') as HTMLSelectElement;
   const selectTo = document.getElementById('pt-select-to') as HTMLSelectElement;
+  const selectUiLocale = document.getElementById('pt-select-ui-locale') as HTMLSelectElement;
   const selectMode = document.getElementById('pt-select-mode') as HTMLSelectElement;
   const selectParaMode = document.getElementById('pt-select-para-mode') as HTMLSelectElement;
   const toggleFloatingBall = document.getElementById('pt-toggle-floating-ball')!;
@@ -56,6 +76,7 @@ export function initGeneral(): void {
     toggleEnabled.classList.toggle('pt-on', s.enabled);
     selectFrom.innerHTML = buildLangOptions(s.from, true);
     selectTo.innerHTML = buildLangOptions(s.to, false);
+    selectUiLocale.innerHTML = buildUiLocaleOptions(s.uiLocale);
     selectMode.value = s.displayMode;
     selectParaMode.value = s.paraDisplayMode ?? 'follow';
     toggleFloatingBall.classList.toggle('pt-on', s.showFloatingBall);
@@ -73,6 +94,11 @@ export function initGeneral(): void {
 
   selectTo.addEventListener('change', () => {
     savePatch({ to: selectTo.value });
+  });
+
+  // 写盘后设置页收到变化整页重新载入（见 main.ts），这里只管写
+  selectUiLocale.addEventListener('change', () => {
+    savePatch({ uiLocale: selectUiLocale.value as UiLocaleChoice });
   });
 
   selectMode.addEventListener('change', () => {

@@ -11,7 +11,7 @@ import {
   ENGINE_LABELS,
   LANG_LIST,
 } from '~/src/storage/schema';
-import { applyI18n, tf } from '~/src/i18n';
+import { applyI18n, loadUiLocale, tf } from '~/src/i18n';
 import { logoMarkSvg } from '~/src/ui/logo';
 import { sleep } from '~/src/runtime/sleep';
 import {
@@ -439,11 +439,10 @@ async function init(): Promise<void> {
   const versionEl = document.getElementById('pt-version');
   if (versionEl) versionEl.textContent = `v${chrome.runtime.getManifest().version}`;
 
-  // 静态文案本地化
-  applyI18n();
-
-  // 加载设置
+  // 加载设置；选了扩展语言时先载入取文表（#1100），再本地化静态文案
   await settingsReady();
+  await loadUiLocale(getSettings().uiLocale);
+  applyI18n();
 
   // 填充选项并同步 UI
   syncUI();
