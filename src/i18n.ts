@@ -12,6 +12,43 @@
 // 静态文案在 HTML 里用 data-i18n 标注，由 applyI18n() 一次性替换；
 // 动态生成的文案直接调 t()。两条路径共用同一份 messages.json，
 // 不再有“HTML 里写死一份、TS 里再写死一份”的漂移风险。
+//
+// 读界面语言、取文案一律经这个模块（#1099）：要按界面语言自己挑东西的地方
+// （更新提示的条目、列表分隔符）调 uiLocale()，不直接读浏览器界面语言。
+// 唯一例外是首装时按浏览器语言推导默认目标语言。
+
+/** 扩展提供了文案的界面语言，与 _locales 目录同名。 */
+export type UiLocale = 'zh_CN' | 'zh_TW' | 'en';
+
+/** 繁体地区。zh-SG（新加坡）用简体，不在此列。 */
+const TRADITIONAL_REGIONS = new Set(['tw', 'hk', 'mo']);
+
+/**
+ * 把 BCP-47 的界面语言码映射到有文案的三种语言之一。
+ * 大小写不敏感 —— getUILanguage() 各平台的大小写并不统一。
+ *
+ * 未支持的语言落到 zh_CN：manifest 的 default_locale 是 zh_CN，
+ * chrome.i18n 取骨架文案时同样回退到它，两边必须一致，否则日语用户
+ * 会看到中文标题配英文条目的混搭。
+ */
+export function pickLocale(uiLang: string): UiLocale {
+  const [lang = '', region = ''] = uiLang.toLowerCase().split('-');
+  if (lang === 'zh') {
+    return TRADITIONAL_REGIONS.has(region) ? 'zh_TW' : 'zh_CN';
+  }
+  if (lang === 'en') return 'en';
+  return 'zh_CN';
+}
+
+/** 当前生效的界面语言：扩展界面文案实际用的是哪一种。 */
+export function uiLocale(): UiLocale {
+  try {
+    return pickLocale(chrome.i18n.getUILanguage());
+  } catch {
+    // 非扩展上下文（如单元测试）
+    return pickLocale('');
+  }
+}
 
 /**
  * 取文案。取不到时返回 fallback（通常是 HTML 里已有的中文），

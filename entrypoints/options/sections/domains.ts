@@ -32,7 +32,7 @@ import {
 } from '~/src/storage/domains';
 import { getSettings, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import type { Domain, Term, TermsCsvSkip } from '~/src/storage/domains';
-import { tf } from '~/src/i18n';
+import { tf, uiLocale } from '~/src/i18n';
 import { showToast, downloadFile, failReason } from '../main';
 
 function langLabel(code: string): string {
@@ -110,9 +110,9 @@ function saveFailed(e: unknown, error: HTMLElement, onGone: () => void): void {
   error.classList.add('pt-visible');
 }
 
-/** 列表分隔符：中文界面用顿号。 */
+/** 列表分隔符：中文界面用顿号（未支持的界面语言回落到简体中文文案，同样用顿号）。 */
 function listSep(): string {
-  return chrome.i18n.getUILanguage().startsWith('zh') ? '、' : ', ';
+  return uiLocale() === 'en' ? ', ' : '、';
 }
 
 /**

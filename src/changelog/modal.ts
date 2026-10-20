@@ -10,15 +10,13 @@
 // 代价与理由见 ADR-0001，别误以为这段代码不占 content.js 的体积。
 
 import { mountIsolated, unmountIsolated } from '~/src/ui/mount';
-import { tf } from '~/src/i18n';
+import { tf, uiLocale, type UiLocale } from '~/src/i18n';
 import modalCss from './modal.css?inline';
-import { pickLocale } from './locale';
 import {
   GROUP_ORDER,
   type ChangeGroup,
   type ChangeType,
   type ChangelogEntry,
-  type LocaleId,
 } from './data';
 
 const MOUNT_ID = 'changelog';
@@ -34,7 +32,7 @@ const GROUP_LABEL: Record<ChangeType, { key: string; fallback: string }> = {
  * 标题与描述之间的分隔符。中文用全角冒号，英文用破折号 ——
  * 「Side-by-side reading：The original…」这种中文标点配英文的混搭很刺眼。
  */
-const TITLE_SEP: Record<LocaleId, string> = {
+const TITLE_SEP: Record<UiLocale, string> = {
   zh_CN: '：',
   zh_TW: '：',
   en: ' — ',
@@ -95,7 +93,7 @@ function orderedGroups(entry: ChangelogEntry): ChangeGroup[] {
   ).filter((g): g is ChangeGroup => !!g && g.items.length > 0);
 }
 
-function renderGroup(group: ChangeGroup, locale: LocaleId): HTMLElement {
+function renderGroup(group: ChangeGroup, locale: UiLocale): HTMLElement {
   const section = el('section', 'pt-changelog-group');
   const label = GROUP_LABEL[group.type];
   section.appendChild(
@@ -150,7 +148,7 @@ function renderSocial(): HTMLElement | null {
 export function showChangelog(entry: ChangelogEntry): void {
   if (document.getElementById(`pt-host-${MOUNT_ID}`)) return;
 
-  const locale = pickLocale(chrome.i18n.getUILanguage());
+  const locale = uiLocale();
   // 全屏遮罩，覆盖 mountIsolated 默认的右下角定位
   const shadow = mountIsolated(MOUNT_ID, { positionCss: 'inset: 0;' });
 

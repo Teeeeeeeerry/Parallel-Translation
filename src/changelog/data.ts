@@ -14,14 +14,14 @@
 // 再在 CHANGELOG 顶部加一条同版本号的条目。两者字面不等时
 // `pnpm zip` 会直接失败（scripts/check-changelog.ts），不靠人工把关。
 
-export type LocaleId = 'zh_CN' | 'zh_TW' | 'en';
+import type { UiLocale } from '~/src/i18n';
 
 /**
  * 三语文案。changelog 是结构化数据而非 UI 文案，故不进 _locales ——
  * 扁平 key-value 表达不了「分组 → 条目」的结构，且历史版本的 key
  * 会永久淤积在 messages.json 里。
  */
-export type I18nText = Record<LocaleId, string>;
+export type I18nText = Record<UiLocale, string>;
 
 /** 变更分组。渲染顺序固定为 feature → improve → fix。 */
 export type ChangeType = 'feature' | 'improve' | 'fix';
