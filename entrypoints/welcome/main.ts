@@ -5,7 +5,7 @@
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
 import './welcome.css';
-import { applyI18n } from '~/src/i18n';
+import { applyI18n, tf } from '~/src/i18n';
 import { detectOS, formatHotkey } from '~/src/hotkeys/platform';
 import { settingsReady, getSettings, patchSettings } from '~/src/storage/settings';
 import { DEFAULT_SETTINGS, LANG_LIST, type HotkeyAction } from '~/src/storage/schema';
@@ -26,7 +26,7 @@ function renderHotkeys(os: Awaited<ReturnType<typeof detectOS>>): void {
   const hotkeys = DEFAULT_SETTINGS.hotkeys;
 
   container.innerHTML = HOTKEY_ACTIONS.map(({ action, i18nKey }) => {
-    const label = chrome.i18n.getMessage(i18nKey) || action;
+    const label = tf(i18nKey, action);
     const combo = formatHotkey(hotkeys[action], os);
     return `<div class="pt-welcome-hotkey-row">
       <span class="pt-welcome-hotkey-label">${label}</span>
