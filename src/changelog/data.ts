@@ -47,6 +47,134 @@ export const GROUP_ORDER: readonly ChangeType[] = ['feature', 'improve', 'fix'];
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: '2.1.218',
+    groups: [
+      {
+        type: 'feature',
+        items: [
+          {
+            title: {
+              zh_CN: '扩展语言',
+              zh_TW: '擴充功能語言',
+              en: 'Extension language',
+            },
+            desc: {
+              zh_CN: '设置页“通用”分区可以单独选扩展界面的语言：English、简体中文或繁體中文，默认跟随浏览器。只改扩展自身的界面，不影响译文、源语言和目标语言。',
+              zh_TW: '設定頁「一般」分區可以單獨選擴充功能介面的語言：English、简体中文或繁體中文，預設跟隨瀏覽器。只改變擴充功能本身的介面，不影響譯文、來源語言與目標語言。',
+              en: "Choose the extension's own interface language under General in settings: English, 简体中文 or 繁體中文, or follow the browser (the default). Translations and the source and target languages are not affected.",
+            },
+          },
+          {
+            title: {
+              zh_CN: '悬浮 UI 大小可调',
+              zh_TW: '浮動 UI 大小可調',
+              en: 'Adjustable floating UI',
+            },
+            desc: {
+              zh_CN: '设置页“悬浮 UI”里可以调悬浮球、逐段翻译按钮和输入翻译圆点的大小，以及鼠标离开段落后按钮停留多久，旁边有实时预览。',
+              zh_TW: '設定頁「浮動 UI」裡可以調整浮動球、逐段翻譯按鈕和輸入翻譯圓點的大小，以及滑鼠離開段落後按鈕停留多久，旁邊有即時預覽。',
+              en: 'Under Floating UI in settings you can resize the floating ball, the Translate on hover button and the Translate input dot, and set how long the button stays after your mouse leaves a paragraph. A live preview shows the result.',
+            },
+          },
+        ],
+      },
+      {
+        type: 'improve',
+        items: [
+          {
+            title: {
+              zh_CN: '长页面翻得更快',
+              zh_TW: '長頁面翻得更快',
+              en: 'Long pages translate faster',
+            },
+            desc: {
+              zh_CN: '全页翻译按字数把段落打包发送，维基表格这类长页面的请求次数减到原来的三分之一左右。在设置里改并发数，正在翻的页面也立即跟着变。',
+              zh_TW: '全頁翻譯依字數把段落打包送出，維基表格這類長頁面的請求次數減到原來的三分之一左右。在設定裡改並行請求數，正在翻譯的頁面也立即跟著變。',
+              en: 'Full-page translation now groups paragraphs by length, cutting the number of requests on long pages such as wiki tables to about a third. Changing the concurrency in settings also applies to a page that is already translating.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '停下就真的停下',
+              zh_TW: '停下就真的停下',
+              en: 'Stopping really stops',
+            },
+            desc: {
+              zh_CN: '还原页面或翻译超时后，已经发出的请求会被取消，不再在后台继续翻译、消耗引擎配额。',
+              zh_TW: '還原頁面或翻譯逾時後，已經送出的請求會被取消，不再在背景繼續翻譯、消耗引擎配額。',
+              en: 'When you restore a page or a translation times out, requests already sent are cancelled instead of finishing in the background and using up engine quota.',
+            },
+          },
+        ],
+      },
+      {
+        type: 'fix',
+        items: [
+          {
+            title: {
+              zh_CN: 'Bing 翻译恢复可用',
+              zh_TW: 'Bing 翻譯恢復可用',
+              en: 'Bing Translate works again',
+            },
+            desc: {
+              zh_CN: '微软更换了 Edge 用的翻译接口，内置的 Bing 翻译原来一律失败，现在改用新接口。',
+              zh_TW: '微軟更換了 Edge 使用的翻譯介面，內建的 Bing 翻譯原本一律失敗，現在改用新介面。',
+              en: 'Microsoft changed the translation endpoint Edge uses, which broke the built-in Bing Translate. It now uses the new endpoint.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '长页面不再报“响应超时”',
+              zh_TW: '長頁面不再報「回應逾時」',
+              en: 'No more "response timeout" on long pages',
+            },
+            desc: {
+              zh_CN: '维基长条目或网速慢时，排队等待的时间原来也算进超时，整批报“响应超时”、停在原文。现在从真正开始翻译时才计时。',
+              zh_TW: '維基長條目或網速慢時，排隊等待的時間原本也算進逾時，整批報「回應逾時」、停在原文。現在從真正開始翻譯時才計時。',
+              en: 'On long wiki articles or slow connections, time spent waiting in the queue used to count toward the timeout, so whole batches failed and stayed untranslated. The timer now starts when translation actually begins.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '翻译期间加载的内容不再漏翻',
+              zh_TW: '翻譯期間載入的內容不再漏翻',
+              en: 'Content loaded during translation is no longer missed',
+            },
+            desc: {
+              zh_CN: '长帖和无限滚动的页面在翻译期间加载出来的内容，原来会整段漏掉，现在会接着补翻。悬浮球等补完才显示完成。',
+              zh_TW: '長帖和無限捲動的頁面在翻譯期間載入的內容，原本會整段漏掉，現在會接著補翻。浮動球等補完才顯示完成。',
+              en: 'Content that loads while a page is translating, as in long threads and infinite scroll, used to be skipped and is now translated as well. The floating ball shows done only after that.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '悬浮球与圆点的显示',
+              zh_TW: '浮動球與圓點的顯示',
+              en: 'Floating ball and dot display',
+            },
+            desc: {
+              zh_CN: '悬浮球拖到最右不再被滚动条挡住，松手后不再偏移，调大后字也跟着变大。调大的输入翻译圆点不再伸进上一行文字。',
+              zh_TW: '浮動球拖到最右不再被捲軸擋住，放開後不再偏移，調大後字也跟著變大。調大的輸入翻譯圓點不再伸進上一行文字。',
+              en: 'The floating ball no longer slips under the scrollbar at the right edge or shifts after you drop it, and its label grows with it. An enlarged Translate input dot no longer overlaps the line above.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '误报与多余请求',
+              zh_TW: '誤報與多餘請求',
+              en: 'False alarms and wasted requests',
+            },
+            desc: {
+              zh_CN: '还原整页时，正在进行的逐段或划词翻译不再弹出“翻译失败”。表格里只有数字和符号的格子不再送去翻译。',
+              zh_TW: '還原整頁時，正在進行的逐段或劃詞翻譯不再跳出「翻譯失敗」。表格裡只有數字和符號的格子不再送去翻譯。',
+              en: 'Restoring a page no longer shows "Translation failed" for a hover or selection translation in progress, and table cells with only numbers and symbols are no longer sent for translation.',
+            },
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '2.1.153',
     groups: [
       {
