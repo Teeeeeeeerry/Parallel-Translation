@@ -103,15 +103,17 @@ export async function loadUiLocale(
   load: MessageLoader = loadBundledMessages,
 ): Promise<boolean> {
   const seq = ++loadSeq;
-  if (choice === 'browser') {
+  // 只认三种界面语言；别的值（设置之外传进来的脏值）一律按跟随浏览器，不去拼路径取表
+  if (!UI_LOCALES.includes(choice as UiLocale)) {
     settle(null);
     return true;
   }
+  const locale = choice as UiLocale;
   let tables: [MessageTable, MessageTable | null];
   try {
     tables = await Promise.all([
-      load(choice),
-      choice === DEFAULT_LOCALE ? null : load(DEFAULT_LOCALE),
+      load(locale),
+      locale === DEFAULT_LOCALE ? null : load(DEFAULT_LOCALE),
     ]);
   } catch (e) {
     if (seq !== loadSeq) return false;
@@ -121,7 +123,7 @@ export async function loadUiLocale(
   }
   if (seq !== loadSeq) return false;
   const own = lowerKeys(tables[0]);
-  settle({ locale: choice, own, fallback: tables[1] ? lowerKeys(tables[1]) : own });
+  settle({ locale, own, fallback: tables[1] ? lowerKeys(tables[1]) : own });
   return true;
 }
 

@@ -54,6 +54,22 @@ describe('后台按请求返回所选语言的取文表', () => {
     }
   });
 
+  test('缺省从扩展包里取：同一语言只读一次，读失败的下次重读', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('', { status: 500 }))
+      .mockImplementation(async () => new Response(JSON.stringify(readMessages('zh_TW'))));
+    const ask = () => answerUiMessages({ type: 'pt:ui-messages', locale: 'zh_TW' });
+    expect(await ask()).toEqual({ ok: false });
+    expect(await ask()).toEqual({ ok: true, table: readMessages('zh_TW') });
+    expect(await ask()).toEqual({ ok: true, table: readMessages('zh_TW') });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledWith('chrome-extension://mock/_locales/zh_TW/messages.json');
+    fetchMock.mockRestore();
+    error.mockRestore();
+  });
+
   test('载入失败时如实报失败', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const r = await answerUiMessages({ type: 'pt:ui-messages', locale: 'en' }, async () => {
