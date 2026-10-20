@@ -6901,3 +6901,101 @@ test.describe('整页翻译结束后告知采集时跳过的段落（#727）', (
     for (const frame of frames) await expect(frame.locator('#c1')).toHaveAttribute('data-pt', 'done');
   });
 });
+
+// ================================================================
+// 扩展语言（#1102，父 #1098）
+// ================================================================
+
+test.describe('扩展语言：设置页、popup 与网页上的提示跟着它走，不跟浏览器（#1102）', () => {
+  const TOAST = '#pt-host-toast .pt-toast';
+
+  /** 所选语言的文案：从随扩展打包的 messages.json 算，不写死。 */
+  function bundled(locale: 'en' | 'zh_CN' | 'zh_TW', key: string): string {
+    const table = JSON.parse(
+      fs.readFileSync(`public/_locales/${locale}/messages.json`, 'utf-8'),
+    ) as Record<string, { message: string }>;
+    return table[key]!.message;
+  }
+
+  /** 走右键菜单“翻译所选文本”，经后台真实的点击处理进入页面（同 TC-E2E-181）。 */
+  async function contextMenuClick(sw: import('@playwright/test').Worker, text: string) {
+    await sw.evaluate(async (t: string) => {
+      const clicked = chrome.contextMenus.onClicked as unknown as {
+        dispatch(info: chrome.contextMenus.OnClickData, tab?: chrome.tabs.Tab): void;
+      };
+      // 扩展没有 tabs 权限，按网址筛不出标签页，全部派发；没有内容脚本的扩展页
+      // 由后台的点击处理吞掉发送失败（#166）
+      for (const tab of await chrome.tabs.query({})) {
+        clicked.dispatch(
+          { menuItemId: 'pt-translate-selection', selectionText: t, editable: false, pageUrl: tab.url ?? '' },
+          tab,
+        );
+      }
+    }, text);
+  }
+
+  test('@core TC-E2E-225: 设置页把扩展语言切到简体中文 → 设置页、新开的 popup、已打开网页上随后出现的提示条都是简体中文；切回跟随浏览器后都回到浏览器语言（#1102）', async ({
+    context, page, serviceWorker, seedSettings, mockGoogle, gotoFixture,
+  }) => {
+    test.setTimeout(120_000);
+    await seedSettings({ to: 'zh-CN' });
+    // 等待态要停留得够久才断言得到，与 TC-E2E-181 同一个延时
+    await mockGoogle({ delayMs: 1_500 });
+    const extId = new URL(serviceWorker.url()).host;
+    const keys = ['rowFrom', 'rowUiLocale', 'popupMaster', 'translate', 'toastTranslating'] as const;
+    // 跟随浏览器时的文案：浏览器按自己的界面语言给（CI 是英文）
+    const browser = await serviceWorker.evaluate(
+      (ks) => Object.fromEntries(ks.map((k) => [k, chrome.i18n.getMessage(k)])),
+      [...keys],
+    );
+    // CI 是英文界面，切到简体中文最能看出“不跟浏览器走”。浏览器本身就是简体中文
+    // 界面时（本机常见）两组文案一模一样、断言恒真，改切 English
+    const target = bundled('zh_CN', 'rowFrom') === browser.rowFrom ? 'en' : 'zh_CN';
+    const picked = Object.fromEntries(keys.map((k) => [k, bundled(target, k)]));
+    expect(picked.rowFrom, '所选语言的文案要和浏览器给的不同').not.toBe(browser.rowFrom);
+
+    // 网页先打开：切换之后不刷新，随后出现的提示条就要换语言
+    await gotoFixture('basic');
+    const ball = await waitForBall(page);
+    await expect(ball).toHaveAttribute('aria-label', browser.translate!);
+
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extId}/options.html`);
+    await expect(options.locator('[data-i18n="rowFrom"]')).toHaveText(browser.rowFrom!);
+    await expect(options.locator('#pt-select-ui-locale')).toHaveValue('browser');
+
+    // ── 切到所选语言（CI 上是简体中文）──
+    await options.selectOption('#pt-select-ui-locale', target);
+    await expect(options.locator('[data-i18n="rowFrom"]')).toHaveText(picked.rowFrom!);
+    await expect(options.locator('[data-i18n="rowUiLocale"]')).toHaveText(picked.rowUiLocale!);
+    await expect(options.locator('#pt-select-ui-locale')).toHaveValue(target);
+
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extId}/popup.html`);
+    await expect(popup.locator('[data-i18n="popupMaster"]')).toHaveText(picked.popupMaster!);
+    await popup.close();
+
+    // 设置页、popup 开在前面，网页标签页回到前台再划词
+    await page.bringToFront();
+    await expect(ball).toHaveAttribute('aria-label', picked.translate!);
+    await contextMenuClick(serviceWorker, 'Hello world');
+    await expect(page.locator(TOAST).first()).toContainText(picked.toastTranslating!);
+    await expect(page.locator(TOAST)).toHaveCount(0, { timeout: 20_000 });
+
+    // ── 切回跟随浏览器 ──
+    await options.selectOption('#pt-select-ui-locale', 'browser');
+    await expect(options.locator('[data-i18n="rowFrom"]')).toHaveText(browser.rowFrom!);
+    await expect(options.locator('#pt-select-ui-locale')).toHaveValue('browser');
+
+    const popupAgain = await context.newPage();
+    await popupAgain.goto(`chrome-extension://${extId}/popup.html`);
+    await expect(popupAgain.locator('[data-i18n="popupMaster"]')).toHaveText(browser.popupMaster!);
+    await popupAgain.close();
+
+    await page.bringToFront();
+    await expect(ball).toHaveAttribute('aria-label', browser.translate!);
+    await contextMenuClick(serviceWorker, 'Hello again');
+    await expect(page.locator(TOAST).first()).toContainText(browser.toastTranslating!);
+    await expect(page.locator(TOAST)).toHaveCount(0, { timeout: 20_000 });
+  });
+});
