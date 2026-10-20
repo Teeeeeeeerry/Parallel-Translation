@@ -40,7 +40,7 @@
 import { mountIsolated, unmountIsolated } from './mount';
 import { deepActiveElement } from './float-common';
 import { createDotPlacer, type DotPlacement } from './input-dot-place';
-import { tf } from '../i18n';
+import { onUiLocaleChange, tf } from '../i18n';
 import { decideInputEligibility, inputText, type TextInput } from './input-eligibility';
 
 const HOST_ID = 'input-dot';
@@ -72,8 +72,11 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
   const dot = document.createElement('button');
   dot.className = 'pt-input-dot';
   dot.type = 'button';
-  dot.setAttribute('aria-label', tf('inputDotLabel', '翻译输入框里的文字'));
   shadow.appendChild(dot);
+  // 可读名称按当时的扩展语言取，扩展语言变了重取（#1101）
+  const relabel = () => dot.setAttribute('aria-label', tf('inputDotLabel', '翻译输入框里的文字'));
+  relabel();
+  const offLocale = onUiLocaleChange(relabel);
 
   let target: TextInput | null = null;
   /**
@@ -242,6 +245,7 @@ export function createInputDot(handlers: InputDotHandlers): () => void {
   sync(deepActiveElement());
 
   return () => {
+    offLocale();
     placer.reset();
     document.removeEventListener('focusin', onFocusIn, true);
     document.removeEventListener('focusout', onFocusOut, true);

@@ -9,6 +9,10 @@
 
 import { tf } from '../i18n';
 
+const MENU_ID = 'pt-translate-selection';
+
+const menuTitle = () => tf('ctxTranslateSelection', '翻译所选文本');
+
 /**
  * 初始化右键菜单。必须在 onInstalled 中调用。
  *
@@ -21,12 +25,24 @@ export async function initContextMenu(): Promise<void> {
     // removeAll 只清本扩展的菜单；await 保证 create 时旧菜单已清空
     await chrome.contextMenus.removeAll();
     chrome.contextMenus.create({
-      id: 'pt-translate-selection',
-      title: tf('ctxTranslateSelection', '翻译所选文本'),
+      id: MENU_ID,
+      title: menuTitle(),
       contexts: ['selection'],
     });
   } catch (e) {
     console.warn('[PT] 右键菜单初始化失败:', e);
+  }
+}
+
+/**
+ * 按当前扩展语言更新菜单标题（#1101）。菜单还没建时（首装的 onInstalled
+ * 之前）update 会失败，忽略即可：之后建菜单时取的就是当时的语言。
+ */
+export async function refreshContextMenuTitle(): Promise<void> {
+  try {
+    await chrome.contextMenus.update(MENU_ID, { title: menuTitle() });
+  } catch {
+    // 菜单还没建
   }
 }
 
@@ -37,7 +53,7 @@ export function onContextMenuClick(
   handler: (tabId: number, text: string) => void,
 ): void {
   chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === 'pt-translate-selection' && tab?.id) {
+    if (info.menuItemId === MENU_ID && tab?.id) {
       handler(tab.id, info.selectionText ?? '');
     }
   });

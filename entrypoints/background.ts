@@ -14,7 +14,9 @@ import { route } from '~/src/engines/router';
 import { EngineError } from '~/src/engines/types';
 import { createInFlightTable, inFlightKey, runEngineCall } from '~/src/runtime/inflight';
 import { ensureE2EMock, applyE2EMock, getE2EMockStats } from '~/src/engines/e2e-mock';
-import { initContextMenu } from '~/src/ui/context-menu';
+import { initContextMenu, refreshContextMenuTitle } from '~/src/ui/context-menu';
+import { loadUiLocale, type UiLocaleChoice } from '~/src/i18n';
+import { UI_MESSAGES, answerUiMessages } from '~/src/runtime/ui-messages';
 import { claimShow, markFreshInstall } from '~/src/changelog/claim';
 import { markSeen } from '~/src/changelog/state';
 
@@ -37,8 +39,20 @@ function deriveTargetLanguage(uiLang: string): string {
 export default defineBackground(() => {
   console.log('[PT] Background service worker started');
 
-  settingsReady().catch((e) => console.error('[PT] 设置加载失败:', e));
-  onSettingsChanged(() => {});
+  // #1101：后台自己的文案（右键菜单标题）按扩展语言取 —— 启动时先载入，
+  // 设置变了换表并更新菜单标题。跟随浏览器时 loadUiLocale 什么都不载入
+  let uiLocaleChoice: UiLocaleChoice | null = null;
+  const followUiLocale = async (choice: UiLocaleChoice): Promise<void> => {
+    if (choice === uiLocaleChoice) return;
+    uiLocaleChoice = choice;
+    // 没载入成功就忘掉这次选择，之后同一个选择再来时还会重试
+    if (!(await loadUiLocale(choice)) && uiLocaleChoice === choice) uiLocaleChoice = null;
+    await refreshContextMenuTitle();
+  };
+  const uiLocaleReady = settingsReady()
+    .then((s) => followUiLocale(s.uiLocale))
+    .catch((e) => console.error('[PT] 设置加载失败:', e));
+  onSettingsChanged((s) => void followUiLocale(s.uiLocale));
 
   // 暴露给 DevTools Console 用于 DoD 验证
   (self as any).cacheSet = cacheSet;
@@ -62,7 +76,8 @@ export default defineBackground(() => {
 
   // 右键菜单 + 首次安装引导
   chrome.runtime.onInstalled.addListener((details) => {
-    initContextMenu().catch(() => {});
+    // 等扩展语言载入后再建菜单，标题用所选语言（#1101）
+    void uiLocaleReady.then(() => initContextMenu());
 
     if (details.reason === 'install') {
       // 首装用户没有「更新」可看 —— 更新提示只服务老用户（ADR-0001），
@@ -197,6 +212,13 @@ export default defineBackground(() => {
     chrome.tabs
       .sendMessage(tabId, { type: 'pt:set-domain', choice: { kind: 'auto' } })
       .catch(() => {});
+  });
+
+  // #1101：内容脚本取所选扩展语言的取文表 —— 不暴露 _locales，由这里转交
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type !== UI_MESSAGES) return;
+    void answerUiMessages(msg).then(sendResponse);
+    return true; // 异步响应
   });
 
   // 健康检查（E2E 测试用于验证消息通道就绪）

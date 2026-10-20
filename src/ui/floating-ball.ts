@@ -9,7 +9,7 @@
 // 位置可拖动并持久化到 storage.local。
 
 import { mountIsolated, unmountIsolated } from './mount';
-import { tf } from '../i18n';
+import { onUiLocaleChange, tf } from '../i18n';
 
 function ballPosKey(): string {
   return `pt-ball-pos:${location.hostname}`;
@@ -86,10 +86,16 @@ export function createBall(callbacks: BallCallbacks): () => void {
 
   const ball = document.createElement('button');
   ball.className = 'pt-ball';
-  ball.setAttribute('aria-label', tf('translate', '翻译此页'));
   shadow.appendChild(ball);
+  ball.setAttribute('aria-label', tf('translate', '翻译此页'));
   // 在设置里关掉又打开时，新球要接着上一次的状态画，而不是重置成 idle
   setBallState(currentState);
+  // 扩展语言变了重取可读名称与字形（#1101）。只换文字，不经 setBallState：
+  // 那会重置错误态自动回到 idle 的计时
+  const offLocale = onUiLocaleChange(() => {
+    ball.setAttribute('aria-label', tf('translate', '翻译此页'));
+    ball.textContent = GLYPH[currentState];
+  });
 
   // --- 拖动 ---
   let dragging = false;
@@ -229,6 +235,7 @@ export function createBall(callbacks: BallCallbacks): () => void {
   sizeObserver?.observe(ball);
 
   return () => {
+    offLocale();
     sizeObserver?.disconnect();
     window.removeEventListener('resize', onResize);
     window.removeEventListener('blur', onDragReset);

@@ -42,7 +42,8 @@ export type MessageTable = Record<
 /** 载入某种语言的取文表。缺省从扩展包里取。 */
 export type MessageLoader = (locale: UiLocale) => Promise<MessageTable>;
 
-const fetchMessages: MessageLoader = async (locale) => {
+/** 从扩展包里取。扩展页面与后台可用；内容脚本取不到，改向后台要（ui-messages.ts）。 */
+export const loadBundledMessages: MessageLoader = async (locale) => {
   const res = await fetch(chrome.runtime.getURL(`_locales/${locale}/messages.json`));
   if (!res.ok) throw new Error(`[PT] 载入 ${locale} 文案失败：${res.status}`);
   return (await res.json()) as MessageTable;
@@ -52,6 +53,30 @@ const fetchMessages: MessageLoader = async (locale) => {
 let active: { locale: UiLocale; own: MessageTable; fallback: MessageTable } | null = null;
 /** 只认最后一次 loadUiLocale，较早发起、较晚载完的那次作废。 */
 let loadSeq = 0;
+/** 扩展语言换好之后要重新取文的常驻元素（悬浮球、输入翻译圆点的可读名称）。 */
+const changeListeners = new Set<() => void>();
+
+/**
+ * 订阅扩展语言的变化：每次 loadUiLocale 落定（含回到跟随浏览器、载入失败
+ * 回落）之后调用。常驻在网页上的元素靠它换掉可读名称；随用随建的界面
+ * （提示条、逐段翻译按钮的文案）出现时自己取文，不必订阅。返回退订函数。
+ */
+export function onUiLocaleChange(fn: () => void): () => void {
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
+
+function settle(next: typeof active): void {
+  active = next;
+  for (const fn of changeListeners) {
+    // 一个订阅者出错不连累别的订阅者，也不让这次载入被当成失败
+    try {
+      fn();
+    } catch (e) {
+      console.error('[PT] 扩展语言变化的订阅者出错:', e);
+    }
+  }
+}
 
 /** chrome.i18n 把消息名、占位符名都按小写处理，这里同样小写化。 */
 function lowerKeys(table: MessageTable): MessageTable {
@@ -71,29 +96,35 @@ function lowerKeys(table: MessageTable): MessageTable {
  * 选定扩展语言。选了具体语言时载入它和 zh_CN 的取文表，载完之前不该渲染
  * 依赖文案的界面；'browser' 时清掉取文表，回到 chrome.i18n。
  * 载入失败时回到跟随浏览器：界面换不成所选语言，但不会空白。
+ * 返回这次选择是否生效：载入失败、或被之后的选择取代时为 false。
  */
 export async function loadUiLocale(
   choice: UiLocaleChoice,
-  load: MessageLoader = fetchMessages,
-): Promise<void> {
+  load: MessageLoader = loadBundledMessages,
+): Promise<boolean> {
   const seq = ++loadSeq;
-  if (choice === 'browser') {
-    active = null;
-    return;
+  // 只认三种界面语言；别的值（设置之外传进来的脏值）一律按跟随浏览器，不去拼路径取表
+  if (!UI_LOCALES.includes(choice as UiLocale)) {
+    settle(null);
+    return true;
   }
+  const locale = choice as UiLocale;
+  let tables: [MessageTable, MessageTable | null];
   try {
-    const [own, fallback] = await Promise.all([
-      load(choice),
-      choice === DEFAULT_LOCALE ? null : load(DEFAULT_LOCALE),
+    tables = await Promise.all([
+      load(locale),
+      locale === DEFAULT_LOCALE ? null : load(DEFAULT_LOCALE),
     ]);
-    if (seq !== loadSeq) return;
-    const ownTable = lowerKeys(own);
-    active = { locale: choice, own: ownTable, fallback: fallback ? lowerKeys(fallback) : ownTable };
   } catch (e) {
-    if (seq !== loadSeq) return;
+    if (seq !== loadSeq) return false;
     console.error('[PT] 载入扩展语言失败，改为跟随浏览器:', e);
-    active = null;
+    settle(null);
+    return false;
   }
+  if (seq !== loadSeq) return false;
+  const own = lowerKeys(tables[0]);
+  settle({ locale, own, fallback: tables[1] ? lowerKeys(tables[1]) : own });
+  return true;
 }
 
 /**

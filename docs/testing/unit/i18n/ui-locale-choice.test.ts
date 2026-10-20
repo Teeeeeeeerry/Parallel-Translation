@@ -146,6 +146,17 @@ describe('跟随浏览器', () => {
     expect(t('rowFrom')).toBe('来自浏览器');
   });
 
+  test('不是三种界面语言之一的值按跟随浏览器处理，不去取表', async () => {
+    await loadUiLocale('en', fromRepo);
+    fromRepo.mockClear();
+    for (const bad of [undefined, 'ja', '../x']) {
+      expect(await loadUiLocale(bad as never, fromRepo)).toBe(true);
+      expect(fromRepo).not.toHaveBeenCalled();
+      vi.mocked(chrome.i18n.getMessage).mockImplementationOnce(() => '来自浏览器');
+      expect(t('rowFrom')).toBe('来自浏览器');
+    }
+  });
+
   test('当前生效界面语言回到浏览器界面语言', async () => {
     await loadUiLocale('en', fromRepo);
     await loadUiLocale('browser');

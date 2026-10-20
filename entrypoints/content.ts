@@ -70,7 +70,8 @@ import { clampParaBtnHideDelay } from '~/src/storage/schema';
 import { watchEffectiveDomains, currentDomain, parseDomainChoice } from '~/src/storage/domains';
 import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { siteRulesReady } from '~/src/storage/specialization';
-import { tf } from '~/src/i18n';
+import { loadUiLocale, tf } from '~/src/i18n';
+import { loadMessagesViaBackground } from '~/src/runtime/ui-messages';
 import { isSiteBlocked } from '~/src/dom/site-filter';
 import { decideShow } from '~/src/changelog/decide';
 import { clearSeen } from '~/src/changelog/state';
@@ -133,6 +134,10 @@ export default defineContentScript({
   runAt: 'document_end',
   async main(ctx) {
     await settingsReady();
+    // #1101：选了扩展语言时先向后台要取文表，载完再显示任何依赖文案的界面
+    // （悬浮球、提示条、更新提示）；跟随浏览器时不发消息、立即返回
+    let uiLocaleChoice = getSettings().uiLocale;
+    await loadUiLocale(uiLocaleChoice, loadMessagesViaBackground);
     // #164: 必须等平台缓存就绪再注册快捷键 —— 否则首次按键按 'other'
     // 匹配（忽略 metaKey），Mac 用户加载后的第一次 ⌘⇧Y 静默无响应
     await detectOS();
@@ -324,6 +329,12 @@ export default defineContentScript({
     // 订阅由编排模块持有（start 订阅 / stop 退订），此处只有一份
     // 响应代码，无重复的创建 / 变更处理块。
     function applySettings(ns: Settings): void {
+      // #1101：扩展语言变了换表。之后新出现的界面用新语言，已经显示的提示条
+      // 不重绘；悬浮球、输入翻译圆点的可读名称经 onUiLocaleChange 自己更新
+      if (ns.uiLocale !== uiLocaleChoice) {
+        uiLocaleChoice = ns.uiLocale;
+        void loadUiLocale(ns.uiLocale, loadMessagesViaBackground);
+      }
       applyMode(ns.displayMode, ns.paraDisplayMode);
       applyStyle(ns.style);
       applyCustomCss(ns.customCss);
