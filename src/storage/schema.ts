@@ -8,6 +8,9 @@
 // 此文件为全局唯一真相来源。后续所有阶段新增配置项都改这里，
 // 不要在别处另开定义。
 
+// 相对路径：wxt.config.ts 直接加载本文件，那里没有 ~ 别名
+import { UI_LOCALES, type UiLocale, type UiLocaleChoice } from '../i18n';
+
 /** 递归 Partial：嵌套字段也可部分提供。数组保持原类型，不递归到索引。 */
 export type DeepPartial<T> = T extends Array<infer U>
   ? Array<U>
@@ -208,6 +211,12 @@ export interface Settings {
    * INPUT_DOT_SIZE_MIN/MAX；可点区随它等比放大，下限见 floating-ui-size.ts。
    */
   inputDotSize: number;
+
+  /**
+   * 扩展语言（#1100）：扩展自身界面用哪种语言。'browser' 跟随浏览器界面语言，
+   * 也可选三种有文案的语言之一。只管扩展界面，与源语言、目标语言、译文无关。
+   */
+  uiLocale: UiLocaleChoice;
 }
 
 export const ENGINE_LABELS: Record<EngineId, string> = {
@@ -328,6 +337,14 @@ export function clampInputDotSize(n: unknown): number {
   return Math.min(INPUT_DOT_SIZE_MAX, Math.max(INPUT_DOT_SIZE_MIN, Math.round(n)));
 }
 
+/**
+ * 校验扩展语言（#1100）—— 写入口与读取单点共用。三种界面语言与 'browser'
+ * 原样保留，其余（导入文件手改、旧版本没有这一项）回落跟随浏览器。
+ */
+export function normalizeUiLocale(v: unknown): UiLocaleChoice {
+  return v === 'browser' || UI_LOCALES.includes(v as UiLocale) ? (v as UiLocaleChoice) : 'browser';
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   enginePriority: ['google-web', 'bing-edge'],
@@ -355,4 +372,5 @@ export const DEFAULT_SETTINGS: Settings = {
   paraBtnSize: PARA_BTN_SIZE_DEFAULT,
   paraBtnHideDelay: PARA_BTN_HIDE_DELAY_DEFAULT,
   inputDotSize: INPUT_DOT_SIZE_DEFAULT,
+  uiLocale: 'browser',
 };

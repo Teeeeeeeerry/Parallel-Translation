@@ -13,6 +13,7 @@ import {
   clampParaBtnHideDelay,
   clampParaBtnSize,
   migrateStyle,
+  normalizeUiLocale,
 } from './schema';
 
 const KEY = 'pt-settings';
@@ -77,6 +78,7 @@ export const KEEP_ON_UNDEFINED_KEYS = [
   'paraBtnSize',
   'paraBtnHideDelay',
   'inputDotSize',
+  'uiLocale',
 ] as const satisfies readonly Exclude<keyof Settings, NestedSettingsKey>[];
 
 export type KeepOnUndefinedKey = (typeof KEEP_ON_UNDEFINED_KEYS)[number];
@@ -136,6 +138,8 @@ function clampWriteEntry(s: Settings): Settings {
     paraBtnSize: clampParaBtnSize(s.paraBtnSize),
     paraBtnHideDelay: clampParaBtnHideDelay(s.paraBtnHideDelay),
     inputDotSize: clampInputDotSize(s.inputDotSize),
+    // #1100: 扩展语言同样在写入口校验，导入无效值回落跟随浏览器
+    uiLocale: normalizeUiLocale(s.uiLocale),
   };
 }
 
@@ -146,7 +150,7 @@ function merge(stored: Partial<Settings> | undefined): Settings {
   const merged = mergeInto(DEFAULT_SETTINGS, stored ?? {});
   // 样式 id 迁移放在读取单点：存储可能留着已删除的 'fade' 或任何脏值，
   // 放行会让 applyStyle 挂上没有 CSS 规则的类名（译文完全无样式）
-  return { ...merged, style: migrateStyle(merged.style) };
+  return { ...merged, style: migrateStyle(merged.style), uiLocale: normalizeUiLocale(merged.uiLocale) };
 }
 
 /**

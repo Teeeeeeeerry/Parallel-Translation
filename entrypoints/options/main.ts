@@ -17,7 +17,7 @@ import {
 import { detectOS } from '~/src/hotkeys/platform';
 import { StorageQuotaError } from '~/src/storage/quota';
 import { StorageReadError } from '~/src/storage/read-error';
-import { applyI18n, tf } from '~/src/i18n';
+import { applyI18n, loadUiLocale, tf } from '~/src/i18n';
 import { logoMarkSvg } from '~/src/ui/logo';
 import { initGeneral } from './sections/general';
 import { initEngines } from './sections/engines';
@@ -107,6 +107,14 @@ async function init(): Promise<void> {
   document.getElementById('pt-logo')!.innerHTML = logoMarkSvg(32, { compact: true });
 
   await settingsReady();
+  // #1100: 选了扩展语言时先载入取文表，载完再渲染任何文案
+  const uiLocaleChoice = getSettings().uiLocale;
+  await loadUiLocale(uiLocaleChoice);
+  // 扩展语言变了就整页重新载入，静态与动态文案一次换齐；本页改的和别处
+  // （另一个设置页、导入、恢复默认）改的都走这里。载入后立刻订阅，不漏掉初始化期间的变化
+  onSettingsChanged((s) => {
+    if (s.uiLocale !== uiLocaleChoice) location.reload();
+  });
   const os = await detectOS();
 
   // 静态文案先本地化，再交给各 section 渲染动态内容

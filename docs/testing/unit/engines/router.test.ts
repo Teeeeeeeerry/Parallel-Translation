@@ -131,6 +131,7 @@ describe('route', () => {
       paraBtnSize: 24,
       paraBtnHideDelay: 1500,
       inputDotSize: 14,
+      uiLocale: 'browser',
     });
 
     vi.mocked(cacheGet).mockResolvedValue(null);
@@ -496,6 +497,7 @@ describe('route', () => {
       paraBtnSize: 24,
       paraBtnHideDelay: 1500,
       inputDotSize: 14,
+      uiLocale: 'browser',
     });
     // 修复前：非缓存路径不跳过已填充槽位 —— 下一引擎重翻全部并
     // 覆盖成功译文（TC-E2E-33 暴露）；修复后只补失败槽位

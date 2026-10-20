@@ -32,6 +32,7 @@ const NON_DEFAULT: Record<string, unknown> = {
   paraBtnSize: 34,
   paraBtnHideDelay: 2500,
   inputDotSize: 20,
+  uiLocale: 'en',
 };
 
 /** 嵌套键另走 NESTED_KEYS，合并语义不在本表 */
