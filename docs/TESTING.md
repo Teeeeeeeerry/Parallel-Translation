@@ -137,7 +137,7 @@ export async function setSettings(context: BrowserContext, patch: object) {
 
 ### 界面文案断言不写死中文（#814）
 
-端到端在 CI 跑的是英文界面。界面文案的期望值一律在页面里用 `chrome.i18n.getMessage` 算，不要写死。`pnpm check:e2e-cjk`（`scripts/check-e2e-cjk.ts`，接在 PR 的 CI 上）扫描 `docs/testing/e2e` 下的每个 `*.spec.ts`：含中日韩字符的字符串、模板与正则字面量，要在字面量结束的那一行末尾写放行注释与理由：
+端到端在 CI 跑的是英文界面。界面文案的期望值一律在页面里用 `chrome.i18n.getMessage` 算，不要写死。例外是用例自己选了扩展语言（#1098）：`chrome.i18n.getMessage` 只给浏览器界面语言的文案，所选语言的期望值从随扩展打包的 `public/_locales/<语言>/messages.json` 读（见 TC-E2E-225）。`pnpm check:e2e-cjk`（`scripts/check-e2e-cjk.ts`，接在 PR 的 CI 上）扫描 `docs/testing/e2e` 下的每个 `*.spec.ts`：含中日韩字符的字符串、模板与正则字面量，要在字面量结束的那一行末尾写放行注释与理由：
 
 ```typescript
 await expect(box).toHaveValue('【译】你好世界'); // cjk-ok: 替身回显的译文

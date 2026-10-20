@@ -14,6 +14,7 @@
 | **翻译运行** | （界面不出现） | `src/orchestration/translation-run.ts`:`createTranslationRuns()` 持有页面根(还原整页时中止并换新根)与输入根(不随还原);`begin(root, signal?)` 派生一次运行的中止信号,交给切批重试与发送层;失效以 `RunInvalidated` 中止本次运行;对外结果里“被放弃”只有 `abandoned`(整页汇总、单文本结果)与状态 `'abandoned'` |
 | 划词翻译 | 翻译选中文本 | `translateSelection()` |
 | **更新提示** | 更新内容 / What's New | `src/changelog/`(数据与渲染)、`pt-changelog`(storage key) |
+| **扩展语言** | 扩展语言 / Extension language | 设置项 `uiLocale`(`'browser'` = 跟随浏览器,或 `en` / `zh_CN` / `zh_TW`,与 `_locales` 目录同名);`src/i18n.ts` 的 `loadUiLocale()`(各上下文启动时载入所选语言的取文表)、`uiLocale()`(当前生效界面语言)、`onUiLocaleChange()`(常驻元素换可读名称);内容脚本经后台 `pt:ui-messages` 取表(`src/runtime/ui-messages.ts`) |
 | **领域** | 翻译领域 | `Domain`、`src/storage/domains.ts`(生效领域列表、`currentDomain()` 当前领域解析)、`src/storage/builtin-domains.ts`(内置领域数据)、`TranslateRequest.domainId` |
 | **术语** | 术语 | `Term`(`noTranslate` = 不翻译) |
 | **站点页面规则** | 站点规则 | `SiteRules`、`src/storage/specialization.ts`(`getSiteRules()` 生效站点规则;`UserSiteRules` 用户规则,存 storage.local,页面先 `siteRulesReady()` 载入)、`src/storage/builtin-site-rules.ts`(内置规则数据);限定范围与排除在全页翻译的 `collect()` 与逐段翻译的 `closestUnit()` 两个入口生效;代码层为 `src/dom/compat.ts` |
@@ -21,6 +22,8 @@
 **逐段翻译**(2026-08-15 定名):设置 → 悬浮 UI → 「逐段翻译」开关。语义 = 光标悬停在文字上时出现翻译按钮,点击仅翻译该段。关闭即解绑悬停监听(不再检测),即时生效无需刷新。此前文案「段落悬停按钮」因与用户语言对不上导致「找不到开关」,已统一改名;`welcomeParaBtnDesc` 描述文案未改(功能说明,不含名称)。
 
 **更新提示**(2026-09-03 定名):扩展更新到新的上架版本后,用户下次打开新页面时在页面内弹出的变更说明。语义 = 只告知本次上架版本改了什么;引导教学是首装欢迎页的职责,两者共存不合并。UI 标题作「更新内容」,对话与 issue 中称「更新提示」,代码一律 `changelog`。
+
+**扩展语言**(2026-10-20 定名):扩展自身界面用哪种语言 —— 设置页、popup、欢迎页、更新提示、网页上的悬浮球、逐段翻译按钮、输入翻译圆点、提示条与右键菜单。设置 → 通用 → 「扩展语言」,默认「跟随浏览器」,也可选 English、简体中文、繁體中文;选项里每种语言用它自己的文字显示。它只管扩展界面,和**源语言 / 目标语言**无关:后者管译文的方向(把什么语言译成什么语言),改扩展语言不影响译文、源语言与目标语言。首装时按浏览器语言推导默认目标语言的逻辑也不看它。跟随浏览器时文案由浏览器按自身界面语言给出,浏览器语言是扩展没有的语言时回落到简体中文(manifest 的 `default_locale`);选了具体语言时缺文案同样回落到简体中文。切换后设置页整页重新载入,已打开网页上随后出现的界面用新语言,已经显示的提示条不重绘(#1098)。扩展商店里的名称与描述由浏览器决定,不受它影响。_避免_:界面语言(和浏览器自己的界面语言撞名)、显示语言、源语言 / 目标语言(那是译文方向)。
 
 **上架版本 / 内部版本**(2026-09-03 定名):**内部版本**指每个 issue 修复 PR 都会 bump 的 `package.json` 末位版本号,变动频繁,绝大多数从未离开仓库;**上架版本**指真正传到扩展商店、用户能装到的版本。二者共用同一个版本号字段,区分方式见 ADR-0002。
 
