@@ -223,18 +223,6 @@ AI 引擎按编号整批请求、按编号回填。模型漏了一行，那一�
 - CSS 类、DOM `data-` 属性、storage key 一律用 `pt-` / `pt` 前缀
 - 颜色与排版一律引用 [`src/styles/tokens.css`](src/styles/tokens.css) 里的设计令牌，**不在组件里写死色值**
 
-完整要求见 [阶段索引的全局要求](docs/phases/README.md#全局要求)。
-
-| 文档 | 内容 |
-|---|---|
-| [CONTEXT.md](CONTEXT.md) | 术语表：逐段翻译、领域、术语、站点页面规则等叫法的定义 |
-| [docs/adr/](docs/adr/) | 架构决策记录：难以逆转、不写下来会被当成随手之举的取舍 |
-| [docs/phases/README.md](docs/phases/README.md) | 分阶段实施索引与依赖图 |
-| [docs/phases/](docs/phases/) | 9 份阶段实施手册：代码骨架、取舍理由、验收标准 |
-| [docs/DoD-report/](docs/DoD-report/) | 各阶段 DoD 验收报告 |
-| [docs/TESTING.md](docs/TESTING.md) | 自动化测试体系：分层策略、性能与内存、异常与边界、隐私与合规 |
-| [store/](store/) | 上架材料 |
-
 ## 许可
 
 [GNU 通用公共许可证第 3 版](LICENSE)（GPL-3.0-or-later）。

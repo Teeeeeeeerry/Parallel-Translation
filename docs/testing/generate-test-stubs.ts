@@ -403,6 +403,11 @@ function verifySync(cases: TestCase[]): SyncReport {
 // ---- 主入口 ----
 
 function main(): void {
+  // DEEP-TESTING.md 在私有文档仓库里（克隆到 notes/ 后由 link.sh 链到 docs/）
+  if (!fs.existsSync(DOC_PATH)) {
+    console.error('找不到 docs/DEEP-TESTING.md：它在私有文档仓库里，先克隆到 notes/ 并运行 notes/link.sh');
+    process.exit(1);
+  }
   console.log('🔍 解析 DEEP-TESTING.md 中的测试用例…\n');
   const cases = parseTestCases();
 

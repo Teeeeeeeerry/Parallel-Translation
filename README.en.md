@@ -223,20 +223,6 @@ Conventions:
 - CSS classes, DOM `data-` attributes, and storage keys all use the `pt-` / `pt` prefix
 - Colors and typography always reference the design tokens in [`src/styles/tokens.css`](src/styles/tokens.css); **never hard-code colors in components**
 
-Full requirements: [global requirements in the phase index](docs/phases/README.md#全局要求) (in Chinese).
-
-| Doc | Contents |
-|---|---|
-| [CONTEXT.md](CONTEXT.md) | Glossary: definitions of single-paragraph translation, domains, terms, site page rules, etc. |
-| [docs/adr/](docs/adr/) | Architecture decision records: hard-to-reverse trade-offs that would look arbitrary if not written down |
-| [docs/phases/README.md](docs/phases/README.md) | Phase index and dependency graph |
-| [docs/phases/](docs/phases/) | 9 phase handbooks: code skeletons, rationale, acceptance criteria |
-| [docs/DoD-report/](docs/DoD-report/) | DoD acceptance report for each phase |
-| [docs/TESTING.md](docs/TESTING.md) | Test system: layering, performance and memory, errors and edge cases, privacy and compliance |
-| [store/](store/) | Store listing materials |
-
-The docs above are written in Chinese.
-
 ## License
 
 [GNU General Public License v3](LICENSE) (GPL-3.0-or-later).

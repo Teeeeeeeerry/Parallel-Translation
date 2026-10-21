@@ -9,6 +9,17 @@ import path from 'path';
 
 const OUTPUT_DIR = path.resolve('.output');
 
+/**
+ * 商店描述与权限理由在私有文档仓库里（克隆到 notes/ 后由 link.sh 链进 store/），
+ * 公开仓库与 CI 上没有。有就一起查，没有就只查公开的隐私政策与 README。
+ */
+const PRIVATE_STORE_DOCS = [
+  'store/description-en.md',
+  'store/description-zh.md',
+  'store/description-zh_TW.md',
+].filter((p) => fs.existsSync(path.resolve(p)));
+const JUSTIFICATION = path.resolve('store/permissions-justification.md');
+
 /** 检查 .output 目录是否存在 */
 function outputExists(): boolean {
   return fs.existsSync(OUTPUT_DIR);
@@ -73,16 +84,16 @@ describe('构建产物校验', () => {
     if (!fs.existsSync(chromeManifest)) return;
     const m = JSON.parse(fs.readFileSync(chromeManifest, 'utf-8')) as Record<string, string[]>;
     const privacy = fs.readFileSync(path.resolve('store/privacy-policy.md'), 'utf-8');
-    const justification = fs.readFileSync(path.resolve('store/permissions-justification.md'), 'utf-8');
+    const justification = fs.existsSync(JUSTIFICATION) ? fs.readFileSync(JUSTIFICATION, 'utf-8') : null;
     const host = (pattern: string) => new URL(pattern.replace(/\*$/, '')).host;
     for (const p of m.host_permissions ?? []) {
       expect(privacy).toContain(`\`${p}\``);
-      expect(justification).toContain(host(p));
+      if (justification !== null) expect(justification).toContain(host(p));
     }
     for (const p of m.optional_host_permissions ?? []) {
       // 权限表里那一行写明是可选权限
       expect(privacy).toMatch(new RegExp(`\\| \`${p.replace(/[.*]/g, '\\$&')}\` \\|[^\\n]*可选权限`));
-      expect(justification).toMatch(new RegExp(`optional host permission[\\s\\S]*${host(p).replace(/\./g, '\\.')}`));
+      if (justification !== null) expect(justification).toMatch(new RegExp(`optional host permission[\\s\\S]*${host(p).replace(/\./g, '\\.')}`));
     }
   });
 
@@ -91,12 +102,7 @@ describe('构建产物校验', () => {
     if (!fs.existsSync(chromeManifest)) return;
     const m = JSON.parse(fs.readFileSync(chromeManifest, 'utf-8')) as Record<string, string[]>;
     const host = (pattern: string) => new URL(pattern.replace(/\*$/, '')).host;
-    for (const doc of [
-      'README.md',
-      'store/description-en.md',
-      'store/description-zh.md',
-      'store/description-zh_TW.md',
-    ]) {
+    for (const doc of ['README.md', ...PRIVATE_STORE_DOCS]) {
       const text = fs.readFileSync(path.resolve(doc), 'utf-8');
       expect(text, doc).toContain('DeepSeek');
       expect(text, doc).toContain('Grok');
