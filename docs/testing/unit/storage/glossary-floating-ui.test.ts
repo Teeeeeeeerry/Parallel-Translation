@@ -11,12 +11,15 @@ import path from 'path';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 
 const read = (p: string) => fs.readFileSync(path.resolve(p), 'utf8');
-const context = read('CONTEXT.md');
+// CONTEXT.md 在私有文档仓库里（克隆到 notes/ 后由 link.sh 链到根目录），
+// 公开仓库与 CI 上没有它，这组用例跳过
+const hasContext = fs.existsSync(path.resolve('CONTEXT.md'));
+const context = hasContext ? read('CONTEXT.md') : '';
 const glossary = context.slice(context.indexOf('## 术语映射'), context.indexOf('\n## ', context.indexOf('## 术语映射') + 1));
 /** 表里某个用户语言那一行 */
 const rowOf = (term: string) => glossary.split('\n').find((l) => l.startsWith(`| **${term}** |`)) ?? '';
 
-describe('术语映射表：悬浮 UI 尺寸（#990）', () => {
+describe.skipIf(!hasContext)('术语映射表：悬浮 UI 尺寸（#990）', () => {
   test('floatingUiVars 读的每个设置项都在“悬浮 UI 尺寸”那一行里', () => {
     const src = read('src/ui/floating-ui-size.ts');
     const keys = Object.keys(DEFAULT_SETTINGS).filter((k) => src.includes(`s.${k}`));

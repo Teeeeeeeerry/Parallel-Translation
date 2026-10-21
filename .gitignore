@@ -31,3 +31,20 @@ Thumbs.db
 npm-debug.log*
 pnpm-debug.log*
 .pnpm-store/
+
+# 私有文档：另存在私有仓库 Parallel-Translation-notes，克隆到 notes/，
+# 下面这些路径是 notes/link.sh 建的指向它的本地链接
+notes/
+CONTEXT.md
+docs/adr
+docs/phases
+docs/DoD-report
+docs/research
+docs/TESTING.md
+docs/DEEP-TESTING.md
+store/description-en.md
+store/description-zh.md
+store/description-zh_TW.md
+store/permissions-justification.md
+store/release-notes-next.md
+store/screenshots
