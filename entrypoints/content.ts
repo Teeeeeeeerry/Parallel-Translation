@@ -65,8 +65,7 @@ import { clampParaBtnHideDelay } from '~/src/storage/schema';
 import { watchEffectiveDomains } from '~/src/storage/domains';
 import type { Domain } from '~/src/storage/domains';
 import { siteRulesReady } from '~/src/storage/specialization';
-import { loadUiLocale, tf } from '~/src/i18n';
-import { loadMessagesViaBackground } from '~/src/runtime/ui-messages';
+import { followUiLocale, tf } from '~/src/i18n';
 import { decideShow } from '~/src/changelog/decide';
 import { clearSeen } from '~/src/changelog/state';
 
@@ -102,10 +101,17 @@ export default defineContentScript({
   runAt: 'document_end',
   async main(ctx) {
     await settingsReady();
-    // #1101：选了扩展语言时先向后台要取文表，载完再显示任何依赖文案的界面
-    // （悬浮球、提示条、更新提示）；跟随浏览器时不发消息、立即返回
-    let uiLocaleChoice = getSettings().uiLocale;
-    await loadUiLocale(uiLocaleChoice, loadMessagesViaBackground);
+    // #1101/#1123：跟随扩展语言 —— 选了具体语言时先向后台要取文表，载完再显示
+    // 任何依赖文案的界面（悬浮球、提示条、更新提示）；跟随浏览器时不发消息、立即
+    // 返回。之后设置变了换表，新出现的界面用新语言，已经显示的提示条不重绘，悬浮
+    // 球、输入翻译圆点的可读名称经 onUiLocaleChange 自己更新；取表失败时在 i18n
+    // 模块里退避重试。content script 失效时不再跟随
+    const uiLocale = followUiLocale({
+      initial: getSettings().uiLocale,
+      subscribe: (fn) => onSettingsChanged((ns) => fn(ns.uiLocale)),
+    });
+    ctx.onInvalidated(() => uiLocale.stop());
+    await uiLocale.ready;
     // #164: 必须等平台缓存就绪再注册快捷键 —— 否则首次按键按 'other'
     // 匹配（忽略 metaKey），Mac 用户加载后的第一次 ⌘⇧Y 静默无响应
     await detectOS();
@@ -287,12 +293,6 @@ export default defineContentScript({
     // 订阅由编排模块持有（start 订阅 / stop 退订），此处只有一份
     // 响应代码，无重复的创建 / 变更处理块。
     function applySettings(ns: Settings): void {
-      // #1101：扩展语言变了换表。之后新出现的界面用新语言，已经显示的提示条
-      // 不重绘；悬浮球、输入翻译圆点的可读名称经 onUiLocaleChange 自己更新
-      if (ns.uiLocale !== uiLocaleChoice) {
-        uiLocaleChoice = ns.uiLocale;
-        void loadUiLocale(ns.uiLocale, loadMessagesViaBackground);
-      }
       applyMode(ns.displayMode, ns.paraDisplayMode);
       applyStyle(ns.style);
       applyCustomCss(ns.customCss);
