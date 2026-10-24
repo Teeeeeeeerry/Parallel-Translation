@@ -15,8 +15,8 @@ import { EngineError } from '~/src/engines/types';
 import { createInFlightTable, inFlightKey, runEngineCall } from '~/src/runtime/inflight';
 import { ensureE2EMock, applyE2EMock, getE2EMockStats } from '~/src/engines/e2e-mock';
 import { initContextMenu, refreshContextMenuTitle } from '~/src/ui/context-menu';
-import { loadUiLocale, type UiLocaleChoice } from '~/src/i18n';
-import { UI_MESSAGES, answerUiMessages } from '~/src/runtime/ui-messages';
+import { followUiLocale, UI_MESSAGES } from '~/src/i18n';
+import { answerUiMessages } from '~/src/runtime/ui-messages';
 import { claimShow, markFreshInstall } from '~/src/changelog/claim';
 import { markSeen } from '~/src/changelog/state';
 import { DOMAIN_CHOICE, INPUT_LANG_CHOICE, tabChoiceForwarder } from '~/src/ui/tab-choice';
@@ -40,20 +40,18 @@ function deriveTargetLanguage(uiLang: string): string {
 export default defineBackground(() => {
   console.log('[PT] Background service worker started');
 
-  // #1101：后台自己的文案（右键菜单标题）按扩展语言取 —— 启动时先载入，
-  // 设置变了换表并更新菜单标题。跟随浏览器时 loadUiLocale 什么都不载入
-  let uiLocaleChoice: UiLocaleChoice | null = null;
-  const followUiLocale = async (choice: UiLocaleChoice): Promise<void> => {
-    if (choice === uiLocaleChoice) return;
-    uiLocaleChoice = choice;
-    // 没载入成功就忘掉这次选择，之后同一个选择再来时还会重试
-    if (!(await loadUiLocale(choice)) && uiLocaleChoice === choice) uiLocaleChoice = null;
-    await refreshContextMenuTitle();
-  };
+  // #1101/#1123：后台自己的文案（右键菜单标题）跟随扩展语言 —— 启动时先载入，
+  // 设置变了换表；每次落定之后更新菜单标题。去重与失败重试在 i18n 模块里
   const uiLocaleReady = settingsReady()
-    .then((s) => followUiLocale(s.uiLocale))
+    .then(
+      (s) =>
+        followUiLocale({
+          initial: s.uiLocale,
+          subscribe: (fn) => onSettingsChanged((ns) => fn(ns.uiLocale)),
+          onApplied: () => void refreshContextMenuTitle(),
+        }).ready,
+    )
     .catch((e) => console.error('[PT] 设置加载失败:', e));
-  onSettingsChanged((s) => void followUiLocale(s.uiLocale));
 
   // 暴露给 DevTools Console 用于 DoD 验证
   (self as any).cacheSet = cacheSet;

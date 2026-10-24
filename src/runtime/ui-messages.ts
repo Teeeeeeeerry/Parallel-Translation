@@ -10,16 +10,17 @@
 // 也不该暴露：任何网页都能借此探测扩展是否安装），也不把三份文案打进内容
 // 脚本包（ADR-0001：内容脚本体积敏感）。所以向后台要：后台从扩展包里取，
 // 原样回给内容脚本。只在选了具体语言时才发，跟随浏览器时一条消息都没有。
+// 内容脚本那一侧的载入器与消息名在 i18n 模块（#1123：跟随扩展语言按上下文挑载入
+// 路径）。
 
 import {
   UI_LOCALES,
+  UI_MESSAGES,
   loadBundledMessages,
   type MessageLoader,
   type MessageTable,
   type UiLocale,
 } from '~/src/i18n';
-
-export const UI_MESSAGES = 'pt:ui-messages';
 
 /**
  * 后台取过的表留在实例内存里：每个 frame 启动都要一次，不必每次重新读扩展包。
@@ -57,12 +58,3 @@ export async function answerUiMessages(
     return { ok: false };
   }
 }
-
-/** 内容脚本的载入器：向后台要所选语言的取文表。 */
-export const loadMessagesViaBackground: MessageLoader = async (locale) => {
-  const reply = (await chrome.runtime.sendMessage({ type: UI_MESSAGES, locale })) as
-    | UiMessagesReply
-    | undefined;
-  if (!reply?.ok) throw new Error(`[PT] 后台没有给出 ${locale} 文案`);
-  return reply.table;
-};

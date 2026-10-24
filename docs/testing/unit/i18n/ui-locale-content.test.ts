@@ -9,8 +9,16 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { loadUiLocale, onUiLocaleChange, t, type MessageTable, type UiLocale } from '~/src/i18n';
-import { answerUiMessages, loadMessagesViaBackground } from '~/src/runtime/ui-messages';
+import {
+  loadMessagesViaBackground,
+  loadUiLocale,
+  onUiLocaleChange,
+  t,
+  UI_MESSAGES,
+  type MessageTable,
+  type UiLocale,
+} from '~/src/i18n';
+import { answerUiMessages } from '~/src/runtime/ui-messages';
 import { refreshContextMenuTitle } from '~/src/ui/context-menu';
 import { createBall, setBallState } from '~/src/ui/floating-ball';
 import { createInputDot } from '~/src/ui/input-dot';
@@ -40,7 +48,7 @@ afterEach(async () => {
 describe('后台按请求返回所选语言的取文表', () => {
   test('三种界面语言各返回自己的表', async () => {
     for (const locale of ['en', 'zh_CN', 'zh_TW'] as const) {
-      const r = await answerUiMessages({ type: 'pt:ui-messages', locale }, fromRepo);
+      const r = await answerUiMessages({ type: UI_MESSAGES, locale }, fromRepo);
       expect(r).toEqual({ ok: true, table: readMessages(locale) });
     }
   });
@@ -48,7 +56,7 @@ describe('后台按请求返回所选语言的取文表', () => {
   test('不是这条消息，或语言不在三种之内：不应答', async () => {
     expect(await answerUiMessages({ type: 'pt:ping' }, fromRepo)).toBeUndefined();
     for (const locale of ['ja', '../secret', '', undefined]) {
-      expect(await answerUiMessages({ type: 'pt:ui-messages', locale }, fromRepo)).toEqual({
+      expect(await answerUiMessages({ type: UI_MESSAGES, locale }, fromRepo)).toEqual({
         ok: false,
       });
     }
@@ -60,7 +68,7 @@ describe('后台按请求返回所选语言的取文表', () => {
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response('', { status: 500 }))
       .mockImplementation(async () => new Response(JSON.stringify(readMessages('zh_TW'))));
-    const ask = () => answerUiMessages({ type: 'pt:ui-messages', locale: 'zh_TW' });
+    const ask = () => answerUiMessages({ type: UI_MESSAGES, locale: 'zh_TW' });
     expect(await ask()).toEqual({ ok: false });
     expect(await ask()).toEqual({ ok: true, table: readMessages('zh_TW') });
     expect(await ask()).toEqual({ ok: true, table: readMessages('zh_TW') });
@@ -72,7 +80,7 @@ describe('后台按请求返回所选语言的取文表', () => {
 
   test('载入失败时如实报失败', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const r = await answerUiMessages({ type: 'pt:ui-messages', locale: 'en' }, async () => {
+    const r = await answerUiMessages({ type: UI_MESSAGES, locale: 'en' }, async () => {
       throw new Error('boom');
     });
     expect(r).toEqual({ ok: false });
@@ -85,7 +93,7 @@ describe('内容脚本经后台载入取文表', () => {
     wireBackground();
     await loadUiLocale('en', loadMessagesViaBackground);
     expect(t('translate')).toBe(message('en', 'translate'));
-    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'pt:ui-messages', locale: 'en' });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: UI_MESSAGES, locale: 'en' });
   });
 
   test('跟随浏览器：一条消息都不发', async () => {
