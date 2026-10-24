@@ -16,7 +16,7 @@ import type { FailureDisplay, PageToggleResult } from './orchestrator';
 import type { IncrementalOutcome } from './page-session';
 import { tf } from '../i18n';
 
-/** 渲染统计（每次整页翻译与增量补翻开始时清零）。 */
+/** 渲染统计：整页翻译会话按轮各记一份（首轮、补采集各轮、每次增量补翻，#1077、#1118）。 */
 export interface RenderStats {
   /** 插入了译文的单元 */
   succeeded: number;
@@ -33,11 +33,6 @@ export interface RenderStats {
 
 export function emptyRenderStats(): RenderStats {
   return { succeeded: 0, rejected: 0, sameAsSource: 0, failed: 0 };
-}
-
-/** 清零，就地修改（content script 持有同一个对象）。 */
-export function resetRenderStats(stats: RenderStats): void {
-  Object.assign(stats, emptyRenderStats());
 }
 
 /** 把一个单元的渲染结果计入统计。 */

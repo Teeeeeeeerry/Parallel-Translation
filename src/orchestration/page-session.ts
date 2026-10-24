@@ -127,7 +127,8 @@ export type PageRunOutcome =
 
 /**
  * 一次增量补翻的结局（#1118）：translated 照常（可能有段落失败，看 stats），
- * error 全部批次失败，abandoned 被放弃（还原整页，不提示）。准入拦下时不报。
+ * error 全部批次失败，abandoned 被放弃（页面根中止，不提示）。准入拦下、会话已经
+ * 结束（还原整页、新的一次开始）时不报。
  */
 export interface IncrementalOutcome {
   status: 'translated' | 'error' | 'abandoned';
@@ -229,6 +230,13 @@ function createSession<U extends object, Ctx>(
   let ended = false;
   /** 这一次整页翻译的批次流水线：增量补翻在整页开关返回之后还要用它送翻。 */
   let translate: PagePipeline | null = null;
+  /**
+   * 正在送翻、结果还没回来的单元（#1118，增量补翻的去重口径）。观察器只交出页面上
+   * 没有译文的单元：翻好的不会再来，在飞的还没落完成标记，可能再交一次。
+   */
+  const inFlight = new WeakSet<U>();
+  /** 翻译项 → 它的单元。 */
+  const unitOf = new WeakMap<object, U>();
 
   const onHidden = (unit: U) => {
     if (observer) observer.registerHidden(unit);
@@ -238,24 +246,45 @@ function createSession<U extends object, Ctx>(
     }
   };
 
-  /** 开一轮新的统计，把这些单元里会话还没交出过的做成翻译项，记进这一轮。 */
-  const takeRound = (units: U[]): TranslateItem<Ctx>[] => {
+  /** 开一轮新的统计，把这些单元做成翻译项，记进这一轮。 */
+  const takeRound = (fresh: U[]): TranslateItem<Ctx>[] => {
     const stats = emptyRenderStats();
     rounds.push(stats);
-    const fresh = units.filter((u) => !handedOut.has(u));
     for (const u of fresh) handedOut.add(u);
-    const items = fresh.map((u) => dom.build(u));
-    for (const item of items) roundOf.set(item, stats);
+    const items = fresh.map((u) => {
+      const item = dom.build(u);
+      roundOf.set(item, stats);
+      unitOf.set(item, u);
+      return item;
+    });
     return items;
   };
 
+  /** 送翻一轮：期间这些单元算在飞，结束后（含放弃、失效）不再算。 */
+  const sendRound = async (
+    pipeline: PagePipeline,
+    items: TranslateItem<Ctx>[],
+    opts: Parameters<PagePipeline>[1],
+  ): Promise<PageTranslateSummary> => {
+    const units = items.map((item) => unitOf.get(item)!);
+    for (const u of units) inFlight.add(u);
+    try {
+      return await pipeline(items, opts);
+    } finally {
+      for (const u of units) inFlight.delete(u);
+    }
+  };
+
+  /** 采集一轮：只交出这个会话还没交出过的单元（#1011、#1056）。 */
   const collectRound = (): TranslateItem<Ctx>[] =>
     takeRound(
-      dom.collect((unit, category) => {
-        if (reported.has(unit)) return;
-        reported.add(unit);
-        countSkip(skips, category);
-      }, onHidden),
+      dom
+        .collect((unit, category) => {
+          if (reported.has(unit)) return;
+          reported.add(unit);
+          countSkip(skips, category);
+        }, onHidden)
+        .filter((u) => !handedOut.has(u)),
     );
 
   const onBatch = (batch: TranslateItem<unknown>[], result: TranslateBatchResult): void => {
@@ -284,15 +313,18 @@ function createSession<U extends object, Ctx>(
   /**
    * 增量补翻（#1118，原在内容脚本）：观察器交出的新单元单独记一轮，走同一条
    * 批次流水线。准入照常重判（扩展关掉、站点拉黑之后不再补翻）；信号从页面根
-   * 派生，还原整页让在飞的这一次放弃、译文不落 DOM。已交出过的单元不再送翻。
+   * 派生，还原整页让在飞的这一次放弃、译文不落 DOM。正在送翻的单元不再送一次；
+   * 翻好之后页面改写了原文的单元（观察器撤回渲染再交回来，#179）照常重翻。
    */
   const incremental = async (units: U[]): Promise<void> => {
     if (ended || !translate) return;
-    const items = takeRound(units);
-    if (items.length === 0) return;
+    const fresh = units.filter((u) => !inFlight.has(u));
+    if (fresh.length === 0) return;
+    const items = takeRound(fresh);
     const stats = rounds[rounds.length - 1]!;
-    const summary = await translate(items, { onBatch });
-    if (summary.admission !== 'allowed') return;
+    const summary = await sendRound(translate, items, { onBatch });
+    // 准入拦下不报；会话已经结束（还原、新的一次开始）的也不报 —— 结局是这一次的
+    if (summary.admission !== 'allowed' || ended) return;
     const status = summary.abandoned ? 'abandoned' : summary.allFailed ? 'error' : 'translated';
     emitIncremental({ status, summary, stats });
   };
@@ -330,7 +362,7 @@ function createSession<U extends object, Ctx>(
       const more = collectRound();
       if (more.length === 0) return false;
       console.info(`[PT] 补采集第 ${round} 轮：${more.length} 个新单元`);
-      const summary = await ctx.translate(more, { signal: ctx.signal, onBatch, admitted: true });
+      const summary = await sendRound(ctx.translate, more, { signal: ctx.signal, onBatch, admitted: true });
       if (summary.abandoned || summary.invalidated) return false;
     }
     return true;
@@ -344,7 +376,7 @@ function createSession<U extends object, Ctx>(
       const list = collectRound();
       if (list.length === 0) return { status: 'no-elements' };
       emit('loading');
-      const summary = await ctx.translate(list, { signal: ctx.signal, onBatch });
+      const summary = await sendRound(ctx.translate, list, { signal: ctx.signal, onBatch });
       // #1077：读首轮自己的统计 —— 不被补翻、增量补翻叠加
       // #327/#416: 引擎返回结果但全部渲染被拒 → 错误态；有段落失败时不算
       const status = summary.abandoned
@@ -380,7 +412,7 @@ function createSession<U extends object, Ctx>(
         console.info(`[PT] 补采集到顶，交给观察器补翻：${handoff.length} 个新单元`);
         // #1078：到顶交接被等待；它自身的失败不回写整页的结论
         try {
-          await ctx.translate(handoff, { signal: ctx.signal, onBatch, admitted: true });
+          await sendRound(ctx.translate, handoff, { signal: ctx.signal, onBatch, admitted: true });
         } catch (e) {
           console.error('[PT] 补采集到顶后的补翻失败:', e);
         }

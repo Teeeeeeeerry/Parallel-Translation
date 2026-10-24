@@ -62,7 +62,7 @@ describe('splitBatches — 批次拆分', () => {
 });
 
 describe('createOrchestrator — 假消息层', () => {
-  test('translatePage：发送回调次数 = 批次数，每批文本正确', async () => {
+  test('批次流水线：发送回调次数 = 批次数，每批文本正确', async () => {
     const send = vi.fn(async (_req: TranslateRequest) => ({ ok: true, data: { translations: [] } }));
     const orch = createOrchestrator({ send });
     orch.start();
@@ -1070,7 +1070,7 @@ describe('全页翻译携带当前领域（#379）', () => {
   async function pageRequests(
     host: string,
     to: string,
-    via: 'translatePage' | 'togglePage' = 'translatePage',
+    via: 'pipeline' | 'togglePage' = 'pipeline',
   ): Promise<TranslateRequest[]> {
     const send = vi.fn(async (_req: TranslateRequest) => ({
       ok: true,
