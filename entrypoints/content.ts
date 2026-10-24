@@ -29,9 +29,7 @@ import { createBall, setBallState } from '~/src/ui/floating-ball';
 import { createParaBtn } from '~/src/ui/paragraph-btn';
 import { floatingUiVars } from '~/src/ui/floating-ui-size';
 import { createInputDot } from '~/src/ui/input-dot';
-import { parseInputLangChoice, type InputLangChoice } from '~/src/ui/input-target-lang';
-import { watchPathChange } from '~/src/ui/path-watch';
-import { createTabChoices, DOMAIN_CHOICE } from '~/src/ui/tab-choice';
+import { createTabChoices, DOMAIN_CHOICE, INPUT_LANG_CHOICE } from '~/src/ui/tab-choice';
 import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
@@ -91,19 +89,6 @@ async function requestTopHostname(): Promise<string> {
   return location.hostname;
 }
 
-/**
- * #663: 子 frame 向主文档要本标签页这一次的对方语言（经 background 转问
- * frameId 0）。取不到时返回 null，跟随设置。
- */
-async function requestTopInputLangChoice(): Promise<InputLangChoice | null> {
-  try {
-    const res: unknown = await chrome.runtime.sendMessage({ type: 'pt:top-input-lang-choice' });
-    return parseInputLangChoice((res as { choice?: unknown } | undefined)?.choice);
-  } catch {
-    return null;
-  }
-}
-
 export default defineContentScript({
   matches: ['<all_urls>'],
   allFrames: true,
@@ -157,6 +142,9 @@ export default defineContentScript({
 
     // #1121：只对本标签页这个页面有效的临时选择 —— 询问、广播、跳页回到自动都在
     // 标签页临时选择模块里，这里每种选择只剩读当前值、设新值
+    /** popup 当前所选的目标语言：消息里带了就用它，没带用设置 */
+    const popupTo = (msg: Record<string, unknown>) => (typeof msg.to === 'string' ? msg.to : getSettings().to);
+
     const tabChoices = createTabChoices({
       isMainFrame,
       sendMessage: (msg) => chrome.runtime.sendMessage(msg),
@@ -167,39 +155,11 @@ export default defineContentScript({
     // #400: 用户在 popup 里为本标签页临时选的领域（#847：单页应用换了路径也算
     // 跳页）。主文档回复 popup 要显示的领域状态
     const domainChoice = tabChoices.define(DOMAIN_CHOICE, {
-      answerSet: (msg) => pageContext.domainState(typeof msg.to === 'string' ? msg.to : getSettings().to),
+      answerSet: (msg) => pageContext.domainState(popupTo(msg)),
     });
 
-    // #662: 用户在 popup 里为本标签页临时选的对方语言（输入翻译），与上面
-    // 的临时领域并列：只存在本页的内存里，不进后台、不写存储。所以刷新、
-    // 跳页、关闭标签页后自然回到跟随设置，别的标签页也不受影响。
-    // #663: 选择广播到本页全部 frame，每个 frame 各存一份；子 frame 启动时
-    // 向主文档问一次
-    let inputLangChoice: InputLangChoice = { kind: 'auto' };
-    /** 本 frame 是否已收到过语言选择的广播 —— 收到过就不再采用启动时问来的选择。 */
-    let inputLangBroadcast = false;
-
-    // #836：单页应用换路由也算跳页。主文档盯住网址，路径变了就把这一次的
-    // 对方语言重置为跟随设置，并经 background 广播给本页全部 frame —— 不广播
-    // 的话 iframe 里还留着旧的选择。同一路径上只换查询参数或 hash 不算。
-    // 拍板理由：在用户眼里，单页应用里点进另一个帖子就是跳页；临时选择的
-    // 全部意义就是不悄悄变成长期设置。两种错的代价也不对称：多重置一次只是
-    // 回到自动判定，那本来就是默认行为；不重置的话，用户在国际站点上选了
-    // 英文，点进一个日文帖子回复时仍被译成英文。只在不是自动时才重置、才广播。
-    // 领域的临时选择（#847）同理，已在标签页临时选择模块里
-    const pathWatch = isMainFrame
-      ? watchPathChange({
-          getHref: () => location.href,
-          navigation: (window as { navigation?: EventTarget }).navigation,
-          win: window,
-          onChange: () => {
-            if (inputLangChoice.kind !== 'auto') {
-              inputLangChoice = { kind: 'auto' };
-              chrome.runtime.sendMessage({ type: 'pt:input-lang-path-changed' }).catch(() => {});
-            }
-          },
-        })
-      : null;
+    // #662/#663/#836：输入翻译这一次的对方语言，与上面的临时领域并列、同一套规则
+    const inputLangChoice = tabChoices.define(INPUT_LANG_CHOICE);
 
     // #1119/#1120：页面上下文 —— “这个页面能不能翻”与“当前领域是哪个”只在这里算。
     // #310：设置经注入读取；#311：准入按本 frame 的主机名；#471：当前领域按顶层
@@ -240,10 +200,10 @@ export default defineContentScript({
     const translateInput = createInputTranslator({
       translateText: (text, from, to, opts) => orchestrator.translateText(text, from, to, opts),
       sourceLang: () => {
-        // #836：浏览器没有 Navigation API 时收不到 pushState，用之前补判一次
-        pathWatch?.check();
         // #663：popup 里临时选了这一次的对方语言，就用它顶替源语言设置这一级
-        return inputLangChoice.kind === 'lang' ? inputLangChoice.lang : getSettings().from;
+        // （#836：读之前由模块补判一次路径）
+        const choice = inputLangChoice.get();
+        return choice.kind === 'lang' ? choice.lang : getSettings().from;
       },
       detectedLang: () => orchestrator.detectedLang(),
       reliableLang: (text) => langDetector.reliableLang(text),
@@ -592,35 +552,13 @@ export default defineContentScript({
         // 领域是同一份判定；目标语言用 popup 当前所选，避免设置刚改、本页还没
         // 收到变更时显示旧结果
         if (!isMainFrame) return;
-        const to = typeof msg.to === 'string' ? msg.to : getSettings().to;
-        sendResponse(pageContext.domainState(to));
+        sendResponse(pageContext.domainState(popupTo(msg)));
         return;
       }
 
-      // #400/#1121：popup 临时切换领域（广播到全部 frame，只有主文档回复）、子 frame
-      // 启动时经 background 来问，都由标签页临时选择模块处理
+      // #400/#662/#1121/#1122：popup 设临时选择（广播到全部 frame，只有主文档回复）、
+      // popup 与子 frame 来问当前值，都由标签页临时选择模块处理
       if (tabChoices.handle(msg, sendResponse)) return;
-
-      if (msg?.type === 'pt:set-input-lang') {
-        // #662: popup 选好这一次的对方语言。#663: 广播到全部 frame，iframe 里
-        // 的输入翻译与主文档用同一种语言；只有主文档回复保存后的选择
-        const choice = parseInputLangChoice(msg.choice);
-        if (!choice) return;
-        inputLangChoice = choice;
-        inputLangBroadcast = true;
-        if (!isMainFrame) return;
-        sendResponse({ choice: inputLangChoice });
-        return;
-      }
-
-      if (msg?.type === 'pt:get-input-lang-choice') {
-        // #662: popup 打开时来问；#663: 子 frame 启动时经 background 来问
-        // （见 requestTopInputLangChoice）。#836：答之前补判一次路径
-        if (!isMainFrame) return;
-        pathWatch?.check();
-        sendResponse({ choice: inputLangChoice });
-        return;
-      }
 
       if (msg?.type === 'pt:translate-selection') {
         // background 的 tabs.sendMessage 不带 frameId，会广播到全部 frame。
@@ -632,13 +570,5 @@ export default defineContentScript({
         return;
       }
     });
-
-    // #663: 切换之后才加载的 iframe 向主文档要这一次的对方语言；期间已收到
-    // 切换广播的，以广播为准（领域的临时选择由标签页临时选择模块询问）
-    if (!isMainFrame) {
-      void requestTopInputLangChoice().then((choice) => {
-        if (choice && !inputLangBroadcast) inputLangChoice = choice;
-      });
-    }
   },
 });
