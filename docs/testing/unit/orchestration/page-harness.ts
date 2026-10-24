@@ -92,8 +92,8 @@ export function domPage(
     collectReadOnly: () => collect(document.body, undefined, { readOnly: true }),
     build: opts.build ?? ((el) => ({ text: el.textContent!, ctx: el })),
     render: (item, translation) => render(item.ctx, translation, 'page', item.text),
-    unrenderAll: () => restorePage(),
-    hasTranslated: () => hasTranslated(),
+    unrenderAll: restorePage,
+    hasTranslated,
     observe: () => ({ stop: () => {}, registerHidden: () => {} }),
   });
 }

@@ -495,8 +495,8 @@ export default defineContentScript({
       render: renderPageItem,
       // #328/#1078: 观察器停止由整页翻译会话、中止在飞翻译由编排模块的开关入口
       // 执行，这里只做 DOM 还原
-      unrenderAll: () => restorePage(),
-      hasTranslated: () => hasTranslated(),
+      unrenderAll: restorePage,
+      hasTranslated,
       // #255/#331: 增量补翻观察器 —— 整页翻译成功后由会话启动，还原时由会话停止
       observe: () =>
         startObserver((els) => {

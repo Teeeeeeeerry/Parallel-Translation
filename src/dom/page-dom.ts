@@ -45,14 +45,14 @@ export function renderPageItem(item: TranslateItem<PageItemCtx>, translation: st
  * 还原整页：撤回页面上全部渲染（逐段翻译、增量补翻翻好的也一并撤回），再拆回
  * 被切分的容器，DOM 回到逐字节原貌。
  */
-export function restorePage(root: Document = document): void {
+export function restorePage(): void {
   // #253: 还原收集走统一遍历模块（shadow 穿透 + 集中式跳过规则）。
   // skipTranslated: false —— 嵌套在已翻译单元内的已翻译单元
   // （.pt-origin 搬移的既有译文）也要一并收集还原。
   const els: Element[] = [];
   const splitContainers: Element[] = [];
   walkShadowTree(
-    root,
+    document,
     (el) => {
       if (el.getAttribute('data-pt') === 'done') els.push(el);
       // #65：收集被切分的容器（#705 起不只 pre），在 unrender 后还原 DOM
@@ -75,10 +75,10 @@ export function restorePage(root: Document = document): void {
  * 逐段翻译与增量补翻都会落 data-pt="done"，仅查标志会把“页面上已有译文”
  * 误判成“没翻过”，整页开关走错分支。
  */
-export function hasTranslated(root: Document = document): boolean {
+export function hasTranslated(): boolean {
   // #253: 判定走统一遍历模块（shadow 穿透，命中即短路终止）
   let found = false;
-  walkShadowTree(root, (el) => {
+  walkShadowTree(document, (el) => {
     if (el.getAttribute('data-pt') === 'done') {
       found = true;
       return 'stop';

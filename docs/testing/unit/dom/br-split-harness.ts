@@ -62,7 +62,7 @@ export async function translatePage(opts: CollectOptions = {}): Promise<{ reques
       requests.push([...req.texts]);
       return { ok: true, data: { translations: req.texts.map(fakeTranslate) } };
     }),
-    hasTranslated: () => hasTranslated(),
+    hasTranslated,
     onBatchResult: (_i, batch, res) => {
       if (!res.ok || !res.data) return;
       batch.forEach((item, j) => {
