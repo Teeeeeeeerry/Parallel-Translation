@@ -9,6 +9,7 @@ import { describe, test, expect, vi } from 'vitest';
 import { createOrchestrator, type BatchTimingRecord, type TranslateItem } from '~/src/orchestration/orchestrator';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 import type { TranslateRequest } from '~/src/engines/types';
+import { translateItems } from './page-harness';
 
 const items = (n: number): TranslateItem<number>[] => Array.from({ length: n }, (_, i) => ({ text: `t${i}`, ctx: i }));
 
@@ -27,7 +28,7 @@ describe('批次耗时（#1083）', () => {
       getHostname: () => 'example.com',
     });
     orch.start();
-    await orch.translatePage(items(25), 'en', 'zh-CN');
+    await translateItems(orch, items(25), 'en', 'zh-CN');
     expect(records).toHaveLength(2);
     expect(records.map((r) => [r.batch, r.attempt, r.items])).toEqual([
       [0, 0, 20],
@@ -45,7 +46,7 @@ describe('批次耗时（#1083）', () => {
       .mockResolvedValue({ ok: true, data: { translations: ['x'] } });
     const orch = createOrchestrator({ send, onBatchTiming: (r) => records.push(r), sleep: async () => {} });
     orch.start();
-    await orch.translatePage(items(1), 'en', 'zh-CN');
+    await translateItems(orch, items(1), 'en', 'zh-CN');
     expect(records.map((r) => [r.attempt, r.ok])).toEqual([
       [0, false],
       [1, true],
@@ -56,7 +57,7 @@ describe('批次耗时（#1083）', () => {
     const send = vi.fn(async (req: TranslateRequest, _ctl?: unknown) => ({ ok: true, data: { translations: req.texts } }));
     const orch = createOrchestrator({ send });
     orch.start();
-    await orch.translatePage(items(1), 'en', 'zh-CN');
+    await translateItems(orch, items(1), 'en', 'zh-CN');
     expect(send.mock.calls[0]![1]).toEqual({ signal: expect.any(AbortSignal) });
   });
 });

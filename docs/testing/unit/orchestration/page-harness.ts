@@ -11,8 +11,19 @@
  *
  * 真实采集与渲染原语的用例见 page-session.test.ts。
  */
-import type { TranslateItem } from '~/src/orchestration/orchestrator';
-import { createPageTranslation, type PageTranslation } from '~/src/orchestration/page-session';
+import type {
+  BatchCallback,
+  PageToggleResult,
+  PageTranslateSummary,
+  TranslateItem,
+  TranslationOrchestrator,
+} from '~/src/orchestration/orchestrator';
+import {
+  createPageTranslation,
+  type PagePipeline,
+  type PageTranslation,
+} from '~/src/orchestration/page-session';
+import { emptyRenderStats, emptySkipStats } from '~/src/orchestration/page-summary';
 import { collect, type SkipCategory } from '~/src/dom/walker';
 import { render } from '~/src/dom/renderer';
 import { hasTranslated, restorePage } from '~/src/dom/page-dom';
@@ -99,4 +110,73 @@ export function domPage(
     hasTranslated,
     observe: () => ({ stop: () => {}, registerHidden: () => {} }),
   });
+}
+
+/** 每个编排模块、每对语言经整页开关拿到的流水线（同时来的几次共用一次拿取）。 */
+const pipelines = new WeakMap<TranslationOrchestrator, Map<string, Promise<PagePipeline | PageToggleResult>>>();
+
+/** 经一次整页开关拿到编排模块交给会话的批次流水线；被准入拦下时返回开关的结果。 */
+async function pipelineOf(orch: TranslationOrchestrator, from: string, to: string): Promise<PagePipeline | PageToggleResult> {
+  let byLang = pipelines.get(orch);
+  if (!byLang) pipelines.set(orch, (byLang = new Map()));
+  const key = `${from}>${to}`;
+  const cached = byLang.get(key);
+  if (cached) return cached;
+  let pipeline: PagePipeline | null = null;
+  const probe: PageTranslation = {
+    hasTranslated: () => false,
+    readUnits: () => [],
+    begin: () => ({
+      run: async (ctx) => {
+        pipeline = ctx.translate;
+        return { status: 'no-elements' };
+      },
+      collectRound: () => [],
+      roundStats: () => emptyRenderStats(),
+      totals: () => emptyRenderStats(),
+      skips: () => emptySkipStats(),
+    }),
+    restore: () => {},
+    current: () => null,
+    subscribe: () => () => {},
+    decline: () => {},
+    onIncremental: () => () => {},
+  };
+  const got = orch.togglePage(probe, from, to).then((result) => {
+    if (pipeline) return pipeline;
+    // 准入拦下的不留：设置改了之后再来要重新拿
+    byLang.delete(key);
+    if (result.status === 'disabled' || result.status === 'blocked') return result;
+    throw new Error(`[harness] 没拿到批次流水线：整页开关返回 ${result.status}`);
+  });
+  byLang.set(key, got);
+  return got;
+}
+
+/**
+ * 直接跑一遍批次流水线（#1118 起编排模块只有 togglePage 一个整页入口）：经一次
+ * 整页开关拿到它交给会话的流水线（每个编排模块每对语言拿一次），再像增量补翻
+ * 那样送翻 —— 准入照常重判，信号从页面根派生（还原整页、abort 让它放弃）。管的
+ * 是切批、闸门、重试、放弃、失效与领域这些流水线自己的行为，用不着采集、补采集
+ * 与观察器。
+ */
+export async function translateItems(
+  orch: TranslationOrchestrator,
+  items: TranslateItem<unknown>[],
+  from: string,
+  to: string,
+  opts: { onBatch?: BatchCallback } = {},
+): Promise<PageTranslateSummary> {
+  const pipeline = await pipelineOf(orch, from, to);
+  if (typeof pipeline !== 'function') {
+    return {
+      admission: pipeline.admission,
+      allFailed: false,
+      abandoned: false,
+      invalidated: false,
+      fatalError: null,
+      display: { showRealReason: false },
+    };
+  }
+  return pipeline(items, { onBatch: opts.onBatch ?? (() => {}) });
 }

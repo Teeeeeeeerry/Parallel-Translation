@@ -15,6 +15,7 @@ import { render } from '~/src/dom/renderer';
 import { hasBlockTextChildren, restorePreserves, unitTextEx } from '~/src/dom/text';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import { MAX_TEXT } from '~/src/dom/classify';
+import { translateItems } from '../orchestration/page-harness';
 
 /** 对话体的一行，约 70 字符。 */
 export const line = (i: number) => `Line ${i}: "I never thought we would meet again," she said quietly.`;
@@ -63,8 +64,7 @@ export async function translatePage(opts: CollectOptions = {}): Promise<{ reques
     }),
   });
   orch.start();
-  await orch.translatePage(
-    units.map((el, i) => ({ text: texts[i]!, ctx: el })),
+  await translateItems(orch, units.map((el, i) => ({ text: texts[i]!, ctx: el })),
     'auto',
     'zh-CN',
     {

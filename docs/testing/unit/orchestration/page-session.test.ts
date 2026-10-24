@@ -11,6 +11,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
+import { startObserver } from '~/src/dom/observer';
 import { render, unrender, type RenderResult } from '~/src/dom/renderer';
 import {
   createOrchestrator,
@@ -21,10 +22,13 @@ import {
   createPageTranslation,
   RECOLLECT_MAX_ROUNDS,
   RECOLLECT_INTERVAL_MS,
+  type IncrementalOutcome,
   type PageTranslation,
 } from '~/src/orchestration/page-session';
+import { allFailedNotice, incrementalNotice, partialFailNotice } from '~/src/orchestration/page-summary';
 import type { TranslateRequest } from '~/src/engines/types';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
+import { translateItems } from './page-harness';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -69,6 +73,8 @@ interface HarnessOptions extends Partial<OrchestratorOptions> {
   onCollect?: () => void;
   /** 观察器启动时调用 */
   onObserve?: () => void;
+  /** 用真实的观察器（MutationObserver + 300 毫秒防抖），缺省是替身 */
+  realObserver?: boolean;
 }
 
 let current: { page: TestPage } | null = null;
@@ -83,11 +89,13 @@ function session(): TestPage {
  * 还原撤回全部渲染，观察器启停记进事件序列。send 可整个替换。
  */
 function harness(extra: HarnessOptions = {}) {
-  const { onSend, render: renderOne = realRender, onCollect, onObserve, ...opts } = extra;
+  const { onSend, render: renderOne = realRender, onCollect, onObserve, realObserver, ...opts } = extra;
   const events: string[] = [];
   const sent: string[] = [];
   let sends = 0;
   let collects = 0;
+  /** 观察器启动时会话交给它的回调：用例拿它模拟观察器看到新单元（#1118） */
+  let onUnits: ((els: Element[]) => void) | null = null;
   const send = vi.fn(async (req: TranslateRequest) => {
     sent.push(...req.texts);
     onSend?.(++sends, req.texts);
@@ -107,9 +115,11 @@ function harness(extra: HarnessOptions = {}) {
       events.push('restore');
     },
     hasTranslated: translated,
-    observe: () => {
+    observe: (deliver) => {
+      onUnits = deliver;
       events.push('observer:start');
       onObserve?.();
+      if (realObserver) return startObserver(deliver);
       return {
         stop: () => events.push('observer:stop'),
         registerHidden: (el) => events.push(`hidden:${el.textContent!.split(' ')[0]}`),
@@ -126,7 +136,9 @@ function harness(extra: HarnessOptions = {}) {
   });
   orch.start();
   current = { page: page as TestPage };
-  return { orch, send, sent, events, page: page as TestPage };
+  /** 观察器看到这些元素（启动之前调用是用例写错了） */
+  const observed = (els: Element[]) => onUnits!(els);
+  return { orch, send, sent, events, observed, page: page as TestPage };
 }
 
 describe('补采集去重是会话自己保证的，不靠完成标记（#1056）', () => {
@@ -541,17 +553,19 @@ describe('统计按轮分开记（#1077）', () => {
     data: { translations: req.texts.map((t) => (t.startsWith('same') ? t : `T(${t})`)) },
   });
 
-  test('首轮全部渲染被拒：报错误态；首轮在飞时另一路增量补翻渲染成功，不掺进首轮的统计', async () => {
+  test('首轮全部渲染被拒：报错误态；首轮在飞时另一路送翻渲染成功，不掺进首轮的统计', async () => {
     addParas('same', 2);
     let incrementalRendered = 0;
     const h = harness();
+    // 先拿到流水线（经一次整页开关，不发请求），首轮在飞时才能直接用
+    await translateItems(h.orch, [], 'en', 'zh-CN');
     let first = true;
     h.send.mockImplementation(async (req: TranslateRequest) => {
       h.sent.push(...req.texts);
       if (first) {
         first = false;
-        // 观察器那一路的增量补翻（自己的 onBatch，不经会话）在首轮在飞时完成
-        await h.orch.translatePage([{ text: 'incremental text', ctx: null }], 'en', 'zh-CN', {
+        // 同一条流水线上另一路送翻（自己的 onBatch，不经会话）在首轮在飞时完成
+        await translateItems(h.orch, [{ text: 'incremental text', ctx: null }], 'en', 'zh-CN', {
           onBatch: (batch, result) => {
             if (result.ok) incrementalRendered += batch.length;
           },
@@ -844,5 +858,200 @@ describe('悬浮球订阅整页翻译的状态流（#1079）', () => {
     off();
     await h.orch.togglePage(session(), 'en', 'zh-CN');
     expect(states).toEqual([]);
+  });
+});
+
+describe('增量补翻归会话（#1118）', () => {
+  // jsdom 没有 IntersectionObserver：真实观察器的可见性那一路用占位
+  beforeEach(() => {
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe(): void {}
+        unobserve(): void {}
+        disconnect(): void {}
+      },
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** 下一次增量补翻的结局 */
+  const nextIncremental = (page: PageTranslation) =>
+    new Promise<IncrementalOutcome>((resolve) => {
+      const off = page.onIncremental((o) => {
+        off();
+        resolve(o);
+      });
+    });
+
+  /** 往页面末尾插几段，返回插进去的元素 */
+  function lateParas(tag: string, n: number): Element[] {
+    addParas(tag, n);
+    return [...document.querySelectorAll('p')].slice(-n);
+  }
+
+  test('整页翻译完成后观察器看到的新段落被补翻、渲染，统计单独记一轮', async () => {
+    addParas('a', 2);
+    const h = harness();
+    const s = session();
+    expect((await h.orch.togglePage(s, 'en', 'zh-CN')).status).toBe('translated');
+    const before = s.current()!.totals();
+
+    const els = lateParas('late', 2);
+    const outcome = nextIncremental(s);
+    h.observed(els);
+    expect(await outcome).toMatchObject({ status: 'translated', stats: { succeeded: 2, failed: 0 } });
+    for (const el of els) {
+      expect(el.getAttribute('data-pt')).toBe('done');
+      expect(el.querySelector('.pt-trans')!.textContent).toBe(`T(${el.querySelector('.pt-origin')!.textContent})`);
+    }
+    expect(s.current()!.totals().succeeded).toBe(before.succeeded + 2);
+  });
+
+  test('真实观察器：往下滚出现的新段落被补翻，已翻过的段落不二次送翻', async () => {
+    addParas('a', 2);
+    const h = harness({ realObserver: true });
+    const s = session();
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    const before = h.sent.length;
+
+    const outcome = nextIncremental(s);
+    const late = addParas('late', 2);
+    expect(await outcome).toMatchObject({ status: 'translated', stats: { succeeded: 2 } });
+    // 只送了新段落，首轮翻过的两段没有再送
+    expect(h.sent.slice(before)).toEqual(late);
+    expect(document.querySelectorAll('[data-pt="done"]')).toHaveLength(4);
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+  });
+
+  test('真实观察器：页面原地改写了已翻段落的原文（#179），撤回旧译文后重新补翻', async () => {
+    const [text] = addParas('a', 1);
+    const h = harness({ realObserver: true });
+    const s = session();
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    const p = document.querySelector('p')!;
+    expect(p.getAttribute('data-pt')).toBe('done');
+
+    const outcome = nextIncremental(s);
+    const node = p.querySelector('.pt-origin')!.firstChild as Text;
+    node.nodeValue = 'Rewritten paragraph of English text on the page.';
+    expect(await outcome).toMatchObject({ status: 'translated' });
+    expect(h.sent.at(-1)).toBe('Rewritten paragraph of English text on the page.');
+    expect(p.querySelector('.pt-trans')!.textContent).toBe('T(Rewritten paragraph of English text on the page.)');
+    expect(h.sent.filter((t) => t === text)).toHaveLength(1);
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+  });
+
+  test('补翻在飞时观察器又交来同一段：不再送一次', async () => {
+    addParas('a', 1);
+    let release: (() => void) | null = null;
+    let hold = false;
+    const send = vi.fn(async (req: TranslateRequest) => {
+      if (hold) await new Promise<void>((r) => (release = r));
+      return { ok: true, data: { translations: req.texts.map((t) => `T(${t})`) } };
+    });
+    const h = harness({ send });
+    const s = session();
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    hold = true;
+    const sends = send.mock.calls.length;
+
+    const els = lateParas('late', 1);
+    const outcomes: IncrementalOutcome[] = [];
+    s.onIncremental((o) => outcomes.push(o));
+    h.observed(els);
+    await flush();
+    h.observed(els);
+    await flush();
+    expect(send.mock.calls.length).toBe(sends + 1);
+    release!();
+    await flush();
+    expect(outcomes).toHaveLength(1);
+    expect(els[0]!.getAttribute('data-pt')).toBe('done');
+  });
+
+  test('部分段落失败：结局带失败数，提示与首轮同一套判定', async () => {
+    addParas('a', 1);
+    let partial = false;
+    const h = harness({
+      send: vi.fn(async (req: TranslateRequest) => ({
+        ok: true,
+        data: { translations: req.texts.map((t) => `T(${t})`), ...(partial && { failedIndices: [0] }) },
+      })),
+    });
+    const s = session();
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    partial = true;
+
+    const outcome = nextIncremental(s);
+    h.observed(lateParas('late', 2));
+    const o = await outcome;
+    expect(o).toMatchObject({ status: 'translated', stats: { succeeded: 1, failed: 1 } });
+    expect(incrementalNotice(o)).toEqual(partialFailNotice(o.stats, o.summary.display));
+    expect(incrementalNotice(o)).not.toBeNull();
+  });
+
+  test('全部失败：结局是失败，提示与首轮全部失败同一条', async () => {
+    addParas('a', 1);
+    let failing = false;
+    const h = harness({
+      send: vi.fn(async (req: TranslateRequest) =>
+        failing
+          ? { ok: false, error: 'HTTP 503', category: 'transient' }
+          : { ok: true, data: { translations: req.texts.map((t) => `T(${t})`) } },
+      ),
+    });
+    const s = session();
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    failing = true;
+
+    const outcome = nextIncremental(s);
+    h.observed(lateParas('late', 2));
+    const o = await outcome;
+    expect(o.status).toBe('error');
+    expect(o.stats.failed).toBe(2);
+    expect(incrementalNotice(o)).toEqual(allFailedNotice(o.summary.display));
+  });
+
+  test('补翻在飞时还原：译文不落回页面，也不报结局（会话已经结束，不提示）', async () => {
+    addParas('a', 1);
+    let reply: ((v: unknown) => void) | null = null;
+    let hold = false;
+    const h = harness({
+      send: vi.fn((req: TranslateRequest) =>
+        hold
+          ? new Promise((r) => (reply = r))
+          : Promise.resolve({ ok: true, data: { translations: req.texts.map((t) => `T(${t})`) } }),
+      ),
+    });
+    const s = session();
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    hold = true;
+
+    const els = lateParas('late', 1);
+    const outcomes: IncrementalOutcome[] = [];
+    s.onIncremental((o) => outcomes.push(o));
+    h.observed(els);
+    await flush();
+    expect((await h.orch.togglePage(s, 'en', 'zh-CN')).status).toBe('restored');
+    reply!({ ok: true, data: { translations: ['T(late)'] } });
+    await flush();
+    expect(outcomes).toEqual([]);
+    expect(els[0]!.getAttribute('data-pt')).toBeNull();
+    expect(document.querySelector('[data-pt="done"]')).toBeNull();
+  });
+
+  test('还原之后观察器才交来的单元：不送翻（会话已经结束）', async () => {
+    addParas('a', 1);
+    const h = harness();
+    const s = session();
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    const sends = h.send.mock.calls.length;
+    h.observed(lateParas('late', 1));
+    await flush();
+    expect(h.send.mock.calls.length).toBe(sends);
   });
 });

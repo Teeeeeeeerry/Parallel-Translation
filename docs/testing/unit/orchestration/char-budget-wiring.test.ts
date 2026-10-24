@@ -1,8 +1,8 @@
 /**
  * 整页翻译与增量补翻按字符预算切批（#1005，父 #1000）
  *
- * 经编排模块的两个整页入口（togglePage 是悬浮球那一路，translatePage 是增量补翻
- * 那一路）与注入的假发送函数断言：
+ * 经编排模块的整页入口 togglePage（悬浮球那一路）与它交给会话的批次流水线（增量
+ * 补翻那一路，#1118）、注入的假发送函数断言：
  *   - 新旧两种切法送出去的文本完全相同，只是分组不同 —— 不多翻、不漏翻；
  *   - 维基成绩表形态的页面上往返次数不比旧切法多；
  *   - 长段落为主的页面上单次请求不再大得离谱；
@@ -17,7 +17,7 @@ import {
   FULL_PAGE_BATCH_LIMITS,
   type TranslateItem,
 } from '~/src/orchestration/orchestrator';
-import { itemsPage } from './page-harness';
+import { itemsPage, translateItems } from './page-harness';
 import type { TranslateRequest } from '~/src/engines/types';
 
 /** 改动前的切法：15 个单元一批，与长短无关 */
@@ -59,7 +59,7 @@ function longParagraphPage(): TranslateItem<number>[] {
 /** 跑一次整页入口，收集每一批发出去的文本与渲染回调 */
 async function run(
   input: TranslateItem<number>[],
-  via: 'togglePage' | 'translatePage',
+  via: 'togglePage' | 'pipeline',
 ): Promise<{ sent: string[][]; rendered: [number, string[]][] }> {
   const sent: string[][] = [];
   const rendered: [number, string[]][] = [];
@@ -82,7 +82,7 @@ async function run(
     });
     await orch.togglePage(page, 'en', 'zh-CN');
   } else {
-    await orch.translatePage(input, 'en', 'zh-CN', {
+    await translateItems(orch, input, 'en', 'zh-CN', {
       onBatch: (batch) => rendered.push([batchOf(batch[0]!.text), batch.map((it) => it.text)]),
     });
   }
@@ -93,7 +93,7 @@ async function run(
 const sorted = (xs: string[]) => [...xs].sort();
 
 describe('整页翻译按字符预算切批（#1005）', () => {
-  for (const via of ['togglePage', 'translatePage'] as const) {
+  for (const via of ['togglePage', 'pipeline'] as const) {
     test(`${via}：新旧两种切法送出去的文本集合完全相同，只是分组不同`, async () => {
       const input = wikiTablePage();
       const { sent } = await run(input, via);

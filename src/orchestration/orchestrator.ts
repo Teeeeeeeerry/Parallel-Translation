@@ -118,7 +118,8 @@ export interface TranslateBatchResult {
 
 /**
  * 一批的渲染回调（#256 渐进渲染：每批返回即触发，首屏不等待最慢段）。#1117：
- * 渲染在整页翻译会话与增量补翻各自的回调里做，编排模块没有全局的批次通知。
+ * 渲染在整页翻译会话的回调里做（#1118 起增量补翻也在会话里），编排模块没有全局
+ * 的批次通知。
  */
 export type BatchCallback = (batch: TranslateItem<unknown>[], result: TranslateBatchResult) => void;
 
@@ -192,18 +193,6 @@ export interface TranslationOrchestrator {
    */
   abort(): void;
   /**
-   * 全页翻译入口：按批次拆分发送，每批返回即触发渲染回调（#256）；
-   * 批次级失败有界重试、失效全局短路、放弃判定都在模块内
-   * （#261 / #262）。
-   */
-  translatePage(
-    items: TranslateItem<unknown>[],
-    from: string,
-    to: string,
-    /** #1078：onBatch 是这一次的渲染（增量补翻自己的统计），每批返回即触发 */
-    pageOpts?: { onBatch?: BatchCallback },
-  ): Promise<PageTranslateSummary>;
-  /**
    * 单文本翻译入口（#312）—— 供逐段翻译与划词翻译使用。
    * 复用整页入口的准入判定（#311）：站点被屏蔽、总开关关闭均零请求；
    * 请求与整页入口一样携带当前领域（#383/#384）；
@@ -229,7 +218,8 @@ export interface TranslationOrchestrator {
    * 整页开关入口（#325）—— 一次调用完成「查询当前翻译态 → 决定
    * 翻译还是还原 → 执行」。#1078：翻译态查询、还原、采集、渲染、补采集、
    * 观察器都在整页翻译会话里（page），模块不触碰 DOM；这里保留在飞互斥、
-   * 准入、页面级闸门的调用、切批与发送。
+   * 准入、页面级闸门的调用、切批与发送。#1118：这是唯一的整页入口 —— 批次
+   * 流水线经这次运行交给会话，增量补翻也由会话经它送翻。
    */
   togglePage(page: PageTranslation, from: string, to: string): Promise<PageToggleResult>;
 }
@@ -435,7 +425,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     detectedLang = normalizeLangCode(raw) ?? detectedLang;
   };
 
-  // #325: 全页翻译流水线本体（translatePage 与 togglePage 共用）
+  // #325: 全页翻译流水线本体（#1118 起只经 togglePage 交给整页翻译会话：首轮、
+  // 补采集、到顶交接、增量补翻）
   const translatePageImpl = async (
     items: TranslateItem<unknown>[],
     from: string,
@@ -685,10 +676,6 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       runs.restorePage();
     },
 
-    async translatePage(items, from, to, pageOpts): Promise<PageTranslateSummary> {
-      return translatePageImpl(items, from, to, { onBatch: pageOpts?.onBatch });
-    },
-
     async togglePage(page, from, to): Promise<PageToggleResult> {
       if (!started) throw new Error('[PT] 编排未启动');
 
@@ -724,7 +711,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // 之后：站点被禁用照旧是准入拦截，已翻译的页面照旧能还原。
       // 只接在整页开关入口上，不进 admissionFrom —— 它被单文本入口共用，
       // 放进去会把逐段与划词一起拦下；那两条靠渲染层的单元级兜底（#783）。
-      // 增量补翻（translatePage）也不判：观察器只在整页翻译成功后启动，
+      // 增量补翻也不判：观察器只在整页翻译成功后启动，
       // 命中闸门时它不启动，后来的新节点不会被补翻。
       // 检测语言不随还原清掉：换了目标语言再点，闸门可能按检测语言命中，
       // 这一页确实就是新目标语言
