@@ -7,8 +7,8 @@
  * 后台没理会信号、照样把译文送回来时，结果仍按这次运行的信号丢弃（#1001 的兜底）。
  */
 import { describe, test, expect, vi } from 'vitest';
-import { type TranslateItem } from '~/src/orchestration/orchestrator';
-import { createOrchestrator } from './page-harness';
+import { createOrchestrator, type TranslateItem } from '~/src/orchestration/orchestrator';
+import { itemsPage } from './page-harness';
 import type { TranslateRequest } from '~/src/engines/types';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 import { pageNotice, emptyRenderStats } from '~/src/orchestration/page-summary';
@@ -18,7 +18,7 @@ const items = (tag: string, n: number): TranslateItem<string>[] =>
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-/** 每一批发出时记下它的信号；回复由用例手动放行 */
+/** 每一批发出时记下它的信号；回复由用例手动放行。整页开关翻的是两批共 40 个单元 */
 function harness() {
   const signals: AbortSignal[] = [];
   const replies: ((v: unknown) => void)[] = [];
@@ -33,37 +33,38 @@ function harness() {
       }),
   );
   const ok = (req: TranslateRequest) => ({ ok: true, data: { translations: req.texts.map((t) => `T(${t})`) } });
-  const orch = createOrchestrator({
-    send,
+  const page = itemsPage(items('a', 40), {
     hasTranslated: () => translated,
     restore: () => {
       translated = false;
     },
-    onBatchResult: (_i, batch, result) => {
-      if (!result.ok) return;
+    onRender: (item) => {
       translated = true;
-      rendered.push(...batch.map((b) => String(b.ctx)));
+      rendered.push(String(item.ctx));
     },
+  });
+  const orch = createOrchestrator({
+    send,
     getSettings: () => ({ ...DEFAULT_SETTINGS, maxConcurrency: 2 }),
     getHostname: () => 'example.com',
     sleep: async () => {},
   });
   orch.start();
-  return { orch, send, signals, replies, ok, rendered };
+  return { orch, page, send, signals, replies, ok, rendered };
 }
 
 describe('放弃的批次通知后台中止（#1001）', () => {
   test('用户点还原：在飞的批次手里的信号触发，结果不渲染', async () => {
     const h = harness();
     // 两批，各 20 个单元；第一批先回来（页面上有了译文，才能还原），第二批在飞
-    const pending = h.orch.togglePage(items('a', 40), 'en', 'zh-CN');
+    const pending = h.orch.togglePage(h.page, 'en', 'zh-CN');
     await flush();
     expect(h.signals).toHaveLength(2);
     h.replies[0]!(h.ok(h.send.mock.calls[0]![0]));
     await flush();
     expect(h.signals[1]!.aborted).toBe(false);
 
-    const restored = await h.orch.togglePage(items('a', 40), 'en', 'zh-CN');
+    const restored = await h.orch.togglePage(h.page, 'en', 'zh-CN');
     expect(restored.status).toBe('restored');
     expect(h.signals[1]!.aborted).toBe(true);
 
@@ -75,11 +76,11 @@ describe('放弃的批次通知后台中止（#1001）', () => {
 
   test('中止消息丢了、后台照样翻完送回来：结果仍被丢弃（#1001 的兜底）', async () => {
     const h = harness();
-    const pending = h.orch.togglePage(items('a', 40), 'en', 'zh-CN');
+    const pending = h.orch.togglePage(h.page, 'en', 'zh-CN');
     await flush();
     h.replies[0]!(h.ok(h.send.mock.calls[0]![0]));
     await flush();
-    await h.orch.togglePage(items('a', 40), 'en', 'zh-CN');
+    await h.orch.togglePage(h.page, 'en', 'zh-CN');
     // 无视信号，正常回译文
     h.replies[1]!(h.ok(h.send.mock.calls[1]![0]));
     expect((await pending).status).toBe('abandoned');
@@ -88,7 +89,7 @@ describe('放弃的批次通知后台中止（#1001）', () => {
 
   test('某一批判了失效：别的在飞批次的信号触发（它们的结果反正要作废）', async () => {
     const h = harness();
-    const pending = h.orch.togglePage(items('a', 40), 'en', 'zh-CN');
+    const pending = h.orch.togglePage(h.page, 'en', 'zh-CN');
     await flush();
     h.replies[0]!({ ok: false, error: '配额耗尽', invalidated: true, category: 'quota' });
     await flush();
@@ -147,13 +148,11 @@ describe('失效不是放弃（#1073）', () => {
 
   test('整页开关全部批次失效：报错误态而不是中止，提示里是失效原因', async () => {
     const pushed: string[] = [];
-    const orch = createOrchestrator({
-      send: async () => invalid,
-      hasTranslated: () => false,
-      pushStatus: (s) => pushed.push(s),
-    });
+    const orch = createOrchestrator({ send: async () => invalid });
+    const page = itemsPage(items('a', 3));
+    page.subscribe((s) => pushed.push(s));
     orch.start();
-    const result = await orch.togglePage(items('a', 3), 'en', 'zh-CN');
+    const result = await orch.togglePage(page, 'en', 'zh-CN');
     expect(result.status).toBe('error');
     expect(result.summary).toMatchObject({ abandoned: false, invalidated: true });
     expect(pushed.at(-1)).toBe('error');
@@ -175,18 +174,20 @@ describe('失效不是放弃（#1073）', () => {
     const orch = createOrchestrator({
       send: async (req) =>
         req.texts[0] === 'r00' ? { ok: true, data: { translations: req.texts } } : invalid,
-      hasTranslated: () => translated,
-      onBatchResult: (_i, _b, r) => {
-        if (r.ok) translated = true;
-      },
-      pushStatus: (s) => events.push(s),
-      onObserverStart: () => events.push('observer:start'),
       getSettings: () => ({ ...DEFAULT_SETTINGS, maxConcurrency: 1 }),
       getHostname: () => 'example.com',
       sleep: async () => {},
     });
+    const page = itemsPage(collect, {
+      hasTranslated: () => translated,
+      onRender: () => {
+        translated = true;
+      },
+      onObserverStart: () => events.push('observer:start'),
+    });
+    page.subscribe((s) => events.push(s));
     orch.start();
-    const result = await orch.togglePage(collect, 'en', 'zh-CN');
+    const result = await orch.togglePage(page, 'en', 'zh-CN');
     expect(result.status).toBe('translated');
     expect(result.summary).toMatchObject({ abandoned: false, invalidated: true, allFailed: false });
     expect(collect.mock.calls.filter((c) => !c[0]?.readOnly)).toHaveLength(1);
@@ -196,8 +197,8 @@ describe('失效不是放弃（#1073）', () => {
   test('还原之后在飞的批次才回失效：按还原报中止', async () => {
     let reply: (v: unknown) => void = () => {};
     let translated = true;
-    const orch = createOrchestrator({
-      send: () => new Promise((r) => (reply = r)),
+    const orch = createOrchestrator({ send: () => new Promise((r) => (reply = r)) });
+    const page = itemsPage(items('a', 3), {
       hasTranslated: () => translated,
       restore: () => {
         translated = false;
@@ -205,10 +206,10 @@ describe('失效不是放弃（#1073）', () => {
     });
     orch.start();
     translated = false;
-    const pending = orch.togglePage(items('a', 3), 'en', 'zh-CN');
+    const pending = orch.togglePage(page, 'en', 'zh-CN');
     await flush();
     translated = true;
-    expect((await orch.togglePage(items('a', 3), 'en', 'zh-CN')).status).toBe('restored');
+    expect((await orch.togglePage(page, 'en', 'zh-CN')).status).toBe('restored');
     reply(invalid);
     expect((await pending).status).toBe('abandoned');
   });

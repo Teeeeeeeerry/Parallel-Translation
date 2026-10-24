@@ -2,21 +2,16 @@
  * 测试装配：用现成的翻译项搭“整页翻译”（#1078）
  *
  * #1078 起整页开关入口只收整页翻译对象（src/orchestration/page-session.ts），
- * 翻译态查询、还原、观察器启停都在它的 DOM 原语里，不再是编排模块的选项。
- * 很多用例只关心编排模块的行为（准入、闸门、在飞互斥、切批、状态推送），用的
- * 是现成的翻译项与这几个钩子。这里把它们转成一个整页翻译对象：单元就是翻译项
- * 本身，渲染由 allRenderRejected 决定成败，其余钩子原样接到对应的原语上。会话
- * 自己的逻辑（去重、补采集、到顶交接、观察器）照常是真的。
+ * 翻译态查询、还原、观察器启停都在它的 DOM 原语里，不是编排模块的选项。
+ * 很多用例只关心编排模块的行为（准入、闸门、在飞互斥、切批），用的是现成的
+ * 翻译项与这几个钩子。itemsPage 用它们直接搭一个整页翻译对象：单元就是翻译项
+ * 本身，渲染由 allRenderRejected 决定成败，其余钩子接到对应的原语上。会话自己
+ * 的逻辑（去重、补采集、到顶交接、观察器、状态流）照常是真的。用例自己创建
+ * 编排模块，把这个对象交给 togglePage；状态流用 page.subscribe 订阅（#1117）。
  *
  * 真实采集与渲染原语的用例见 page-session.test.ts。
  */
-import {
-  createOrchestrator as createRealOrchestrator,
-  type OrchestratorOptions,
-  type TranslateItem,
-  type TranslationOrchestrator,
-  type PageToggleVisual,
-} from '~/src/orchestration/orchestrator';
+import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import { createPageTranslation, type PageTranslation } from '~/src/orchestration/page-session';
 import { collect, type SkipCategory } from '~/src/dom/walker';
 import { render } from '~/src/dom/renderer';
@@ -38,19 +33,18 @@ export interface PageHooks {
   onObserverStop?: () => void;
   /** 为真时每个单元都被渲染层拒绝（#327） */
   allRenderRejected?: () => boolean;
+  /** 每渲染一个单元调一次（批次里按顺序），在 allRenderRejected 判定之前 */
+  onRender?: (item: TranslateItem<unknown>, translation: string) => void;
 }
 
-/** 旧装配里写在编排模块选项上的状态推送（#1079 起是整页翻译会话的状态流）。 */
-export interface StatusHooks {
-  /** 悬浮球该显示的状态；isMainFrame 为假时不推（子框架不显示，#327） */
-  pushStatus?: (status: PageToggleVisual) => void;
-}
+/** itemsPage 搭出的整页翻译：可以换上下一次要翻的翻译项。 */
+export type ItemsPage = PageTranslation & {
+  /** 换上下一次 togglePage 要翻的翻译项，返回这个整页翻译本身 */
+  withSource(s: ItemsSource): ItemsPage;
+};
 
-const isPage = (x: unknown): x is PageTranslation =>
-  typeof x === 'object' && x !== null && 'begin' in x && 'restore' in x;
-
-/** 用翻译项搭一个整页翻译；source 可以随后换（itemsPage 返回的 setSource）。 */
-export function itemsPage(source: ItemsSource, hooks: PageHooks = {}): PageTranslation & { setSource(s: ItemsSource): void } {
+/** 用翻译项搭一个整页翻译；source 可以随后换（withSource）。 */
+export function itemsPage(source: ItemsSource = [], hooks: PageHooks = {}): ItemsPage {
   // 闸门取样读最近一次交进来的翻译项；一次整页翻译开始（begin）时定下它采集用的
   // 那一份 —— 在飞期间又调了一次 togglePage（忙碌、还原）不会换掉在飞那一次的
   let pending = source;
@@ -60,7 +54,10 @@ export function itemsPage(source: ItemsSource, hooks: PageHooks = {}): PageTrans
     collect: () => list(active),
     collectReadOnly: () => list(pending, { readOnly: true }),
     build: (u) => u,
-    render: () => (hooks.allRenderRejected?.() ? { rendered: false, reason: 'non-text-content' } : { rendered: true }),
+    render: (item, translation) => {
+      hooks.onRender?.(item, translation);
+      return hooks.allRenderRejected?.() ? { rendered: false, reason: 'non-text-content' } : { rendered: true };
+    },
     unrenderAll: () => hooks.restore?.(),
     hasTranslated: () => hooks.hasTranslated?.() ?? false,
     observe: () => {
@@ -73,7 +70,13 @@ export function itemsPage(source: ItemsSource, hooks: PageHooks = {}): PageTrans
     active = pending;
     return begin();
   };
-  return Object.assign(page, { setSource: (s: ItemsSource) => (pending = s) });
+  const self: ItemsPage = Object.assign(page, {
+    withSource: (s: ItemsSource) => {
+      pending = s;
+      return self;
+    },
+  });
+  return self;
 }
 
 /**
@@ -96,41 +99,4 @@ export function domPage(
     hasTranslated,
     observe: () => ({ stop: () => {}, registerHidden: () => {} }),
   });
-}
-
-/**
- * 旧的装配方式：钩子写在编排模块的选项里，togglePage 传翻译项。同一个编排模块
- * 共用一个整页翻译对象（还原要停的是上一次启动的观察器），每次 togglePage 换上
- * 这一次的翻译项；传的已经是整页翻译对象时原样交给编排模块。
- */
-export function createOrchestrator(
-  opts: OrchestratorOptions & PageHooks & StatusHooks,
-): Omit<TranslationOrchestrator, 'togglePage'> & {
-  togglePage(items: ItemsSource | PageTranslation, from: string, to: string): ReturnType<TranslationOrchestrator['togglePage']>;
-} {
-  const { hasTranslated, restore, onObserverStart, onObserverStop, allRenderRejected, pushStatus, ...rest } = opts;
-  const orch = createRealOrchestrator(rest);
-  const page = itemsPage([], { hasTranslated, restore, onObserverStart, onObserverStop, allRenderRejected });
-  // #1079：状态流由整页翻译发出；与 content 一样只在主框架订阅
-  const subscribed = new WeakSet<PageTranslation>();
-  const watch = (p: PageTranslation) => {
-    if (!pushStatus || subscribed.has(p)) return;
-    subscribed.add(p);
-    p.subscribe((s) => {
-      if (opts.isMainFrame?.() !== false) pushStatus(s);
-    });
-  };
-  return {
-    start: () => orch.start(),
-    stop: () => orch.stop(),
-    abort: () => orch.abort(),
-    translatePage: (...args) => orch.translatePage(...args),
-    translateText: (...args) => orch.translateText(...args),
-    detectedLang: () => orch.detectedLang(),
-    togglePage(items, from, to) {
-      const target = isPage(items) ? items : (page.setSource(items), page);
-      watch(target);
-      return orch.togglePage(target, from, to);
-    },
-  };
 }

@@ -11,11 +11,12 @@
  * pageNotice、逐段翻译入口 closestUnit，以及还原断言。
  */
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import { mockAllBoundingRects } from '../../setup';
 import { MAX_TEXT, closestUnit } from '~/src/dom/classify';
 import { collect, type SkipCategory } from '~/src/dom/walker';
 import { hasBlockTextChildren, unitTextEx } from '~/src/dom/text';
-import { createOrchestrator, domPage } from '../orchestration/page-harness';
+import { domPage } from '../orchestration/page-harness';
 import { emptyRenderStats, emptySkipStats, pageNotice } from '~/src/orchestration/page-summary';
 import { brLines, collectUnits, fakeTranslate, isOverLimit, line, restorePage, translatePage } from './br-split-harness';
 
@@ -116,7 +117,7 @@ describe('整页翻译：其余行有译文，汇总报出被跳过的这一行�
         sent.push(...req.texts);
         return { ok: true, data: { translations: req.texts.map(fakeTranslate) } };
       }),
-    } as Parameters<typeof createOrchestrator>[0]);
+    });
     orch.start();
     // 与 content 同一口径的整页翻译会话（#1077、#1078）：首轮与补采集共用，同一元素只交出一次、跳过只计一次
     const page = domPage({

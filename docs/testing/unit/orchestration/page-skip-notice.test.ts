@@ -11,8 +11,8 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
 import { collect } from '~/src/dom/walker';
-import { type PageToggleResult } from '~/src/orchestration/orchestrator';
-import { createOrchestrator, domPage } from './page-harness';
+import { createOrchestrator, type PageToggleResult } from '~/src/orchestration/orchestrator';
+import { domPage } from './page-harness';
 import {
   emptyRenderStats,
   emptySkipStats,
@@ -50,9 +50,7 @@ async function translatePage(html: string, { countSkips = true } = {}) {
     ok: true,
     data: { translations: req.texts.map((t) => `[译] ${t}`) },
   }));
-  const orch = createOrchestrator({
-    send,
-  } as Parameters<typeof createOrchestrator>[0]);
+  const orch = createOrchestrator({ send });
   orch.start();
   // 与 content 同一口径的整页翻译会话（#1077、#1078）：首轮与补采集共用，同一元素只交出一次、跳过只计一次
   const page = domPage();

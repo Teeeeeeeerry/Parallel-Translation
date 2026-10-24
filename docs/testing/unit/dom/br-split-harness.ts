@@ -62,22 +62,23 @@ export async function translatePage(opts: CollectOptions = {}): Promise<{ reques
       requests.push([...req.texts]);
       return { ok: true, data: { translations: req.texts.map(fakeTranslate) } };
     }),
-    hasTranslated,
-    onBatchResult: (_i, batch, res) => {
-      if (!res.ok || !res.data) return;
-      batch.forEach((item, j) => {
-        const i = units.indexOf(item.ctx as Element);
-        const map = preserves[i]!;
-        const restored = restorePreserves(res.data!.translations[j]!, map, item.text);
-        render(item.ctx as Element, restored, 'page', restorePreserves(item.text, map, item.text));
-      });
-    },
-  } as Parameters<typeof createOrchestrator>[0]);
+  });
   orch.start();
   await orch.translatePage(
     units.map((el, i) => ({ text: texts[i]!, ctx: el })),
     'auto',
     'zh-CN',
+    {
+      onBatch: (batch, res) => {
+        if (!res.ok || !res.data) return;
+        batch.forEach((item, j) => {
+          const i = units.indexOf(item.ctx as Element);
+          const map = preserves[i]!;
+          const restored = restorePreserves(res.data!.translations[j]!, map, item.text);
+          render(item.ctx as Element, restored, 'page', restorePreserves(item.text, map, item.text));
+        });
+      },
+    },
   );
   orch.stop();
   return { requests };

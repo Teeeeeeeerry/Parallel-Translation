@@ -12,10 +12,11 @@
  * 又被顶掉”的那一条（#832）。这里从整页翻译开始就记下出现过的每一条提示。
  */
 import { describe, test, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import fs from 'fs';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
 import { collect } from '~/src/dom/walker';
-import { createOrchestrator, domPage } from './page-harness';
+import { domPage } from './page-harness';
 import {
   emptyRenderStats,
   emptySkipStats,
@@ -89,7 +90,7 @@ async function translateFixture(file: string): Promise<string[]> {
       ok: true,
       data: { translations: req.texts.map((t) => `[译] ${t}`) },
     })),
-  } as Parameters<typeof createOrchestrator>[0]);
+  });
   orch.start();
   // 与 content 同一口径的整页翻译会话（#1077、#1078）：首轮与补采集共用，同一元素只交出一次、跳过只计一次
   const page = domPage();

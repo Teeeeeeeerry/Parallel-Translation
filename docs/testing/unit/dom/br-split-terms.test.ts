@@ -83,25 +83,26 @@ async function translatePage(): Promise<{ domainIds: (string | undefined)[] }> {
     }),
     getDomains: () => [domain()],
     getHostname: () => 'forum.example',
-    hasTranslated: () => document.querySelector('[data-pt="done"]') !== null,
-    onBatchResult: (_i, batch, res) => {
-      if (!res.ok || !res.data) return;
-      batch.forEach((item, j) => {
-        const map = preserves[units.indexOf(item.ctx as Element)]!;
-        render(
-          item.ctx as Element,
-          restorePreserves(res.data!.translations[j]!, map, item.text),
-          'page',
-          restorePreserves(item.text, map, item.text),
-        );
-      });
-    },
-  } as Parameters<typeof createOrchestrator>[0]);
+  });
   orch.start();
   await orch.translatePage(
     units.map((el, i) => ({ text: texts[i]!, ctx: el })),
     'auto',
     'zh-CN',
+    {
+      onBatch: (batch, res) => {
+        if (!res.ok || !res.data) return;
+        batch.forEach((item, j) => {
+          const map = preserves[units.indexOf(item.ctx as Element)]!;
+          render(
+            item.ctx as Element,
+            restorePreserves(res.data!.translations[j]!, map, item.text),
+            'page',
+            restorePreserves(item.text, map, item.text),
+          );
+        });
+      },
+    },
   );
   orch.stop();
   return { domainIds };

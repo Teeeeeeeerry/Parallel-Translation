@@ -11,6 +11,7 @@
  * 调用方不改行为：结论（translate、reason、lang）与改动前相同。
  */
 import { describe, test, expect, vi } from 'vitest';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import {
   decidePageGate,
   describePageGate,
@@ -19,7 +20,7 @@ import {
   type PageGateDecision,
   type PageGateInput,
 } from '~/src/orchestration/page-gate';
-import { createOrchestrator } from './page-harness';
+import { itemsPage } from './page-harness';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 
 const reliable = (...languages: [string, number][]): ContentLang => ({
@@ -161,11 +162,9 @@ describe('整页开关入口：依据随结果带出，并交给调用方记到�
     const orch = createOrchestrator({
       send,
       getPageLang: () => pageLang,
-      hasTranslated: () => false,
-      pushStatus: () => {},
       onGateDecision: (d: PageGateDecision) => decisions.push(d),
       ...(detect ? { detectContentLang: detect } : {}),
-    } as Parameters<typeof createOrchestrator>[0]);
+    });
     orch.start();
     return { orch, send, decisions };
   }
@@ -176,7 +175,7 @@ describe('整页开关入口：依据随结果带出，并交给调用方记到�
     const a = setup('en', async (text) =>
       text.includes('\n') ? reliable(['zh', 96]) : { ...reliable(['zh', 96]), reliable: false },
     );
-    const ra = await a.orch.togglePage(ZH, 'auto', 'zh-CN');
+    const ra = await a.orch.togglePage(itemsPage(ZH), 'auto', 'zh-CN');
     expect(ra.status).toBe('same-language');
     expect(ra.gate).toMatchObject({ translate: false, basis: 'content-share' });
     expect(a.decisions).toEqual([ra.gate]);
@@ -184,7 +183,7 @@ describe('整页开关入口：依据随结果带出，并交给调用方记到�
     a.orch.stop();
 
     const b = setup('zh-CN');
-    const rb = await b.orch.togglePage(ZH, 'auto', 'zh-CN');
+    const rb = await b.orch.togglePage(itemsPage(ZH), 'auto', 'zh-CN');
     expect(rb.gate).toMatchObject({ translate: false, basis: 'declaration' });
     expect(b.decisions).toEqual([rb.gate]);
     b.orch.stop();
@@ -192,7 +191,7 @@ describe('整页开关入口：依据随结果带出，并交给调用方记到�
 
   test('照常翻译：结果与改动前相同（没有 gate），调用方照样收到带依据的判定', async () => {
     const { orch, send, decisions } = setup('zh-CN', async () => ({ ...reliable(['en', 60]), reliable: false }));
-    const result = await orch.togglePage(ZH, 'auto', 'zh-CN');
+    const result = await orch.togglePage(itemsPage(ZH), 'auto', 'zh-CN');
     expect(result.status).toBe('translated');
     expect(result.gate).toBeUndefined();
     expect(send).toHaveBeenCalledTimes(1);

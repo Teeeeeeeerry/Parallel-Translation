@@ -5,8 +5,8 @@
  * 补翻的观察器不启动。经整页开关入口 togglePage 断言，假消息层数请求条数。
  */
 import { describe, test, expect, vi } from 'vitest';
-import { splitBatches, FULL_PAGE_BATCH_LIMITS } from '~/src/orchestration/orchestrator';
-import { createOrchestrator } from './page-harness';
+import { createOrchestrator, splitBatches, FULL_PAGE_BATCH_LIMITS } from '~/src/orchestration/orchestrator';
+import { itemsPage } from './page-harness';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import { collect } from '~/src/dom/walker';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
@@ -33,13 +33,15 @@ function setup(opts: {
   const send = opts.send ?? fakeSend();
   const pushes: string[] = [];
   const onObserverStart = vi.fn();
+  const page = itemsPage([], {
+    hasTranslated: opts.hasTranslated ?? (() => false),
+    restore: opts.restore,
+    onObserverStart,
+  });
+  page.subscribe((s) => pushes.push(s));
   const orch = createOrchestrator({
     send,
     getPageLang: () => opts.pageLang,
-    hasTranslated: opts.hasTranslated ?? (() => false),
-    restore: opts.restore,
-    pushStatus: (s) => pushes.push(s),
-    onObserverStart,
     ...(opts.blocked
       ? {
           getHostname: () => 'www.example.com',
@@ -50,9 +52,9 @@ function setup(opts: {
           }),
         }
       : {}),
-  } as Parameters<typeof createOrchestrator>[0]);
+  });
   orch.start();
-  return { orch, send, pushes, onObserverStart };
+  return { orch, page, send, pushes, onObserverStart };
 }
 
 function items(n: number): TranslateItem<number>[] {
@@ -61,9 +63,9 @@ function items(n: number): TranslateItem<number>[] {
 
 describe('命中闸门：零请求、页面一个字不动（#792）', () => {
   test('页面语言与目标语言相同：一个翻译请求都不发，带着原因返回', async () => {
-    const { orch, send } = setup({ pageLang: 'zh-CN' });
+    const { orch, page, send } = setup({ pageLang: 'zh-CN' });
 
-    const result = await orch.togglePage(items(40), 'auto', 'zh-CN');
+    const result = await orch.togglePage(page.withSource(items(40)), 'auto', 'zh-CN');
 
     expect(send).toHaveBeenCalledTimes(0);
     expect(result.status).toBe('same-language');
@@ -77,9 +79,9 @@ describe('命中闸门：零请求、页面一个字不动（#792）', () => {
     const before = document.body.innerHTML;
     const restoreRects = mockAllBoundingRects();
     const collectItems = vi.fn(() => collect().map((el, i) => ({ text: el.textContent!, ctx: i })));
-    const { orch, send } = setup({ pageLang: 'zh-CN' });
+    const { orch, page, send } = setup({ pageLang: 'zh-CN' });
 
-    await orch.togglePage(collectItems, 'auto', 'zh-CN');
+    await orch.togglePage(page.withSource(collectItems), 'auto', 'zh-CN');
 
     restoreRects();
     expect(collectItems).not.toHaveBeenCalled();
@@ -89,9 +91,9 @@ describe('命中闸门：零请求、页面一个字不动（#792）', () => {
   });
 
   test('增量补翻的观察器不启动，悬浮球不点亮完成态', async () => {
-    const { orch, onObserverStart, pushes } = setup({ pageLang: 'zh-CN' });
+    const { orch, page, onObserverStart, pushes } = setup({ pageLang: 'zh-CN' });
 
-    await orch.togglePage(items(3), 'auto', 'zh-CN');
+    await orch.togglePage(page.withSource(items(3)), 'auto', 'zh-CN');
 
     expect(onObserverStart).not.toHaveBeenCalled();
     expect(pushes).not.toContain('done');
@@ -100,9 +102,9 @@ describe('命中闸门：零请求、页面一个字不动（#792）', () => {
   });
 
   test('悬浮球推到未翻译态 idle，而不是完成态（#793）', async () => {
-    const { orch, pushes } = setup({ pageLang: 'zh-CN' });
+    const { orch, page, pushes } = setup({ pageLang: 'zh-CN' });
 
-    await orch.togglePage(items(3), 'auto', 'zh-CN');
+    await orch.togglePage(page.withSource(items(3)), 'auto', 'zh-CN');
 
     expect(pushes).toEqual(['idle']);
     orch.stop();
@@ -114,13 +116,13 @@ describe('命中闸门：零请求、页面一个字不动（#792）', () => {
     const orch = createOrchestrator({
       send,
       getPageLang: () => 'zh-CN',
-      hasTranslated: () => false,
       isMainFrame: () => false,
-      pushStatus: (s) => pushes.push(s),
-    } as Parameters<typeof createOrchestrator>[0]);
+    });
     orch.start();
+    // 与 content 一样，子框架不订阅整页翻译的状态流（#1079）
+    const page = itemsPage(items(3));
 
-    const result = await orch.togglePage(items(3), 'auto', 'zh-CN');
+    const result = await orch.togglePage(page, 'auto', 'zh-CN');
 
     expect(result.status).toBe('same-language');
     expect(pushes).toEqual([]);
@@ -129,9 +131,9 @@ describe('命中闸门：零请求、页面一个字不动（#792）', () => {
   });
 
   test('站点被禁用时仍是准入拦截：闸门排在准入之后', async () => {
-    const { orch, send } = setup({ pageLang: 'zh-CN', blocked: true });
+    const { orch, page, send } = setup({ pageLang: 'zh-CN', blocked: true });
 
-    const result = await orch.togglePage(items(3), 'auto', 'zh-CN');
+    const result = await orch.togglePage(page.withSource(items(3)), 'auto', 'zh-CN');
 
     expect(result.status).toBe('blocked');
     expect(send).toHaveBeenCalledTimes(0);
@@ -140,9 +142,9 @@ describe('命中闸门：零请求、页面一个字不动（#792）', () => {
 
   test('页面已有译文时照常还原：闸门只管翻译这一支', async () => {
     const restore = vi.fn();
-    const { orch, send } = setup({ pageLang: 'zh-CN', hasTranslated: () => true, restore });
+    const { orch, page, send } = setup({ pageLang: 'zh-CN', hasTranslated: () => true, restore });
 
-    const result = await orch.togglePage(items(3), 'auto', 'zh-CN');
+    const result = await orch.togglePage(page.withSource(items(3)), 'auto', 'zh-CN');
 
     expect(result.status).toBe('restored');
     expect(restore).toHaveBeenCalledTimes(1);
@@ -153,9 +155,9 @@ describe('命中闸门：零请求、页面一个字不动（#792）', () => {
 
 describe('不命中：整页翻译行为与改动前完全一致（#792）', () => {
   test('页面语言与目标语言不同：照常分批送翻、推送加载与完成、启动观察器', async () => {
-    const { orch, send, pushes, onObserverStart } = setup({ pageLang: 'en' });
+    const { orch, page, send, pushes, onObserverStart } = setup({ pageLang: 'en' });
 
-    const result = await orch.togglePage(items(40), 'auto', 'zh-CN');
+    const result = await orch.togglePage(page.withSource(items(40)), 'auto', 'zh-CN');
 
     expect(result.status).toBe('translated');
     expect(result.gate).toBeUndefined();
@@ -167,9 +169,9 @@ describe('不命中：整页翻译行为与改动前完全一致（#792）', () 
   });
 
   test('判不出页面语言：照常翻译（#789）', async () => {
-    const { orch, send } = setup({ pageLang: null });
+    const { orch, page, send } = setup({ pageLang: null });
 
-    const result = await orch.togglePage(items(2), 'auto', 'zh-CN');
+    const result = await orch.togglePage(page.withSource(items(2)), 'auto', 'zh-CN');
 
     expect(result.status).toBe('translated');
     expect(send).toHaveBeenCalledTimes(1);
@@ -179,9 +181,9 @@ describe('不命中：整页翻译行为与改动前完全一致（#792）', () 
   test('按需采集的形式：不命中时采集一次，照常翻译；翻完再补采集一次（#1011）', async () => {
     // 真实的整页翻译会话补采集时只交出新出现的单元（src/orchestration/page-session.ts），这里没有新单元
     const collectItems = vi.fn().mockReturnValueOnce(items(2)).mockReturnValue([]);
-    const { orch, send } = setup({ pageLang: 'en' });
+    const { orch, page, send } = setup({ pageLang: 'en' });
 
-    const result = await orch.togglePage(collectItems, 'auto', 'zh-CN');
+    const result = await orch.togglePage(page.withSource(collectItems), 'auto', 'zh-CN');
 
     expect(collectItems).toHaveBeenCalledTimes(2);
     expect(result.status).toBe('translated');
@@ -196,20 +198,20 @@ describe('还原之后检测语言仍在（#792）', () => {
   test('翻过一次（引擎报告 en）→ 还原 → 目标语言改成 en 再点：闸门按检测语言命中，零新增请求', async () => {
     let translated = false;
     const send = fakeSend('en');
-    const { orch } = setup({
+    const { orch, page } = setup({
       pageLang: null,
       send,
       hasTranslated: () => translated,
       restore: () => (translated = false),
     });
 
-    const first = await orch.togglePage(items(2), 'auto', 'zh-CN');
+    const first = await orch.togglePage(page.withSource(items(2)), 'auto', 'zh-CN');
     expect(first.status).toBe('translated');
     translated = true;
-    expect((await orch.togglePage(items(2), 'auto', 'zh-CN')).status).toBe('restored');
+    expect((await orch.togglePage(page.withSource(items(2)), 'auto', 'zh-CN')).status).toBe('restored');
     const sent = send.mock.calls.length;
 
-    const third = await orch.togglePage(items(2), 'auto', 'en');
+    const third = await orch.togglePage(page.withSource(items(2)), 'auto', 'en');
 
     expect(third.status).toBe('same-language');
     expect(third.gate).toMatchObject({ translate: false, reason: 'same-language', lang: 'en' });

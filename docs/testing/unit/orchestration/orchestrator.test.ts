@@ -5,8 +5,8 @@
  * 发送回调次数 = 批次数、单测不触碰 chrome。
  */
 import { describe, test, expect, vi } from 'vitest';
-import { splitBatches, FULL_PAGE_BATCH_LIMITS } from '~/src/orchestration/orchestrator';
-import { createOrchestrator } from './page-harness';
+import { createOrchestrator, splitBatches, FULL_PAGE_BATCH_LIMITS } from '~/src/orchestration/orchestrator';
+import { itemsPage, type ItemsPage, type PageHooks } from './page-harness';
 import { displayDecision } from '~/src/orchestration/text-notice';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import type { TranslateRequest } from '~/src/engines/types';
@@ -28,6 +28,9 @@ async function flush(): Promise<void> {
 
 /** 按旧的 15 个一批切：这些用例管的是渲染与中止语义，要的是“多于一批” */
 const BY15 = { maxItems: 15, maxChars: Infinity };
+
+/** 按 BY15 切出来的一批是第几批（items() 的 ctx 就是下标） */
+const batchIndex = (batch: TranslateItem<unknown>[]) => Math.floor((batch[0]!.ctx as number) / BY15.maxItems);
 
 function items(n: number): TranslateItem<number>[] {
   return Array.from({ length: n }, (_, i) => ({ text: `text-${i}`, ctx: i }));
@@ -126,11 +129,11 @@ describe('渐进渲染回调注入（#256）', () => {
     const orch = createOrchestrator({
       batchLimits: BY15,
       send,
-      onBatchResult: (i) => order.push(i),
     });
     orch.start();
 
-    const pending = orch.translatePage(items(20), 'en', 'zh');
+    const onBatch = (batch: TranslateItem<unknown>[]) => order.push(batchIndex(batch));
+    const pending = orch.translatePage(items(20), 'en', 'zh', { onBatch });
     // 等一个宏任务（#1007 之后批次经闸门放行，多出几跳微任务；数微任务是
     // 实现细节，这条要钉的只是慢批没回来之前快批已经渲染）
     await new Promise((r) => setTimeout(r, 0));
@@ -157,13 +160,14 @@ describe('渐进渲染回调注入（#256）', () => {
       batchLimits: BY15,
       send,
       sleep: () => Promise.resolve(),
-      onBatchResult: (i, _batch, result) => {
-        seen.push([i, result.ok ? 'ok' : result.error!]);
-      },
     });
     orch.start();
 
-    await orch.translatePage(items(20), 'en', 'zh');
+    await orch.translatePage(items(20), 'en', 'zh', {
+      onBatch: (batch, result) => {
+        seen.push([batchIndex(batch), result.ok ? 'ok' : result.error!]);
+      },
+    });
     expect(seen).toEqual([
       [0, '批0失败'],
       [1, 'ok'],
@@ -200,11 +204,11 @@ describe('还原中止在飞翻译（#262，#1066 起由翻译运行表达）', 
       batchLimits: BY15,
       send,
       sleep: () => Promise.resolve(),
-      onBatchResult: (i) => order.push(i),
     });
     orch.start();
 
-    const pending = orch.translatePage(items(20), 'en', 'zh');
+    const onBatch = (batch: TranslateItem<unknown>[]) => order.push(batchIndex(batch));
+    const pending = orch.translatePage(items(20), 'en', 'zh', { onBatch });
     await flush();
     // 快批已返回并渲染
     expect(order).toEqual([1]);
@@ -236,17 +240,17 @@ describe('还原中止在飞翻译（#262，#1066 起由翻译运行表达）', 
       batchLimits: BY15,
       send,
       sleep: () => Promise.resolve(),
-      onBatchResult: (i) => order.push(i),
     });
     orch.start();
+    const onBatch = (batch: TranslateItem<unknown>[]) => order.push(batchIndex(batch));
 
     // 旧翻译在飞
-    const oldPending = orch.translatePage(items(20), 'en', 'zh');
+    const oldPending = orch.translatePage(items(20), 'en', 'zh', { onBatch });
     await flush();
     orch.abort();
 
     // 新翻译开始 —— 不受旧批次干扰
-    const newSummary = await orch.translatePage(items(16), 'en', 'zh');
+    const newSummary = await orch.translatePage(items(16), 'en', 'zh', { onBatch });
     expect(newSummary.abandoned).toBe(false);
     expect(newSummary.allFailed).toBe(false);
     // 新翻译的批次全部渲染
@@ -624,14 +628,11 @@ describe('整页开关入口（#325）', () => {
   test('页面无译文 → 执行翻译并返回 translated', async () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: ['译'] } }));
     const restore = vi.fn();
-    const orch = createOrchestrator({
-      send,
-      hasTranslated: () => false,
-      restore,
-    });
+    const orch = createOrchestrator({ send });
+    const page = itemsPage(items(2), { hasTranslated: () => false, restore });
     orch.start();
 
-    const result = await orch.togglePage(items(2), 'en', 'zh-CN');
+    const result = await orch.togglePage(page, 'en', 'zh-CN');
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(restore).not.toHaveBeenCalled();
@@ -643,14 +644,11 @@ describe('整页开关入口（#325）', () => {
   test('页面已有译文 → 执行还原并返回 restored，零请求', async () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
     const restore = vi.fn();
-    const orch = createOrchestrator({
-      send,
-      hasTranslated: () => true,
-      restore,
-    });
+    const orch = createOrchestrator({ send });
+    const page = itemsPage(items(2), { hasTranslated: () => true, restore });
     orch.start();
 
-    const result = await orch.togglePage(items(2), 'en', 'zh-CN');
+    const result = await orch.togglePage(page, 'en', 'zh-CN');
 
     expect(restore).toHaveBeenCalledTimes(1);
     expect(send).not.toHaveBeenCalled();
@@ -663,8 +661,8 @@ describe('整页开关入口（#325）', () => {
     // 模块不访问 document / location
     const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
     let state = false;
-    const orch = createOrchestrator({
-      send,
+    const orch = createOrchestrator({ send });
+    const page = itemsPage(items(1), {
       hasTranslated: () => state,
       restore: () => {
         state = false;
@@ -673,11 +671,11 @@ describe('整页开关入口（#325）', () => {
     orch.start();
 
     state = false;
-    const t = await orch.togglePage(items(1), 'en', 'zh-CN');
+    const t = await orch.togglePage(page, 'en', 'zh-CN');
     expect(t.status).toBe('translated');
 
     state = true;
-    const r = await orch.togglePage(items(1), 'en', 'zh-CN');
+    const r = await orch.togglePage(page, 'en', 'zh-CN');
     expect(r.status).toBe('restored');
     expect(state).toBe(false);
     orch.stop();
@@ -693,14 +691,13 @@ describe('整页开关入口（#325）', () => {
     const restore = vi.fn();
     const orch = createOrchestrator({
       send,
-      restore,
-      hasTranslated: () => true,
       getSettings: () => settings(true),
       getHostname: () => 'example.com',
     });
+    const page = itemsPage(items(1), { restore, hasTranslated: () => true });
     orch.start();
 
-    const blocked = await orch.togglePage(items(1), 'en', 'zh-CN');
+    const blocked = await orch.togglePage(page, 'en', 'zh-CN');
     expect(blocked.status).toBe('blocked');
     expect(send).not.toHaveBeenCalled();
     expect(restore).not.toHaveBeenCalled();
@@ -708,13 +705,12 @@ describe('整页开关入口（#325）', () => {
 
     const orch2 = createOrchestrator({
       send,
-      restore,
-      hasTranslated: () => true,
       getSettings: () => settings(false),
       getHostname: () => 'other.com',
     });
+    const page2 = itemsPage(items(1), { restore, hasTranslated: () => true });
     orch2.start();
-    const disabled = await orch2.togglePage(items(1), 'en', 'zh-CN');
+    const disabled = await orch2.togglePage(page2, 'en', 'zh-CN');
     expect(disabled.status).toBe('disabled');
     expect(send).not.toHaveBeenCalled();
     orch2.stop();
@@ -722,10 +718,11 @@ describe('整页开关入口（#325）', () => {
 
   test('无翻译项（空 items）→ no-elements，零请求', async () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
-    const orch = createOrchestrator({ send, hasTranslated: () => false });
+    const orch = createOrchestrator({ send });
+    const page = itemsPage([], { hasTranslated: () => false });
     orch.start();
 
-    const result = await orch.togglePage([], 'en', 'zh-CN');
+    const result = await orch.togglePage(page, 'en', 'zh-CN');
 
     expect(result.status).toBe('no-elements');
     expect(send).not.toHaveBeenCalled();
@@ -737,16 +734,14 @@ describe('在飞互斥（#326）', () => {
   test('在飞期间二次触发且页面尚无译文：假消息层只收到一轮请求，第二次返回忙碌', async () => {
     let resolveSend!: (v: unknown) => void;
     const send = vi.fn(() => new Promise((r) => (resolveSend = r)));
-    const orch = createOrchestrator({
-      send,
-      hasTranslated: () => false,
-    });
+    const orch = createOrchestrator({ send });
+    const page = itemsPage(items(1), { hasTranslated: () => false });
     orch.start();
 
-    const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    const first = orch.togglePage(page, 'en', 'zh-CN');
     // #1076：闸门判定是异步的，冲一下让首轮批次发出去（真正在飞）
     await flush();
-    const second = await orch.togglePage(items(1), 'en', 'zh-CN');
+    const second = await orch.togglePage(page, 'en', 'zh-CN');
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(second.status).toBe('busy');
@@ -762,19 +757,16 @@ describe('在飞互斥（#326）', () => {
     const send = vi.fn(() => new Promise((r) => (resolveSend = r)));
     const restore = vi.fn();
     let translated = false; // 首批渲染完成后置 true（模拟内容脚本渲染）
-    const orch = createOrchestrator({
-      send,
-      hasTranslated: () => translated,
-      restore,
-    });
+    const orch = createOrchestrator({ send });
+    const page = itemsPage(items(1), { hasTranslated: () => translated, restore });
     orch.start();
 
-    const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    const first = orch.togglePage(page, 'en', 'zh-CN');
     // #1076：闸门判定是异步的，冲一下让首轮批次发出去（真正在飞）
     await flush();
     // 首批在飞期间译文已落 DOM（渲染回调置位）→ 再次触发放行还原
     translated = true;
-    const second = await orch.togglePage(items(1), 'en', 'zh-CN');
+    const second = await orch.togglePage(page, 'en', 'zh-CN');
 
     expect(second.status).toBe('restored');
     expect(restore).toHaveBeenCalledTimes(1);
@@ -789,13 +781,14 @@ describe('在飞互斥（#326）', () => {
   test('忙碌状态不被调用方当作错误：正常返回而非抛错', async () => {
     let resolveSend!: (v: unknown) => void;
     const send = vi.fn(() => new Promise((r) => (resolveSend = r)));
-    const orch = createOrchestrator({ send, hasTranslated: () => false });
+    const orch = createOrchestrator({ send });
+    const page = itemsPage(items(1), { hasTranslated: () => false });
     orch.start();
 
-    const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    const first = orch.togglePage(page, 'en', 'zh-CN');
     // #1076：闸门判定是异步的，冲一下让首轮批次发出去（真正在飞）
     await flush();
-    const second = await orch.togglePage(items(1), 'en', 'zh-CN');
+    const second = await orch.togglePage(page, 'en', 'zh-CN');
 
     expect(second.status).toBe('busy');
     expect(second.summary).toBeUndefined();
@@ -809,19 +802,19 @@ describe('在飞互斥（#326）', () => {
 });
 
 describe('状态推送与中止记账（#327）', () => {
-  function orchWith(opts: Record<string, unknown>): {
+  function orchWith(hooks: PageHooks): {
     orch: ReturnType<typeof createOrchestrator>;
+    page: ItemsPage;
     pushes: string[];
   } {
     const pushes: string[] = [];
     const orch = createOrchestrator({
       send: vi.fn(async () => ({ ok: true, data: { translations: ['译'] } })),
-      hasTranslated: () => false,
-      pushStatus: (s) => pushes.push(s),
-      ...opts,
-    } as Parameters<typeof createOrchestrator>[0]);
+    });
+    const page = itemsPage(items(1), hooks);
+    page.subscribe((s) => pushes.push(s));
     orch.start();
-    return { orch, pushes };
+    return { orch, page, pushes };
   }
 
   test('翻译在飞时执行还原：结果标记为已中止、推送空闲而非错误', async () => {
@@ -830,19 +823,16 @@ describe('状态推送与中止记账（#327）', () => {
     const restore = vi.fn();
     const pushes: string[] = [];
     let translated = false;
-    const orch = createOrchestrator({
-      send,
-      restore,
-      hasTranslated: () => translated,
-      pushStatus: (s) => pushes.push(s),
-    });
+    const orch = createOrchestrator({ send });
+    const page = itemsPage(items(1), { restore, hasTranslated: () => translated });
+    page.subscribe((s) => pushes.push(s));
     orch.start();
 
-    const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    const first = orch.togglePage(page, 'en', 'zh-CN');
     // #1076：闸门判定是异步的，冲一下让首轮批次发出去（真正在飞）
     await flush();
     translated = true; // 在飞期间首批已渲染
-    const second = await orch.togglePage(items(1), 'en', 'zh-CN');
+    const second = await orch.togglePage(page, 'en', 'zh-CN');
     expect(second.status).toBe('restored');
 
     resolveSend({ ok: true, data: { translations: ['译'] } });
@@ -860,15 +850,12 @@ describe('状态推送与中止记账（#327）', () => {
     const send = vi.fn(() => new Promise((r) => (resolveSend = r)));
     const restore = vi.fn();
     const pushes: string[] = [];
-    const orch = createOrchestrator({
-      send,
-      restore,
-      hasTranslated: () => false,
-      pushStatus: (s) => pushes.push(s),
-    });
+    const orch = createOrchestrator({ send });
+    const page = itemsPage(items(1), { restore, hasTranslated: () => false });
+    page.subscribe((s) => pushes.push(s));
     orch.start();
 
-    const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    const first = orch.togglePage(page, 'en', 'zh-CN');
     // #1076：闸门判定是异步的，冲一下让首轮批次发出去（真正在飞）
     await flush();
     // 批次已 resolve（最后一批返回），但整体返回前用户还原
@@ -890,14 +877,12 @@ describe('状态推送与中止记账（#327）', () => {
       retryable: false,
     }));
     const pushes: string[] = [];
-    const orch = createOrchestrator({
-      send,
-      hasTranslated: () => false,
-      pushStatus: (s) => pushes.push(s),
-    });
+    const orch = createOrchestrator({ send });
+    const page = itemsPage(items(1), { hasTranslated: () => false });
+    page.subscribe((s) => pushes.push(s));
     orch.start();
 
-    const result = await orch.togglePage(items(1), 'en', 'zh-CN');
+    const result = await orch.togglePage(page, 'en', 'zh-CN');
 
     expect(result.status).toBe('error');
     expect(pushes).toEqual(['loading', 'error']);
@@ -905,9 +890,9 @@ describe('状态推送与中止记账（#327）', () => {
   });
 
   test('引擎返回结果但全部渲染被拒：不推送已完成状态', async () => {
-    const { orch, pushes } = orchWith({ allRenderRejected: () => true });
+    const { orch, page, pushes } = orchWith({ allRenderRejected: () => true });
 
-    const result = await orch.togglePage(items(1), 'en', 'zh-CN');
+    const result = await orch.togglePage(page, 'en', 'zh-CN');
 
     expect(result.status).toBe('error');
     expect(pushes).toEqual(['loading', 'error']);
@@ -915,9 +900,9 @@ describe('状态推送与中止记账（#327）', () => {
   });
 
   test('状态推送为注入回调：模块不直接操作 UI（假回调可完整测试）', async () => {
-    const { orch, pushes } = orchWith({});
+    const { orch, page, pushes } = orchWith({});
 
-    const result = await orch.togglePage(items(1), 'en', 'zh-CN');
+    const result = await orch.togglePage(page, 'en', 'zh-CN');
 
     expect(result.status).toBe('translated');
     expect(pushes).toEqual(['loading', 'done']);
@@ -929,13 +914,13 @@ describe('状态推送与中止记账（#327）', () => {
     const pushes: string[] = [];
     const orch = createOrchestrator({
       send,
-      hasTranslated: () => false,
       isMainFrame: () => false,
-      pushStatus: (s) => pushes.push(s),
     });
+    const page = itemsPage(items(1), { hasTranslated: () => false });
+    // 与 content 一样，子框架不订阅整页翻译的状态流（#1079）
     orch.start();
 
-    const result = await orch.togglePage(items(1), 'en', 'zh-CN');
+    const result = await orch.togglePage(page, 'en', 'zh-CN');
 
     expect(result.status).toBe('translated');
     expect(send).toHaveBeenCalledTimes(1); // 子框架照常翻译
@@ -948,12 +933,8 @@ describe('观察器启停时机（#328）', () => {
   test('未触发翻译时观察器始终未被启动', async () => {
     const start = vi.fn();
     const stop = vi.fn();
-    const orch = createOrchestrator({
-      send: vi.fn(),
-      hasTranslated: () => false,
-      onObserverStart: start,
-      onObserverStop: stop,
-    });
+    const orch = createOrchestrator({ send: vi.fn() });
+    itemsPage(items(1), { hasTranslated: () => false, onObserverStart: start, onObserverStop: stop });
     orch.start();
 
     // 只构造编排、不触发 toggle：观察器启停钩子零调用
@@ -966,12 +947,11 @@ describe('观察器启停时机（#328）', () => {
     const start = vi.fn();
     const orch = createOrchestrator({
       send: vi.fn(async () => ({ ok: true, data: { translations: ['译'] } })),
-      hasTranslated: () => false,
-      onObserverStart: start,
     });
+    const page = itemsPage(items(1), { hasTranslated: () => false, onObserverStart: start });
     orch.start();
 
-    const result = await orch.togglePage(items(1), 'en', 'zh-CN');
+    const result = await orch.togglePage(page, 'en', 'zh-CN');
 
     expect(result.status).toBe('translated');
     expect(start).toHaveBeenCalledTimes(1);
@@ -987,12 +967,11 @@ describe('观察器启停时机（#328）', () => {
         error: 'HTTP 503',
         retryable: true,
       })),
-      hasTranslated: () => false,
-      onObserverStart: start,
     });
+    const page = itemsPage(items(1), { hasTranslated: () => false, onObserverStart: start });
     orch.start();
 
-    const result = await orch.togglePage(items(1), 'en', 'zh-CN');
+    const result = await orch.togglePage(page, 'en', 'zh-CN');
 
     expect(result.status).toBe('error');
     expect(start).not.toHaveBeenCalled();
@@ -1005,8 +984,8 @@ describe('观察器启停时机（#328）', () => {
     const start = vi.fn();
     const stop = vi.fn();
     let translated = false;
-    const orch = createOrchestrator({
-      send,
+    const orch = createOrchestrator({ send });
+    const page = itemsPage(items(1), {
       hasTranslated: () => translated,
       restore: () => {},
       onObserverStart: start,
@@ -1014,11 +993,11 @@ describe('观察器启停时机（#328）', () => {
     });
     orch.start();
 
-    const first = orch.togglePage(items(1), 'en', 'zh-CN');
+    const first = orch.togglePage(page, 'en', 'zh-CN');
     // #1076：闸门判定是异步的，冲一下让首轮批次发出去（真正在飞）
     await flush();
     translated = true;
-    await orch.togglePage(items(1), 'en', 'zh-CN'); // 在飞还原
+    await orch.togglePage(page, 'en', 'zh-CN'); // 在飞还原
     resolveSend({ ok: true, data: { translations: ['译'] } });
     const firstResult = await first;
 
@@ -1035,6 +1014,8 @@ describe('观察器启停时机（#328）', () => {
     let translated = false;
     const orch = createOrchestrator({
       send: vi.fn(async () => ({ ok: true, data: { translations: ['译'] } })),
+    });
+    const page = itemsPage(items(1), {
       hasTranslated: () => translated,
       restore: () => {
         translated = false;
@@ -1044,15 +1025,15 @@ describe('观察器启停时机（#328）', () => {
     });
     orch.start();
 
-    await orch.togglePage(items(1), 'en', 'zh-CN');
+    await orch.togglePage(page, 'en', 'zh-CN');
     expect(start).toHaveBeenCalledTimes(1);
     translated = true;
-    await orch.togglePage(items(1), 'en', 'zh-CN');
+    await orch.togglePage(page, 'en', 'zh-CN');
     expect(stop).toHaveBeenCalledTimes(1);
 
     // 重复还原（例如快捷键连按）：观察器已经停了，不再停一次
     translated = true;
-    await orch.togglePage(items(1), 'en', 'zh-CN');
+    await orch.togglePage(page, 'en', 'zh-CN');
     expect(stop).toHaveBeenCalledTimes(1);
     orch.stop();
   });
@@ -1063,6 +1044,8 @@ describe('观察器启停时机（#328）', () => {
     let translated = false;
     const orch = createOrchestrator({
       send: vi.fn(async () => ({ ok: true, data: { translations: ['译'] } })),
+    });
+    const page = itemsPage(items(1), {
       hasTranslated: () => translated,
       restore: () => {
         translated = false;
@@ -1072,14 +1055,14 @@ describe('观察器启停时机（#328）', () => {
     });
     orch.start();
 
-    await orch.togglePage(items(1), 'en', 'zh-CN');
+    await orch.togglePage(page, 'en', 'zh-CN');
     expect(start).toHaveBeenCalledTimes(1);
 
     translated = true;
-    await orch.togglePage(items(1), 'en', 'zh-CN');
+    await orch.togglePage(page, 'en', 'zh-CN');
     expect(stop).toHaveBeenCalledTimes(1);
 
-    await orch.togglePage(items(1), 'en', 'zh-CN');
+    await orch.togglePage(page, 'en', 'zh-CN');
     expect(start).toHaveBeenCalledTimes(2);
     orch.stop();
   });
@@ -1102,10 +1085,10 @@ describe('全页翻译携带当前领域（#379）', () => {
       getSettings: () => DEFAULT_SETTINGS,
       getHostname: () => host,
       getDomains: () => domains,
-      hasTranslated: () => false,
     });
     orch.start();
-    await orch[via](items(3), 'en', to);
+    if (via === 'togglePage') await orch.togglePage(itemsPage(items(3)), 'en', to);
+    else await orch.translatePage(items(3), 'en', to);
     orch.stop();
     return send.mock.calls.map((c) => c[0]!);
   }
@@ -1227,7 +1210,6 @@ describe('逐段翻译与划词翻译携带当前领域（#383/#384）', () => {
       getSettings: () => DEFAULT_SETTINGS,
       getHostname: () => 'github.com',
       getDomains: () => domains,
-      hasTranslated: () => false,
     });
     orch.start();
     await orch.translatePage(items(1), 'en', 'zh-CN');
@@ -1260,7 +1242,6 @@ describe('当前领域按顶层页面判定（#471）', () => {
       getHostname: () => opts.frameHost,
       getTopHostname: () => opts.topHost,
       getDomains: () => domains,
-      hasTranslated: () => false,
     });
     orch.start();
     await orch.translatePage(items(1), 'en', 'zh-CN');

@@ -6,7 +6,8 @@
  * 就是目标语言的文字走 #787 的说明，不是被闸门拦住。
  */
 import { describe, test, expect, vi, afterEach, afterAll } from 'vitest';
-import { createOrchestrator } from './page-harness';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { itemsPage } from './page-harness';
 import { pageNotice, emptyRenderStats } from '~/src/orchestration/page-summary';
 import { paraNotice, selectionNotice } from '~/src/orchestration/text-notice';
 import { render } from '~/src/dom/renderer';
@@ -33,10 +34,9 @@ async function gatedPage(reply: (t: string) => string = (t) => `[译] ${t}`) {
   const orch = createOrchestrator({
     send,
     getPageLang: () => 'zh-CN',
-    hasTranslated: () => false,
-  } as Parameters<typeof createOrchestrator>[0]);
+  });
   orch.start();
-  const page = await orch.togglePage([{ text: '我的文档', ctx: 0 }], 'auto', 'zh-CN');
+  const page = await orch.togglePage(itemsPage([{ text: '我的文档', ctx: 0 }]), 'auto', 'zh-CN');
   expect(page.status).toBe('same-language');
   expect(send).toHaveBeenCalledTimes(0);
   return { orch, send };

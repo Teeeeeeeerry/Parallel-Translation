@@ -35,7 +35,8 @@
  * 页面翻完之后补采集第 1 轮采不到新单元，就此结束 —— 与真实页面一致。
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
-import { createOrchestrator } from './page-harness';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { itemsPage } from './page-harness';
 import {
   CONTENT_SAMPLE_MAX_CHARS,
   UNIT_DETECT_COUNT,
@@ -144,19 +145,17 @@ async function measure(n: number): Promise<Measure> {
   const orch = createOrchestrator({
     send,
     getPageLang: () => 'zh-CN',
-    hasTranslated: () => false,
-    pushStatus: () => {},
     detectContentLang: detect,
-    // #1056：与真实渲染一样，译好的单元落上完成标记，补采集据此不再重采
-    onBatchResult: (_i: number, batch: { ctx: unknown }[], r: { ok: boolean }) => {
-      if (r.ok) for (const it of batch) (it.ctx as Element).setAttribute('data-pt', 'done');
-    },
-  } as Parameters<typeof createOrchestrator>[0]);
+  });
+  // #1056：与真实渲染一样，译好的单元落上完成标记，补采集据此不再重采
+  const page = itemsPage(collectItems, {
+    onRender: (item) => (item.ctx as Element).setAttribute('data-pt', 'done'),
+  });
   orch.start();
   counts.visits = 0;
   counts.layout = 0;
   const start = performance.now();
-  const result = await orch.togglePage(collectItems, 'auto', 'zh-CN');
+  const result = await orch.togglePage(page, 'auto', 'zh-CN');
   orch.stop();
   expect(result.status).toBe('translated');
   // #1056：每段只发一次 —— 补采集没有把翻好的段落当成新单元再发

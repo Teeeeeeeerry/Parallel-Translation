@@ -11,8 +11,13 @@
  * 断言比较新旧两种切法，不写死批次条数：预算由 #1006 实测调整时这里不该红。
  */
 import { describe, test, expect, vi } from 'vitest';
-import { splitBatches, FULL_PAGE_BATCH_LIMITS, type TranslateItem } from '~/src/orchestration/orchestrator';
-import { createOrchestrator } from './page-harness';
+import {
+  createOrchestrator,
+  splitBatches,
+  FULL_PAGE_BATCH_LIMITS,
+  type TranslateItem,
+} from '~/src/orchestration/orchestrator';
+import { itemsPage } from './page-harness';
 import type { TranslateRequest } from '~/src/engines/types';
 
 /** 改动前的切法：15 个单元一批，与长短无关 */
@@ -62,14 +67,25 @@ async function run(
     sent.push(req.texts);
     return { ok: true, data: { translations: req.texts.map((t) => `T(${t})`) } };
   });
-  const orch = createOrchestrator({
-    send,
-    hasTranslated: () => false,
-    onBatchResult: (i, batch) => rendered.push([i, batch.map((it) => it.text)]),
-  });
+  const orch = createOrchestrator({ send });
+  /** 这一项在发出去的第几批里 */
+  const batchOf = (text: string) => sent.findIndex((texts) => texts.includes(text));
   orch.start();
-  if (via === 'togglePage') await orch.togglePage(input, 'en', 'zh-CN');
-  else await orch.translatePage(input, 'en', 'zh-CN');
+  if (via === 'togglePage') {
+    // 整页翻译对象逐项渲染，同一批的各项连着渲染：按批归拢成一次回调
+    const page = itemsPage(input, {
+      onRender: (item) => {
+        const i = batchOf(item.text);
+        if (rendered.at(-1)?.[0] !== i) rendered.push([i, []]);
+        rendered.at(-1)![1].push(item.text);
+      },
+    });
+    await orch.togglePage(page, 'en', 'zh-CN');
+  } else {
+    await orch.translatePage(input, 'en', 'zh-CN', {
+      onBatch: (batch) => rendered.push([batchOf(batch[0]!.text), batch.map((it) => it.text)]),
+    });
+  }
   orch.stop();
   return { sent, rendered };
 }

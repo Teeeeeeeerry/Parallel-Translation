@@ -15,7 +15,8 @@
  * 给定；不调真实识别器（#851：可靠标记会在两次调用之间翻转）。
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
-import { createOrchestrator } from './page-harness';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { itemsPage } from './page-harness';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import {
   type ContentLang,
@@ -47,18 +48,15 @@ function setup(pageLang: string | null, detect?: Detect) {
     ok: true,
     data: { translations: req.texts.map((t) => `[译] ${t}`) },
   }));
-  const pushes: string[] = [];
   const decisions: PageGateDecision[] = [];
   const orch = createOrchestrator({
     send,
     getPageLang: () => pageLang,
-    hasTranslated: () => false,
-    pushStatus: (s) => pushes.push(s),
     onGateDecision: (d: PageGateDecision) => decisions.push(d),
     ...(detect ? { detectContentLang: detect } : {}),
-  } as Parameters<typeof createOrchestrator>[0]);
+  });
   orch.start();
-  return { orch, send, pushes, decisions };
+  return { orch, send, decisions };
 }
 
 function items(texts: string[]): TranslateItem<number>[] {
@@ -89,9 +87,9 @@ describe('不到外文块下限的单元也送去识别，接上“最长的几�
       'Deep Dive into LLMs like ChatGPT, a general audience deep dive into the technology',
     ]);
     const a = setup('zh-CN', sampleUnsure());
-    await a.orch.togglePage(page, 'auto', 'zh-CN');
+    await a.orch.togglePage(itemsPage(page), 'auto', 'zh-CN');
     const b = setup('en');
-    await b.orch.togglePage(page, 'auto', 'zh-CN');
+    await b.orch.togglePage(itemsPage(page), 'auto', 'zh-CN');
 
     expect(a.send).toHaveBeenCalledTimes(1);
     expect(a.send.mock.calls).toEqual(b.send.mock.calls);
@@ -111,7 +109,7 @@ describe('不到外文块下限的单元也送去识别，接上“最长的几�
       collect(document.body, undefined, mode).map((el, i) => ({ text: el.textContent!, ctx: i }));
     const { orch, send } = setup('en', vi.fn(sampleUnsure()));
 
-    const result = await orch.togglePage(collectItems, 'auto', 'zh-CN');
+    const result = await orch.togglePage(itemsPage(collectItems), 'auto', 'zh-CN');
 
     restoreRects();
     expect(result.status).toBe('same-language');

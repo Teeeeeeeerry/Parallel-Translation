@@ -29,8 +29,6 @@ import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { isSiteBlocked } from '~/src/dom/site-filter';
 import { judgePage, type ContentLang, type PageGateDecision } from './page-gate';
 import type { PageTranslation } from './page-session';
-// #1078：补采集的轮数与间隔归整页翻译会话；这里转出，旧的引用不必改
-export { RECOLLECT_MAX_ROUNDS, RECOLLECT_INTERVAL_MS } from './page-session';
 import { normalizeLangCode } from './lang-code';
 import { attemptBatchWithRetry } from '~/src/runtime/batch-retry';
 import {
@@ -118,6 +116,12 @@ export interface TranslateBatchResult {
   contextInvalidated?: boolean;
 }
 
+/**
+ * 一批的渲染回调（#256 渐进渲染：每批返回即触发，首屏不等待最慢段）。#1117：
+ * 渲染在整页翻译会话与增量补翻各自的回调里做，编排模块没有全局的批次通知。
+ */
+export type BatchCallback = (batch: TranslateItem<unknown>[], result: TranslateBatchResult) => void;
+
 /** 全页翻译的批次结果汇总（#261）：content 据此映射页面状态。 */
 export interface PageTranslateSummary {
   /** 准入结果（#311）：未通过准入时零请求，调用方据此映射状态与提示。 */
@@ -196,11 +200,8 @@ export interface TranslationOrchestrator {
     items: TranslateItem<unknown>[],
     from: string,
     to: string,
-    /**
-     * #1078：onBatch 是这一次的渲染（增量补翻自己的统计）；onBatchResult 照常
-     * 收到每一批的通知
-     */
-    pageOpts?: { onBatch?: (batch: TranslateItem<unknown>[], result: TranslateBatchResult) => void },
+    /** #1078：onBatch 是这一次的渲染（增量补翻自己的统计），每批返回即触发 */
+    pageOpts?: { onBatch?: BatchCallback },
   ): Promise<PageTranslateSummary>;
   /**
    * 单文本翻译入口（#312）—— 供逐段翻译与划词翻译使用。
@@ -299,16 +300,6 @@ export interface OrchestratorOptions {
   batchLimits?: BatchLimits;
   /** 注入 sleep 以便测试推进虚拟时钟；缺省共享实现。 */
   sleep?: (ms: number) => Promise<void>;
-  /**
-   * 每批结果的通知（#256 渐进渲染：每批返回即触发，首屏不等待最慢段）。#1078：
-   * 渲染在整页翻译会话与增量补翻各自的 onBatch 里做，这里只是通知；没传
-   * onBatch 的 translatePage 仍由它渲染。
-   */
-  onBatchResult?: (
-    batchIndex: number,
-    batch: TranslateItem<unknown>[],
-    result: TranslateBatchResult,
-  ) => void;
   /**
    * 设置变更订阅注入（#265）：content 传 storage 的 onSettingsChanged；
    * 模块在 start 时订阅、stop 时退订。
@@ -422,7 +413,6 @@ export function splitBatches<T>(
 export function createOrchestrator(opts: OrchestratorOptions): TranslationOrchestrator {
   const batchLimits = opts.batchLimits ?? FULL_PAGE_BATCH_LIMITS;
   const sleepFn = opts.sleep ?? defaultSleep;
-  const onBatchResult = opts.onBatchResult;
   let started = false;
   // #1066：翻译运行 —— 整页、补采集、到顶交接、逐段、划词从页面根派生信号，
   // 输入翻译从输入根派生。还原整页中止页面根：在飞翻译据此放弃尝试、重试与
@@ -452,12 +442,12 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     to: string,
     // #1011：补采集是整页翻译的延续，准入在整页入口已经判过，不重判
     // #1073：signal 是外层运行（整页开关的这一次）的信号；没有时从页面根派生
-    // #1077：onBatch 是这一次的渲染回调（整页翻译会话），缺省 onBatchResult
+    // #1077：onBatch 是这一次的渲染回调（整页翻译会话、增量补翻）
     {
       admitted = false,
       signal,
-      onBatch = onBatchResult,
-    }: { admitted?: boolean; signal?: AbortSignal; onBatch?: OrchestratorOptions['onBatchResult'] } = {},
+      onBatch,
+    }: { admitted?: boolean; signal?: AbortSignal; onBatch?: BatchCallback } = {},
   ): Promise<PageTranslateSummary> => {
     if (!started) throw new Error('[PT] 编排未启动');
 
@@ -584,7 +574,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         }
 
         // #256 渐进渲染：每批返回即触发渲染回调，互不等待
-        onBatch?.(i, batch, result);
+        onBatch?.(batch, result);
       }),
     );
 
@@ -657,14 +647,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     try {
       const outcome = await session.run({
         translate: (items, { signal: s, onBatch, admitted }) =>
-          translatePageImpl(items, from, to, {
-            signal: s,
-            admitted,
-            onBatch: (i, batch, result) => {
-              onBatch(batch, result);
-              onBatchResult?.(i, batch, result);
-            },
-          }),
+          translatePageImpl(items, from, to, { signal: s, admitted, onBatch }),
         signal,
         sleep: sleepFn,
       });
@@ -703,15 +686,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
     },
 
     async translatePage(items, from, to, pageOpts): Promise<PageTranslateSummary> {
-      const onBatch = pageOpts?.onBatch;
-      return translatePageImpl(items, from, to, {
-        onBatch: onBatch
-          ? (i, batch, result) => {
-              onBatch(batch, result);
-              onBatchResult?.(i, batch, result);
-            }
-          : onBatchResult,
-      });
+      return translatePageImpl(items, from, to, { onBatch: pageOpts?.onBatch });
     },
 
     async togglePage(page, from, to): Promise<PageToggleResult> {
