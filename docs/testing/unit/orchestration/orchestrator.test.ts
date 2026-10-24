@@ -5,6 +5,7 @@
  * 发送回调次数 = 批次数、单测不触碰 chrome。
  */
 import { describe, test, expect, vi } from 'vitest';
+import { createPageContext } from '~/src/orchestration/page-context';
 import { createOrchestrator, splitBatches, FULL_PAGE_BATCH_LIMITS } from '~/src/orchestration/orchestrator';
 import { itemsPage, type ItemsPage, type PageHooks, translateItems } from './page-harness';
 import { displayDecision } from '~/src/orchestration/text-notice';
@@ -314,12 +315,14 @@ describe('准入判定（#311）', () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
     const orch = createOrchestrator({
       send,
-      getSettings: () =>
-        settings({
-          enabled: true,
-          siteList: { mode: 'blacklist', list: ['example.com'] },
-        }),
-      getHostname: () => 'www.example.com',
+      context: createPageContext({
+        getSettings: () =>
+          settings({
+            enabled: true,
+            siteList: { mode: 'blacklist', list: ['example.com'] },
+          }),
+        getHostname: () => 'www.example.com',
+      }),
     });
     orch.start();
     const summary = await translateItems(orch, items(2), 'en', 'zh-CN');
@@ -332,12 +335,14 @@ describe('准入判定（#311）', () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
     const orch = createOrchestrator({
       send,
-      getSettings: () =>
-        settings({
-          enabled: true,
-          siteList: { mode: 'whitelist', list: ['example.com'] },
-        }),
-      getHostname: () => 'other.example.org',
+      context: createPageContext({
+        getSettings: () =>
+          settings({
+            enabled: true,
+            siteList: { mode: 'whitelist', list: ['example.com'] },
+          }),
+        getHostname: () => 'other.example.org',
+      }),
     });
     orch.start();
     const summary = await translateItems(orch, items(2), 'en', 'zh-CN');
@@ -350,9 +355,11 @@ describe('准入判定（#311）', () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
     const orch = createOrchestrator({
       send,
-      getSettings: () =>
-        settings({ enabled: false, siteList: { mode: 'blacklist', list: [] } }),
-      getHostname: () => 'example.com',
+      context: createPageContext({
+        getSettings: () =>
+          settings({ enabled: false, siteList: { mode: 'blacklist', list: [] } }),
+        getHostname: () => 'example.com',
+      }),
     });
     orch.start();
     const summary = await translateItems(orch, items(2), 'en', 'zh-CN');
@@ -365,9 +372,11 @@ describe('准入判定（#311）', () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
     const orch = createOrchestrator({
       send,
-      getSettings: () =>
-        settings({ enabled: true, siteList: { mode: 'blacklist', list: [] } }),
-      getHostname: () => 'example.com',
+      context: createPageContext({
+        getSettings: () =>
+          settings({ enabled: true, siteList: { mode: 'blacklist', list: [] } }),
+        getHostname: () => 'example.com',
+      }),
     });
     orch.start();
     const summary = await translateItems(orch, items(2), 'en', 'zh-CN');
@@ -420,12 +429,14 @@ describe('单文本翻译入口（#312）', () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
     const orch = createOrchestrator({
       send,
-      getSettings: () =>
-        settings({
-          enabled: true,
-          siteList: { mode: 'blacklist', list: ['example.com'] },
-        }),
-      getHostname: () => 'example.com',
+      context: createPageContext({
+        getSettings: () =>
+          settings({
+            enabled: true,
+            siteList: { mode: 'blacklist', list: ['example.com'] },
+          }),
+        getHostname: () => 'example.com',
+      }),
     });
     orch.start();
 
@@ -444,9 +455,11 @@ describe('单文本翻译入口（#312）', () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
     const orch = createOrchestrator({
       send,
-      getSettings: () =>
-        settings({ enabled: false, siteList: { mode: 'blacklist', list: [] } }),
-      getHostname: () => 'example.com',
+      context: createPageContext({
+        getSettings: () =>
+          settings({ enabled: false, siteList: { mode: 'blacklist', list: [] } }),
+        getHostname: () => 'example.com',
+      }),
     });
     orch.start();
 
@@ -691,8 +704,10 @@ describe('整页开关入口（#325）', () => {
     const restore = vi.fn();
     const orch = createOrchestrator({
       send,
-      getSettings: () => settings(true),
-      getHostname: () => 'example.com',
+      context: createPageContext({
+        getSettings: () => settings(true),
+        getHostname: () => 'example.com',
+      }),
     });
     const page = itemsPage(items(1), { restore, hasTranslated: () => true });
     orch.start();
@@ -705,8 +720,10 @@ describe('整页开关入口（#325）', () => {
 
     const orch2 = createOrchestrator({
       send,
-      getSettings: () => settings(false),
-      getHostname: () => 'other.com',
+      context: createPageContext({
+        getSettings: () => settings(false),
+        getHostname: () => 'other.com',
+      }),
     });
     const page2 = itemsPage(items(1), { restore, hasTranslated: () => true });
     orch2.start();
@@ -914,7 +931,9 @@ describe('状态推送与中止记账（#327）', () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: ['译'] } }));
     const orch = createOrchestrator({
       send,
-      isMainFrame: () => false,
+      context: createPageContext({
+        isMainFrame: () => false,
+      }),
     });
     const page = itemsPage(items(1), { hasTranslated: () => false });
     orch.start();
@@ -1080,9 +1099,11 @@ describe('全页翻译携带当前领域（#379）', () => {
     const orch = createOrchestrator({
       send,
       batchLimits: { maxItems: 2, maxChars: Infinity },
-      getSettings: () => DEFAULT_SETTINGS,
-      getHostname: () => host,
-      getDomains: () => domains,
+      context: createPageContext({
+        getSettings: () => DEFAULT_SETTINGS,
+        getHostname: () => host,
+        getDomains: () => domains,
+      }),
     });
     orch.start();
     if (via === 'togglePage') await orch.togglePage(itemsPage(items(3)), 'en', to);
@@ -1128,9 +1149,11 @@ describe('全页翻译携带当前领域（#379）', () => {
     }));
     const orch = createOrchestrator({
       send,
-      getSettings: () => DEFAULT_SETTINGS,
-      getHostname: () => 'law.example.org',
-      getDomains: () => domains,
+      context: createPageContext({
+        getSettings: () => DEFAULT_SETTINGS,
+        getHostname: () => 'law.example.org',
+        getDomains: () => domains,
+      }),
     });
     orch.start();
     await translateItems(orch, items(1), 'en', 'zh-CN');
@@ -1155,7 +1178,7 @@ describe('全页翻译携带当前领域（#379）', () => {
       ok: true,
       data: { translations: [] },
     }));
-    const orch = createOrchestrator({ send, getHostname: () => 'github.com' });
+    const orch = createOrchestrator({ send, context: createPageContext({ getHostname: () => 'github.com' }) });
     orch.start();
     await translateItems(orch, items(1), 'en', 'zh-CN');
     orch.stop();
@@ -1173,9 +1196,11 @@ describe('逐段翻译与划词翻译携带当前领域（#383/#384）', () => {
     const domains = await getEffectiveDomains();
     const orch = createOrchestrator({
       send,
-      getSettings: () => DEFAULT_SETTINGS,
-      getHostname: () => host,
-      getDomains: () => domains,
+      context: createPageContext({
+        getSettings: () => DEFAULT_SETTINGS,
+        getHostname: () => host,
+        getDomains: () => domains,
+      }),
     });
     orch.start();
     await orch.translateText('text-0', 'en', to);
@@ -1205,9 +1230,11 @@ describe('逐段翻译与划词翻译携带当前领域（#383/#384）', () => {
     const domains = await getEffectiveDomains();
     const orch = createOrchestrator({
       send,
-      getSettings: () => DEFAULT_SETTINGS,
-      getHostname: () => 'github.com',
-      getDomains: () => domains,
+      context: createPageContext({
+        getSettings: () => DEFAULT_SETTINGS,
+        getHostname: () => 'github.com',
+        getDomains: () => domains,
+      }),
     });
     orch.start();
     await translateItems(orch, items(1), 'en', 'zh-CN');
@@ -1233,13 +1260,15 @@ describe('当前领域按顶层页面判定（#471）', () => {
     const domains = await getEffectiveDomains();
     const orch = createOrchestrator({
       send,
-      getSettings: () => ({
-        ...DEFAULT_SETTINGS,
-        ...(opts.siteList && { siteList: opts.siteList }),
+      context: createPageContext({
+        getSettings: () => ({
+          ...DEFAULT_SETTINGS,
+          ...(opts.siteList && { siteList: opts.siteList }),
+        }),
+        getHostname: () => opts.frameHost,
+        getTopHostname: () => opts.topHost,
+        getDomains: () => domains,
       }),
-      getHostname: () => opts.frameHost,
-      getTopHostname: () => opts.topHost,
-      getDomains: () => domains,
     });
     orch.start();
     await translateItems(orch, items(1), 'en', 'zh-CN');

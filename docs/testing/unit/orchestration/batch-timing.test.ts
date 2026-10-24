@@ -6,6 +6,7 @@
  * 的参数与改动前相同，结果一个字段都不多。
  */
 import { describe, test, expect, vi } from 'vitest';
+import { createPageContext } from '~/src/orchestration/page-context';
 import { createOrchestrator, type BatchTimingRecord, type TranslateItem } from '~/src/orchestration/orchestrator';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 import type { TranslateRequest } from '~/src/engines/types';
@@ -24,8 +25,10 @@ describe('批次耗时（#1083）', () => {
     const orch = createOrchestrator({
       send,
       onBatchTiming: (r) => records.push(r),
-      getSettings: () => ({ ...DEFAULT_SETTINGS, maxConcurrency: 1 }),
-      getHostname: () => 'example.com',
+      context: createPageContext({
+        getSettings: () => ({ ...DEFAULT_SETTINGS, maxConcurrency: 1 }),
+        getHostname: () => 'example.com',
+      }),
     });
     orch.start();
     await translateItems(orch, items(25), 'en', 'zh-CN');

@@ -5,6 +5,7 @@
  * 补翻的观察器不启动。经整页开关入口 togglePage 断言，假消息层数请求条数。
  */
 import { describe, test, expect, vi } from 'vitest';
+import { createPageContext } from '~/src/orchestration/page-context';
 import { createOrchestrator, splitBatches, FULL_PAGE_BATCH_LIMITS } from '~/src/orchestration/orchestrator';
 import { itemsPage } from './page-harness';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
@@ -42,16 +43,16 @@ function setup(opts: {
   const orch = createOrchestrator({
     send,
     getPageLang: () => opts.pageLang,
-    ...(opts.blocked
-      ? {
-          getHostname: () => 'www.example.com',
-          getSettings: () => ({
-            ...DEFAULT_SETTINGS,
-            enabled: true,
-            siteList: { mode: 'blacklist' as const, list: ['example.com'] },
-          }),
-        }
-      : {}),
+    ...(opts.blocked && {
+      context: createPageContext({
+        getHostname: () => 'www.example.com',
+        getSettings: () => ({
+          ...DEFAULT_SETTINGS,
+          enabled: true,
+          siteList: { mode: 'blacklist' as const, list: ['example.com'] },
+        }),
+      }),
+    }),
   });
   orch.start();
   return { orch, page, send, pushes, onObserverStart };
@@ -116,7 +117,9 @@ describe('命中闸门：零请求、页面一个字不动（#792）', () => {
     const orch = createOrchestrator({
       send,
       getPageLang: () => 'zh-CN',
-      isMainFrame: () => false,
+      context: createPageContext({
+        isMainFrame: () => false,
+      }),
     });
     orch.start();
     const page = itemsPage(items(3));

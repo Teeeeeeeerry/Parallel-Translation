@@ -13,6 +13,7 @@
  * 与 google-web 引擎（只替身 fetch，回显查询文本）、真实渲染器，以及还原。
  */
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createPageContext } from '~/src/orchestration/page-context';
 import type { Domain, Term } from '~/src/storage/domains';
 import { resetStorage } from '~/docs/testing/setup';
 
@@ -82,8 +83,10 @@ async function translatePage(): Promise<{ domainIds: (string | undefined)[] }> {
       domainIds.push(req.domainId);
       return { ok: true, data: await route(req) };
     }),
-    getDomains: () => [domain()],
-    getHostname: () => 'forum.example',
+    context: createPageContext({
+      getDomains: () => [domain()],
+      getHostname: () => 'forum.example',
+    }),
   });
   orch.start();
   await translateItems(orch, units.map((el, i) => ({ text: texts[i]!, ctx: el })),

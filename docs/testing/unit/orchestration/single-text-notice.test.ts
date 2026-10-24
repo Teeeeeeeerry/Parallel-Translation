@@ -6,19 +6,20 @@
  * 分类各断言一条：给定这样的准入与发送结果，入口给出什么提示。
  */
 import { describe, test, expect, vi } from 'vitest';
-import { createOrchestrator, type OrchestratorOptions } from '~/src/orchestration/orchestrator';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { createPageContext, type PageContextSource } from '~/src/orchestration/page-context';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 import { CONTEXT_INVALIDATED_MSG } from '~/src/runtime/messaging';
 
 const error = (message: string) => ({ ok: false, notice: { message, purpose: 'status', kind: 'error' } });
 
-async function noticeFor(reply: unknown, extra: Partial<OrchestratorOptions> = {}) {
-  const orch = createOrchestrator({ send: vi.fn(async () => reply), ...extra });
+async function noticeFor(reply: unknown, context: PageContextSource = {}) {
+  const orch = createOrchestrator({ send: vi.fn(async () => reply), context: createPageContext(context) });
   orch.start();
   return orch.translateText('Hello', 'en', 'zh-CN');
 }
 
-const blockedSite: Partial<OrchestratorOptions> = {
+const blockedSite: PageContextSource = {
   getSettings: () => ({ ...DEFAULT_SETTINGS, siteList: { mode: 'blacklist', list: ['example.com'] } }),
   getHostname: () => 'example.com',
 };
