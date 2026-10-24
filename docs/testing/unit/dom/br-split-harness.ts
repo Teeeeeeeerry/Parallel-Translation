@@ -2,7 +2,7 @@
  * 以 br 分行的超长段落（#694）几张票共用的测试脚手架。
  *
  * 只经外部入口：采集入口 collect、整页翻译的编排入口 translatePage（真实
- * 渲染器），以及还原。还原与“是否已翻译”用 content script 同一份实现
+ * 渲染器），以及还原。还原用 content script 同一份实现
  * （src/dom/page-dom.ts，#1116）。
  *
  * 夹具一律用文字真正超过长度上限的段落：#768 之后按 br 切行只看文字长度，
@@ -13,7 +13,6 @@ import { mockAllBoundingRects } from '../../setup';
 import { collect, type CollectOptions } from '~/src/dom/walker';
 import { render } from '~/src/dom/renderer';
 import { hasBlockTextChildren, restorePreserves, unitTextEx } from '~/src/dom/text';
-import { hasTranslated } from '~/src/dom/page-dom';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import { MAX_TEXT } from '~/src/dom/classify';
 
@@ -62,22 +61,23 @@ export async function translatePage(opts: CollectOptions = {}): Promise<{ reques
       requests.push([...req.texts]);
       return { ok: true, data: { translations: req.texts.map(fakeTranslate) } };
     }),
-    hasTranslated,
-    onBatchResult: (_i, batch, res) => {
-      if (!res.ok || !res.data) return;
-      batch.forEach((item, j) => {
-        const i = units.indexOf(item.ctx as Element);
-        const map = preserves[i]!;
-        const restored = restorePreserves(res.data!.translations[j]!, map, item.text);
-        render(item.ctx as Element, restored, 'page', restorePreserves(item.text, map, item.text));
-      });
-    },
-  } as Parameters<typeof createOrchestrator>[0]);
+  });
   orch.start();
   await orch.translatePage(
     units.map((el, i) => ({ text: texts[i]!, ctx: el })),
     'auto',
     'zh-CN',
+    {
+      onBatch: (batch, res) => {
+        if (!res.ok || !res.data) return;
+        batch.forEach((item, j) => {
+          const i = units.indexOf(item.ctx as Element);
+          const map = preserves[i]!;
+          const restored = restorePreserves(res.data!.translations[j]!, map, item.text);
+          render(item.ctx as Element, restored, 'page', restorePreserves(item.text, map, item.text));
+        });
+      },
+    },
   );
   orch.stop();
   return { requests };

@@ -10,7 +10,8 @@
  * 取样页面不动、等识别算在飞、识别期间还原、悬浮球状态。
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
-import { createOrchestrator } from './page-harness';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { itemsPage } from './page-harness';
 import { CONTENT_DETECT_TIMEOUT_MS } from '~/src/orchestration/page-gate';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import {
@@ -33,15 +34,15 @@ type Detect = (sample: string) => Promise<ContentLang | null>;
 function setup(pageLang: string | null, detect?: Detect) {
   const send = fakeSend();
   const pushes: string[] = [];
+  const page = itemsPage();
+  page.subscribe((s) => pushes.push(s));
   const orch = createOrchestrator({
     send,
     getPageLang: () => pageLang,
-    hasTranslated: () => false,
-    pushStatus: (s) => pushes.push(s),
     ...(detect ? { detectContentLang: detect } : {}),
-  } as Parameters<typeof createOrchestrator>[0]);
+  });
   orch.start();
-  return { orch, send, pushes };
+  return { orch, page, send, pushes };
 }
 
 const reliable = (...languages: [string, number][]): ContentLang => ({
@@ -92,9 +93,9 @@ const ZH = items([
 describe('声明是目标语言、内容成块外文：照常翻译（#843）', () => {
   test('Steam 那一类页面：声明 zh-cn，识别说大半是英文 —— 照常送翻，不弹同语言', async () => {
     const detect = vi.fn<Detect>(async () => reliable(['en', 61], ['zh', 38]));
-    const { orch, send, pushes } = setup('zh-cn', detect);
+    const { orch, page, send, pushes } = setup('zh-cn', detect);
 
-    const result = await orch.togglePage(STEAM, 'auto', 'zh-CN');
+    const result = await orch.togglePage(page.withSource(STEAM), 'auto', 'zh-CN');
 
     expect(result.status).toBe('translated');
     expect(send).toHaveBeenCalledTimes(1);
@@ -110,9 +111,9 @@ describe('声明是目标语言、内容成块外文：照常翻译（#843）', 
 
 describe('纯目标语言页面：仍然拦下，零请求（#777 不回退）', () => {
   test('声明 zh-CN、识别说是中文：一个翻译请求都不发，带同语言原因返回', async () => {
-    const { orch, send, pushes } = setup('zh-CN', async () => reliable(['zh', 95], ['en', 5]));
+    const { orch, page, send, pushes } = setup('zh-CN', async () => reliable(['zh', 95], ['en', 5]));
 
-    const result = await orch.togglePage(ZH, 'auto', 'zh-CN');
+    const result = await orch.togglePage(page.withSource(ZH), 'auto', 'zh-CN');
 
     expect(send).toHaveBeenCalledTimes(0);
     expect(result.status).toBe('same-language');
@@ -133,10 +134,10 @@ describe('纯目标语言页面：仍然拦下，零请求（#777 不回退）',
     const collectItems = (mode?: { readOnly: boolean }) =>
       collect(document.body, undefined, mode).map((el, i) => ({ text: el.textContent!, ctx: i }));
     const detect = vi.fn<Detect>(async () => reliable(['zh', 100]));
-    const { orch, send } = setup('zh-CN', detect);
+    const { orch, page, send } = setup('zh-CN', detect);
     const round = oneRound(collectItems({ readOnly: true }));
 
-    const result = await orch.togglePage(collectItems, 'auto', 'zh-CN');
+    const result = await orch.togglePage(page.withSource(collectItems), 'auto', 'zh-CN');
 
     restoreRects();
     expect(result.status).toBe('same-language');
@@ -152,10 +153,10 @@ describe('纯目标语言页面：仍然拦下，零请求（#777 不回退）',
 describe('等识别的这段时间算在飞（#326 不回退）', () => {
   test('识别还没回来时再点一次：第二次返回忙碌，只送出一轮请求', async () => {
     const { detect, release } = heldDetect();
-    const { orch, send } = setup('zh-cn', detect);
+    const { orch, page, send } = setup('zh-cn', detect);
 
-    const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
-    const second = await orch.togglePage(STEAM, 'auto', 'zh-CN');
+    const first = orch.togglePage(page.withSource(STEAM), 'auto', 'zh-CN');
+    const second = await orch.togglePage(page.withSource(STEAM), 'auto', 'zh-CN');
     release(reliable(['en', 76], ['zh', 23]));
 
     expect(second.status).toBe('busy');
@@ -178,12 +179,12 @@ describe('识别的回调永远不来：到时间上限就当拿不到，照常�
   test('声明是外文：上限之前算在飞，到上限后走回落照常翻译，在飞回落、悬浮球停在完成态', async () => {
     vi.useFakeTimers();
     const detect = vi.fn<Detect>(hang);
-    const { orch, send, pushes } = setup('en', detect);
+    const { orch, page, send, pushes } = setup('en', detect);
 
-    const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
+    const first = orch.togglePage(page.withSource(STEAM), 'auto', 'zh-CN');
     await vi.advanceTimersByTimeAsync(CONTENT_DETECT_TIMEOUT_MS - 1);
     // 上限之前仍在等识别：再点一次是忙碌，一个请求都还没发
-    expect((await orch.togglePage(STEAM, 'auto', 'zh-CN')).status).toBe('busy');
+    expect((await orch.togglePage(page.withSource(STEAM), 'auto', 'zh-CN')).status).toBe('busy');
     expect(send).toHaveBeenCalledTimes(0);
 
     await vi.advanceTimersByTimeAsync(1);
@@ -194,7 +195,7 @@ describe('识别的回调永远不来：到时间上限就当拿不到，照常�
     expect(pushes).toEqual(['loading', 'done']);
 
     // 在飞标记已经回落：再点一次不是忙碌，而是又走一轮（识别照样挂住、照样到点放弃）
-    const again = orch.togglePage(STEAM, 'auto', 'zh-CN');
+    const again = orch.togglePage(page.withSource(STEAM), 'auto', 'zh-CN');
     await vi.advanceTimersByTimeAsync(CONTENT_DETECT_TIMEOUT_MS);
     expect((await again).status).toBe('translated');
     expect(send).toHaveBeenCalledTimes(2);
@@ -212,30 +213,29 @@ describe('识别在飞时中止：这次运行已中止就丢弃识别结果（#
   function setupWithPage(pageLang: string | null, detect: Detect) {
     const send = fakeSend();
     const pushes: string[] = [];
-    const page = { translated: false };
+    const dom = { translated: false };
     const restore = vi.fn(() => {
-      page.translated = false;
+      dom.translated = false;
     });
+    const page = itemsPage([], { hasTranslated: () => dom.translated, restore });
+    page.subscribe((s) => pushes.push(s));
     const orch = createOrchestrator({
       send,
       getPageLang: () => pageLang,
-      hasTranslated: () => page.translated,
-      restore,
-      pushStatus: (s) => pushes.push(s),
       detectContentLang: detect,
-    } as Parameters<typeof createOrchestrator>[0]);
+    });
     orch.start();
-    return { orch, send, pushes, page, restore };
+    return { orch, send, pushes, page, dom, restore };
   }
 
   test('识别在飞时点还原：还原立即完成，不等识别返回', async () => {
     const { detect } = pendingDetect();
-    const { orch, page, restore, pushes } = setupWithPage('zh-cn', detect);
+    const { orch, page, dom, restore, pushes } = setupWithPage('zh-cn', detect);
 
-    void orch.togglePage(STEAM, 'auto', 'zh-CN');
+    void orch.togglePage(page.withSource(STEAM), 'auto', 'zh-CN');
     // 识别在飞期间逐段翻译了一段，页面有了译文，再点悬浮球就是还原
-    page.translated = true;
-    const restored = await orch.togglePage(STEAM, 'auto', 'zh-CN');
+    dom.translated = true;
+    const restored = await orch.togglePage(page.withSource(STEAM), 'auto', 'zh-CN');
 
     // 识别一直没放行，还原照样走完
     expect(restored.status).toBe('restored');
@@ -246,11 +246,11 @@ describe('识别在飞时中止：这次运行已中止就丢弃识别结果（#
 
   test('还原之后识别才回来：结果丢弃，不翻译、不推送状态', async () => {
     const { detect, release } = pendingDetect();
-    const { orch, send, pushes, page } = setupWithPage('zh-cn', detect);
+    const { orch, send, pushes, page, dom } = setupWithPage('zh-cn', detect);
 
-    const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
-    page.translated = true;
-    await orch.togglePage(STEAM, 'auto', 'zh-CN');
+    const first = orch.togglePage(page.withSource(STEAM), 'auto', 'zh-CN');
+    dom.translated = true;
+    await orch.togglePage(page.withSource(STEAM), 'auto', 'zh-CN');
     expect(pushes).toEqual(['idle']);
     // 识别说大半是英文：没有中止的话这里会照常整页翻译
     release(reliable(['en', 76], ['zh', 23]));
@@ -266,9 +266,9 @@ describe('识别在飞时中止：这次运行已中止就丢弃识别结果（#
   test('abort 中止页面根（导航等中止）：识别回来不翻译也不推送；识别说是目标语言也不推未翻译态', async () => {
     for (const verdict of [reliable(['en', 76], ['zh', 23]), reliable(['zh', 95], ['en', 5])]) {
       const { detect, release } = pendingDetect();
-      const { orch, send, pushes } = setupWithPage('zh-cn', detect);
+      const { orch, page, send, pushes } = setupWithPage('zh-cn', detect);
 
-      const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
+      const first = orch.togglePage(page.withSource(STEAM), 'auto', 'zh-CN');
       orch.abort();
       release(verdict);
 
@@ -283,9 +283,9 @@ describe('识别在飞时中止：这次运行已中止就丢弃识别结果（#
 
   test('中止不计失败、不弹提示；在飞已回落，之后再点照常翻译', async () => {
     const { detect, release } = pendingDetect();
-    const { orch, send, pushes } = setupWithPage('zh-cn', detect);
+    const { orch, page, send, pushes } = setupWithPage('zh-cn', detect);
 
-    const first = orch.togglePage(STEAM, 'auto', 'zh-CN');
+    const first = orch.togglePage(page.withSource(STEAM), 'auto', 'zh-CN');
     orch.abort();
     release(reliable(['en', 76], ['zh', 23]));
     const result = await first;
@@ -295,7 +295,7 @@ describe('识别在飞时中止：这次运行已中止就丢弃识别结果（#
     expect(pageNotice(result, emptyRenderStats())).toBeNull();
 
     detect.mockImplementation(async () => reliable(['en', 76], ['zh', 23]));
-    const again = await orch.togglePage(STEAM, 'auto', 'zh-CN');
+    const again = await orch.togglePage(page.withSource(STEAM), 'auto', 'zh-CN');
     expect(again.status).toBe('translated');
     expect(send).toHaveBeenCalledTimes(1);
     expect(pushes).toEqual(['loading', 'done']);
@@ -323,15 +323,17 @@ describe('内容识别这一级拦下纯目标语言页面：#777 的几条在�
     const orch = createOrchestrator({
       send,
       getPageLang: () => 'en',
-      hasTranslated: () => document.querySelector('[data-pt]') !== null,
-      pushStatus: (s) => pushes.push(s),
-      onObserverStart,
       detectContentLang: detect,
-    } as Parameters<typeof createOrchestrator>[0]);
+    });
+    const page = itemsPage(collectItems, {
+      hasTranslated: () => document.querySelector('[data-pt]') !== null,
+      onObserverStart,
+    });
+    page.subscribe((s) => pushes.push(s));
     orch.start();
 
     for (let click = 1; click <= 2; click++) {
-      const result = await orch.togglePage(collectItems, 'auto', 'zh-CN');
+      const result = await orch.togglePage(page, 'auto', 'zh-CN');
       expect(result.status).toBe('same-language');
       expect(document.body.innerHTML).toBe(before);
       expect(document.querySelectorAll('[data-pt], .pt-chunk, [data-pt-split]')).toHaveLength(0);
@@ -349,9 +351,9 @@ describe('内容识别这一级拦下纯目标语言页面：#777 的几条在�
 describe('内容识别这一级拦下时的悬浮球状态（#870，同 #793、#327）', () => {
   // 声明都写成 en：拦下只能来自内容识别
   test('主文档：悬浮球推到未翻译态 idle，从不推 loading 或完成态 done', async () => {
-    const { orch, send, pushes } = setup('en', async () => reliable(['zh', 96], ['en', 4]));
+    const { orch, page, send, pushes } = setup('en', async () => reliable(['zh', 96], ['en', 4]));
 
-    const result = await orch.togglePage(ZH, 'auto', 'zh-CN');
+    const result = await orch.togglePage(page.withSource(ZH), 'auto', 'zh-CN');
 
     expect(result.status).toBe('same-language');
     expect(send).toHaveBeenCalledTimes(0);
@@ -359,24 +361,22 @@ describe('内容识别这一级拦下时的悬浮球状态（#870，同 #793、#
     orch.stop();
   });
 
-  test('子框架：照样判、照样拦，但一次状态都不推', async () => {
+  // #1079 起状态流只在主框架订阅（见 content），子框架一次状态都不推不再是编排模块的事
+  test('子框架：照样判、照样拦', async () => {
     const send = fakeSend();
-    const pushes: string[] = [];
     const orch = createOrchestrator({
       send,
       getPageLang: () => 'en',
-      hasTranslated: () => false,
       isMainFrame: () => false,
-      pushStatus: (s) => pushes.push(s),
       detectContentLang: async () => reliable(['zh', 96], ['en', 4]),
-    } as Parameters<typeof createOrchestrator>[0]);
+    });
     orch.start();
+    const page = itemsPage(ZH);
 
-    const result = await orch.togglePage(ZH, 'auto', 'zh-CN');
+    const result = await orch.togglePage(page, 'auto', 'zh-CN');
 
     expect(result.status).toBe('same-language');
     expect(send).toHaveBeenCalledTimes(0);
-    expect(pushes).toEqual([]);
     orch.stop();
   });
 });

@@ -6,7 +6,8 @@
  * 汇总提示说了什么。同一时刻只显示一条提示，所以汇总只给出一条。
  */
 import { describe, test, expect, vi, beforeEach } from 'vitest';
-import { createOrchestrator, domPage } from './page-harness';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { domPage } from './page-harness';
 import type { PageToggleResult, TranslateItem } from '~/src/orchestration/orchestrator';
 import {
   emptyRenderStats,
@@ -41,11 +42,11 @@ async function translatePage(
       ok: true,
       data: { translations: req.texts.map(reply) },
     })),
-    pushStatus: (s) => pushes.push(s),
-  } as Parameters<typeof createOrchestrator>[0]);
+  });
   orch.start();
   // 与 content 同一口径的整页翻译会话：真实渲染、渲染结果计入会话的统计（#1077）
   const page = domPage({ collect: () => [...root.querySelectorAll('p, li')] });
+  page.subscribe((s) => pushes.push(s));
   const result = await orch.togglePage(page, 'auto', 'zh-CN');
   const stats = page.current()?.totals() ?? emptyRenderStats();
   orch.stop();

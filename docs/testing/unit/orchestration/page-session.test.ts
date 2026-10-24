@@ -14,12 +14,15 @@ import { collect } from '~/src/dom/walker';
 import { render, unrender, type RenderResult } from '~/src/dom/renderer';
 import {
   createOrchestrator,
-  RECOLLECT_MAX_ROUNDS,
-  RECOLLECT_INTERVAL_MS,
   type OrchestratorOptions,
   type TranslateItem,
 } from '~/src/orchestration/orchestrator';
-import { createPageTranslation, type PageTranslation } from '~/src/orchestration/page-session';
+import {
+  createPageTranslation,
+  RECOLLECT_MAX_ROUNDS,
+  RECOLLECT_INTERVAL_MS,
+  type PageTranslation,
+} from '~/src/orchestration/page-session';
 import type { TranslateRequest } from '~/src/engines/types';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 

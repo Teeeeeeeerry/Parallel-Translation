@@ -13,7 +13,8 @@
  * 真实识别器的可靠标记会在两次调用之间翻转（#851）。
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
-import { createOrchestrator } from './page-harness';
+import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { itemsPage } from './page-harness';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import {
   type ContentLang,
@@ -48,16 +49,13 @@ function fakeSend() {
 
 function setup(pageLang: string | null, detect?: Detect) {
   const send = fakeSend();
-  const pushes: string[] = [];
   const orch = createOrchestrator({
     send,
     getPageLang: () => pageLang,
-    hasTranslated: () => false,
-    pushStatus: (s) => pushes.push(s),
     ...(detect ? { detectContentLang: detect } : {}),
-  } as Parameters<typeof createOrchestrator>[0]);
+  });
   orch.start();
-  return { orch, send, pushes };
+  return { orch, send };
 }
 
 function items(texts: string[]): TranslateItem<number>[] {
@@ -96,9 +94,9 @@ afterEach(() => {
 describe('有够长的外文单元：照常翻译，与改动前的整页翻译完全一致', () => {
   test('送出去的请求与没注入识别、声明是外文时逐条相同', async () => {
     const a = setup('zh-cn', sampleSays({ reliable: true, languages: [{ lang: 'zh', percentage: 70 }] }));
-    await a.orch.togglePage(STEAM, 'auto', 'zh-CN');
+    await a.orch.togglePage(itemsPage(STEAM), 'auto', 'zh-CN');
     const b = setup('en');
-    await b.orch.togglePage(STEAM, 'auto', 'zh-CN');
+    await b.orch.togglePage(itemsPage(STEAM), 'auto', 'zh-CN');
 
     expect(a.send.mock.calls).toEqual(b.send.mock.calls);
     a.orch.stop();
@@ -120,7 +118,7 @@ describe('没有够长的外文单元、全页目标语言占优：拦下', () =
     const detect = vi.fn(byText());
     const { orch, send } = setup('en', detect);
 
-    const result = await orch.togglePage(collectItems, 'auto', 'zh-CN');
+    const result = await orch.togglePage(itemsPage(collectItems), 'auto', 'zh-CN');
 
     restoreRects();
     expect(result.status).toBe('same-language');
