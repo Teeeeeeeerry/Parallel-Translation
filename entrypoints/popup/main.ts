@@ -20,6 +20,7 @@ import {
   InvalidSitesError,
 } from '~/src/storage/domains';
 import type { DomainChoice } from '~/src/storage/domains';
+import { DOMAIN_CHOICE, tabChoiceMessages } from '~/src/ui/tab-choice';
 import { parseInputLangChoice, type InputLangChoice } from '~/src/ui/input-target-lang';
 import {
   settingsReady,
@@ -304,7 +305,7 @@ async function onDomainChange(): Promise<void> {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab?.id == null) throw new Error('no active tab');
     const resp = await chrome.tabs.sendMessage(tab.id, {
-      type: 'pt:set-domain',
+      type: tabChoiceMessages(DOMAIN_CHOICE.name).set,
       choice,
       to: getSettings().to,
     });

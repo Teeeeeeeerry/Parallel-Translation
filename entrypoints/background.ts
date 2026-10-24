@@ -19,6 +19,7 @@ import { loadUiLocale, type UiLocaleChoice } from '~/src/i18n';
 import { UI_MESSAGES, answerUiMessages } from '~/src/runtime/ui-messages';
 import { claimShow, markFreshInstall } from '~/src/changelog/claim';
 import { markSeen } from '~/src/changelog/state';
+import { DOMAIN_CHOICE, tabChoiceForwarder } from '~/src/ui/tab-choice';
 
 /** 将浏览器 UI 语言映射到 LANG_LIST 中可用的目标语言码 */
 function deriveTargetLanguage(uiLang: string): string {
@@ -167,17 +168,13 @@ export default defineBackground(() => {
     sendResponse({ hostname });
   });
 
-  // #400: 子 frame 启动时要本标签页的临时领域选择 —— 转问该标签页的
-  // 主文档（frameId 0），切换之后才加载的 iframe 与主文档带同一个领域
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg?.type !== 'pt:top-domain-choice') return;
-    const tabId = sender.tab?.id;
-    if (tabId == null) return;
-    chrome.tabs
-      .sendMessage(tabId, { type: 'pt:get-domain-choice' }, { frameId: 0 })
-      .then(sendResponse, () => sendResponse(undefined));
-    return true;
-  });
+  // #400/#847/#1121：标签页临时选择的通用转发 —— 子 frame 启动时的询问转给本标签页
+  // 的主文档（frameId 0），主文档报来的跳页重置广播给全部 frame
+  chrome.runtime.onMessage.addListener(
+    tabChoiceForwarder([DOMAIN_CHOICE], (tabId, msg, opts) =>
+      opts ? chrome.tabs.sendMessage(tabId, msg, opts) : chrome.tabs.sendMessage(tabId, msg),
+    ),
+  );
 
   // #663: 子 frame 启动时要本标签页这一次的对方语言（输入翻译）—— 与上面
   // 的临时领域同一条路，转问该标签页的主文档
@@ -200,17 +197,6 @@ export default defineBackground(() => {
     if (tabId == null || sender.frameId !== 0) return;
     chrome.tabs
       .sendMessage(tabId, { type: 'pt:set-input-lang', choice: { kind: 'auto' } })
-      .catch(() => {});
-  });
-
-  // #847：领域的临时选择（#400）同理 —— 回到按网址判定，与 popup 临时切换
-  // 走同一条 pt:set-domain，同样不带 frameId、只认主文档发来的
-  chrome.runtime.onMessage.addListener((msg, sender) => {
-    if (msg?.type !== 'pt:domain-path-changed') return;
-    const tabId = sender.tab?.id;
-    if (tabId == null || sender.frameId !== 0) return;
-    chrome.tabs
-      .sendMessage(tabId, { type: 'pt:set-domain', choice: { kind: 'auto' } })
       .catch(() => {});
   });
 
