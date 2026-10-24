@@ -361,9 +361,9 @@ describe('内容识别这一级拦下时的悬浮球状态（#870，同 #793、#
     orch.stop();
   });
 
-  test('子框架：照样判、照样拦，但一次状态都不推', async () => {
+  // #1079 起状态流只在主框架订阅（见 content），子框架一次状态都不推不再是编排模块的事
+  test('子框架：照样判、照样拦', async () => {
     const send = fakeSend();
-    const pushes: string[] = [];
     const orch = createOrchestrator({
       send,
       getPageLang: () => 'en',
@@ -371,14 +371,12 @@ describe('内容识别这一级拦下时的悬浮球状态（#870，同 #793、#
       detectContentLang: async () => reliable(['zh', 96], ['en', 4]),
     });
     orch.start();
-    // 与 content 一样，子框架不订阅整页翻译的状态流（#1079）
     const page = itemsPage(ZH);
 
     const result = await orch.togglePage(page, 'auto', 'zh-CN');
 
     expect(result.status).toBe('same-language');
     expect(send).toHaveBeenCalledTimes(0);
-    expect(pushes).toEqual([]);
     orch.stop();
   });
 });

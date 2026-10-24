@@ -909,22 +909,20 @@ describe('状态推送与中止记账（#327）', () => {
     orch.stop();
   });
 
-  test('子框架不推送状态，但照常执行翻译', async () => {
+  // #1079 起状态流只在主框架订阅（见 content），不推状态不再是编排模块的事
+  test('子框架照常执行翻译', async () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: ['译'] } }));
-    const pushes: string[] = [];
     const orch = createOrchestrator({
       send,
       isMainFrame: () => false,
     });
     const page = itemsPage(items(1), { hasTranslated: () => false });
-    // 与 content 一样，子框架不订阅整页翻译的状态流（#1079）
     orch.start();
 
     const result = await orch.togglePage(page, 'en', 'zh-CN');
 
     expect(result.status).toBe('translated');
     expect(send).toHaveBeenCalledTimes(1); // 子框架照常翻译
-    expect(pushes).toEqual([]); // 但不推送状态
     orch.stop();
   });
 });
@@ -937,7 +935,7 @@ describe('观察器启停时机（#328）', () => {
     itemsPage(items(1), { hasTranslated: () => false, onObserverStart: start, onObserverStop: stop });
     orch.start();
 
-    // 只构造编排、不触发 toggle：观察器启停钩子零调用
+    // 只构造编排与整页翻译、不触发 toggle：观察器启停钩子零调用
     expect(start).not.toHaveBeenCalled();
     expect(stop).not.toHaveBeenCalled();
     orch.stop();

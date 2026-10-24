@@ -2,7 +2,7 @@
  * 以 br 分行的超长段落（#694）几张票共用的测试脚手架。
  *
  * 只经外部入口：采集入口 collect、整页翻译的编排入口 translatePage（真实
- * 渲染器），以及还原。还原与“是否已翻译”用 content script 同一份实现
+ * 渲染器），以及还原。还原用 content script 同一份实现
  * （src/dom/page-dom.ts，#1116）。
  *
  * 夹具一律用文字真正超过长度上限的段落：#768 之后按 br 切行只看文字长度，
@@ -13,7 +13,6 @@ import { mockAllBoundingRects } from '../../setup';
 import { collect, type CollectOptions } from '~/src/dom/walker';
 import { render } from '~/src/dom/renderer';
 import { hasBlockTextChildren, restorePreserves, unitTextEx } from '~/src/dom/text';
-import { hasTranslated } from '~/src/dom/page-dom';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import { MAX_TEXT } from '~/src/dom/classify';
 

@@ -110,8 +110,8 @@ describe('命中闸门：零请求、页面一个字不动（#792）', () => {
     orch.stop();
   });
 
-  test('子框架不推状态（#793，同 #327）', async () => {
-    const pushes: string[] = [];
+  // 子框架不推状态（#793，同 #327）：#1079 起状态流只在主框架订阅，见 content；这里只看判定
+  test('子框架照样判、照样拦（#793）', async () => {
     const send = fakeSend();
     const orch = createOrchestrator({
       send,
@@ -119,13 +119,11 @@ describe('命中闸门：零请求、页面一个字不动（#792）', () => {
       isMainFrame: () => false,
     });
     orch.start();
-    // 与 content 一样，子框架不订阅整页翻译的状态流（#1079）
     const page = itemsPage(items(3));
 
     const result = await orch.togglePage(page, 'auto', 'zh-CN');
 
     expect(result.status).toBe('same-language');
-    expect(pushes).toEqual([]);
     expect(send).toHaveBeenCalledTimes(0);
     orch.stop();
   });
