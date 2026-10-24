@@ -19,7 +19,8 @@ import {
 } from '~/src/orchestration/orchestrator';
 import { createPageTranslation, type PageTranslation } from '~/src/orchestration/page-session';
 import { collect, type SkipCategory } from '~/src/dom/walker';
-import { render, unrender } from '~/src/dom/renderer';
+import { render } from '~/src/dom/renderer';
+import { hasTranslated, restorePage } from '~/src/dom/page-dom';
 
 /** 现成的翻译项，或按需交出翻译项的函数（收到 readOnly 时是闸门取样）。 */
 export type ItemsSource =
@@ -77,8 +78,8 @@ export function itemsPage(source: ItemsSource, hooks: PageHooks = {}): PageTrans
 
 /**
  * 真实 DOM 原语搭的整页翻译，与 content script 同一口径：采集用 walker 的
- * collect（或用例给的采集），渲染用 renderer 的 render，翻译态以完成标记为准，
- * 还原撤回全部渲染。统计与跳过从 page.current() 读。
+ * collect（或用例给的采集），渲染用 renderer 的 render，还原与翻译态查询用
+ * page-dom 的真实实现（#1116，含切块还原）。统计与跳过从 page.current() 读。
  */
 export function domPage(
   opts: {
@@ -91,8 +92,8 @@ export function domPage(
     collectReadOnly: () => collect(document.body, undefined, { readOnly: true }),
     build: opts.build ?? ((el) => ({ text: el.textContent!, ctx: el })),
     render: (item, translation) => render(item.ctx, translation, 'page', item.text),
-    unrenderAll: () => document.querySelectorAll('[data-pt="done"]').forEach((el) => unrender(el)),
-    hasTranslated: () => document.querySelector('[data-pt="done"]') !== null,
+    unrenderAll: () => restorePage(),
+    hasTranslated: () => hasTranslated(),
     observe: () => ({ stop: () => {}, registerHidden: () => {} }),
   });
 }

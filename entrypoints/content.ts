@@ -18,13 +18,17 @@ import {
   translatableText,
   shallowTranslatableText,
   unitTextEx,
-  hasBlockTextChildren,
   restorePreserves,
 } from '~/src/dom/text';
 import { startObserver } from '~/src/dom/observer';
-import { walkShadowTree } from '~/src/dom/shadow-walk';
-import { render, unrender, applyMode, applyStyle, type RenderResult } from '~/src/dom/renderer';
-import { unsplitChunks } from '~/src/dom/chunk-split';
+import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
+import {
+  buildPageItem,
+  hasTranslated,
+  renderPageItem,
+  restorePage,
+  type PageItemCtx,
+} from '~/src/dom/page-dom';
 import { applyCustomCss } from '~/src/styles/custom';
 import { createBall, setBallState } from '~/src/ui/floating-ball';
 import { createParaBtn } from '~/src/ui/paragraph-btn';
@@ -416,13 +420,6 @@ export default defineContentScript({
     // 收集与渲染（DOM 职责）、提示渲染、消息监听接线；悬浮球 / 快捷键 /
     // popup 三条触发路径都只调用 togglePage（开关入口的薄包装）。
 
-    /** 翻译项的渲染上下文（#261）：目标元素 + preserves + 原文。 */
-    interface PageItemCtx {
-      target: Element;
-      preserves: Map<string, string>;
-      rawText: string;
-    }
-
     /**
      * 增量补翻的渲染统计（每次开始时清零），各项含义见 RenderStats。#1077：整页
      * 翻译的统计归整页翻译会话，按轮各记各的，不与这里共用。
@@ -479,27 +476,9 @@ export default defineContentScript({
     orchestrator.start();
 
     /**
-     * 构建翻译项（DOM 职责，#329 内容脚本保留的部分）：
-     * 归一化内部空白、混合内容提取、占位符映射全部在此。
-     */
-    function buildPageItem(el: Element): TranslateItem<PageItemCtx> {
-      const { text, preserves } = unitTextEx(el, { shallow: hasBlockTextChildren(el) });
-      return { text, ctx: { target: el, preserves, rawText: text } };
-    }
-
-    /** 渲染一个单元（DOM 职责）：占位符换回原文后插入译文。 */
-    function renderPageItem(item: TranslateItem<PageItemCtx>, translation: string): RenderResult {
-      const ctx = item.ctx;
-      // #58：将占位符替换回原文（用户名等标识符不翻译但保留）
-      const restored = restorePreserves(translation, ctx.preserves, ctx.rawText);
-      // #783：译文与送去翻译的原文比对，原文里的占位符同样换回
-      const source = restorePreserves(ctx.rawText, ctx.preserves, ctx.rawText);
-      return render(ctx.target, restored, 'page', source);
-    }
-
-    /**
      * 整页翻译（#1077、#1078）：采集去重、按轮统计、渲染、补采集、到顶交接、
-     * 观察器启停与隐藏单元缓冲、还原都在整页翻译会话里，内容脚本只给 DOM 原语。
+     * 观察器启停与隐藏单元缓冲、还原都在整页翻译会话里，内容脚本只给 DOM 原语
+     * （#1116：还原、翻译态查询、翻译项构建与渲染在 src/dom/page-dom.ts）。
      * 每次整页翻译从它新建一个会话，还原时结束。
      */
     const page = createPageTranslation<Element, PageItemCtx>({
@@ -514,8 +493,10 @@ export default defineContentScript({
       collectReadOnly: () => collect(document.body, undefined, { readOnly: true }),
       build: buildPageItem,
       render: renderPageItem,
-      unrenderAll: doRestore,
-      hasTranslated,
+      // #328/#1078: 观察器停止由整页翻译会话、中止在飞翻译由编排模块的开关入口
+      // 执行，这里只做 DOM 还原
+      unrenderAll: () => restorePage(),
+      hasTranslated: () => hasTranslated(),
       // #255/#331: 增量补翻观察器 —— 整页翻译成功后由会话启动，还原时由会话停止
       observe: () =>
         startObserver((els) => {
@@ -605,51 +586,6 @@ export default defineContentScript({
         ? allFailedNotice(summary.display)
         : partialFailNotice(renderStats, summary.display);
       if (notice && isMainFrame) toast(notice.message, { purpose: 'status', kind: notice.kind });
-    }
-
-    // ── 还原（DOM 职责）──
-    function doRestore(): void {
-      // #253: 还原收集走统一遍历模块（shadow 穿透 + 集中式跳过规则）。
-      // skipTranslated: false —— 嵌套在已翻译单元内的已翻译单元
-      // （.pt-origin 搬移的既有译文）也要一并收集还原。
-      // #328/#1078: 观察器停止由整页翻译会话、中止在飞翻译由编排模块的
-      // 开关入口执行，此处只做 DOM 还原
-      const els: Element[] = [];
-      const splitContainers: Element[] = [];
-      walkShadowTree(
-        document,
-        (el) => {
-          if (el.getAttribute('data-pt') === 'done') els.push(el);
-          // #65：收集被切分的容器（#705 起不只 pre），在 unrender 后还原 DOM
-          if (el.getAttribute('data-pt-split') === '1') splitContainers.push(el);
-        },
-        { skipTranslated: false },
-      );
-
-      for (const el of els) {
-        unrender(el);
-      }
-      // #65：unrender chunk 后再还原切分包装，将 DOM 恢复为逐字节原貌
-      for (const container of splitContainers) {
-        unsplitChunks(container);
-      }
-    }
-
-    /**
-     * 翻译态查询（#325/#329）—— 以真实 DOM 为准而不是布尔标志：
-     * 单段翻译（translateOne）与 observer 增量补翻都会落 data-pt="done"，
-     * 仅查标志会把“页面上已有译文”误判成“没翻过”，toggle 走错分支。
-     */
-    function hasTranslated(): boolean {
-      // #253: 判定走统一遍历模块（shadow 穿透，命中即短路终止）
-      let found = false;
-      walkShadowTree(document, (el) => {
-        if (el.getAttribute('data-pt') === 'done') {
-          found = true;
-          return 'stop';
-        }
-      });
-      return found;
     }
 
     // ── 翻译单段 ──
