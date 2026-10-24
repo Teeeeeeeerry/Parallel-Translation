@@ -90,10 +90,15 @@ describe('导入文件（#1124）', () => {
     error.mockRestore();
   });
 
-  test('空文件：交给解析，解析说不行就是导入失败', async () => {
+  test('空文件：交给解析，解析说不行就是导入失败（不是读取失败）', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const r = await importFile(file(''), parseNumbers);
-    expect(r.ok).toBe(false);
+    const seen: string[] = [];
+    const r = await importFile(file(''), async (text) => {
+      seen.push(text);
+      throw new Error('[PT] 文件是空的');
+    });
+    expect(seen).toEqual(['']);
+    expect(r).toEqual({ ok: false, message: '导入失败：文件是空的' });
     error.mockRestore();
   });
 

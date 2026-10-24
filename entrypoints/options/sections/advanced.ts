@@ -10,7 +10,7 @@ import {
   getSettings,
   onSettingsChanged,
 } from '~/src/storage/settings';
-import { importSettings as applyImport } from '~/src/storage/settings-import';
+import { IMPORT_BAD_JSON, importSettings as applyImport } from '~/src/storage/settings-import';
 import { cacheClear } from '~/src/storage/cache';
 import { resetSettings as resetAllSettings } from '~/src/storage/settings-reset';
 import { tf } from '~/src/i18n';
@@ -34,7 +34,7 @@ async function exportSettings(): Promise<string> {
   return JSON.stringify(clean, null, 2);
 }
 
-/** 文件不是能导入的设置（JSON 无效、自定义 CSS 校验不过）：配置保持不变。 */
+/** 文件不是能导入的设置（JSON 无效、自定义 CSS 校验不过）：配置保持不变，message 是原因。 */
 class InvalidSettingsFile extends Error {}
 
 /**
@@ -50,8 +50,13 @@ async function importSettings(file: File): Promise<void> {
       if (!r.ok) throw new InvalidSettingsFile(r.reason);
     },
     {
-      failure: (e) =>
-        e instanceof InvalidSettingsFile ? tf('toastImportFail', `导入失败：${e.message}`) : null,
+      // JSON 无效给本地化的固定文案；别的原因（自定义 CSS 校验不过）照原样说出来 ——
+      // 原先一律显示“JSON 格式无效”，用户找不到真正的问题
+      failure: (e) => {
+        if (!(e instanceof InvalidSettingsFile)) return null;
+        if (e.message === IMPORT_BAD_JSON) return tf('toastImportFail', '导入失败：JSON 格式无效');
+        return tf('importFailed', `导入失败：${e.message}`, e.message);
+      },
     },
   );
   showToast(result.ok ? tf('toastImported', '设置已导入') : result.message, result.ok ? 2000 : 4000);
