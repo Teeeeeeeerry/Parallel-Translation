@@ -55,6 +55,14 @@ describe('准入', () => {
     expect(ctx({ settings: white, host: 'github.com' }).admission()).toBe('allowed');
   });
 
+  test('站点是否被名单拦下不看总开关：更新提示据此躲开拉黑站点（ADR-0001、#1120）', () => {
+    const list = { siteList: { mode: 'blacklist' as const, list: ['github.com'] } };
+    expect(ctx({ settings: list }).siteBlocked()).toBe(true);
+    expect(ctx({ settings: { ...list, enabled: false } }).siteBlocked()).toBe(true);
+    expect(ctx({ settings: { enabled: false } }).siteBlocked()).toBe(false);
+    expect(createPageContext({}).siteBlocked()).toBe(false);
+  });
+
   test('总开关关闭：不论站点名单，都是关闭', () => {
     const off = { enabled: false, siteList: { mode: 'blacklist' as const, list: ['github.com'] } };
     expect(ctx({ settings: off }).admission()).toBe('disabled');
@@ -108,6 +116,20 @@ describe('popup 的领域状态', () => {
         { id: 'law-zh', name: '领域 law-zh' },
       ],
     });
+  });
+
+  test('popup 显示的当前领域与请求实际带的一致（#1120）', () => {
+    // 自动：popup 显示的自动判定就是请求带的领域
+    const auto = ctx({ host: 'cdn.other.net', top: 'law.example.org' });
+    const autoId = auto.domainId('zh-CN');
+    expect(autoId).toBe('law-zh');
+    expect(auto.domainState('zh-CN').autoName).toBe(DOMAINS.find((d) => d.id === autoId)!.name);
+    // 临时选了别的领域：popup 报出的临时选择就是请求带的领域
+    const chosen = ctx({ top: 'law.example.org', choice: { kind: 'domain', id: 'dev-zh' } });
+    const state = chosen.domainState('zh-CN');
+    expect(state.choice).toEqual({ kind: 'domain', id: 'dev-zh' });
+    expect(chosen.domainId('zh-CN')).toBe('dev-zh');
+    expect(state.options.map((o) => o.id)).toContain('dev-zh');
   });
 
   test('目标语言没有领域：自动判定为空、没有可选项', () => {

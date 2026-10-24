@@ -63,12 +63,11 @@ import {
 } from '~/src/storage/settings';
 import type { Settings } from '~/src/storage/schema';
 import { clampParaBtnHideDelay } from '~/src/storage/schema';
-import { watchEffectiveDomains, currentDomain, parseDomainChoice } from '~/src/storage/domains';
+import { watchEffectiveDomains, parseDomainChoice } from '~/src/storage/domains';
 import type { Domain, DomainChoice } from '~/src/storage/domains';
 import { siteRulesReady } from '~/src/storage/specialization';
 import { loadUiLocale, tf } from '~/src/i18n';
 import { loadMessagesViaBackground } from '~/src/runtime/ui-messages';
-import { isSiteBlocked } from '~/src/dom/site-filter';
 import { decideShow } from '~/src/changelog/decide';
 import { clearSeen } from '~/src/changelog/state';
 
@@ -212,6 +211,22 @@ export default defineContentScript({
         })
       : null;
 
+    // #1119/#1120：页面上下文 —— “这个页面能不能翻”与“当前领域是哪个”只在这里算。
+    // #310：设置经注入读取；#311：准入按本 frame 的主机名；#471：当前领域按顶层
+    // 页面判定
+    const pageContext = createPageContext({
+      getSettings,
+      getHostname: () => location.hostname,
+      getTopHostname: () => topHostname,
+      getDomains: () => domains,
+      // #847：浏览器没有 Navigation API 时收不到 pushState，用之前补判一次
+      getDomainChoice: () => {
+        pathWatch?.check();
+        return domainChoice;
+      },
+      isMainFrame: () => isMainFrame,
+    });
+
     // ── 注入 UI（仅主文档）──
     if (isMainFrame) {
       // #242: 悬浮球经注册表启停；showFloatingBall 决定是否启动
@@ -309,16 +324,15 @@ export default defineContentScript({
     registry.ensure('drag', true);
 
     /**
-     * #632：当前站点是否获得准入 —— 复用站点名单判定，与编排模块的准入
-     * （整页、逐段、划词翻译）同一个口径、同一个主机名。鼠标路过就浮出的
-     * UI 按它决定要不要注册：站点没获准入时根本不挂监听，而不是浮出来、
-     * 点下去才提示被禁用。输入翻译圆点（#649）同样按它门控。
+     * #632：当前站点是否获得准入 —— 问页面上下文（#1120），与编排模块的准入
+     * （整页、逐段、划词、输入翻译）是同一份判定。鼠标路过就浮出的 UI 按它决定
+     * 要不要注册：站点没获准入时根本不挂监听，而不是浮出来、点下去才提示被禁用。
+     * 输入翻译圆点（#649）同样按它门控。#686：扩展总开关也算在内。
      *
-     * #686：扩展总开关也算在内 —— 总开关关掉时编排模块的准入同样拦下
-     * （静默不响应），所以这类 UI 也不该注册。
+     * 设置变更时 getSettings() 已是新值（存储模块先更新缓存再通知），所以不用传参。
      */
-    function uiAdmitted(ns: Settings): boolean {
-      return ns.enabled && !isSiteBlocked(location.hostname, ns.siteList);
+    function uiAdmitted(): boolean {
+      return pageContext.admission() === 'allowed';
     }
 
     // ── 设置变更统一入口（#265）──
@@ -349,12 +363,12 @@ export default defineContentScript({
         registry.ensure('ball', ns.showFloatingBall);
         // #632: 段落按钮还要站点获得准入；改名单经此入口即时启停
         // #686: 与输入翻译圆点同一份判定，总开关关掉同样不注册
-        registry.ensure('para-btn', ns.showParagraphBtn && uiAdmitted(ns));
+        registry.ensure('para-btn', ns.showParagraphBtn && uiAdmitted());
       }
       // #636: 输入翻译圆点在每个 frame 经注册表 ensure —— 启停幂等、即时生效
       // #649: 还要扩展总开关打开、站点获得准入（与逐段按钮同一份判定）；
       // 改名单、开关总开关都经此入口即时启停
-      registry.ensure('input-dot', ns.inputTranslate && uiAdmitted(ns));
+      registry.ensure('input-dot', ns.inputTranslate && uiAdmitted());
     }
     applySettings(s);
 
@@ -368,12 +382,13 @@ export default defineContentScript({
      *
      * 不 await —— 更新提示与翻译功能互不依赖，不该让它拖慢内容脚本启动。
      */
-    async function maybeShowChangelog(ns: Settings): Promise<void> {
+    async function maybeShowChangelog(): Promise<void> {
       const decision = decideShow({
         version: chrome.runtime.getManifest().version,
         isDev: import.meta.env.DEV,
         isMainFrame,
-        siteBlocked: isSiteBlocked(location.hostname, ns.siteList),
+        // #1120：拉黑判断问页面上下文，与准入同一份站点名单判定
+        siteBlocked: pageContext.siteBlocked(),
       });
       if (!decision.show) return;
 
@@ -403,7 +418,7 @@ export default defineContentScript({
       }
     }
 
-    void maybeShowChangelog(s).catch((e) =>
+    void maybeShowChangelog().catch((e) =>
       console.error('[PT] 更新提示失败：', e),
     );
 
@@ -426,22 +441,6 @@ export default defineContentScript({
       .get(DEBUG_BATCH_TIMING_KEY)
       .then((r) => r[DEBUG_BATCH_TIMING_KEY] === true)
       .catch(() => false);
-
-    // #1119：页面上下文 —— “这个页面能不能翻”与“当前领域是哪个”只在这里算。
-    // #310：设置经注入读取；#311：准入按本 frame 的主机名；#471：当前领域按顶层
-    // 页面判定
-    const pageContext = createPageContext({
-      getSettings,
-      getHostname: () => location.hostname,
-      getTopHostname: () => topHostname,
-      getDomains: () => domains,
-      // #847：浏览器没有 Navigation API 时收不到 pushState，用之前补判一次
-      getDomainChoice: () => {
-        pathWatch?.check();
-        return domainChoice;
-      },
-      isMainFrame: () => isMainFrame,
-    });
 
     // #261: 编排模块 —— 全页翻译的批次流水线在模块内，
     // 渲染回调按批触发（#256 渐进渲染，首屏不等最慢段）
@@ -586,25 +585,6 @@ export default defineContentScript({
       if (notice) toast(notice.message, notice);
     }
 
-    // ── popup 的领域状态 ──
-    /**
-     * popup 显示用的领域状态（#399、#400）：自动判定会选中的领域、本标签页
-     * 的临时选择，以及可切换到的领域。
-     */
-    function domainState(to: string) {
-      const lang = to.toLowerCase();
-      return {
-        // #401: “以后在此站点都使用”按顶层页面的主机名记住
-        host: topHostname,
-        autoName: currentDomain(domains, topHostname, to)?.name ?? null,
-        choice: domainChoice,
-        // 可切换到的领域：一个领域只服务一种目标语言
-        options: domains
-          .filter((d) => d.targetLang.toLowerCase() === lang)
-          .map((d) => ({ id: d.id, name: d.name })),
-      };
-    }
-
     // ── 监听 popup / background 消息 ──
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg?.type === 'pt:toggle-translate') {
@@ -621,14 +601,14 @@ export default defineContentScript({
       }
 
       if (msg?.type === 'pt:current-domain') {
-        // #399: popup 显示当前领域 —— 与全页翻译携带的领域同一口径
-        // （本页读到的领域列表 + 顶层页面主机名，#471）；目标语言用 popup
-        // 当前所选，避免设置刚改、本页还没收到变更时显示旧结果
+        // #399: popup 显示当前领域 —— 问页面上下文（#1120），与全页翻译携带的
+        // 领域是同一份判定；目标语言用 popup 当前所选，避免设置刚改、本页还没
+        // 收到变更时显示旧结果
         if (!isMainFrame) return;
         // #847：答之前补判一次路径
         pathWatch?.check();
         const to = typeof msg.to === 'string' ? msg.to : getSettings().to;
-        sendResponse(domainState(to));
+        sendResponse(pageContext.domainState(to));
         return;
       }
 
@@ -641,7 +621,7 @@ export default defineContentScript({
         choiceBroadcast = true;
         if (!isMainFrame) return;
         const to = typeof msg.to === 'string' ? msg.to : getSettings().to;
-        sendResponse(domainState(to));
+        sendResponse(pageContext.domainState(to));
         return;
       }
 

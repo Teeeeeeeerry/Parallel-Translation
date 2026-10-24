@@ -61,6 +61,11 @@ export interface PageContext {
   settings(): Settings | undefined;
   /** 这个页面能不能翻（总开关与站点名单）。 */
   admission(): Admission;
+  /**
+   * 本 frame 的站点是否被站点名单拦下，不看总开关 —— 更新提示（ADR-0001）只躲开
+   * 被拉黑的站点，总开关关着照样弹。
+   */
+  siteBlocked(): boolean;
   /** 是否主框架。 */
   isMainFrame(): boolean;
   /** 按目标语言解析的当前领域 ID；没有时为 undefined（请求里不带这个字段）。 */
@@ -75,6 +80,11 @@ export function createPageContext(src: PageContextSource): PageContext {
   const domains = () => src.getDomains?.() ?? [];
   const choice = (): DomainChoice => src.getDomainChoice?.() ?? { kind: 'auto' };
 
+  const siteBlocked = () => {
+    const s = src.getSettings?.();
+    return s ? isSiteBlocked(hostname(), s.siteList) : false;
+  };
+
   return {
     settings: () => src.getSettings?.(),
 
@@ -82,9 +92,10 @@ export function createPageContext(src: PageContextSource): PageContext {
       const s = src.getSettings?.();
       if (!s) return 'allowed';
       if (!s.enabled) return 'disabled';
-      if (isSiteBlocked(hostname(), s.siteList)) return 'blocked';
-      return 'allowed';
+      return siteBlocked() ? 'blocked' : 'allowed';
     },
+
+    siteBlocked,
 
     isMainFrame: () => src.isMainFrame?.() !== false,
 
