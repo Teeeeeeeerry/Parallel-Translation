@@ -9,6 +9,7 @@
 import { describe, test, expect } from 'vitest';
 import {
   createTabChoices,
+  INPUT_LANG_CHOICE,
   tabChoiceForwarder,
   tabChoiceMessages,
   type TabChoice,
@@ -197,12 +198,36 @@ describe('标签页临时选择（#1121）', () => {
     expect(forward({ type: 'pt:other' }, { tab: { id: 1 }, frameId: 0 }, () => {})).toBeUndefined();
   });
 
-  test('消息名由种类生成', () => {
+  test('消息名由种类生成，两种临时选择沿用原来的消息名', () => {
     expect(tabChoiceMessages('domain')).toEqual({
       set: 'pt:set-domain',
       get: 'pt:get-domain-choice',
       top: 'pt:top-domain-choice',
       navigated: 'pt:domain-path-changed',
     });
+    expect(tabChoiceMessages(INPUT_LANG_CHOICE.name)).toEqual({
+      set: 'pt:set-input-lang',
+      get: 'pt:get-input-lang-choice',
+      top: 'pt:top-input-lang-choice',
+      navigated: 'pt:input-lang-path-changed',
+    });
+  });
+
+  test('两种临时选择共用一个路径监视：跳页时各自只在不是自动时重置并广播（#1122）', () => {
+    let href = 'https://forum.example/t/1';
+    const sent: unknown[] = [];
+    const choices = createTabChoices({
+      isMainFrame: true,
+      sendMessage: async (msg) => void sent.push(msg),
+      getHref: () => href,
+      win: new EventTarget(),
+    });
+    const domain = choices.define(KIND);
+    const lang = choices.define(INPUT_LANG_CHOICE);
+    lang.set({ kind: 'lang', lang: 'en' });
+    href = 'https://forum.example/t/2';
+    expect(domain.get()).toEqual({ kind: 'auto' });
+    expect(lang.get()).toEqual({ kind: 'auto' });
+    expect(sent).toEqual([{ type: tabChoiceMessages(INPUT_LANG_CHOICE.name).navigated }]);
   });
 });

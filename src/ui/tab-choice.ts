@@ -17,11 +17,17 @@
 //   广播为准；
 // - popup 设新值时广播到全部 frame，只有主文档回复。
 //
+// 跳页重置的拍板理由（#836）：在用户眼里，单页应用里点进另一个帖子就是跳页；
+// 临时选择的全部意义就是不悄悄变成长期设置。两种错的代价也不对称：多重置一次
+// 只是回到自动判定，那本来就是默认行为；不重置的话，用户在国际站点上选了英文，
+// 点进一个日文帖子回复时仍被译成英文。
+//
 // 消息名由种类生成（tabChoiceMessages），内容脚本、popup 与后台都从这里取。后台
 // 的转问与广播是一个按种类通用的转发（tabChoiceForwarder）。
 
 import { watchPathChange } from './path-watch';
 import { parseDomainChoice, type DomainChoice } from '~/src/storage/domains';
+import { parseInputLangChoice, type InputLangChoice } from './input-target-lang';
 
 /** 一种临时选择：名字（生成消息名）与怎么认出一个合法的值。值的自动态是 { kind: 'auto' }。 */
 export interface TabChoiceKind<T extends { kind: string }> {
@@ -31,6 +37,9 @@ export interface TabChoiceKind<T extends { kind: string }> {
 
 /** 领域的临时选择（#400）：popup 里临时切换领域或选“无领域”。 */
 export const DOMAIN_CHOICE: TabChoiceKind<DomainChoice> = { name: 'domain', parse: parseDomainChoice };
+
+/** 输入翻译这一次的对方语言（#662、#663）：popup 里选的，顶替源语言设置这一级。 */
+export const INPUT_LANG_CHOICE: TabChoiceKind<InputLangChoice> = { name: 'input-lang', parse: parseInputLangChoice };
 
 /** 一种临时选择用到的消息名。 */
 export interface TabChoiceMessages {
@@ -85,8 +94,6 @@ export interface TabChoices {
   ): TabChoice<T>;
   /** 内容脚本消息监听里调用：是某种临时选择的消息就处理并返回 true。 */
   handle(msg: unknown, reply: Reply): boolean;
-  /** 补判一次路径（浏览器没有 Navigation API 时，在用到临时选择之前调用）。 */
-  check(): void;
 }
 
 interface Entry {
@@ -109,6 +116,7 @@ export function createTabChoices(deps: TabChoicesDeps): TabChoices {
           },
         })
       : null;
+  /** 补判一次路径：浏览器没有 Navigation API 时收不到 pushState，读与答之前调用 */
   const check = () => pathWatch?.check();
 
   return {
@@ -174,8 +182,6 @@ export function createTabChoices(deps: TabChoicesDeps): TabChoices {
       entry.handle(m, reply);
       return true;
     },
-
-    check,
   };
 }
 

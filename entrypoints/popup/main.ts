@@ -20,7 +20,7 @@ import {
   InvalidSitesError,
 } from '~/src/storage/domains';
 import type { DomainChoice } from '~/src/storage/domains';
-import { DOMAIN_CHOICE, tabChoiceMessages } from '~/src/ui/tab-choice';
+import { DOMAIN_CHOICE, INPUT_LANG_CHOICE, tabChoiceMessages } from '~/src/ui/tab-choice';
 import { parseInputLangChoice, type InputLangChoice } from '~/src/ui/input-target-lang';
 import {
   settingsReady,
@@ -316,6 +316,9 @@ async function onDomainChange(): Promise<void> {
   }
 }
 
+/** 对方语言临时选择的消息名（#1122：由标签页临时选择模块生成）。 */
+const INPUT_LANG_MESSAGES = tabChoiceMessages(INPUT_LANG_CHOICE.name);
+
 /** 每次刷新递增；后发起的刷新开始后，先前的重试不再写界面（同 domainRefresh）。 */
 let inputLangRefresh = 0;
 
@@ -324,7 +327,7 @@ async function askInputLangChoice(tabId: number): Promise<InputLangChoice | null
   try {
     const resp = await chrome.tabs.sendMessage(
       tabId,
-      { type: 'pt:get-input-lang-choice' },
+      { type: INPUT_LANG_MESSAGES.get },
       { frameId: 0 },
     );
     return parseInputLangChoice((resp as { choice?: unknown } | undefined)?.choice);
@@ -384,7 +387,7 @@ async function onInputLangChange(): Promise<void> {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab?.id == null) throw new Error('no active tab');
-    const resp = await chrome.tabs.sendMessage(tab.id, { type: 'pt:set-input-lang', choice });
+    const resp = await chrome.tabs.sendMessage(tab.id, { type: INPUT_LANG_MESSAGES.set, choice });
     if (refresh === inputLangRefresh) {
       renderInputLangSelect(parseInputLangChoice((resp as { choice?: unknown } | undefined)?.choice));
     }

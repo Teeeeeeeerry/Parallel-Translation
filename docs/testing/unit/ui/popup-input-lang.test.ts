@@ -15,6 +15,9 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { LANG_LIST } from '~/src/storage/schema';
+import { INPUT_LANG_CHOICE, tabChoiceMessages } from '~/src/ui/tab-choice';
+
+const INPUT_LANG = tabChoiceMessages(INPUT_LANG_CHOICE.name);
 
 const settings = vi.hoisted(() => ({
   enabled: true,
@@ -78,8 +81,8 @@ beforeEach(() => {
   patchSettings.mockClear();
   // 默认：本页还没有临时选择
   reply = (msg) => {
-    if (msg.type === 'pt:get-input-lang-choice') return { choice: { kind: 'auto' } };
-    if (msg.type === 'pt:set-input-lang') return { choice: msg.choice };
+    if (msg.type === INPUT_LANG.get) return { choice: { kind: 'auto' } };
+    if (msg.type === INPUT_LANG.set) return { choice: msg.choice };
     return undefined;
   };
 });
@@ -102,7 +105,7 @@ describe('popup 里的“这一次译成”选择器（#662）', () => {
     await openPopup();
     await vi.waitFor(() => expect(select()?.disabled).toBe(false));
     expect(select()!.value).toBe('auto');
-    const asks = sentOf('pt:get-input-lang-choice');
+    const asks = sentOf(INPUT_LANG.get);
     expect(asks).toHaveLength(1);
     // 只问主文档：子 frame 不回答这一问
     expect(asks[0]!.opts).toEqual({ frameId: 0 });
@@ -110,7 +113,7 @@ describe('popup 里的“这一次译成”选择器（#662）', () => {
 
   test('本页已经选过一种语言：打开时显示它', async () => {
     reply = (msg) =>
-      msg.type === 'pt:get-input-lang-choice' ? { choice: { kind: 'lang', lang: 'en' } } : undefined;
+      msg.type === INPUT_LANG.get ? { choice: { kind: 'lang', lang: 'en' } } : undefined;
     await openPopup();
     await vi.waitFor(() => expect(select()?.value).toBe('en'));
   });
@@ -120,8 +123,8 @@ describe('popup 里的“这一次译成”选择器（#662）', () => {
     await vi.waitFor(() => expect(select()?.disabled).toBe(false));
     select()!.value = 'ja';
     select()!.dispatchEvent(new Event('change'));
-    await vi.waitFor(() => expect(sentOf('pt:set-input-lang')).toHaveLength(1));
-    const [set] = sentOf('pt:set-input-lang');
+    await vi.waitFor(() => expect(sentOf(INPUT_LANG.set)).toHaveLength(1));
+    const [set] = sentOf(INPUT_LANG.set);
     expect(set!.msg.choice).toEqual({ kind: 'lang', lang: 'ja' });
     // 不带 frameId：带了只有主文档收得到，all_frames 注入的 iframe 收不到
     expect(set!.opts).toBeUndefined();
@@ -130,16 +133,16 @@ describe('popup 里的“这一次译成”选择器（#662）', () => {
 
   test('选回“跟随设置” → 交给页面的是 auto，不是某种语言', async () => {
     reply = (msg) => {
-      if (msg.type === 'pt:get-input-lang-choice') return { choice: { kind: 'lang', lang: 'en' } };
-      if (msg.type === 'pt:set-input-lang') return { choice: msg.choice };
+      if (msg.type === INPUT_LANG.get) return { choice: { kind: 'lang', lang: 'en' } };
+      if (msg.type === INPUT_LANG.set) return { choice: msg.choice };
       return undefined;
     };
     await openPopup();
     await vi.waitFor(() => expect(select()?.value).toBe('en'));
     select()!.value = 'auto';
     select()!.dispatchEvent(new Event('change'));
-    await vi.waitFor(() => expect(sentOf('pt:set-input-lang')).toHaveLength(1));
-    expect(sentOf('pt:set-input-lang')[0]!.msg.choice).toEqual({ kind: 'auto' });
+    await vi.waitFor(() => expect(sentOf(INPUT_LANG.set)).toHaveLength(1));
+    expect(sentOf(INPUT_LANG.set)[0]!.msg.choice).toEqual({ kind: 'auto' });
     expect(select()!.value).toBe('auto');
   });
 
@@ -148,7 +151,7 @@ describe('popup 里的“这一次译成”选择器（#662）', () => {
     await vi.waitFor(() => expect(select()?.disabled).toBe(false));
     select()!.value = 'en';
     select()!.dispatchEvent(new Event('change'));
-    await vi.waitFor(() => expect(sentOf('pt:set-input-lang')).toHaveLength(1));
+    await vi.waitFor(() => expect(sentOf(INPUT_LANG.set)).toHaveLength(1));
     expect(patchSettings).not.toHaveBeenCalled();
   });
 
@@ -156,7 +159,7 @@ describe('popup 里的“这一次译成”选择器（#662）', () => {
     vi.useFakeTimers();
     try {
       for (const bad of [{ kind: 'lang' }, { kind: 'lang', lang: 42 }, { kind: 'lang', lang: 'xx-NOPE' }, { kind: 'domain', id: 'x' }, 'en']) {
-        reply = (msg) => (msg.type === 'pt:get-input-lang-choice' ? { choice: bad } : undefined);
+        reply = (msg) => (msg.type === INPUT_LANG.get ? { choice: bad } : undefined);
         await openPopup();
         await vi.advanceTimersByTimeAsync(6000);
         expect(select()!.disabled, JSON.stringify(bad)).toBe(true);
