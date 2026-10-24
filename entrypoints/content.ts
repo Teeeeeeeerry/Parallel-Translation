@@ -42,6 +42,7 @@ import {
   type PageToggleResult,
 } from '~/src/orchestration/orchestrator';
 import { createPageTranslation, type PageSession } from '~/src/orchestration/page-session';
+import { createPageContext } from '~/src/orchestration/page-context';
 import {
   emptyRenderStats,
   emptySkipStats,
@@ -426,6 +427,22 @@ export default defineContentScript({
       .then((r) => r[DEBUG_BATCH_TIMING_KEY] === true)
       .catch(() => false);
 
+    // #1119：页面上下文 —— “这个页面能不能翻”与“当前领域是哪个”只在这里算。
+    // #310：设置经注入读取；#311：准入按本 frame 的主机名；#471：当前领域按顶层
+    // 页面判定
+    const pageContext = createPageContext({
+      getSettings,
+      getHostname: () => location.hostname,
+      getTopHostname: () => topHostname,
+      getDomains: () => domains,
+      // #847：浏览器没有 Navigation API 时收不到 pushState，用之前补判一次
+      getDomainChoice: () => {
+        pathWatch?.check();
+        return domainChoice;
+      },
+      isMainFrame: () => isMainFrame,
+    });
+
     // #261: 编排模块 —— 全页翻译的批次流水线在模块内，
     // 渲染回调按批触发（#256 渐进渲染，首屏不等最慢段）
     const orchestrator = createOrchestrator({
@@ -438,19 +455,8 @@ export default defineContentScript({
       // #310: 载荷类型收紧为真实 Settings，此处不再需要强制转型
       subscribeSettings: onSettingsChanged,
       onSettingsChange: (ns) => applySettings(ns),
-      // #310: 读取当前设置经注入项提供，模块自身不直接访问存储；
-      // #311: 准入判定的当前主机名同样经注入提供
-      getSettings,
-      getHostname: () => location.hostname,
-      // #471: 当前领域按顶层页面判定；准入判定仍按本 frame 的主机名
-      getTopHostname: () => topHostname,
-      getDomains: () => domains,
-      // #847：浏览器没有 Navigation API 时收不到 pushState，用之前补判一次
-      getDomainChoice: () => {
-        pathWatch?.check();
-        return domainChoice;
-      },
-      isMainFrame: () => isMainFrame,
+      // #1119：准入、当前领域、是否主框架都问页面上下文
+      context: pageContext,
       // #792：页面级闸门读本 frame 的语言声明
       getPageLang: () => document.documentElement.getAttribute('lang'),
       // #843：页面级闸门的第一级 —— 浏览器自带的语言识别，零网络请求

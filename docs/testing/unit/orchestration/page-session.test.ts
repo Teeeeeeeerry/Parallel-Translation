@@ -12,6 +12,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { startObserver } from '~/src/dom/observer';
+import { createPageContext } from '~/src/orchestration/page-context';
 import { render, unrender, type RenderResult } from '~/src/dom/renderer';
 import {
   createOrchestrator,
@@ -218,8 +219,10 @@ describe('翻译期间插入的内容被补上（#1011）', () => {
   test('站点没准入：一次都不采集', async () => {
     addParas('a', 5);
     const h = harness({
-      getSettings: () => ({ ...DEFAULT_SETTINGS, siteList: { mode: 'blacklist', list: ['example.com'] } }),
-      getHostname: () => 'example.com',
+      context: createPageContext({
+        getSettings: () => ({ ...DEFAULT_SETTINGS, siteList: { mode: 'blacklist', list: ['example.com'] } }),
+        getHostname: () => 'example.com',
+      }),
     });
     const s = session();
     expect((await h.orch.togglePage(s, 'en', 'zh-CN')).status).toBe('blocked');
@@ -298,8 +301,10 @@ describe('翻译期间插入的内容被补上（#1011）', () => {
         enabled = false;
         if (n === 1) late.push(...addParas('new', 3));
       },
-      getSettings: () => ({ ...DEFAULT_SETTINGS, enabled }),
-      getHostname: () => 'example.com',
+      context: createPageContext({
+        getSettings: () => ({ ...DEFAULT_SETTINGS, enabled }),
+        getHostname: () => 'example.com',
+      }),
     });
     expect((await h.orch.togglePage(session(), 'en', 'zh-CN')).status).toBe('translated');
     expect(h.send).toHaveBeenCalledTimes(2);

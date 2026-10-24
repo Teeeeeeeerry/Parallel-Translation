@@ -8,6 +8,7 @@
  * “前几批在飞、后面的在排队”那一刻。
  */
 import { describe, test, expect } from 'vitest';
+import { createPageContext } from '~/src/orchestration/page-context';
 import {
   createOrchestrator,
   splitBatches,
@@ -51,8 +52,6 @@ function harness(maxConcurrency: number) {
   const settings = { ...DEFAULT_SETTINGS, maxConcurrency };
   const orch = createOrchestrator({
     send,
-    getSettings: () => settings,
-    getHostname: () => 'example.com',
     subscribeSettings: (fn) => {
       settingsListener = fn;
       return () => {
@@ -61,6 +60,10 @@ function harness(maxConcurrency: number) {
     },
     // 退避不真等
     sleep: async () => {},
+    context: createPageContext({
+      getSettings: () => settings,
+      getHostname: () => 'example.com',
+    }),
   });
   orch.start();
   /** 放行当前所有在飞的批次，直到没有新的批次发出 */

@@ -10,7 +10,7 @@
 // 独立的拦截规则，而在真实环境里逐条复现（装扩展、改版本、拉黑站点、
 // 开 iframe）代价过高。
 //
-// 返回原因而非裸 boolean,与 orchestration/orchestrator.ts 的 Admission
+// 返回原因而非裸 boolean,与 orchestration/page-context.ts 的 Admission
 // 同一风格：调用方拿到 entry 可直接渲染，不必再查一次数据。
 
 import { findEntry, type ChangelogEntry } from './data';

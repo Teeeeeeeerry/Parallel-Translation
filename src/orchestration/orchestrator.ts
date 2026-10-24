@@ -24,9 +24,7 @@ import type {
 } from '~/src/engines/types';
 import type { Settings } from '~/src/storage/schema';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
-import { currentDomain } from '~/src/storage/domains';
-import type { Domain, DomainChoice } from '~/src/storage/domains';
-import { isSiteBlocked } from '~/src/dom/site-filter';
+import { createPageContext, type Admission, type PageContext } from './page-context';
 import { judgePage, type ContentLang, type PageGateDecision } from './page-gate';
 import type { PageTranslation } from './page-session';
 import { normalizeLangCode } from './lang-code';
@@ -141,14 +139,6 @@ export interface PageTranslateSummary {
   /** 提示语义（#313）：全失败时展示真实原因还是泛化文案。 */
   display: FailureDisplay;
 }
-
-/**
- * 翻译入口准入结果（#311）—— 总开关与站点名单判定：
- *   - allowed：放行
- *   - disabled：总开关关闭，不发请求
- *   - blocked：站点在黑名单中（或白名单未命中），不发请求
- */
-export type Admission = 'allowed' | 'disabled' | 'blocked';
 
 /**
  * 单文本翻译结果（#312）—— 逐段、划词、输入翻译共用。#1075：二选一 —— 成功带
@@ -299,36 +289,11 @@ export interface OrchestratorOptions {
   /** 设置变更响应（#265）：样式应用与 UI 启停由调用方实现（经注册表）。 */
   onSettingsChange?: (s: Settings) => void;
   /**
-   * 读取当前设置（#310）：模块自身不直接访问存储 ——
-   * 准入判定等后续逻辑经此注入读取，装配方注入 storage 的 getSettings。
+   * 页面上下文（#1119）：准入（总开关、站点名单）、当前领域、是否主框架都问它，
+   * 模块自身不读存储、不碰 location。取代 #310、#311、#379、#400、#471 的六个
+   * 读取选项。未注入时放行、没有领域、算主框架。
    */
-  getSettings?: () => Settings;
-  /**
-   * 读取当前主机名（#311）：准入判定经此注入取得页面地址，
-   * 模块不直接访问 location。
-   */
-  getHostname?: () => string;
-  /**
-   * 读取顶层页面的主机名（#471）：当前领域按顶层页面判定，一个标签页里
-   * 所有 frame 得到同一个领域。站点名单的准入判定不用它，仍按
-   * getHostname。未注入时回落到 getHostname（主文档二者相同）。
-   */
-  getTopHostname?: () => string;
-  /**
-   * 读取生效领域列表（#379）：全页翻译按当前主机名与目标语言从中
-   * 选出当前领域，把领域 ID 放进翻译请求；未注入视同没有领域。
-   */
-  getDomains?: () => readonly Domain[];
-  /**
-   * 读取本标签页的临时领域选择（#400）：用户在 popup 里切换的领域或
-   * “无领域”。未注入视同自动选择。
-   */
-  getDomainChoice?: () => DomainChoice;
-  /**
-   * 主框架标志（#327）：子框架不产生提示，但照常执行翻译。#1079：悬浮球的状态
-   * 不再经编排模块推送，由内容脚本订阅整页翻译会话的状态流。
-   */
-  isMainFrame?: () => boolean;
+  context?: PageContext;
   /**
    * 本 frame 页面的语言声明（`<html lang>` 的原值，#792）：页面级闸门的
    * 取数之一，经注入读取 —— 模块不触碰 DOM。未注入或没有声明时为 null。
@@ -402,6 +367,7 @@ export function splitBatches<T>(
 
 export function createOrchestrator(opts: OrchestratorOptions): TranslationOrchestrator {
   const batchLimits = opts.batchLimits ?? FULL_PAGE_BATCH_LIMITS;
+  const context = opts.context ?? createPageContext({});
   const sleepFn = opts.sleep ?? defaultSleep;
   let started = false;
   // #1066：翻译运行 —— 整页、补采集、到顶交接、逐段、划词从页面根派生信号，
@@ -444,7 +410,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
 
     // #311: 准入判定是翻译入口的前置步骤 —— 总开关关闭或站点被
     // 名单禁用时零请求，以结构化状态说明拦截原因
-    const admission = admitted ? 'allowed' : admissionFrom(opts);
+    const admission = admitted ? 'allowed' : context.admission();
     if (admission !== 'allowed') {
       return {
         admission,
@@ -456,12 +422,12 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       };
     }
 
-    const maxConcurrency = opts.getSettings?.()?.maxConcurrency;
+    const maxConcurrency = context.settings()?.maxConcurrency;
     if (maxConcurrency !== undefined) sendGate.setMax(maxConcurrency);
     // 批次拆分（#245、#1005）：字符预算与个数上限双闸，每批独立发送
     const batches = splitBatches(items, batchLimits);
     // #379: 当前领域在翻译开始时定一次，各批次一致；没有则不携带字段
-    const domainId = currentDomainIdFrom(opts, to);
+    const domainId = context.domainId(to);
 
     let allFailed = true;
     // 有批次报了“已中止”（后台按信号中止了引擎调用）
@@ -687,7 +653,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       }
 
       // 准入判定先行（#311）：拦截时零请求、不执行任何动作
-      const admission = admissionFrom(opts);
+      const admission = context.admission();
       if (admission !== 'allowed') {
         return {
           status: admission === 'disabled' ? 'disabled' : 'blocked',
@@ -709,7 +675,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       // #792：页面级闸门 —— 本页已经是目标语言就一个请求都不发，页面一个
       // 字不动（连采集都不做：采集会把超长段落切成切块）。排在准入与还原
       // 之后：站点被禁用照旧是准入拦截，已翻译的页面照旧能还原。
-      // 只接在整页开关入口上，不进 admissionFrom —— 它被单文本入口共用，
+      // 只接在整页开关入口上，不进页面上下文的准入 —— 它被单文本入口共用，
       // 放进去会把逐段与划词一起拦下；那两条靠渲染层的单元级兜底（#783）。
       // 增量补翻也不判：观察器只在整页翻译成功后启动，
       // 命中闸门时它不启动，后来的新节点不会被补翻。
@@ -740,8 +706,8 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
         notice: singleTextMissNotice(m),
         ...(abandoned && { abandoned }),
       });
-      const admission = admissionFrom(opts);
-      if (admission === 'blocked') return miss({ kind: 'blocked', mainFrame: opts.isMainFrame?.() !== false });
+      const admission = context.admission();
+      if (admission === 'blocked') return miss({ kind: 'blocked', mainFrame: context.isMainFrame() });
       if (admission === 'disabled') return miss({ kind: 'disabled' });
       // #794：这里不判页面级闸门。逐段与划词是用户点名要翻的一段，中文页面
       // 上划中一段英文引文单独翻译完全合理；目标语言的文字由渲染层与划词
@@ -749,7 +715,7 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
 
       // 单文本单请求，与整页入口共用注入的消息层（#312）。逐段翻译与
       // 划词翻译同样携带当前领域，术语译法与全页翻译一致（#383/#384）
-      const domainId = currentDomainIdFrom(opts, to);
+      const domainId = context.domainId(to);
       // #1044：这一条被放弃时通知后台中止，与整页批次同一条路（#1001）——
       // 中止信号交给消息层，消息层把这次发送的批次身份发给后台。#1072：放弃
       // 只看这次运行的信号 —— 页面还原（从页面根派生时）与调用方自己的信号
@@ -796,32 +762,4 @@ export function createOrchestrator(opts: OrchestratorOptions): TranslationOrches
       });
     },
   };
-}
-
-/**
- * 准入判定（#311）—— 总开关 + 站点黑白名单，发生在任何请求之前。
- * 当前主机名经注入提供（getHostname），模块不直接访问页面地址。
- */
-function admissionFrom(opts: OrchestratorOptions): Admission {
-  const s = opts.getSettings?.();
-  if (!s) return 'allowed';
-  if (!s.enabled) return 'disabled';
-  const host = opts.getHostname?.() ?? '';
-  if (isSiteBlocked(host, s.siteList)) return 'blocked';
-  return 'allowed';
-}
-
-/**
- * 当前领域 ID（#379）—— 生效领域与主机名均经注入提供。
- * #471: 按顶层页面的主机名判定，iframe 里与主文档得到同一个领域。
- * #400: 用户在 popup 里临时切换过领域时以它为准。
- */
-function currentDomainIdFrom(
-  opts: OrchestratorOptions,
-  to: string,
-): string | undefined {
-  const domains = opts.getDomains?.();
-  if (!domains) return undefined;
-  const host = (opts.getTopHostname ?? opts.getHostname)?.() ?? '';
-  return currentDomain(domains, host, to, opts.getDomainChoice?.())?.id;
 }

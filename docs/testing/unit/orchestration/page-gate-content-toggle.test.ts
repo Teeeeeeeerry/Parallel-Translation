@@ -10,6 +10,7 @@
  * 取样页面不动、等识别算在飞、识别期间还原、悬浮球状态。
  */
 import { describe, test, expect, vi, afterEach } from 'vitest';
+import { createPageContext } from '~/src/orchestration/page-context';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import { itemsPage } from './page-harness';
 import { CONTENT_DETECT_TIMEOUT_MS } from '~/src/orchestration/page-gate';
@@ -367,8 +368,10 @@ describe('内容识别这一级拦下时的悬浮球状态（#870，同 #793、#
     const orch = createOrchestrator({
       send,
       getPageLang: () => 'en',
-      isMainFrame: () => false,
       detectContentLang: async () => reliable(['zh', 96], ['en', 4]),
+      context: createPageContext({
+        isMainFrame: () => false,
+      }),
     });
     orch.start();
     const page = itemsPage(ZH);

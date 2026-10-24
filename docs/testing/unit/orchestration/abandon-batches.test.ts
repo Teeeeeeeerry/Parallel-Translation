@@ -7,6 +7,7 @@
  * 后台没理会信号、照样把译文送回来时，结果仍按这次运行的信号丢弃（#1001 的兜底）。
  */
 import { describe, test, expect, vi } from 'vitest';
+import { createPageContext } from '~/src/orchestration/page-context';
 import { createOrchestrator, type TranslateItem } from '~/src/orchestration/orchestrator';
 import { itemsPage, translateItems } from './page-harness';
 import type { TranslateRequest } from '~/src/engines/types';
@@ -45,9 +46,11 @@ function harness() {
   });
   const orch = createOrchestrator({
     send,
-    getSettings: () => ({ ...DEFAULT_SETTINGS, maxConcurrency: 2 }),
-    getHostname: () => 'example.com',
     sleep: async () => {},
+    context: createPageContext({
+      getSettings: () => ({ ...DEFAULT_SETTINGS, maxConcurrency: 2 }),
+      getHostname: () => 'example.com',
+    }),
   });
   orch.start();
   return { orch, page, send, signals, replies, ok, rendered };
@@ -126,10 +129,12 @@ describe('放弃的批次通知后台中止（#1001）', () => {
     const send = vi.fn(async () => ({ ok: false, error: '引擎失败', category: 'transient' }));
     const orch = createOrchestrator({
       send,
-      getSettings: () => ({ ...DEFAULT_SETTINGS, maxConcurrency: 2 }),
-      getHostname: () => 'example.com',
       // 虚拟时钟：重试等待永远不会自己醒
       sleep: () => new Promise<void>(() => {}),
+      context: createPageContext({
+        getSettings: () => ({ ...DEFAULT_SETTINGS, maxConcurrency: 2 }),
+        getHostname: () => 'example.com',
+      }),
     });
     orch.start();
     const pending = translateItems(orch, items('a', 20), 'en', 'zh-CN');
@@ -174,9 +179,11 @@ describe('失效不是放弃（#1073）', () => {
     const orch = createOrchestrator({
       send: async (req) =>
         req.texts[0] === 'r00' ? { ok: true, data: { translations: req.texts } } : invalid,
-      getSettings: () => ({ ...DEFAULT_SETTINGS, maxConcurrency: 1 }),
-      getHostname: () => 'example.com',
       sleep: async () => {},
+      context: createPageContext({
+        getSettings: () => ({ ...DEFAULT_SETTINGS, maxConcurrency: 1 }),
+        getHostname: () => 'example.com',
+      }),
     });
     const page = itemsPage(collect, {
       hasTranslated: () => translated,
