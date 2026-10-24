@@ -2,8 +2,8 @@
  * 以 br 分行的超长段落（#694）几张票共用的测试脚手架。
  *
  * 只经外部入口：采集入口 collect、整页翻译的编排入口 translatePage（真实
- * 渲染器），以及还原。还原照 content script 的 doRestore 同一顺序：先
- * unrender 所有已翻译单元，再拆回所有被切分的容器（entrypoints/content.ts）。
+ * 渲染器），以及还原。还原与“是否已翻译”用 content script 同一份实现
+ * （src/dom/page-dom.ts，#1116）。
  *
  * 夹具一律用文字真正超过长度上限的段落：#768 之后按 br 切行只看文字长度，
  * 文字不长、只是链接多的段落整段作为一个单元，根本不走切行。
@@ -11,10 +11,9 @@
 import { vi } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { collect, type CollectOptions } from '~/src/dom/walker';
-import { render, unrender } from '~/src/dom/renderer';
-import { unsplitChunks } from '~/src/dom/chunk-split';
+import { render } from '~/src/dom/renderer';
 import { hasBlockTextChildren, restorePreserves, unitTextEx } from '~/src/dom/text';
-import { walkShadowTree } from '~/src/dom/shadow-walk';
+import { hasTranslated } from '~/src/dom/page-dom';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import { MAX_TEXT } from '~/src/dom/classify';
 
@@ -63,7 +62,7 @@ export async function translatePage(opts: CollectOptions = {}): Promise<{ reques
       requests.push([...req.texts]);
       return { ok: true, data: { translations: req.texts.map(fakeTranslate) } };
     }),
-    hasTranslated: () => document.querySelector('[data-pt="done"]') !== null,
+    hasTranslated,
     onBatchResult: (_i, batch, res) => {
       if (!res.ok || !res.data) return;
       batch.forEach((item, j) => {
@@ -84,18 +83,5 @@ export async function translatePage(opts: CollectOptions = {}): Promise<{ reques
   return { requests };
 }
 
-/** 还原：与 content script 的 doRestore 同一顺序。 */
-export function restorePage(): void {
-  const done: Element[] = [];
-  const split: Element[] = [];
-  walkShadowTree(
-    document,
-    (el) => {
-      if (el.getAttribute('data-pt') === 'done') done.push(el);
-      if (el.getAttribute('data-pt-split') === '1') split.push(el);
-    },
-    { skipTranslated: false },
-  );
-  for (const el of done) unrender(el);
-  for (const el of split) unsplitChunks(el);
-}
+/** 还原：content script 同一份实现（#1116）。 */
+export { restorePage } from '~/src/dom/page-dom';
