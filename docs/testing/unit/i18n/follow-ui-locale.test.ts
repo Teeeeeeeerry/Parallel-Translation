@@ -124,38 +124,74 @@ describe('跟随扩展语言（#1123）', () => {
     follow.stop();
   });
 
-  test('一直取不到：重试有上限，停在浏览器语言', async () => {
-    const load = vi.fn<MessageLoader>(async () => {
-      throw new Error('后台没有给出文案');
+  test('一直取不到：重试有上限，停在浏览器语言；之后同一个选择再推来时重新试', async () => {
+    let down = true;
+    const load = vi.fn<MessageLoader>(async (locale) => {
+      if (down) throw new Error('后台没有给出文案');
+      return readMessages(locale);
     });
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const follow = followUiLocale({ ...fakeSettings('en'), load, sleep: async () => {} });
+    const s = fakeSettings('en');
+    const follow = followUiLocale({ ...s, load, sleep: async () => {} });
     expect(await follow.ready).toBe(false);
     await flush();
+    // 首次一次加重试五次，每次取所选语言与回落的 zh_CN 两张表
+    expect(load.mock.calls.filter(([l]) => l === 'en')).toHaveLength(6);
     const calls = load.mock.calls.length;
     await flush();
     expect(load.mock.calls.length).toBe(calls);
     expect(t(KEY)).toBe(browserText());
+
+    // 后台回来了；设置里别的项变了，又推来同一个选择
+    down = false;
+    s.push('en');
+    await flush();
+    expect(t(KEY)).toBe(message('en'));
     error.mockRestore();
     follow.stop();
   });
 
   test('快速连切两次：最后是第二次选的语言，第一次较晚载完也不会盖过它', async () => {
     const s = fakeSettings('browser');
-    const pending = new Map<UiLocale, () => void>();
+    /** 每一次取表各自的放行函数，按语言分组、按调用先后排 */
+    const pending: { locale: UiLocale; release: () => void }[] = [];
     const load: MessageLoader = (locale) =>
-      new Promise((resolve) => pending.set(locale, () => resolve(readMessages(locale))));
+      new Promise((resolve) => pending.push({ locale, release: () => resolve(readMessages(locale)) }));
+    const releaseAll = (pick: (p: (typeof pending)[number], i: number) => boolean) =>
+      pending.forEach((p, i) => pick(p, i) && p.release());
     const follow = followUiLocale({ ...s, load });
     await follow.ready;
 
     s.push('en');
     s.push('zh_TW');
     await flush();
-    // 第二次先载完，第一次后载完
-    pending.get('zh_TW')!();
-    pending.get('zh_CN')?.();
+    // 第一次切换取了 en 与 zh_CN，第二次取了 zh_TW 与 zh_CN
+    expect(pending.map((p) => p.locale)).toEqual(['en', 'zh_CN', 'zh_TW', 'zh_CN']);
+    // 第二次先载完
+    releaseAll((_, i) => i >= 2);
     await flush();
-    pending.get('en')!();
+    expect(t(KEY)).toBe(message('zh_TW'));
+    // 第一次后载完：不盖过第二次
+    releaseAll((_, i) => i < 2);
+    await flush();
+    expect(t(KEY)).toBe(message('zh_TW'));
+    follow.stop();
+  });
+
+  test('初始设置还没读到时推来的选择优先（后台启动时被设置变化唤醒）', async () => {
+    const s = fakeSettings('browser');
+    let resolveInitial!: (c: UiLocaleChoice) => void;
+    const follow = followUiLocale({
+      initial: new Promise<UiLocaleChoice>((r) => (resolveInitial = r)),
+      subscribe: s.subscribe,
+      load: fromRepo,
+    });
+    s.push('zh_TW');
+    await flush();
+    expect(t(KEY)).toBe(message('zh_TW'));
+    // 读到的初始设置是变化之前的旧值：不采用
+    resolveInitial('en');
+    expect(await follow.ready).toBe(true);
     await flush();
     expect(t(KEY)).toBe(message('zh_TW'));
     follow.stop();

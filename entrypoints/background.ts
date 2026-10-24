@@ -42,16 +42,12 @@ export default defineBackground(() => {
 
   // #1101/#1123：后台自己的文案（右键菜单标题）跟随扩展语言 —— 启动时先载入，
   // 设置变了换表；每次落定之后更新菜单标题。去重与失败重试在 i18n 模块里
-  const uiLocaleReady = settingsReady()
-    .then(
-      (s) =>
-        followUiLocale({
-          initial: s.uiLocale,
-          subscribe: (fn) => onSettingsChanged((ns) => fn(ns.uiLocale)),
-          onApplied: () => void refreshContextMenuTitle(),
-        }).ready,
-    )
-    .catch((e) => console.error('[PT] 设置加载失败:', e));
+  // 订阅随即挂上（service worker 被设置变化唤醒时那次变化不漏），初始设置读到再载入
+  const uiLocaleReady = followUiLocale({
+    initial: settingsReady().then((s) => s.uiLocale),
+    subscribe: (fn) => onSettingsChanged((ns) => fn(ns.uiLocale)),
+    onApplied: () => void refreshContextMenuTitle(),
+  }).ready;
 
   // 暴露给 DevTools Console 用于 DoD 验证
   (self as any).cacheSet = cacheSet;

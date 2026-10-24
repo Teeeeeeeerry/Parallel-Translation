@@ -160,8 +160,11 @@ export async function loadUiLocale(
 const FOLLOW_RETRY_MS = [500, 1000, 2000, 4000, 8000] as const;
 
 export interface FollowUiLocaleOptions {
-  /** 当前的扩展语言设置 */
-  initial: UiLocaleChoice;
+  /**
+   * 当前的扩展语言设置；可以是还没读到的设置（后台启动时），订阅照样立即挂上，
+   * 读到之前推来的选择优先
+   */
+  initial: UiLocaleChoice | PromiseLike<UiLocaleChoice>;
   /** 订阅扩展语言设置的变化（设置里别的项变了也可以推，同一种语言不重复载入）；返回退订函数 */
   subscribe: (fn: (choice: UiLocaleChoice) => void) => () => void;
   /** 取表函数；缺省按所在上下文挑（扩展页与后台读扩展包，内容脚本向后台要） */
@@ -183,8 +186,8 @@ export interface UiLocaleFollower {
  * 跟随扩展语言（#1123）：首次按当前设置载入，之后随设置变化换表。之后新出现的
  * 界面用新语言；已经显示的提示条不重绘，常驻元素经 onUiLocaleChange 自己更新。
  * - 同一种语言不重复载入；
- * - 取表失败先回到跟随浏览器（界面不会空白），按退避重试，换上所选语言为止，
- *   重试有上限；
+ * - 取表失败先回到跟随浏览器（界面不会空白），按退避重试，换上所选语言为止；
+ *   重试有上限，用尽后同一个选择再推来时重新试；
  * - 新的选择到达后，较早那次的载入与重试作废。
  */
 export function followUiLocale(opts: FollowUiLocaleOptions): UiLocaleFollower {
@@ -199,22 +202,44 @@ export function followUiLocale(opts: FollowUiLocaleOptions): UiLocaleFollower {
     wanted = choice;
     const current = () => !stopped && wanted === choice;
     for (let attempt = 0; ; attempt++) {
-      const ok = await loadUiLocale(choice, load);
+      let ok: boolean;
+      try {
+        ok = await loadUiLocale(choice, load);
+      } catch (e) {
+        // 取文表形状不对之类的意外：按失败处理，ready 不至于一直不落定
+        console.error('[PT] 载入扩展语言出错:', e);
+        ok = false;
+      }
       if (attempt === 0) onFirst?.(ok && current());
       if (!current()) return;
       opts.onApplied?.();
-      if (ok || attempt >= FOLLOW_RETRY_MS.length) return;
+      if (ok) return;
+      if (attempt >= FOLLOW_RETRY_MS.length) {
+        // 重试用尽：忘掉这次选择，之后同一个选择再推来（设置里别的项变了）时重新试
+        wanted = null;
+        return;
+      }
       await sleep(FOLLOW_RETRY_MS[attempt]!);
       if (!current()) return;
     }
   };
 
-  // 首次载入失败时 ready 先报 false（调用方不必等重试），重试在后台继续
-  const ready = new Promise<boolean>((resolve) => void apply(opts.initial, resolve));
+  /** 订阅已推来过选择：读到的初始设置已经过时 */
+  let pushed = false;
   const unsubscribe = opts.subscribe((choice) => {
+    pushed = true;
     if (stopped || choice === wanted) return;
     void apply(choice);
   });
+  // 首次载入失败时 ready 先报 false（调用方不必等重试），重试在后台继续
+  const ready = Promise.resolve(opts.initial).then(
+    (choice) =>
+      pushed || stopped ? true : new Promise<boolean>((resolve) => void apply(choice, resolve)),
+    (e) => {
+      console.error('[PT] 读取扩展语言设置失败:', e);
+      return false;
+    },
+  );
   return {
     ready,
     stop() {
