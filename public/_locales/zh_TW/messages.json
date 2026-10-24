@@ -145,6 +145,15 @@
   "toastExported": { "message": "設定已匯出（不含 API key）" },
   "toastImported": { "message": "設定已匯入" },
   "toastImportFail": { "message": "匯入失敗：JSON 格式無效" },
+  "importReadFailed": { "message": "匯入失敗：讀不到這個檔案，請確認檔案還在、沒有被其他程式佔用" },
+  "importFailed": {
+    "message": "匯入失敗：$reason$",
+    "placeholders": { "reason": { "content": "$1" } }
+  },
+  "settingsSaveFailed": {
+    "message": "儲存設定失敗：$reason$",
+    "placeholders": { "reason": { "content": "$1" } }
+  },
   "toastReset": { "message": "已還原預設設定" },
   "confirmReset": { "message": "確定要將所有設定還原為預設值並清除所有快取與 API key 嗎？此操作無法復原。" },
 

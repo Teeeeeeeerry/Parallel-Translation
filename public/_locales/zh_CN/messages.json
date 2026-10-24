@@ -145,6 +145,15 @@
   "toastExported": { "message": "设置已导出（不含 API key）" },
   "toastImported": { "message": "设置已导入" },
   "toastImportFail": { "message": "导入失败：JSON 格式无效" },
+  "importReadFailed": { "message": "导入失败：读不出这个文件，请确认文件还在、没有被别的程序占用" },
+  "importFailed": {
+    "message": "导入失败：$reason$",
+    "placeholders": { "reason": { "content": "$1" } }
+  },
+  "settingsSaveFailed": {
+    "message": "保存设置失败：$reason$",
+    "placeholders": { "reason": { "content": "$1" } }
+  },
   "toastReset": { "message": "已恢复默认设置" },
   "confirmReset": { "message": "确定要恢复所有设置为默认值并清除所有缓存和 API key 吗？此操作不可撤销。" },
 

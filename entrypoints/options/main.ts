@@ -15,8 +15,6 @@ import {
   onSettingsChanged,
 } from '~/src/storage/settings';
 import { detectOS } from '~/src/hotkeys/platform';
-import { StorageQuotaError } from '~/src/storage/quota';
-import { StorageReadError } from '~/src/storage/read-error';
 import { applyI18n, loadUiLocale, tf } from '~/src/i18n';
 import { logoMarkSvg } from '~/src/ui/logo';
 import { initGeneral } from './sections/general';
@@ -59,44 +57,6 @@ export function showToast(msg: string, duration = 2000): void {
   (el as any)._tid = setTimeout(() => {
     el.style.display = 'none';
   }, duration);
-}
-
-// ---- Failure reason ----
-
-/**
- * 给用户看的失败原因：去掉内部日志用的“[PT] ”前缀；存储空间不足时说明
- * 办法（#510）；存储读取失败时按界面语言显示（#588，错误本身的文字只给日志用）。
- * 设置页各分区的失败提示都用它（#528）。
- */
-export function failReason(e: unknown): string {
-  if (e instanceof StorageQuotaError) {
-    return tf('domainStorageFull', '存储空间不足，可以在“高级”分区点“清空缓存”后重试');
-  }
-  if (e instanceof StorageReadError) {
-    return tf('domainStorageReadFailed', '暂时读不到存储里的数据，请稍后重试');
-  }
-  return (e instanceof Error ? e.message : String(e)).replace(/^\[PT\]\s*/, '');
-}
-
-// ---- Download ----
-
-/** 下载开始之后多久释放临时链接（#494）。 */
-const REVOKE_DELAY_MS = 60_000;
-
-/**
- * 把文本存成文件并触发下载（#494）。设置页的各个导出都用它。
- *
- * 临时链接延后释放：Chrome 在触发下载时已经取到文件，但 Firefox 的下载
- * 异步开始，同一时刻释放可能导致下载失败或得到空文件。FileSaver.js 同样
- * 延后几十秒才释放。
- */
-export function downloadFile(content: string, filename: string, type: string): void {
-  const url = URL.createObjectURL(new Blob([content], { type }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
 }
 
 // ---- Init ----

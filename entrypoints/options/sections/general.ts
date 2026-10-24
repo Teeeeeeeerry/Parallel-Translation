@@ -20,16 +20,12 @@ import {
 import type { DisplayMode, Settings } from '~/src/storage/schema';
 import {
   getSettings,
-  patchSettings,
   onSettingsChanged,
 } from '~/src/storage/settings';
 import { tf, UI_LOCALES, type UiLocale, type UiLocaleChoice } from '~/src/i18n';
 import { createSliderRow } from '../slider-row';
 import { createFloatingPreview } from '../floating-preview';
-
-function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
-  patchSettings(patch).catch((e) => console.error('[PT] 设置写入失败:', e));
-}
+import { savePatch } from '../save-settings';
 
 function buildLangOptions(selected: string, includeAuto: boolean): string {
   return LANG_LIST
