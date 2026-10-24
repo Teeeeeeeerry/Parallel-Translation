@@ -52,14 +52,19 @@ export function skipReport<T>(
 
 /**
  * 把隐藏的文件输入框接到按钮上：点按钮打开选择；选完先清空 value（再次选同一个
- * 文件也会触发 change），再把文件交给 onFile。取消选择时什么都不做。
+ * 文件也会触发 change），再把文件交给 onFile。取消选择时什么都不做。beforeOpen
+ * 返回 false 时不打开选择（例如有未保存的修改、用户不想继续）。
  */
 export function wireFileImport(
   button: HTMLElement,
   input: HTMLInputElement,
   onFile: (file: File) => void,
+  opts: { beforeOpen?: () => boolean } = {},
 ): void {
-  button.addEventListener('click', () => input.click());
+  button.addEventListener('click', () => {
+    if (opts.beforeOpen && !opts.beforeOpen()) return;
+    input.click();
+  });
   input.addEventListener('change', () => {
     const file = input.files?.[0];
     input.value = '';
@@ -77,23 +82,47 @@ class FileReadError extends Error {
 
 export type ImportOutcome<R> = { ok: true; value: R } | { ok: false; message: string };
 
+export interface ImportOptions {
+  /**
+   * 把调用方自己认得的错误换成专门的提示（例如“文件不是站点规则导出文件”、
+   * “这个领域已被删除”）；返回 null 时用通用提示
+   */
+  failure?: (e: unknown) => string | null;
+}
+
 /**
  * 导入一个文件：读出文字交给 parse（调用方的解析与写入），返回它的结果，或给
- * 用户看的失败提示。failure 可以把调用方自己认得的错误换成专门的提示（例如
- * “文件不是站点规则导出文件”）；返回 null 时用通用提示 ——
- * 读不出文件：“导入失败：读不出这个文件……”；其他错误：“导入失败：原因”
- * （存储配额用完时原因是“可以在高级分区清空缓存”）。
+ * 用户看的失败提示。通用提示 —— 读不出文件：“导入失败：读不出这个文件……”
+ * （不经 failure）；其他错误：“导入失败：原因”（存储配额用完时原因是“可以在
+ * 高级分区清空缓存”）。
  */
-export async function importFile<R>(
+export function importFile<R>(
   file: Blob,
   parse: (text: string) => Promise<R>,
-  opts: { failure?: (e: unknown) => string | null } = {},
+  opts: ImportOptions = {},
+): Promise<ImportOutcome<R>> {
+  return importWith(() => file.text(), parse, opts);
+}
+
+/** 同 importFile，交给 parse 的是原始字节 —— 编码由解析的一方识别（#590：UTF-8 或 GBK）。 */
+export function importFileBytes<R>(
+  file: Blob,
+  parse: (bytes: ArrayBuffer) => Promise<R>,
+  opts: ImportOptions = {},
+): Promise<ImportOutcome<R>> {
+  return importWith(() => file.arrayBuffer(), parse, opts);
+}
+
+async function importWith<C, R>(
+  read: () => Promise<C>,
+  parse: (content: C) => Promise<R>,
+  opts: ImportOptions,
 ): Promise<ImportOutcome<R>> {
   try {
-    const text = await file.text().catch((e: unknown) => {
+    const content = await read().catch((e: unknown) => {
       throw new FileReadError(e);
     });
-    return { ok: true, value: await parse(text) };
+    return { ok: true, value: await parse(content) };
   } catch (e) {
     console.error('[PT] 导入失败:', e);
     if (e instanceof FileReadError) {

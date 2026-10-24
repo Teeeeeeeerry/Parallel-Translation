@@ -30,11 +30,12 @@ import {
   importDomainTermsCsv,
   createDomainFromTermsCsv,
 } from '~/src/storage/domains';
-import { getSettings, patchSettings, onSettingsChanged } from '~/src/storage/settings';
+import { getSettings, onSettingsChanged } from '~/src/storage/settings';
 import type { Domain, Term, TermsCsvSkip } from '~/src/storage/domains';
 import { tf, uiLocale } from '~/src/i18n';
 import { showToast } from '../main';
-import { downloadFile, failReason } from '../file-io';
+import { downloadFile, failReason, importFileBytes, skipReport as fileSkipReport, wireFileImport } from '../file-io';
+import { savePatch } from '../save-settings';
 
 function langLabel(code: string): string {
   return LANG_LIST.find((l) => l.code === code)?.label ?? code;
@@ -95,17 +96,24 @@ function sitesEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
   return details;
 }
 
+/** 领域已在别处被删除时的提示（#430）。 */
+const domainGoneMessage = () => tf('domainSaveDeleted', '这个领域已被删除，列表已刷新');
+
 /**
- * 保存失败（#430）：领域已在别处被删除时提示并刷新列表（该领域随之消失）；
- * 其他写入错误把原因写在编辑框下方。
+ * 领域已在别处被删除（#430）：提示并刷新列表（该领域随之消失），返回 true；
+ * 别的错误返回 false。保存、导出、导入术语共用这一处（#1125）。
  */
+function domainGone(e: unknown, onGone: () => void): boolean {
+  if (!(e instanceof DomainNotFoundError)) return false;
+  showToast(domainGoneMessage(), 4000);
+  onGone();
+  return true;
+}
+
+/** 保存失败：领域已被删除时提示并刷新列表；其他写入错误把原因写在编辑框下方。 */
 function saveFailed(e: unknown, error: HTMLElement, onGone: () => void): void {
   console.error('[PT] 保存领域失败:', e);
-  if (e instanceof DomainNotFoundError) {
-    showToast(tf('domainSaveDeleted', '这个领域已被删除，列表已刷新'), 4000);
-    onGone();
-    return;
-  }
+  if (domainGone(e, onGone)) return;
   const reason = failReason(e);
   error.textContent = tf('domainSaveFailed', `保存失败：${reason}`, reason);
   error.classList.add('pt-visible');
@@ -187,18 +195,16 @@ function skipLine({ line, reason }: TermsCsvSkip, headerColumns?: number): strin
   }
 }
 
-/** 跳过的行最多列出这么多条，其余只给条数。 */
-const SKIP_LIST_MAX = 20;
-
 /**
- * 导入跳过的行的说明（#404）：最多列出 SKIP_LIST_MAX 条，其余只给条数。
- * 往已有领域导入与从 CSV 新建领域（#603）共用。
+ * 导入跳过的行的说明（#404）：最多列出 20 条，其余只给条数（#1125：经设置页共用
+ * 的 skipReport）。往已有领域导入与从 CSV 新建领域（#603）共用。
  */
 function skipReport(skipped: TermsCsvSkip[], headerColumns?: number): string {
-  const lines = skipped.slice(0, SKIP_LIST_MAX).map((s) => skipLine(s, headerColumns));
-  const more = String(skipped.length - SKIP_LIST_MAX);
-  if (skipped.length > SKIP_LIST_MAX) lines.push(tf('domainTermsSkipMore', `另有 ${more} 行没有导入`, more));
-  return lines.join('\n');
+  return fileSkipReport(
+    skipped,
+    (s) => skipLine(s, headerColumns),
+    (more) => tf('domainTermsSkipMore', `另有 ${more} 行没有导入`, more),
+  );
 }
 
 /**
@@ -359,17 +365,14 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
       .catch((e) => {
         console.error('[PT] 导出术语失败:', e);
         // 领域已在别处被删除：与保存失败同样提示并刷新列表（#430）
-        if (e instanceof DomainNotFoundError) {
-          showToast(tf('domainSaveDeleted', '这个领域已被删除，列表已刷新'), 4000);
-          onGone();
-          return;
-        }
+        if (domainGone(e, onGone)) return;
         const reason = failReason(e);
         showToast(tf('domainTermsExportFailed', `导出术语失败：${reason}`, reason), 4000);
       });
   });
 
-  // #403：导入 CSV，与已保存的术语合并（同一原词以导入为准）
+  // #403：导入 CSV，与已保存的术语合并（同一原词以导入为准）。#1125：文件输入框、
+  // 读文件与失败提示走设置页共用函数
   const importFile = document.createElement('input');
   importFile.type = 'file';
   // #590：制表符分隔的术语表常存成 .tsv 或 .txt
@@ -378,23 +381,26 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
   const importBtn = document.createElement('button');
   importBtn.className = 'pt-btn pt-btn-secondary pt-domain-terms-import';
   importBtn.textContent = tf('domainTermsImport', '导入 CSV');
-  importBtn.addEventListener('click', () => {
-    // 导入合并的是已保存的术语，重绘后表格里未保存的修改会被替换
-    if (dirty && !confirm(tf('domainTermsImportDiscard', '术语表有未保存的修改，导入后会被替换。继续导入吗？'))) {
-      return;
-    }
-    importFile.click();
-  });
-  importFile.addEventListener('change', () => {
-    const file = importFile.files?.[0];
-    // 清空选择：再次选同一个文件也会触发 change
-    importFile.value = '';
-    if (!file) return;
-    // #590：交原始字节，编码由存储模块识别（UTF-8 或 GBK）
-    file
-      .arrayBuffer()
-      .then((buf) => importDomainTermsCsv(d.id, buf))
-      .then(({ imported, skipped, headerColumns }) => {
+  wireFileImport(
+    importBtn,
+    importFile,
+    (file) => {
+      // #590：交原始字节，编码由存储模块识别（UTF-8 或 GBK）
+      void importFileBytes(file, (buf) => importDomainTermsCsv(d.id, buf), {
+        failure: (e) => {
+          if (e instanceof DomainNotFoundError) {
+            onGone();
+            return domainGoneMessage();
+          }
+          const reason = failReason(e);
+          return tf('domainTermsImportFailed', `导入术语失败：${reason}`, reason);
+        },
+      }).then((result) => {
+        if (!result.ok) {
+          showToast(result.message, 4000);
+          return;
+        }
+        const { imported, skipped, headerColumns } = result.value;
         const n = String(imported);
         const current = document.querySelector<HTMLDetailsElement>(
           `details[data-editor="terms"][data-domain-id="${CSS.escape(d.id)}"]`,
@@ -411,18 +417,14 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
         showImportReport(current);
         const m = String(skipped.length);
         showToast(tf('domainTermsImportedSkipped', `已导入 ${imported} 条术语，跳过 ${m} 行`, n, m), 4000);
-      })
-      .catch((e) => {
-        console.error('[PT] 导入术语失败:', e);
-        if (e instanceof DomainNotFoundError) {
-          showToast(tf('domainSaveDeleted', '这个领域已被删除，列表已刷新'), 4000);
-          onGone();
-          return;
-        }
-        const reason = failReason(e);
-        showToast(tf('domainTermsImportFailed', `导入术语失败：${reason}`, reason), 4000);
       });
-  });
+    },
+    {
+      // 导入合并的是已保存的术语，重绘后表格里未保存的修改会被替换
+      beforeOpen: () =>
+        !dirty || confirm(tf('domainTermsImportDiscard', '术语表有未保存的修改，导入后会被替换。继续导入吗？')),
+    },
+  );
 
   const actions = document.createElement('div');
   actions.className = 'pt-domain-terms-actions';
@@ -665,49 +667,47 @@ export function initDomains(): void {
       'domainTermsImportHint',
       '每行一条术语：原词、译法、不翻译（true / false，可省略）。首行可以是表头；逗号、分号或制表符分隔，UTF-8 或 GBK 编码。',
     );
-  importNewBtn.addEventListener('click', () => importNewFile.click());
-  importNewFile.addEventListener('change', () => {
-    const file = importNewFile.files?.[0];
-    // 清空选择：再次选同一个文件也会触发 change
-    importNewFile.value = '';
-    if (!file) return;
+  // #1125：文件输入框、读文件与失败提示走设置页共用函数
+  wireFileImport(importNewBtn, importNewFile, (file) => {
     const max = nameInput.maxLength > 0 ? nameInput.maxLength : undefined;
     const name = nameInput.value.trim() || (file.name.replace(/\.[^.]*$/, '') || file.name).slice(0, max);
     importNewError.classList.remove('pt-visible');
-    file
-      .arrayBuffer()
-      .then((buf) => createDomainFromTermsCsv({ name, targetLang: langSelect.value }, buf))
-      .then(({ domain, imported, skipped, headerColumns }) => {
-        // 没有可导入的行：没有新建，跳过的原因列在卡片里，名称留在输入框
-        if (!domain) {
-          importNewError.textContent = skipReport(skipped, headerColumns);
-          importNewError.classList.toggle('pt-visible', skipped.length > 0);
-          showToast(tf('domainImportNewNone', '文件里没有可导入的术语，没有新建领域'), 4000);
-          return;
-        }
-        nameInput.value = '';
-        nameInput.classList.remove('pt-error');
-        // 跳过的行列在新领域的术语编辑区下方（#404 的展示）
-        if (skipped.length > 0) importReports.set(domain.id, skipReport(skipped, headerColumns));
-        reveal = domain.id;
-        refresh();
-        const n = String(imported);
-        if (skipped.length === 0) {
-          showToast(tf('domainImportedNew', `已新建领域“${domain.name}”，导入 ${n} 条术语`, domain.name, n));
-          return;
-        }
-        const m = String(skipped.length);
-        showToast(
-          tf('domainImportedNewSkipped', `已新建领域“${domain.name}”，导入 ${n} 条术语，跳过 ${m} 行`, domain.name, n, m),
-          4000,
-        );
-      })
+    void importFileBytes(file, (buf) => createDomainFromTermsCsv({ name, targetLang: langSelect.value }, buf), {
       // #470: 失败时提示原因，名称留在输入框里方便重试
-      .catch((e) => {
-        console.error('[PT] 从 CSV 新建领域失败:', e);
+      failure: (e) => {
         const reason = failReason(e);
-        showToast(tf('domainCreateFailed', `新建领域失败：${reason}`, reason), 4000);
-      });
+        return tf('domainCreateFailed', `新建领域失败：${reason}`, reason);
+      },
+    }).then((result) => {
+      if (!result.ok) {
+        showToast(result.message, 4000);
+        return;
+      }
+      const { domain, imported, skipped, headerColumns } = result.value;
+      // 没有可导入的行：没有新建，跳过的原因列在卡片里，名称留在输入框
+      if (!domain) {
+        importNewError.textContent = skipReport(skipped, headerColumns);
+        importNewError.classList.toggle('pt-visible', skipped.length > 0);
+        showToast(tf('domainImportNewNone', '文件里没有可导入的术语，没有新建领域'), 4000);
+        return;
+      }
+      nameInput.value = '';
+      nameInput.classList.remove('pt-error');
+      // 跳过的行列在新领域的术语编辑区下方（#404 的展示）
+      if (skipped.length > 0) importReports.set(domain.id, skipReport(skipped, headerColumns));
+      reveal = domain.id;
+      refresh();
+      const n = String(imported);
+      if (skipped.length === 0) {
+        showToast(tf('domainImportedNew', `已新建领域“${domain.name}”，导入 ${n} 条术语`, domain.name, n));
+        return;
+      }
+      const m = String(skipped.length);
+      showToast(
+        tf('domainImportedNewSkipped', `已新建领域“${domain.name}”，导入 ${n} 条术语，跳过 ${m} 行`, domain.name, n, m),
+        4000,
+      );
+    });
   });
   nameInput.addEventListener('input', () => {
     nameInput.classList.remove('pt-error');
@@ -721,8 +721,7 @@ export function initDomains(): void {
   const syncMtTermTargets = () =>
     toggleMtTermTargets.classList.toggle('pt-on', getSettings().mtApplyTermTargets);
   toggleMtTermTargets.addEventListener('click', () => {
-    patchSettings({ mtApplyTermTargets: !getSettings().mtApplyTermTargets })
-      .catch((e) => console.error('[PT] 设置写入失败:', e));
+    savePatch({ mtApplyTermTargets: !getSettings().mtApplyTermTargets });
   });
   syncMtTermTargets();
   onSettingsChanged(syncMtTermTargets);
