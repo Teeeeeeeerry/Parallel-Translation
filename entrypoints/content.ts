@@ -31,6 +31,7 @@ import { floatingUiVars } from '~/src/ui/floating-ui-size';
 import { createInputDot } from '~/src/ui/input-dot';
 import { parseInputLangChoice, type InputLangChoice } from '~/src/ui/input-target-lang';
 import { watchPathChange } from '~/src/ui/path-watch';
+import { createTabChoices, DOMAIN_CHOICE } from '~/src/ui/tab-choice';
 import { toast } from '~/src/ui/toast';
 import { startHotkeys } from '~/src/hotkeys/listener';
 import { startSelectionDrag } from '~/src/ui/selection-drag';
@@ -63,8 +64,8 @@ import {
 } from '~/src/storage/settings';
 import type { Settings } from '~/src/storage/schema';
 import { clampParaBtnHideDelay } from '~/src/storage/schema';
-import { watchEffectiveDomains, parseDomainChoice } from '~/src/storage/domains';
-import type { Domain, DomainChoice } from '~/src/storage/domains';
+import { watchEffectiveDomains } from '~/src/storage/domains';
+import type { Domain } from '~/src/storage/domains';
 import { siteRulesReady } from '~/src/storage/specialization';
 import { loadUiLocale, tf } from '~/src/i18n';
 import { loadMessagesViaBackground } from '~/src/runtime/ui-messages';
@@ -91,21 +92,8 @@ async function requestTopHostname(): Promise<string> {
 }
 
 /**
- * #400: 子 frame 向主文档要本标签页的临时领域选择（经 background 转问
- * frameId 0）。取不到时返回 null，按自动判定。
- */
-async function requestTopDomainChoice(): Promise<DomainChoice | null> {
-  try {
-    const res: unknown = await chrome.runtime.sendMessage({ type: 'pt:top-domain-choice' });
-    return parseDomainChoice((res as { choice?: unknown } | undefined)?.choice);
-  } catch {
-    return null;
-  }
-}
-
-/**
  * #663: 子 frame 向主文档要本标签页这一次的对方语言（经 background 转问
- * frameId 0），与 requestTopDomainChoice 同一条路。取不到时返回 null，跟随设置。
+ * frameId 0）。取不到时返回 null，跟随设置。
  */
 async function requestTopInputLangChoice(): Promise<InputLangChoice | null> {
   try {
@@ -167,12 +155,20 @@ export default defineContentScript({
     // 得到同一个领域
     const topHostname = isMainFrame ? location.hostname : await requestTopHostname();
 
-    // #400: 用户在 popup 里为本标签页临时选的领域。只存在本页内存里：
-    // 刷新、跳页或关闭标签页后回到自动，其他标签页不受影响。#847：单页应用
-    // 换了路径也算跳页，见下面的 pathWatch
-    let domainChoice: DomainChoice = { kind: 'auto' };
-    /** 本 frame 是否已收到过切换广播 —— 收到过就不再采用启动时问来的选择。 */
-    let choiceBroadcast = false;
+    // #1121：只对本标签页这个页面有效的临时选择 —— 询问、广播、跳页回到自动都在
+    // 标签页临时选择模块里，这里每种选择只剩读当前值、设新值
+    const tabChoices = createTabChoices({
+      isMainFrame,
+      sendMessage: (msg) => chrome.runtime.sendMessage(msg),
+      getHref: () => location.href,
+      navigation: (window as { navigation?: EventTarget }).navigation,
+      win: window,
+    });
+    // #400: 用户在 popup 里为本标签页临时选的领域（#847：单页应用换了路径也算
+    // 跳页）。主文档回复 popup 要显示的领域状态
+    const domainChoice = tabChoices.define(DOMAIN_CHOICE, {
+      answerSet: (msg) => pageContext.domainState(typeof msg.to === 'string' ? msg.to : getSettings().to),
+    });
 
     // #662: 用户在 popup 里为本标签页临时选的对方语言（输入翻译），与上面
     // 的临时领域并列：只存在本页的内存里，不进后台、不写存储。所以刷新、
@@ -189,10 +185,8 @@ export default defineContentScript({
     // 拍板理由：在用户眼里，单页应用里点进另一个帖子就是跳页；临时选择的
     // 全部意义就是不悄悄变成长期设置。两种错的代价也不对称：多重置一次只是
     // 回到自动判定，那本来就是默认行为；不重置的话，用户在国际站点上选了
-    // 英文，点进一个日文帖子回复时仍被译成英文。
-    // #847：领域的临时选择（#400）用的是同一套机制，同一个理由，一并重置为
-    // 按网址判定，经 background 的 pt:domain-path-changed 广播给各 frame。
-    // 两样各自只在不是自动时才重置、才广播
+    // 英文，点进一个日文帖子回复时仍被译成英文。只在不是自动时才重置、才广播。
+    // 领域的临时选择（#847）同理，已在标签页临时选择模块里
     const pathWatch = isMainFrame
       ? watchPathChange({
           getHref: () => location.href,
@@ -202,10 +196,6 @@ export default defineContentScript({
             if (inputLangChoice.kind !== 'auto') {
               inputLangChoice = { kind: 'auto' };
               chrome.runtime.sendMessage({ type: 'pt:input-lang-path-changed' }).catch(() => {});
-            }
-            if (domainChoice.kind !== 'auto') {
-              domainChoice = { kind: 'auto' };
-              chrome.runtime.sendMessage({ type: 'pt:domain-path-changed' }).catch(() => {});
             }
           },
         })
@@ -219,11 +209,8 @@ export default defineContentScript({
       getHostname: () => location.hostname,
       getTopHostname: () => topHostname,
       getDomains: () => domains,
-      // #847：浏览器没有 Navigation API 时收不到 pushState，用之前补判一次
-      getDomainChoice: () => {
-        pathWatch?.check();
-        return domainChoice;
-      },
+      // #847：浏览器没有 Navigation API 时收不到 pushState，读之前由模块补判一次
+      getDomainChoice: () => domainChoice.get(),
       isMainFrame: () => isMainFrame,
     });
 
@@ -605,34 +592,14 @@ export default defineContentScript({
         // 领域是同一份判定；目标语言用 popup 当前所选，避免设置刚改、本页还没
         // 收到变更时显示旧结果
         if (!isMainFrame) return;
-        // #847：答之前补判一次路径
-        pathWatch?.check();
         const to = typeof msg.to === 'string' ? msg.to : getSettings().to;
         sendResponse(pageContext.domainState(to));
         return;
       }
 
-      if (msg?.type === 'pt:set-domain') {
-        // #400: popup 临时切换领域。广播到全部 frame，iframe 里的翻译请求
-        // 与主文档带同一个领域；只有主文档回复
-        const choice = parseDomainChoice(msg.choice);
-        if (!choice) return;
-        domainChoice = choice;
-        choiceBroadcast = true;
-        if (!isMainFrame) return;
-        const to = typeof msg.to === 'string' ? msg.to : getSettings().to;
-        sendResponse(pageContext.domainState(to));
-        return;
-      }
-
-      if (msg?.type === 'pt:get-domain-choice') {
-        // #400: 子 frame 启动时经 background 来问（见 requestTopDomainChoice）。
-        // #847：答之前补判一次路径
-        if (!isMainFrame) return;
-        pathWatch?.check();
-        sendResponse({ choice: domainChoice });
-        return;
-      }
+      // #400/#1121：popup 临时切换领域（广播到全部 frame，只有主文档回复）、子 frame
+      // 启动时经 background 来问，都由标签页临时选择模块处理
+      if (tabChoices.handle(msg, sendResponse)) return;
 
       if (msg?.type === 'pt:set-input-lang') {
         // #662: popup 选好这一次的对方语言。#663: 广播到全部 frame，iframe 里
@@ -666,13 +633,9 @@ export default defineContentScript({
       }
     });
 
-    // #400: 切换之后才加载的 iframe 向主文档要当前的临时选择；期间已收到
-    // 切换广播的，以广播为准
+    // #663: 切换之后才加载的 iframe 向主文档要这一次的对方语言；期间已收到
+    // 切换广播的，以广播为准（领域的临时选择由标签页临时选择模块询问）
     if (!isMainFrame) {
-      void requestTopDomainChoice().then((choice) => {
-        if (choice && !choiceBroadcast) domainChoice = choice;
-      });
-      // #663: 这一次的对方语言同理
       void requestTopInputLangChoice().then((choice) => {
         if (choice && !inputLangBroadcast) inputLangChoice = choice;
       });
