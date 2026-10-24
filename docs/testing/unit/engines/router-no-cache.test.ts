@@ -11,6 +11,7 @@ import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import { route } from '~/src/engines/router';
 import type { TranslateRequest } from '~/src/engines/types';
+import { translateItems } from '../orchestration/page-harness';
 
 vi.mock('~/src/storage/settings', async (importOriginal) => ({
   ...(await importOriginal<typeof import('~/src/storage/settings')>()),
@@ -63,11 +64,11 @@ beforeEach(() => {
 describe('阅读侧三条入口的缓存行为不变', () => {
   test('整页翻译：每段写一条，再翻一次全部命中缓存、引擎一段也收不到', async () => {
     const orch = setup();
-    await orch.translatePage(items(['First paragraph', 'Second paragraph']), 'en', 'zh-CN');
+    await translateItems(orch, items(['First paragraph', 'Second paragraph']), 'en', 'zh-CN');
     expect(cacheEntries()).toBe(2);
     expect(engineTexts()).toBe(2);
 
-    await orch.translatePage(items(['First paragraph', 'Second paragraph']), 'en', 'zh-CN');
+    await translateItems(orch, items(['First paragraph', 'Second paragraph']), 'en', 'zh-CN');
     expect(cacheEntries()).toBe(2);
     expect(engineTexts()).toBe(2);
   });
@@ -98,7 +99,7 @@ describe('阅读侧三条入口的缓存行为不变', () => {
 describe('输入翻译既不写缓存也不读缓存', () => {
   test('一次输入翻译之后缓存条数不增加', async () => {
     const orch = setup();
-    await orch.translatePage(items(['Already cached']), 'en', 'zh-CN');
+    await translateItems(orch, items(['Already cached']), 'en', 'zh-CN');
     expect(cacheEntries()).toBe(1);
 
     const r = await orch.translateText('我写的一段话', 'auto', 'en', { noCache: true });

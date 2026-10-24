@@ -14,12 +14,7 @@ import '~/src/styles/tokens.css';
 import '~/src/styles/presets.css';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
-import {
-  translatableText,
-  shallowTranslatableText,
-  unitTextEx,
-  restorePreserves,
-} from '~/src/dom/text';
+import { unitTextEx, restorePreserves } from '~/src/dom/text';
 import { startObserver } from '~/src/dom/observer';
 import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
 import {
@@ -46,16 +41,12 @@ import {
   createOrchestrator,
   type PageToggleResult,
 } from '~/src/orchestration/orchestrator';
-import type { TranslateItem, TranslateBatchResult } from '~/src/orchestration/orchestrator';
 import { createPageTranslation, type PageSession } from '~/src/orchestration/page-session';
 import {
-  allFailedNotice,
-  countRender,
   emptyRenderStats,
   emptySkipStats,
   framePageNotice,
-  partialFailNotice,
-  resetRenderStats,
+  incrementalNotice,
   skipConsoleLine,
 } from '~/src/orchestration/page-summary';
 import { describePageGate } from '~/src/orchestration/page-gate';
@@ -298,6 +289,7 @@ export default defineContentScript({
       registry.ensure('hotkeys', true);
     }
 
+    // ── 翻译选区 ──
     // 划词翻译入口：拖选划词与右键菜单都走这里
     const translateSelection = createSelectionTranslator({
       translateText: (text, from, to, opts) => orchestrator.translateText(text, from, to, opts),
@@ -415,16 +407,11 @@ export default defineContentScript({
     );
 
     // ── 翻译全页 ──
-    // #329: 内容脚本不再持有翻译态 —— 在飞标志、翻译态查询、还原编排、
-    // 状态推送、观察器启停全部在编排模块（开关入口）。这里只保留：
-    // 收集与渲染（DOM 职责）、提示渲染、消息监听接线；悬浮球 / 快捷键 /
-    // popup 三条触发路径都只调用 togglePage（开关入口的薄包装）。
-
-    /**
-     * 增量补翻的渲染统计（每次开始时清零），各项含义见 RenderStats。#1077：整页
-     * 翻译的统计归整页翻译会话，按轮各记各的，不与这里共用。
-     */
-    const renderStats = emptyRenderStats();
+    // #329: 内容脚本不持有翻译态 —— 在飞互斥、准入与页面级闸门在编排模块（开关
+    // 入口）；采集去重、按轮统计、补采集、观察器启停、增量补翻、还原与状态流在
+    // 整页翻译会话（#1077、#1078、#1079、#1118）。这里只保留：注入 DOM 原语、
+    // 提示渲染、消息监听接线；悬浮球 / 快捷键 / popup 三条触发路径都只调用
+    // togglePage（开关入口的薄包装）。
 
     // #852：浏览器自带的本地语言识别，不发网络请求。页面级闸门取各语言占比
     // （#843），输入翻译取单一可靠结果（#661）
@@ -497,47 +484,25 @@ export default defineContentScript({
       // 执行，这里只做 DOM 还原
       unrenderAll: restorePage,
       hasTranslated,
-      // #255/#331: 增量补翻观察器 —— 整页翻译成功后由会话启动，还原时由会话停止
-      observe: () =>
-        startObserver((els) => {
-          translateIncremental(els).catch((e) => console.error('[PT] 增量补翻失败:', e));
-        }),
+      // #255/#331: 增量补翻观察器 —— 整页翻译成功后由会话启动，还原时由会话停止；
+      // 看到的新单元交回会话补翻（#1118）
+      observe: (onUnits) => startObserver(onUnits),
     });
     // #327/#1079：悬浮球只订阅整页翻译会话的状态流 —— 进行中、完成（补采集结束
     // 之后）、已还原、失败；子框架不显示
-    if (isMainFrame) page.subscribe(setBallState);
-
-    /**
-     * 增量补翻那一路的渲染（#1077）：同一个渲染原语，统计记在 renderStats。
-     * 只用到它的 onBatchResult —— 增量补翻的单元来自观察器，不经会话采集。
-     */
-    const incrementalSession = {
-      onBatchResult(batch: TranslateItem<unknown>[], result: TranslateBatchResult): void {
-        if (!result.ok || !result.data) {
-          renderStats.failed += batch.length;
-          return;
-        }
-        const translations = result.data.translations;
-        // #416: 所有引擎都失败的段落不渲染，保持原样，结束后汇总提示
-        const failed = new Set(result.data.failedIndices ?? []);
-        for (let j = 0; j < batch.length; j++) {
-          if (failed.has(j)) {
-            renderStats.failed++;
-            continue;
-          }
-          try {
-            countRender(renderStats, renderPageItem(batch[j] as TranslateItem<PageItemCtx>, translations[j]!));
-          } catch (e) {
-            throw new Error(`[render idx=${j}] ${e instanceof Error ? e.message : String(e)}`);
-          }
-        }
-      },
-    };
+    if (isMainFrame) {
+      page.subscribe(setBallState);
+      // #1118：增量补翻失败时提示，与首轮同一套判定；中止（还原）不算失败
+      page.onIncremental((outcome) => {
+        const notice = incrementalNotice(outcome);
+        if (notice) toast(notice.message, { purpose: 'status', kind: notice.kind });
+      });
+    }
 
     /**
      * 整页开关入口（#329）—— 悬浮球、快捷键、popup 消息三条触发路径
-     * 的唯一调用点：收集（DOM）→ 编排模块开关入口（准入 / 在飞互斥 /
-     * 翻译态决定 / 状态推送 / 观察器启停）→ 提示渲染（DOM）。
+     * 的唯一调用点：编排模块开关入口（准入 / 在飞互斥 / 页面级闸门 / 翻译态
+     * 决定，采集、渲染与状态流在整页翻译会话）→ 提示渲染（DOM）。
      */
     async function togglePage(): Promise<PageToggleResult> {
       const ns = getSettings();
@@ -563,29 +528,6 @@ export default defineContentScript({
       const notice = framePageNotice(result, session?.totals() ?? emptyRenderStats(), skips, isMainFrame);
       if (notice) toast(notice.message, { purpose: 'status', kind: notice.kind });
       return result;
-    }
-
-    /**
-     * 增量补翻（#329）：observer 的新节点回调 —— 直接走编排模块的
-     * 全页流水线（准入 / 批次 / 中止 / 提示语义），不再经过开关入口
-     * （不触发在飞互斥与状态推送）。
-     */
-    async function translateIncremental(elements: Element[]): Promise<void> {
-      const ns = getSettings();
-      const items = elements.map(buildPageItem);
-      if (items.length === 0) return;
-      resetRenderStats(renderStats);
-
-      const summary = await orchestrator.translatePage(items, ns.from, ns.to, {
-        onBatch: (batch, result) => incrementalSession.onBatchResult(batch, result),
-      });
-
-      // 中止（还原）不算失败；失败提示与整页同口径
-      if (summary.abandoned) return;
-      const notice = summary.allFailed
-        ? allFailedNotice(summary.display)
-        : partialFailNotice(renderStats, summary.display);
-      if (notice && isMainFrame) toast(notice.message, { purpose: 'status', kind: notice.kind });
     }
 
     // ── 翻译单段 ──
@@ -638,7 +580,7 @@ export default defineContentScript({
       if (notice) toast(notice.message, notice);
     }
 
-    // ── 翻译选区 ──
+    // ── popup 的领域状态 ──
     /**
      * popup 显示用的领域状态（#399、#400）：自动判定会选中的领域、本标签页
      * 的临时选择，以及可切换到的领域。

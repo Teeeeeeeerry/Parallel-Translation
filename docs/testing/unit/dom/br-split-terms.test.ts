@@ -44,6 +44,7 @@ import { render } from '~/src/dom/renderer';
 import { restorePreserves } from '~/src/dom/text';
 import type { TranslateRequest } from '~/src/engines/types';
 import { brLines, collectUnits, isOverLimit, line, restorePage } from './br-split-harness';
+import { translateItems } from '../orchestration/page-harness';
 
 const N = 60;
 
@@ -85,8 +86,7 @@ async function translatePage(): Promise<{ domainIds: (string | undefined)[] }> {
     getHostname: () => 'forum.example',
   });
   orch.start();
-  await orch.translatePage(
-    units.map((el, i) => ({ text: texts[i]!, ctx: el })),
+  await translateItems(orch, units.map((el, i) => ({ text: texts[i]!, ctx: el })),
     'auto',
     'zh-CN',
     {

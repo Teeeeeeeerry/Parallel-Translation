@@ -8,7 +8,7 @@
  */
 import { describe, test, expect, vi } from 'vitest';
 import { createOrchestrator, type TranslateItem } from '~/src/orchestration/orchestrator';
-import { itemsPage } from './page-harness';
+import { itemsPage, translateItems } from './page-harness';
 import type { TranslateRequest } from '~/src/engines/types';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 import { pageNotice, emptyRenderStats } from '~/src/orchestration/page-summary';
@@ -100,7 +100,7 @@ describe('放弃的批次通知后台中止（#1001）', () => {
 
   test('外部中止入口 abort()：在飞批次的信号同样触发', async () => {
     const h = harness();
-    const pending = h.orch.translatePage(items('a', 20), 'en', 'zh-CN');
+    const pending = translateItems(h.orch, items('a', 20), 'en', 'zh-CN');
     await flush();
     h.orch.abort();
     expect(h.signals[0]!.aborted).toBe(true);
@@ -110,7 +110,7 @@ describe('放弃的批次通知后台中止（#1001）', () => {
 
   test('正常翻完：没有任何一批的信号触发', async () => {
     const h = harness();
-    const pending = h.orch.translatePage(items('a', 40), 'en', 'zh-CN');
+    const pending = translateItems(h.orch, items('a', 40), 'en', 'zh-CN');
     await flush();
     h.replies[0]!(h.ok(h.send.mock.calls[0]![0]));
     h.replies[1]!(h.ok(h.send.mock.calls[1]![0]));
@@ -132,7 +132,7 @@ describe('放弃的批次通知后台中止（#1001）', () => {
       sleep: () => new Promise<void>(() => {}),
     });
     orch.start();
-    const pending = orch.translatePage(items('a', 20), 'en', 'zh-CN');
+    const pending = translateItems(orch, items('a', 20), 'en', 'zh-CN');
     await flush();
     expect(send).toHaveBeenCalledTimes(1);
     orch.abort();
@@ -162,7 +162,7 @@ describe('失效不是放弃（#1073）', () => {
   test('增量补翻判了失效：汇总不报中止（调用方据此提示真实原因）', async () => {
     const orch = createOrchestrator({ send: async () => invalid });
     orch.start();
-    const summary = await orch.translatePage(items('a', 3), 'en', 'zh-CN');
+    const summary = await translateItems(orch, items('a', 3), 'en', 'zh-CN');
     expect(summary).toMatchObject({ abandoned: false, invalidated: true, allFailed: true });
   });
 

@@ -6,7 +6,7 @@
  */
 import { describe, test, expect, vi } from 'vitest';
 import { createOrchestrator, splitBatches, FULL_PAGE_BATCH_LIMITS } from '~/src/orchestration/orchestrator';
-import { itemsPage, type ItemsPage, type PageHooks } from './page-harness';
+import { itemsPage, type ItemsPage, type PageHooks, translateItems } from './page-harness';
 import { displayDecision } from '~/src/orchestration/text-notice';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import type { TranslateRequest } from '~/src/engines/types';
@@ -68,7 +68,7 @@ describe('createOrchestrator — 假消息层', () => {
     orch.start();
 
     const input = items(100);
-    await orch.translatePage(input, 'en', 'zh-CN');
+    await translateItems(orch, input, 'en', 'zh-CN');
 
     // 缺省按 FULL_PAGE_BATCH_LIMITS 切（#1005）：发出去的就是切分函数给的那几批
     const expected = splitBatches(input, FULL_PAGE_BATCH_LIMITS).map((b) => b.map((it) => it.text));
@@ -83,14 +83,14 @@ describe('createOrchestrator — 假消息层', () => {
     const orch = createOrchestrator({ send, batchLimits: { maxItems: 7, maxChars: Infinity } });
     orch.start();
 
-    await orch.translatePage(items(16), 'auto', 'zh');
+    await translateItems(orch, items(16), 'auto', 'zh');
     expect(send.mock.calls.map((c) => c[0]!.texts.length)).toEqual([7, 7, 2]);
   });
 
   test('未启动 → 翻译入口抛错', async () => {
     const send = vi.fn(async (_req: TranslateRequest) => ({ ok: true, data: { translations: [] } }));
     const orch = createOrchestrator({ send });
-    await expect(orch.translatePage(items(1), 'en', 'zh')).rejects.toThrow(
+    await expect(translateItems(orch, items(1), 'en', 'zh')).rejects.toThrow(
       '未启动',
     );
     expect(send).not.toHaveBeenCalled();
@@ -101,7 +101,7 @@ describe('createOrchestrator — 假消息层', () => {
     const orch = createOrchestrator({ send });
     orch.start();
     orch.stop();
-    await expect(orch.translatePage(items(1), 'en', 'zh')).rejects.toThrow(
+    await expect(translateItems(orch, items(1), 'en', 'zh')).rejects.toThrow(
       '未启动',
     );
     expect(send).not.toHaveBeenCalled();
@@ -133,7 +133,7 @@ describe('渐进渲染回调注入（#256）', () => {
     orch.start();
 
     const onBatch = (batch: TranslateItem<unknown>[]) => order.push(batchIndex(batch));
-    const pending = orch.translatePage(items(20), 'en', 'zh', { onBatch });
+    const pending = translateItems(orch, items(20), 'en', 'zh', { onBatch });
     // 等一个宏任务（#1007 之后批次经闸门放行，多出几跳微任务；数微任务是
     // 实现细节，这条要钉的只是慢批没回来之前快批已经渲染）
     await new Promise((r) => setTimeout(r, 0));
@@ -163,7 +163,7 @@ describe('渐进渲染回调注入（#256）', () => {
     });
     orch.start();
 
-    await orch.translatePage(items(20), 'en', 'zh', {
+    await translateItems(orch, items(20), 'en', 'zh', {
       onBatch: (batch, result) => {
         seen.push([batchIndex(batch), result.ok ? 'ok' : result.error!]);
       },
@@ -178,7 +178,7 @@ describe('渐进渲染回调注入（#256）', () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
     const orch = createOrchestrator({ send, batchLimits: BY15 });
     orch.start();
-    await expect(orch.translatePage(items(16), 'en', 'zh')).resolves.toMatchObject({
+    await expect(translateItems(orch, items(16), 'en', 'zh')).resolves.toMatchObject({
       allFailed: false,
       abandoned: false,
     });
@@ -208,7 +208,7 @@ describe('还原中止在飞翻译（#262，#1066 起由翻译运行表达）', 
     orch.start();
 
     const onBatch = (batch: TranslateItem<unknown>[]) => order.push(batchIndex(batch));
-    const pending = orch.translatePage(items(20), 'en', 'zh', { onBatch });
+    const pending = translateItems(orch, items(20), 'en', 'zh', { onBatch });
     await flush();
     // 快批已返回并渲染
     expect(order).toEqual([1]);
@@ -245,12 +245,12 @@ describe('还原中止在飞翻译（#262，#1066 起由翻译运行表达）', 
     const onBatch = (batch: TranslateItem<unknown>[]) => order.push(batchIndex(batch));
 
     // 旧翻译在飞
-    const oldPending = orch.translatePage(items(20), 'en', 'zh', { onBatch });
+    const oldPending = translateItems(orch, items(20), 'en', 'zh', { onBatch });
     await flush();
     orch.abort();
 
     // 新翻译开始 —— 不受旧批次干扰
-    const newSummary = await orch.translatePage(items(16), 'en', 'zh', { onBatch });
+    const newSummary = await translateItems(orch, items(16), 'en', 'zh', { onBatch });
     expect(newSummary.abandoned).toBe(false);
     expect(newSummary.allFailed).toBe(false);
     // 新翻译的批次全部渲染
@@ -322,7 +322,7 @@ describe('准入判定（#311）', () => {
       getHostname: () => 'www.example.com',
     });
     orch.start();
-    const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+    const summary = await translateItems(orch, items(2), 'en', 'zh-CN');
     expect(send).not.toHaveBeenCalled();
     expect(summary.admission).toBe('blocked');
     orch.stop();
@@ -340,7 +340,7 @@ describe('准入判定（#311）', () => {
       getHostname: () => 'other.example.org',
     });
     orch.start();
-    const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+    const summary = await translateItems(orch, items(2), 'en', 'zh-CN');
     expect(send).not.toHaveBeenCalled();
     expect(summary.admission).toBe('blocked');
     orch.stop();
@@ -355,7 +355,7 @@ describe('准入判定（#311）', () => {
       getHostname: () => 'example.com',
     });
     orch.start();
-    const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+    const summary = await translateItems(orch, items(2), 'en', 'zh-CN');
     expect(send).not.toHaveBeenCalled();
     expect(summary.admission).toBe('disabled');
     orch.stop();
@@ -370,7 +370,7 @@ describe('准入判定（#311）', () => {
       getHostname: () => 'example.com',
     });
     orch.start();
-    const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+    const summary = await translateItems(orch, items(2), 'en', 'zh-CN');
     expect(send).toHaveBeenCalledTimes(1);
     expect(summary.admission).toBe('allowed');
     orch.stop();
@@ -380,7 +380,7 @@ describe('准入判定（#311）', () => {
     const send = vi.fn(async () => ({ ok: true, data: { translations: [] } }));
     const orch = createOrchestrator({ send });
     orch.start();
-    const summary = await orch.translatePage(items(1), 'en', 'zh-CN');
+    const summary = await translateItems(orch, items(1), 'en', 'zh-CN');
     expect(send).toHaveBeenCalledTimes(1);
     expect(summary.admission).toBe('allowed');
     orch.stop();
@@ -506,7 +506,7 @@ describe('失败提示语义映射（#313）', () => {
     const orch = createOrchestrator({ send });
     orch.start();
 
-    const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+    const summary = await translateItems(orch, items(2), 'en', 'zh-CN');
 
     expect(summary.allFailed).toBe(true);
     expect(summary.display).toEqual({
@@ -526,7 +526,7 @@ describe('失败提示语义映射（#313）', () => {
     const orch = createOrchestrator({ send });
     orch.start();
 
-    const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+    const summary = await translateItems(orch, items(2), 'en', 'zh-CN');
 
     expect(summary.allFailed).toBe(true);
     expect(summary.display).toEqual({ showRealReason: false });
@@ -568,7 +568,7 @@ describe('跨三条路径的失败提示契约（#316）', () => {
       const orch = createOrchestrator({ send });
       orch.start();
 
-      const page = await orch.translatePage(items(2), 'en', 'zh-CN');
+      const page = await translateItems(orch, items(2), 'en', 'zh-CN');
       const single = await orch.translateText('Hello', 'en', 'zh-CN');
 
       expect(single.ok).toBe(false);
@@ -1086,7 +1086,7 @@ describe('全页翻译携带当前领域（#379）', () => {
     });
     orch.start();
     if (via === 'togglePage') await orch.togglePage(itemsPage(items(3)), 'en', to);
-    else await orch.translatePage(items(3), 'en', to);
+    else await translateItems(orch, items(3), 'en', to);
     orch.stop();
     return send.mock.calls.map((c) => c[0]!);
   }
@@ -1133,7 +1133,7 @@ describe('全页翻译携带当前领域（#379）', () => {
       getDomains: () => domains,
     });
     orch.start();
-    await orch.translatePage(items(1), 'en', 'zh-CN');
+    await translateItems(orch, items(1), 'en', 'zh-CN');
     expect(send.mock.calls[0]![0]).not.toHaveProperty('domainId');
 
     // 设置页新建领域并填上适用网址
@@ -1142,7 +1142,7 @@ describe('全页翻译携带当前领域（#379）', () => {
     fireStorageChange({ 'pt-domains': { newValue: {} } }, 'local');
     await flush();
 
-    await orch.translatePage(items(1), 'en', 'zh-CN');
+    await translateItems(orch, items(1), 'en', 'zh-CN');
     expect(send.mock.calls[1]![0].domainId).toBe(law.id);
     orch.stop();
     off();
@@ -1157,7 +1157,7 @@ describe('全页翻译携带当前领域（#379）', () => {
     }));
     const orch = createOrchestrator({ send, getHostname: () => 'github.com' });
     orch.start();
-    await orch.translatePage(items(1), 'en', 'zh-CN');
+    await translateItems(orch, items(1), 'en', 'zh-CN');
     orch.stop();
     expect(send.mock.calls[0]![0]).not.toHaveProperty('domainId');
   });
@@ -1210,7 +1210,7 @@ describe('逐段翻译与划词翻译携带当前领域（#383/#384）', () => {
       getDomains: () => domains,
     });
     orch.start();
-    await orch.translatePage(items(1), 'en', 'zh-CN');
+    await translateItems(orch, items(1), 'en', 'zh-CN');
     await orch.translateText(items(1)[0]!.text, 'en', 'zh-CN');
     orch.stop();
     const [page, single] = send.mock.calls.map((c) => c[0]!);
@@ -1242,7 +1242,7 @@ describe('当前领域按顶层页面判定（#471）', () => {
       getDomains: () => domains,
     });
     orch.start();
-    await orch.translatePage(items(1), 'en', 'zh-CN');
+    await translateItems(orch, items(1), 'en', 'zh-CN');
     const pageCount = send.mock.calls.length;
     await orch.translateText('text-0', 'en', 'zh-CN');
     orch.stop();
@@ -1291,7 +1291,7 @@ describe('扩展上下文失效不按错误记录（#579）', () => {
     orch.start();
 
     try {
-      const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+      const summary = await translateItems(orch, items(2), 'en', 'zh-CN');
 
       expect(summary.invalidated).toBe(true);
       expect(summary.allFailed).toBe(true);
@@ -1319,7 +1319,7 @@ describe('扩展上下文失效不按错误记录（#579）', () => {
     orch.start();
 
     try {
-      const summary = await orch.translatePage(items(2), 'en', 'zh-CN');
+      const summary = await translateItems(orch, items(2), 'en', 'zh-CN');
 
       expect(summary.invalidated).toBe(true);
       expect(errorSpy).toHaveBeenCalledWith('[PT] 批次翻译失败:', '配额已用尽');
@@ -1342,7 +1342,7 @@ describe('扩展上下文失效不按错误记录（#579）', () => {
     orch.start();
 
     try {
-      await orch.translatePage(items(1), 'en', 'zh-CN');
+      await translateItems(orch, items(1), 'en', 'zh-CN');
 
       expect(errorSpy).toHaveBeenCalledWith('[PT] 批次翻译失败:', 'HTTP 503');
     } finally {
@@ -1386,7 +1386,7 @@ describe('记下引擎报告的检测语言（#659）', () => {
     ] as const) {
       const orch = createOrchestrator({ send: sendDetecting([raw]) });
       orch.start();
-      await orch.translatePage(items(3), 'auto', 'zh-CN');
+      await translateItems(orch, items(3), 'auto', 'zh-CN');
       expect(orch.detectedLang()).toBe(want);
     }
   });
@@ -1408,11 +1408,11 @@ describe('记下引擎报告的检测语言（#659）', () => {
   test('引擎不提供或给出认不出的值 → 不记录也不报错，保留上一次的结果', async () => {
     const orch = createOrchestrator({ send: sendDetecting([undefined, 'EN', undefined, 'xx-#bad']) });
     orch.start();
-    await orch.translatePage(items(1), 'auto', 'zh-CN');
+    await translateItems(orch, items(1), 'auto', 'zh-CN');
     expect(orch.detectedLang()).toBeNull();
-    await orch.translatePage(items(1), 'auto', 'zh-CN');
+    await translateItems(orch, items(1), 'auto', 'zh-CN');
     expect(orch.detectedLang()).toBe('en');
-    await orch.translatePage(items(1), 'auto', 'zh-CN');
+    await translateItems(orch, items(1), 'auto', 'zh-CN');
     expect(orch.detectedLang()).toBe('en');
     await orch.translateText('x', 'auto', 'zh-CN', { recordDetectedLang: true });
     expect(orch.detectedLang()).toBe('en');
@@ -1422,7 +1422,7 @@ describe('记下引擎报告的检测语言（#659）', () => {
     const send = vi.fn(async () => ({ ok: false, error: 'boom', category: 'network' }));
     const orch = createOrchestrator({ send, sleep: async () => {} });
     orch.start();
-    await orch.translatePage(items(1), 'auto', 'zh-CN');
+    await translateItems(orch, items(1), 'auto', 'zh-CN');
     await orch.translateText('x', 'auto', 'zh-CN', { recordDetectedLang: true });
     expect(orch.detectedLang()).toBeNull();
   });
@@ -1434,7 +1434,7 @@ describe('记下引擎报告的检测语言（#659）', () => {
     ];
     const orch = createOrchestrator({ send: sendDetecting(['EN']) });
     orch.start();
-    await orch.translatePage(items(3), 'auto', 'zh-CN');
+    await translateItems(orch, items(3), 'auto', 'zh-CN');
     await orch.translateText('Hello', 'auto', 'zh-CN', { recordDetectedLang: true });
     expect(orch.detectedLang()).toBe('en');
     for (const spy of spies) {

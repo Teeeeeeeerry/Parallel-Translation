@@ -25,6 +25,8 @@
 // - 到顶交接（#1036）：补满轮数时，在启动观察器的同一个同步段里再采一次，交给
 //   增量补翻；这一次翻译被等待（#1078，此前是没等待的调用）。
 // - 观察器启停与观察器启动前的隐藏单元缓冲（#255、#331、#332）。
+// - 增量补翻（#1118）：观察器交出的新单元由会话去重、送翻、渲染、记统计（单独
+//   一轮），结局经 onIncremental 报出；内容脚本据此给失败提示。
 // - 还原：停观察器、撤回页面上全部渲染。
 // - 状态流（#1079）：悬浮球该显示什么 —— 进行中、完成、已还原（空闲）、失败 ——
 //   由这里发出，悬浮球只订阅它。补采集真正结束后才报完成（#1012）。
@@ -81,15 +83,22 @@ export interface PageDom<U extends object, Ctx> {
   unrenderAll(): void;
   /** 页面上有没有译文 —— 以页面为准（逐段翻译、增量补翻也算，#325）。 */
   hasTranslated(): boolean;
-  /** 启动增量补翻观察器（整页翻译成功后，#328）。 */
-  observe(): PageObserver<U>;
+  /**
+   * 启动增量补翻观察器（整页翻译成功后，#328）：之后进入 DOM 的新单元、展开的
+   * 隐藏单元经 onUnits 交回会话（#1118）。
+   */
+  observe(onUnits: (units: U[]) => void): PageObserver<U>;
 }
 
 /** 编排模块的批次流水线（准入、切批、闸门、发送、重试）。 */
 export type PagePipeline = (
   items: TranslateItem<unknown>[],
   opts: {
-    signal: AbortSignal;
+    /**
+     * 外层运行的信号；没有时从页面根派生 —— 增量补翻在整页开关返回之后才发生，
+     * 不跟着那一次运行，只随还原整页中止（#1118）
+     */
+    signal?: AbortSignal;
     onBatch: (batch: TranslateItem<unknown>[], result: TranslateBatchResult) => void;
     /** 补采集与到顶交接是这一次的延续，准入不重判（#1011） */
     admitted?: boolean;
@@ -115,6 +124,17 @@ export type PageState = PageToggleVisual;
 export type PageRunOutcome =
   | { status: 'no-elements' }
   | { status: 'translated' | 'error' | 'abandoned'; summary: PageTranslateSummary };
+
+/**
+ * 一次增量补翻的结局（#1118）：translated 照常（可能有段落失败，看 stats），
+ * error 全部批次失败，abandoned 被放弃（还原整页，不提示）。准入拦下时不报。
+ */
+export interface IncrementalOutcome {
+  status: 'translated' | 'error' | 'abandoned';
+  summary: PageTranslateSummary;
+  /** 这一次补翻自己那一轮的渲染统计 */
+  stats: RenderStats;
+}
 
 export interface PageSession<Ctx = unknown> {
   /** 跑这一次整页翻译：首轮 → 补采集 → 到顶交接 → 启动观察器。 */
@@ -145,6 +165,8 @@ export interface PageTranslation {
   subscribe(listener: (state: PageState) => void): () => void;
   /** 这一次不翻（页面级闸门判定本页已是目标语言，#793）：报空闲。 */
   decline(): void;
+  /** 订阅增量补翻的结局（#1118）：失败提示与首轮同一套判定。返回退订函数。 */
+  onIncremental(listener: (outcome: IncrementalOutcome) => void): () => void;
 }
 
 export function createPageTranslation<U extends object, Ctx>(dom: PageDom<U, Ctx>): PageTranslation {
@@ -153,12 +175,16 @@ export function createPageTranslation<U extends object, Ctx>(dom: PageDom<U, Ctx
   const emit = (state: PageState) => {
     for (const l of [...listeners]) l(state);
   };
+  const incrementalListeners = new Set<(outcome: IncrementalOutcome) => void>();
+  const emitIncremental = (outcome: IncrementalOutcome) => {
+    for (const l of [...incrementalListeners]) l(outcome);
+  };
   return {
     hasTranslated: () => dom.hasTranslated(),
     readUnits: () => dom.collectReadOnly().map((u) => dom.build(u).text),
     begin() {
       current?.end();
-      current = createSession(dom, emit);
+      current = createSession(dom, emit, emitIncremental);
       return current;
     },
     restore() {
@@ -177,12 +203,17 @@ export function createPageTranslation<U extends object, Ctx>(dom: PageDom<U, Ctx
       // #793：推成完成态是在骗人，用户再点一次也会困惑
       emit('idle');
     },
+    onIncremental(listener) {
+      incrementalListeners.add(listener);
+      return () => incrementalListeners.delete(listener);
+    },
   };
 }
 
 function createSession<U extends object, Ctx>(
   dom: PageDom<U, Ctx>,
   emit: (state: PageState) => void,
+  emitIncremental: (outcome: IncrementalOutcome) => void,
 ): PageSession<Ctx> & { end(): void } {
   const skips = emptySkipStats();
   const handedOut = new WeakSet<U>();
@@ -196,6 +227,8 @@ function createSession<U extends object, Ctx>(
   const buffered = new WeakSet<U>();
   let observer: PageObserver<U> | null = null;
   let ended = false;
+  /** 这一次整页翻译的批次流水线：增量补翻在整页开关返回之后还要用它送翻。 */
+  let translate: PagePipeline | null = null;
 
   const onHidden = (unit: U) => {
     if (observer) observer.registerHidden(unit);
@@ -205,20 +238,25 @@ function createSession<U extends object, Ctx>(
     }
   };
 
-  const collectRound = (): TranslateItem<Ctx>[] => {
+  /** 开一轮新的统计，把这些单元里会话还没交出过的做成翻译项，记进这一轮。 */
+  const takeRound = (units: U[]): TranslateItem<Ctx>[] => {
     const stats = emptyRenderStats();
     rounds.push(stats);
-    const units = dom.collect((unit, category) => {
-      if (reported.has(unit)) return;
-      reported.add(unit);
-      countSkip(skips, category);
-    }, onHidden);
     const fresh = units.filter((u) => !handedOut.has(u));
     for (const u of fresh) handedOut.add(u);
     const items = fresh.map((u) => dom.build(u));
     for (const item of items) roundOf.set(item, stats);
     return items;
   };
+
+  const collectRound = (): TranslateItem<Ctx>[] =>
+    takeRound(
+      dom.collect((unit, category) => {
+        if (reported.has(unit)) return;
+        reported.add(unit);
+        countSkip(skips, category);
+      }, onHidden),
+    );
 
   const onBatch = (batch: TranslateItem<unknown>[], result: TranslateBatchResult): void => {
     const statsOf = (item: TranslateItem<unknown>) => roundOf.get(item) ?? rounds[rounds.length - 1]!;
@@ -243,10 +281,28 @@ function createSession<U extends object, Ctx>(
     }
   };
 
+  /**
+   * 增量补翻（#1118，原在内容脚本）：观察器交出的新单元单独记一轮，走同一条
+   * 批次流水线。准入照常重判（扩展关掉、站点拉黑之后不再补翻）；信号从页面根
+   * 派生，还原整页让在飞的这一次放弃、译文不落 DOM。已交出过的单元不再送翻。
+   */
+  const incremental = async (units: U[]): Promise<void> => {
+    if (ended || !translate) return;
+    const items = takeRound(units);
+    if (items.length === 0) return;
+    const stats = rounds[rounds.length - 1]!;
+    const summary = await translate(items, { onBatch });
+    if (summary.admission !== 'allowed') return;
+    const status = summary.abandoned ? 'abandoned' : summary.allFailed ? 'error' : 'translated';
+    emitIncremental({ status, summary, stats });
+  };
+
   /** #328: 观察器只在整页翻译成功后启动恰好一次；补挂启动前登记的隐藏单元。 */
   const startObserver = (): void => {
     if (observer || ended) return;
-    observer = dom.observe();
+    observer = dom.observe((units) => {
+      incremental(units).catch((e) => console.error('[PT] 增量补翻失败:', e));
+    });
     for (const ref of preStartHidden) {
       const unit = ref.deref();
       if (unit) observer.registerHidden(unit);
@@ -284,11 +340,12 @@ function createSession<U extends object, Ctx>(
     collectRound,
 
     async run(ctx) {
+      translate = ctx.translate;
       const list = collectRound();
       if (list.length === 0) return { status: 'no-elements' };
       emit('loading');
       const summary = await ctx.translate(list, { signal: ctx.signal, onBatch });
-      // #1077：读首轮自己的统计 —— 不被补翻、另一路增量补翻清零或叠加
+      // #1077：读首轮自己的统计 —— 不被补翻、增量补翻叠加
       // #327/#416: 引擎返回结果但全部渲染被拒 → 错误态；有段落失败时不算
       const status = summary.abandoned
         ? 'abandoned'

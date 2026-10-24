@@ -8,6 +8,7 @@
 import { describe, test, expect, vi } from 'vitest';
 import { decidePageGate } from '~/src/orchestration/page-gate';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
+import { translateItems } from './page-harness';
 
 describe('decidePageGate — 页面语言与目标语言比对（#788）', () => {
   test('页面语言与目标语言相同：不翻，带原因与判出的页面语言', () => {
@@ -187,7 +188,7 @@ describe('第一次点整页翻译时只有语言声明可用（#791）', () => 
     }));
     const orch = createOrchestrator({ send } as Parameters<typeof createOrchestrator>[0]);
     orch.start();
-    await orch.translatePage([{ text: '你好', ctx: 0 }], 'auto', 'en');
+    await translateItems(orch, [{ text: '你好', ctx: 0 }], 'auto', 'en');
 
     expect(
       decidePageGate({ to: 'zh-CN', detectedLang: orch.detectedLang(), pageLang: 'en' }),

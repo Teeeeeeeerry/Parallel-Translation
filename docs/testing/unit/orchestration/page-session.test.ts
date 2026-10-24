@@ -21,10 +21,13 @@ import {
   createPageTranslation,
   RECOLLECT_MAX_ROUNDS,
   RECOLLECT_INTERVAL_MS,
+  type IncrementalOutcome,
   type PageTranslation,
 } from '~/src/orchestration/page-session';
+import { allFailedNotice, incrementalNotice, partialFailNotice } from '~/src/orchestration/page-summary';
 import type { TranslateRequest } from '~/src/engines/types';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
+import { translateItems } from './page-harness';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -88,6 +91,8 @@ function harness(extra: HarnessOptions = {}) {
   const sent: string[] = [];
   let sends = 0;
   let collects = 0;
+  /** 观察器启动时会话交给它的回调：用例拿它模拟观察器看到新单元（#1118） */
+  let onUnits: ((els: Element[]) => void) | null = null;
   const send = vi.fn(async (req: TranslateRequest) => {
     sent.push(...req.texts);
     onSend?.(++sends, req.texts);
@@ -107,7 +112,8 @@ function harness(extra: HarnessOptions = {}) {
       events.push('restore');
     },
     hasTranslated: translated,
-    observe: () => {
+    observe: (deliver) => {
+      onUnits = deliver;
       events.push('observer:start');
       onObserve?.();
       return {
@@ -126,7 +132,9 @@ function harness(extra: HarnessOptions = {}) {
   });
   orch.start();
   current = { page: page as TestPage };
-  return { orch, send, sent, events, page: page as TestPage };
+  /** 观察器看到这些元素（启动之前调用是用例写错了） */
+  const observed = (els: Element[]) => onUnits!(els);
+  return { orch, send, sent, events, observed, page: page as TestPage };
 }
 
 describe('补采集去重是会话自己保证的，不靠完成标记（#1056）', () => {
@@ -541,17 +549,19 @@ describe('统计按轮分开记（#1077）', () => {
     data: { translations: req.texts.map((t) => (t.startsWith('same') ? t : `T(${t})`)) },
   });
 
-  test('首轮全部渲染被拒：报错误态；首轮在飞时另一路增量补翻渲染成功，不掺进首轮的统计', async () => {
+  test('首轮全部渲染被拒：报错误态；首轮在飞时另一路送翻渲染成功，不掺进首轮的统计', async () => {
     addParas('same', 2);
     let incrementalRendered = 0;
     const h = harness();
+    // 先拿到流水线（经一次整页开关，不发请求），首轮在飞时才能直接用
+    await translateItems(h.orch, [], 'en', 'zh-CN');
     let first = true;
     h.send.mockImplementation(async (req: TranslateRequest) => {
       h.sent.push(...req.texts);
       if (first) {
         first = false;
-        // 观察器那一路的增量补翻（自己的 onBatch，不经会话）在首轮在飞时完成
-        await h.orch.translatePage([{ text: 'incremental text', ctx: null }], 'en', 'zh-CN', {
+        // 同一条流水线上另一路送翻（自己的 onBatch，不经会话）在首轮在飞时完成
+        await translateItems(h.orch, [{ text: 'incremental text', ctx: null }], 'en', 'zh-CN', {
           onBatch: (batch, result) => {
             if (result.ok) incrementalRendered += batch.length;
           },
@@ -844,5 +854,144 @@ describe('悬浮球订阅整页翻译的状态流（#1079）', () => {
     off();
     await h.orch.togglePage(session(), 'en', 'zh-CN');
     expect(states).toEqual([]);
+  });
+});
+
+describe('增量补翻归会话（#1118）', () => {
+  /** 下一次增量补翻的结局 */
+  const nextIncremental = (page: PageTranslation) =>
+    new Promise<IncrementalOutcome>((resolve) => {
+      const off = page.onIncremental((o) => {
+        off();
+        resolve(o);
+      });
+    });
+
+  /** 往页面末尾插几段，返回插进去的元素 */
+  function lateParas(tag: string, n: number): Element[] {
+    addParas(tag, n);
+    return [...document.querySelectorAll('p')].slice(-n);
+  }
+
+  test('整页翻译完成后观察器看到的新段落被补翻、渲染，统计单独记一轮', async () => {
+    addParas('a', 2);
+    const h = harness();
+    const s = session();
+    expect((await h.orch.togglePage(s, 'en', 'zh-CN')).status).toBe('translated');
+    const rounds = s.current()!.totals();
+
+    const els = lateParas('late', 2);
+    const outcome = nextIncremental(s);
+    h.observed(els);
+    expect(await outcome).toMatchObject({ status: 'translated', stats: { succeeded: 2, failed: 0 } });
+    for (const el of els) {
+      expect(el.getAttribute('data-pt')).toBe('done');
+      expect(el.querySelector('.pt-trans')!.textContent).toBe(`T(${el.querySelector('.pt-origin')!.textContent})`);
+    }
+    expect(s.current()!.totals().succeeded).toBe(rounds.succeeded + 2);
+  });
+
+  test('已翻过的段落不会在增量补翻里二次送翻', async () => {
+    addParas('a', 2);
+    const h = harness();
+    const s = session();
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    const before = h.sent.length;
+
+    const late = addParas('late', 1);
+    const first = nextIncremental(s);
+    // 观察器把首轮翻过的段落与新段落一起交过来
+    h.observed([...document.querySelectorAll('p')]);
+    await first;
+    expect(h.sent.slice(before)).toEqual(late);
+
+    // 同一批再交一次：一个都不送，不报结局
+    const sends = h.send.mock.calls.length;
+    h.observed([...document.querySelectorAll('p')]);
+    await flush();
+    expect(h.send.mock.calls.length).toBe(sends);
+  });
+
+  test('部分段落失败：结局带失败数，提示与首轮同一套判定', async () => {
+    addParas('a', 1);
+    let partial = false;
+    const h = harness({
+      send: vi.fn(async (req: TranslateRequest) => ({
+        ok: true,
+        data: { translations: req.texts.map((t) => `T(${t})`), ...(partial && { failedIndices: [0] }) },
+      })),
+    });
+    const s = session();
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    partial = true;
+
+    const outcome = nextIncremental(s);
+    h.observed(lateParas('late', 2));
+    const o = await outcome;
+    expect(o).toMatchObject({ status: 'translated', stats: { succeeded: 1, failed: 1 } });
+    expect(incrementalNotice(o)).toEqual(partialFailNotice(o.stats, o.summary.display));
+    expect(incrementalNotice(o)).not.toBeNull();
+  });
+
+  test('全部失败：结局是失败，提示与首轮全部失败同一条', async () => {
+    addParas('a', 1);
+    let failing = false;
+    const h = harness({
+      send: vi.fn(async (req: TranslateRequest) =>
+        failing
+          ? { ok: false, error: 'HTTP 503', category: 'transient' }
+          : { ok: true, data: { translations: req.texts.map((t) => `T(${t})`) } },
+      ),
+    });
+    const s = session();
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    failing = true;
+
+    const outcome = nextIncremental(s);
+    h.observed(lateParas('late', 2));
+    const o = await outcome;
+    expect(o.status).toBe('error');
+    expect(o.stats.failed).toBe(2);
+    expect(incrementalNotice(o)).toEqual(allFailedNotice(o.summary.display));
+  });
+
+  test('补翻在飞时还原：结局是被放弃、不提示，译文不落回页面', async () => {
+    addParas('a', 1);
+    let reply: ((v: unknown) => void) | null = null;
+    let hold = false;
+    const h = harness({
+      send: vi.fn((req: TranslateRequest) =>
+        hold
+          ? new Promise((r) => (reply = r))
+          : Promise.resolve({ ok: true, data: { translations: req.texts.map((t) => `T(${t})`) } }),
+      ),
+    });
+    const s = session();
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    hold = true;
+
+    const els = lateParas('late', 1);
+    const outcome = nextIncremental(s);
+    h.observed(els);
+    await flush();
+    expect((await h.orch.togglePage(s, 'en', 'zh-CN')).status).toBe('restored');
+    reply!({ ok: true, data: { translations: ['T(late)'] } });
+    const o = await outcome;
+    expect(o.status).toBe('abandoned');
+    expect(incrementalNotice(o)).toBeNull();
+    expect(els[0]!.getAttribute('data-pt')).toBeNull();
+    expect(document.querySelector('[data-pt="done"]')).toBeNull();
+  });
+
+  test('还原之后观察器才交来的单元：不送翻（会话已经结束）', async () => {
+    addParas('a', 1);
+    const h = harness();
+    const s = session();
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    await h.orch.togglePage(s, 'en', 'zh-CN');
+    const sends = h.send.mock.calls.length;
+    h.observed(lateParas('late', 1));
+    await flush();
+    expect(h.send.mock.calls.length).toBe(sends);
   });
 });

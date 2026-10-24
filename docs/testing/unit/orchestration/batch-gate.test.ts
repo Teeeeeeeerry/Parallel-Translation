@@ -16,6 +16,7 @@ import {
 } from '~/src/orchestration/orchestrator';
 import { DEFAULT_SETTINGS } from '~/src/storage/schema';
 import type { TranslateRequest } from '~/src/engines/types';
+import { translateItems } from './page-harness';
 
 const items = (n: number, tag = 'u'): TranslateItem<number>[] =>
   Array.from({ length: n }, (_, i) => ({ text: `${tag}${i}`, ctx: i }));
@@ -95,7 +96,7 @@ describe('content 侧在飞批次闸门（#1007）', () => {
     const h = harness(3);
     const input = items(200);
     expect(batchCount(200)).toBeGreaterThan(3);
-    const done = h.orch.translatePage(input, 'en', 'zh-CN');
+    const done = translateItems(h.orch, input, 'en', 'zh-CN');
     await flush();
     // 一开始只放进并发数那么多批
     expect(h.pending).toHaveLength(3);
@@ -110,7 +111,7 @@ describe('content 侧在飞批次闸门（#1007）', () => {
 
   test('还原发生在批次排队时：放行那一刻直接作废，不再发出', async () => {
     const h = harness(2);
-    const done = h.orch.translatePage(items(200), 'en', 'zh-CN');
+    const done = translateItems(h.orch, items(200), 'en', 'zh-CN');
     await flush();
     expect(h.sent).toHaveLength(2);
     // 前两批在飞，其余在排队 —— 此刻用户点了还原
@@ -124,7 +125,7 @@ describe('content 侧在飞批次闸门（#1007）', () => {
 
   test('其他批次判了失效：排队中的批次放行时作废，不再发出', async () => {
     const h = harness(2);
-    const done = h.orch.translatePage(items(200), 'en', 'zh-CN');
+    const done = translateItems(h.orch, items(200), 'en', 'zh-CN');
     await flush();
     expect(h.sent).toHaveLength(2);
     // 第一批回来是失效（上下文失效 / 配额耗尽）
@@ -137,8 +138,8 @@ describe('content 侧在飞批次闸门（#1007）', () => {
 
   test('整页翻译与增量补翻共用同一道闸门：两路同时跑，在飞总数仍不超过设置', async () => {
     const h = harness(3);
-    const a = h.orch.translatePage(items(120, 'a'), 'en', 'zh-CN');
-    const b = h.orch.translatePage(items(120, 'b'), 'en', 'zh-CN');
+    const a = translateItems(h.orch, items(120, 'a'), 'en', 'zh-CN');
+    const b = translateItems(h.orch, items(120, 'b'), 'en', 'zh-CN');
     await flush();
     expect(h.pending).toHaveLength(3);
     await h.drain();
@@ -150,7 +151,7 @@ describe('content 侧在飞批次闸门（#1007）', () => {
   test('并发数取翻译开始时的设置值', async () => {
     const h = harness(6);
     h.settings.maxConcurrency = 4;
-    const done = h.orch.translatePage(items(200), 'en', 'zh-CN');
+    const done = translateItems(h.orch, items(200), 'en', 'zh-CN');
     await flush();
     expect(h.pending).toHaveLength(4);
     await h.drain();
@@ -162,7 +163,7 @@ describe('content 侧在飞批次闸门（#1007）', () => {
 describe('翻译途中改并发数，在飞上限跟着变（#1008）', () => {
   test('调大：排队的批次立刻放行到新上限，之后峰值符合新上限', async () => {
     const h = harness(2);
-    const done = h.orch.translatePage(items(300), 'en', 'zh-CN');
+    const done = translateItems(h.orch, items(300), 'en', 'zh-CN');
     await flush();
     expect(h.pending).toHaveLength(2);
     expect(h.peak()).toBe(2);
@@ -178,7 +179,7 @@ describe('翻译途中改并发数，在飞上限跟着变（#1008）', () => {
 
   test('调小：已在飞的照常跑完不被砍断，之后在飞数降到新上限以内', async () => {
     const h = harness(5);
-    const done = h.orch.translatePage(items(300), 'en', 'zh-CN');
+    const done = translateItems(h.orch, items(300), 'en', 'zh-CN');
     await flush();
     expect(h.pending).toHaveLength(5);
     h.changeConcurrency(2);
@@ -202,13 +203,13 @@ describe('翻译途中改并发数，在飞上限跟着变（#1008）', () => {
 
   test('改设置不重建闸门：改完之后再来一路增量补翻，两路在飞总数仍只受新上限约束', async () => {
     const h = harness(3);
-    const a = h.orch.translatePage(items(300, 'a'), 'en', 'zh-CN');
+    const a = translateItems(h.orch, items(300, 'a'), 'en', 'zh-CN');
     await flush();
     h.changeConcurrency(4);
     await flush();
     expect(h.pending).toHaveLength(4);
     // 重建闸门的话：旧闸门里 a 的批次照旧占着名额，b 进新闸门再占 4 个，在飞翻倍
-    const b = h.orch.translatePage(items(300, 'b'), 'en', 'zh-CN');
+    const b = translateItems(h.orch, items(300, 'b'), 'en', 'zh-CN');
     await flush();
     expect(h.pending).toHaveLength(4);
     await h.drain();

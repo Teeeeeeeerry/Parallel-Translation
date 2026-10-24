@@ -17,7 +17,7 @@ import {
   FULL_PAGE_BATCH_LIMITS,
   type TranslateItem,
 } from '~/src/orchestration/orchestrator';
-import { itemsPage } from './page-harness';
+import { itemsPage, translateItems } from './page-harness';
 import type { TranslateRequest } from '~/src/engines/types';
 
 /** 改动前的切法：15 个单元一批，与长短无关 */
@@ -82,7 +82,7 @@ async function run(
     });
     await orch.togglePage(page, 'en', 'zh-CN');
   } else {
-    await orch.translatePage(input, 'en', 'zh-CN', {
+    await translateItems(orch, input, 'en', 'zh-CN', {
       onBatch: (batch) => rendered.push([batchOf(batch[0]!.text), batch.map((it) => it.text)]),
     });
   }

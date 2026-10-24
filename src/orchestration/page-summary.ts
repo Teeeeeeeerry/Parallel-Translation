@@ -13,6 +13,7 @@
 import type { RenderResult } from '../dom/renderer';
 import type { SkipCategory } from '../dom/walker';
 import type { FailureDisplay, PageToggleResult } from './orchestrator';
+import type { IncrementalOutcome } from './page-session';
 import { tf } from '../i18n';
 
 /** 渲染统计（每次整页翻译与增量补翻开始时清零）。 */
@@ -252,6 +253,17 @@ export function pageNotice(
     case 'disabled':
       return null;
   }
+}
+
+/**
+ * 增量补翻结束后的提示（#1118）：与首轮同一套判定 —— 全部批次失败给
+ * allFailedNotice，部分段落失败给 partialFailNotice；被放弃（还原）不提示。
+ */
+export function incrementalNotice(outcome: IncrementalOutcome): PageNotice | null {
+  if (outcome.status === 'abandoned') return null;
+  return outcome.status === 'error'
+    ? allFailedNotice(outcome.summary.display)
+    : partialFailNotice(outcome.stats, outcome.summary.display);
 }
 
 /**
