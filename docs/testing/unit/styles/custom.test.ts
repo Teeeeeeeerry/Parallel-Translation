@@ -142,21 +142,34 @@ describe('拒绝原因按界面语言显示（设置页表单与导入设置的�
     await loadUiLocale('browser');
   });
 
+  const INPUTS = [
+    '.x { color: red }',
+    '@import "a.css";',
+    '<style>',
+    'background: url(a.png)',
+    'color: javascript:alert(1)',
+    'width: expression(1)',
+  ];
+  const reasons = () => INPUTS.map((css) => {
+    const r = validateCustomCss(css);
+    return r.ok ? '' : r.msg;
+  });
+
+  test('繁体界面：六种拒绝原因都取自繁体的表，不回落成简体（键名拼错会在这里露出来）', async () => {
+    await loadUiLocale('zh_CN', fromRepo);
+    const simplified = reasons();
+    await loadUiLocale('zh_TW', fromRepo);
+    const traditional = reasons();
+    traditional.forEach((m, i) => {
+      expect(m).not.toBe('');
+      expect(m).not.toBe(simplified[i]);
+    });
+  });
+
   test('英文界面：六种拒绝原因都是英文，没有中文', async () => {
     await loadUiLocale('en', fromRepo);
-    const inputs = [
-      '.x { color: red }',
-      '@import "a.css";',
-      '<style>',
-      'background: url(a.png)',
-      'color: javascript:alert(1)',
-      'width: expression(1)',
-    ];
-    const msgs = inputs.map((css) => {
-      const r = validateCustomCss(css);
-      return r.ok ? '' : r.msg;
-    });
-    expect(new Set(msgs).size).toBe(inputs.length);
+    const msgs = reasons();
+    expect(new Set(msgs).size).toBe(INPUTS.length);
     for (const m of msgs) {
       expect(m).not.toBe('');
       expect(m).not.toMatch(/[\u4e00-\u9fff]/);
