@@ -390,6 +390,7 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
           throw e;
         });
       void importFileBytes(file, importInto, {
+        what: '导入术语',
         failure: (e) => {
           const reason = failReason(e);
           return tf('domainTermsImportFailed', `导入术语失败：${reason}`, reason);
@@ -417,7 +418,7 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
         showImportReport(current);
         const m = String(skipped.length);
         showToast(tf('domainTermsImportedSkipped', `已导入 ${imported} 条术语，跳过 ${m} 行`, n, m), 4000);
-      });
+      }).catch((e) => console.error('[PT] 导入术语之后更新界面失败:', e));
     },
     {
       // 导入合并的是已保存的术语，重绘后表格里未保存的修改会被替换
@@ -673,6 +674,7 @@ export function initDomains(): void {
     const name = nameInput.value.trim() || (file.name.replace(/\.[^.]*$/, '') || file.name).slice(0, max);
     importNewError.classList.remove('pt-visible');
     void importFileBytes(file, (buf) => createDomainFromTermsCsv({ name, targetLang: langSelect.value }, buf), {
+      what: '从 CSV 新建领域',
       // #470: 失败时提示原因，名称留在输入框里方便重试
       failure: (e) => {
         const reason = failReason(e);
@@ -707,7 +709,7 @@ export function initDomains(): void {
         tf('domainImportedNewSkipped', `已新建领域“${domain.name}”，导入 ${n} 条术语，跳过 ${m} 行`, domain.name, n, m),
         4000,
       );
-    });
+    }).catch((e) => console.error('[PT] 从 CSV 新建领域之后更新界面失败:', e));
   });
   nameInput.addEventListener('input', () => {
     nameInput.classList.remove('pt-error');

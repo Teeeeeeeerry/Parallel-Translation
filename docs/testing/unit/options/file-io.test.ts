@@ -121,6 +121,16 @@ describe('导入文件（#1124）', () => {
     error.mockRestore();
   });
 
+  test('失败日志写明是哪一种导入，排查时分得清', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const boom = new Error('boom');
+    await importFile(file('[1]'), async () => {
+      throw boom;
+    }, { what: '导入站点规则' });
+    expect(error).toHaveBeenCalledWith('[PT] 导入站点规则失败:', boom);
+    error.mockRestore();
+  });
+
   test('写入时存储配额用完：提示可以在高级分区清空缓存', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const r = await importFile(file('[1]'), async () => {

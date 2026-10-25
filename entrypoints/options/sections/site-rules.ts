@@ -332,6 +332,7 @@ export function initSiteRules(): void {
   function importJson(file: File): void {
     importReport.classList.remove('pt-visible');
     void importFromFile(file, importUserSiteRules, {
+      what: '导入站点规则',
       failure: (e) => {
         if (!(e instanceof SiteRulesImportError)) {
           const reason = failReason(e);
@@ -370,7 +371,7 @@ export function initSiteRules(): void {
       const done = tf('siteRulesImportedSkipped', `已导入 ${n} 个站点，跳过 ${m} 条，刷新网站后生效`, n, m);
       showToast(done, 4000);
       return refresh(done);
-    });
+    }).catch((e) => console.error('[PT] 导入站点规则之后更新界面失败:', e));
   }
 
   addBtn.addEventListener('click', add);
