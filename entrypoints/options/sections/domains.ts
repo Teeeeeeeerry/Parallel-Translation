@@ -96,16 +96,13 @@ function sitesEditor(d: Domain, onGone: () => void): HTMLDetailsElement {
   return details;
 }
 
-/** 领域已在别处被删除时的提示（#430）。 */
-const domainGoneMessage = () => tf('domainSaveDeleted', '这个领域已被删除，列表已刷新');
-
 /**
  * 领域已在别处被删除（#430）：提示并刷新列表（该领域随之消失），返回 true；
  * 别的错误返回 false。保存、导出、导入术语共用这一处（#1125）。
  */
 function domainGone(e: unknown, onGone: () => void): boolean {
   if (!(e instanceof DomainNotFoundError)) return false;
-  showToast(domainGoneMessage(), 4000);
+  showToast(tf('domainSaveDeleted', '这个领域已被删除，列表已刷新'), 4000);
   onGone();
   return true;
 }
@@ -386,12 +383,14 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
     importFile,
     (file) => {
       // #590：交原始字节，编码由存储模块识别（UTF-8 或 GBK）
-      void importFileBytes(file, (buf) => importDomainTermsCsv(d.id, buf), {
+      // 领域已在别处被删除不算导入失败：交回错误，由 domainGone 提示并刷新列表
+      const importInto = (buf: ArrayBuffer) =>
+        importDomainTermsCsv(d.id, buf).catch((e: unknown) => {
+          if (e instanceof DomainNotFoundError) return e;
+          throw e;
+        });
+      void importFileBytes(file, importInto, {
         failure: (e) => {
-          if (e instanceof DomainNotFoundError) {
-            onGone();
-            return domainGoneMessage();
-          }
           const reason = failReason(e);
           return tf('domainTermsImportFailed', `导入术语失败：${reason}`, reason);
         },
@@ -400,7 +399,8 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
           showToast(result.message, 4000);
           return;
         }
-        const { imported, skipped, headerColumns } = result.value;
+        if (domainGone(result.value, onGone)) return;
+        const { imported, skipped, headerColumns } = result.value as Exclude<typeof result.value, DomainNotFoundError>;
         const n = String(imported);
         const current = document.querySelector<HTMLDetailsElement>(
           `details[data-editor="terms"][data-domain-id="${CSS.escape(d.id)}"]`,
