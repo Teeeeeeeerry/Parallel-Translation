@@ -131,11 +131,18 @@ export async function loadUiLocale(
   choice: UiLocaleChoice,
   load: MessageLoader = loadBundledMessages,
 ): Promise<boolean> {
+  return (await applyUiLocale(choice, load)) === 'applied';
+}
+
+/** 一次载入的结局：生效、载入失败（已回到跟随浏览器）、被之后的选择取代。 */
+type LoadOutcome = 'applied' | 'failed' | 'superseded';
+
+async function applyUiLocale(choice: UiLocaleChoice, load: MessageLoader): Promise<LoadOutcome> {
   const seq = ++loadSeq;
   // 只认三种界面语言；别的值（设置之外传进来的脏值）一律按跟随浏览器，不去拼路径取表
   if (!UI_LOCALES.includes(choice as UiLocale)) {
     settle(null);
-    return true;
+    return 'applied';
   }
   const locale = choice as UiLocale;
   let tables: [MessageTable, MessageTable | null];
@@ -145,15 +152,15 @@ export async function loadUiLocale(
       locale === DEFAULT_LOCALE ? null : load(DEFAULT_LOCALE),
     ]);
   } catch (e) {
-    if (seq !== loadSeq) return false;
+    if (seq !== loadSeq) return 'superseded';
     console.error('[PT] 载入扩展语言失败，改为跟随浏览器:', e);
     settle(null);
-    return false;
+    return 'failed';
   }
-  if (seq !== loadSeq) return false;
+  if (seq !== loadSeq) return 'superseded';
   const own = lowerKeys(tables[0]);
   settle({ locale, own, fallback: tables[1] ? lowerKeys(tables[1]) : own });
-  return true;
+  return 'applied';
 }
 
 /** 取表失败后的重试等待（毫秒，#1123）：后台重启一般一两秒就回来，等满这几次就停。 */
@@ -202,16 +209,23 @@ export function followUiLocale(opts: FollowUiLocaleOptions): UiLocaleFollower {
     wanted = choice;
     const current = () => !stopped && wanted === choice;
     for (let attempt = 0; ; attempt++) {
-      let ok: boolean;
+      let outcome: LoadOutcome;
       try {
-        ok = await loadUiLocale(choice, load);
+        outcome = await applyUiLocale(choice, load);
       } catch (e) {
         // 取文表形状不对之类的意外：按失败处理，ready 不至于一直不落定
         console.error('[PT] 载入扩展语言出错:', e);
-        ok = false;
+        outcome = 'failed';
       }
+      const ok = outcome === 'applied';
       if (attempt === 0) onFirst?.(ok && current());
       if (!current()) return;
+      // 被同一上下文里别处的载入取代：这一次不重试、不报落定；忘掉这次选择，之后
+      // 同一个选择再推来时照常载入
+      if (outcome === 'superseded') {
+        wanted = null;
+        return;
+      }
       opts.onApplied?.();
       if (ok) return;
       if (attempt >= FOLLOW_RETRY_MS.length) {

@@ -239,4 +239,38 @@ describe('跟随扩展语言（#1123）', () => {
     expect(t(KEY)).toBe(message('zh_TW'));
     expect(applied).toHaveBeenCalledTimes(2);
   });
+
+  test('被同一上下文里别处的载入取代（不是失败）：不重试、不盖过对方', async () => {
+    const s = fakeSettings('browser');
+    let releaseEn: (() => void) | null = null;
+    const load = vi.fn<MessageLoader>((locale) =>
+      locale === 'en'
+        ? new Promise((resolve) => (releaseEn = () => resolve(readMessages(locale))))
+        : Promise.resolve(readMessages(locale)),
+    );
+    const waits: number[] = [];
+    const applied = vi.fn();
+    const follow = followUiLocale({ ...s, load, sleep: async (ms) => void waits.push(ms), onApplied: applied });
+    await follow.ready;
+    applied.mockClear();
+
+    s.push('en');
+    await flush();
+    // en 还在载入，别处直接载入了繁体
+    await loadUiLocale('zh_TW', fromRepo);
+    releaseEn!();
+    await flush();
+    expect(t(KEY)).toBe(message('zh_TW'));
+    expect(waits).toEqual([]);
+    expect(load.mock.calls.filter(([l]) => l === 'en')).toHaveLength(1);
+    expect(applied).not.toHaveBeenCalled();
+
+    // 之后设置又推来 en：照常载入
+    s.push('en');
+    await flush();
+    releaseEn!();
+    await flush();
+    expect(t(KEY)).toBe(message('en'));
+    follow.stop();
+  });
 });
