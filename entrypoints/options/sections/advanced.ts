@@ -50,6 +50,7 @@ async function importSettings(file: File): Promise<void> {
       if (!r.ok) throw new InvalidSettingsFile(r.reason);
     },
     {
+      what: '导入设置',
       // JSON 无效给本地化的固定文案；别的原因（自定义 CSS 校验不过）照原样说出来 ——
       // 原先一律显示“JSON 格式无效”，用户找不到真正的问题
       failure: (e) => {
@@ -116,7 +117,9 @@ export function initAdvanced(): void {
   });
 
   // #1124：选完清空 value（允许重复导入同一文件）、读文件与失败提示都在共用函数里
-  wireFileImport(importBtn, importInput, (file) => void importSettings(file));
+  wireFileImport(importBtn, importInput, (file) => {
+    importSettings(file).catch((e) => console.error('[PT] 导入设置之后更新界面失败:', e));
+  });
 
   resetBtn.addEventListener('click', () => {
     if (confirm(tf('confirmReset', '确定要恢复所有设置为默认值并清除所有缓存和 API key 吗？此操作不可撤销。'))) {

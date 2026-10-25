@@ -102,6 +102,10 @@
   "cardCustomCss": { "message": "自定义 CSS" },
   "cssNoSelector": { "message": "只需填写 CSS 属性，无需选择器与花括号" },
   "cssNoUrl": { "message": "不允许使用 url()" },
+  "cssNoImport": { "message": "不支持 @import" },
+  "cssNoStyleTag": { "message": "不允许 style 标签" },
+  "cssNoJsProtocol": { "message": "不允许 javascript: 协议" },
+  "cssNoExpression": { "message": "不允许 expression()" },
 
   "secHotkeysDesc": { "message": "点击快捷键组合进入录制模式，按下新组合键即可重新绑定。" },
   "cardBindings": { "message": "动作绑定" },

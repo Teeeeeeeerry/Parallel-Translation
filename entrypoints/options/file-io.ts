@@ -83,6 +83,8 @@ class FileReadError extends Error {
 export type ImportOutcome<R> = { ok: true; value: R } | { ok: false; message: string };
 
 export interface ImportOptions {
+  /** 写进失败日志的是哪一种导入（“导入术语”“导入站点规则”……），排查时分得清；缺省“导入” */
+  what?: string;
   /**
    * 把调用方自己认得的错误换成专门的提示（例如“文件不是站点规则导出文件”、
    * “这个领域已被删除”）；返回 null 时用通用提示
@@ -124,7 +126,7 @@ async function importWith<C, R>(
     });
     return { ok: true, value: await parse(content) };
   } catch (e) {
-    console.error('[PT] 导入失败:', e);
+    console.error(`[PT] ${opts.what ?? '导入'}失败:`, e);
     if (e instanceof FileReadError) {
       return {
         ok: false,
