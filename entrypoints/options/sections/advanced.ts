@@ -8,18 +8,15 @@
 
 import {
   getSettings,
-  patchSettings,
   onSettingsChanged,
 } from '~/src/storage/settings';
-import { importSettings as applyImport } from '~/src/storage/settings-import';
+import { IMPORT_BAD_JSON, importSettings as applyImport } from '~/src/storage/settings-import';
 import { cacheClear } from '~/src/storage/cache';
 import { resetSettings as resetAllSettings } from '~/src/storage/settings-reset';
 import { tf } from '~/src/i18n';
-import { showToast, downloadFile } from '../main';
-
-function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
-  patchSettings(patch).catch((e) => console.error('[PT] 设置写入失败:', e));
-}
+import { showToast } from '../main';
+import { downloadFile, importFile, wireFileImport } from '../file-io';
+import { savePatch } from '../save-settings';
 
 /**
  * 导出设置，显式剔除 API key。
@@ -37,15 +34,32 @@ async function exportSettings(): Promise<string> {
   return JSON.stringify(clean, null, 2);
 }
 
-async function importSettings(json: string): Promise<void> {
-  // #324: 导入走整体替换语义（与恢复默认一致）—— 解析校验在
-  // settings-import 模块，失败时配置保持不变
-  const result = await applyImport(json);
-  if (result.ok) {
-    showToast(tf('toastImported', '设置已导入'));
-  } else {
-    showToast(tf('toastImportFail', `导入失败：${result.reason}`));
-  }
+/** 文件不是能导入的设置（JSON 无效、自定义 CSS 校验不过）：配置保持不变，message 是原因。 */
+class InvalidSettingsFile extends Error {}
+
+/**
+ * 导入设置（#1124：读文件、读取失败与存储配额的提示走设置页共用函数）。#324：
+ * 导入走整体替换语义（与恢复默认一致）—— 解析校验在 settings-import 模块，失败时
+ * 配置保持不变。
+ */
+async function importSettings(file: File): Promise<void> {
+  const result = await importFile(
+    file,
+    async (json) => {
+      const r = await applyImport(json);
+      if (!r.ok) throw new InvalidSettingsFile(r.reason);
+    },
+    {
+      // JSON 无效给本地化的固定文案；别的原因（自定义 CSS 校验不过）照原样说出来 ——
+      // 原先一律显示“JSON 格式无效”，用户找不到真正的问题
+      failure: (e) => {
+        if (!(e instanceof InvalidSettingsFile)) return null;
+        if (e.message === IMPORT_BAD_JSON) return tf('toastImportFail', '导入失败：JSON 格式无效');
+        return tf('importFailed', `导入失败：${e.message}`, e.message);
+      },
+    },
+  );
+  showToast(result.ok ? tf('toastImported', '设置已导入') : result.message, result.ok ? 2000 : 4000);
 }
 
 async function resetSettings(): Promise<void> {
@@ -62,7 +76,7 @@ export function initAdvanced(): void {
   const clearCacheBtn = document.getElementById('pt-clear-cache-btn')!;
   const exportBtn = document.getElementById('pt-export-settings-btn')!;
   const importBtn = document.getElementById('pt-import-settings-btn')!;
-  const importFile = document.getElementById('pt-import-file') as HTMLInputElement;
+  const importInput = document.getElementById('pt-import-file') as HTMLInputElement;
   const resetBtn = document.getElementById('pt-reset-settings-btn')!;
 
   function syncUI(): void {
@@ -101,22 +115,8 @@ export function initAdvanced(): void {
     showToast(tf('toastExported', '设置已导出（不含 API key）'));
   });
 
-  importBtn.addEventListener('click', () => {
-    importFile.click();
-  });
-
-  importFile.addEventListener('change', () => {
-    const file = importFile.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      importSettings(reader.result as string).catch((e) =>
-        console.error('[PT] 导入失败:', e),
-      );
-    };
-    reader.readAsText(file);
-    importFile.value = ''; // 允许重复导入同一文件
-  });
+  // #1124：选完清空 value（允许重复导入同一文件）、读文件与失败提示都在共用函数里
+  wireFileImport(importBtn, importInput, (file) => void importSettings(file));
 
   resetBtn.addEventListener('click', () => {
     if (confirm(tf('confirmReset', '确定要恢复所有设置为默认值并清除所有缓存和 API key 吗？此操作不可撤销。'))) {

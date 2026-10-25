@@ -9,15 +9,11 @@
 import type { StyleId } from '~/src/storage/schema';
 import {
   getSettings,
-  patchSettings,
   onSettingsChanged,
 } from '~/src/storage/settings';
 import { tf } from '~/src/i18n';
 import { validateCustomCss } from '~/src/styles/custom';
-
-function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
-  patchSettings(patch).catch((e) => console.error('[PT] 设置写入失败:', e));
-}
+import { savePatch } from '../save-settings';
 
 export function initAppearance(): void {
   const selectStyle = document.getElementById('pt-select-style') as HTMLSelectElement;

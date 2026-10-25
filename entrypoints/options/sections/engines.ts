@@ -17,17 +17,13 @@ import {
 } from '~/src/storage/schema';
 import {
   getSettings,
-  patchSettings,
   onSettingsChanged,
 } from '~/src/storage/settings';
 import { getKey, setKey, removeKey } from '~/src/storage/keys';
 import { testConnection } from '~/src/engines/test-connection';
 import { tf } from '~/src/i18n';
 import { showToast } from '../main';
-
-function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
-  patchSettings(patch).catch((e) => console.error('[PT] 设置写入失败:', e));
-}
+import { savePatch } from '../save-settings';
 
 // #608: 引擎列表、BYOK 卡片（说明文案与模型名占位）都取自引擎清单。
 // 模型名占位即引擎的默认模型；没有默认模型的引擎（DeepL）没有模型名一栏。

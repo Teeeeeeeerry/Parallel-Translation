@@ -33,7 +33,8 @@ import {
 import { getSettings, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import type { Domain, Term, TermsCsvSkip } from '~/src/storage/domains';
 import { tf, uiLocale } from '~/src/i18n';
-import { showToast, downloadFile, failReason } from '../main';
+import { showToast } from '../main';
+import { downloadFile, failReason } from '../file-io';
 
 function langLabel(code: string): string {
   return LANG_LIST.find((l) => l.code === code)?.label ?? code;

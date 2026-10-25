@@ -35,7 +35,8 @@ import type {
   UserSiteRules,
 } from '~/src/storage/specialization';
 import { tf } from '~/src/i18n';
-import { showToast, downloadFile, failReason } from '../main';
+import { showToast } from '../main';
+import { downloadFile, failReason } from '../file-io';
 
 type Field = keyof SiteRules;
 

@@ -13,13 +13,9 @@ import { actionLabel, startRecording, checkConflict } from '~/src/hotkeys/record
 import { tf } from '~/src/i18n';
 import {
   getSettings,
-  patchSettings,
   onSettingsChanged,
 } from '~/src/storage/settings';
-
-function savePatch(patch: Parameters<typeof patchSettings>[0]): void {
-  patchSettings(patch).catch((e) => console.error('[PT] 设置写入失败:', e));
-}
+import { savePatch } from '../save-settings';
 
 const ACTIONS: HotkeyAction[] = [
   'toggle-translate',

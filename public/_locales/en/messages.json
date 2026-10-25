@@ -145,6 +145,15 @@
   "toastExported": { "message": "Settings exported (no API keys)" },
   "toastImported": { "message": "Settings imported" },
   "toastImportFail": { "message": "Import failed: invalid JSON" },
+  "importReadFailed": { "message": "Import failed: the file could not be read. Make sure it still exists and is not in use by another program" },
+  "importFailed": {
+    "message": "Import failed: $reason$",
+    "placeholders": { "reason": { "content": "$1" } }
+  },
+  "settingsSaveFailed": {
+    "message": "Failed to save settings: $reason$",
+    "placeholders": { "reason": { "content": "$1" } }
+  },
   "toastReset": { "message": "Defaults restored" },
   "confirmReset": { "message": "Restore all settings to defaults and clear all caches and API keys? This cannot be undone." },
 

@@ -20,6 +20,9 @@ import { DEFAULT_SETTINGS, clampConcurrency } from './schema';
 import { validateCustomCss } from '~/src/styles/custom';
 import { replaceSettings } from './settings';
 
+/** 文件不是 JSON 对象时的原因（#1124：设置页据此给本地化的“JSON 格式无效”提示）。 */
+export const IMPORT_BAD_JSON = 'JSON 格式无效';
+
 export type ImportResult =
   | { ok: true }
   | { ok: false; reason: string };
@@ -35,12 +38,12 @@ export function parseImport(
   try {
     data = JSON.parse(json);
   } catch {
-    return { ok: false, reason: 'JSON 格式无效' };
+    return { ok: false, reason: IMPORT_BAD_JSON };
   }
   // 非对象（数组 / 基本类型）视为无效 —— 整体替换语义下绝不能
   // 把合法但形状错误的 JSON 解析成「空配置」把本机设置冲掉
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-    return { ok: false, reason: 'JSON 格式无效' };
+    return { ok: false, reason: IMPORT_BAD_JSON };
   }
 
   const rec = data as Record<string, unknown>;
