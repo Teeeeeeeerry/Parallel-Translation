@@ -102,6 +102,10 @@
   "cardCustomCss": { "message": "Custom CSS" },
   "cssNoSelector": { "message": "Only CSS properties, no selectors or braces needed" },
   "cssNoUrl": { "message": "url() is not allowed" },
+  "cssNoImport": { "message": "@import is not allowed" },
+  "cssNoStyleTag": { "message": "style tags are not allowed" },
+  "cssNoJsProtocol": { "message": "The javascript: protocol is not allowed" },
+  "cssNoExpression": { "message": "expression() is not allowed" },
 
   "secHotkeysDesc": { "message": "Click a shortcut to start recording, then press the new combination." },
   "cardBindings": { "message": "Action bindings" },

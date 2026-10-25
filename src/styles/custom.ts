@@ -10,16 +10,21 @@
 // 这换来三重安全：改不动宿主页面、改不动扩展自身 UI、
 // 商店审核层面干净。
 
+import { tf } from '../i18n';
+
 const STYLE_ID = 'pt-custom-style';
 
-/** 禁止出现的构造 —— 一旦允许，用户就能改宿主页面和扩展自身 UI */
+/**
+ * 禁止出现的构造 —— 一旦允许，用户就能改宿主页面和扩展自身 UI。拒绝原因按界面
+ * 语言取文：设置页表单与导入设置的提示都直接显示它
+ */
 const FORBIDDEN = [
-  { pattern: /[{}\\]/, msg: '只需填写 CSS 属性，无需选择器与花括号' },
-  { pattern: /@import/i, msg: '不支持 @import' },
-  { pattern: /<\/?style/i, msg: '不允许 style 标签' },
-  { pattern: /url\s*\(/i, msg: '不允许使用 url()' },
-  { pattern: /javascript:/i, msg: '不允许 javascript: 协议' },
-  { pattern: /expression\s*\(/i, msg: '不允许 expression()' },
+  { pattern: /[{}\\]/, key: 'cssNoSelector', fallback: '只需填写 CSS 属性，无需选择器与花括号' },
+  { pattern: /@import/i, key: 'cssNoImport', fallback: '不支持 @import' },
+  { pattern: /<\/?style/i, key: 'cssNoStyleTag', fallback: '不允许 style 标签' },
+  { pattern: /url\s*\(/i, key: 'cssNoUrl', fallback: '不允许使用 url()' },
+  { pattern: /javascript:/i, key: 'cssNoJsProtocol', fallback: '不允许 javascript: 协议' },
+  { pattern: /expression\s*\(/i, key: 'cssNoExpression', fallback: '不允许 expression()' },
 ];
 
 /**
@@ -29,8 +34,8 @@ const FORBIDDEN = [
 export function validateCustomCss(
   input: string,
 ): { ok: true } | { ok: false; msg: string } {
-  for (const { pattern, msg } of FORBIDDEN) {
-    if (pattern.test(input)) return { ok: false, msg };
+  for (const { pattern, key, fallback } of FORBIDDEN) {
+    if (pattern.test(input)) return { ok: false, msg: tf(key, fallback) };
   }
   return { ok: true };
 }

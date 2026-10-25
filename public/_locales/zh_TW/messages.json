@@ -102,6 +102,10 @@
   "cardCustomCss": { "message": "自訂 CSS" },
   "cssNoSelector": { "message": "只需填寫 CSS 屬性，無需選擇器與大括號" },
   "cssNoUrl": { "message": "不允許使用 url()" },
+  "cssNoImport": { "message": "不支援 @import" },
+  "cssNoStyleTag": { "message": "不允許 style 標籤" },
+  "cssNoJsProtocol": { "message": "不允許 javascript: 協定" },
+  "cssNoExpression": { "message": "不允許 expression()" },
 
   "secHotkeysDesc": { "message": "點擊快速鍵組合進入錄製模式，按下新組合鍵即可重新繫結。" },
   "cardBindings": { "message": "動作繫結" },

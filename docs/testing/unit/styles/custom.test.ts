@@ -1,10 +1,24 @@
 /**
  * styles/custom.ts — 自定义 CSS 校验与注入 单元测试
  */
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import { validateCustomCss, applyCustomCss } from '~/src/styles/custom';
+import { loadUiLocale, type MessageTable, type UiLocale } from '~/src/i18n';
+
+const fromRepo = async (locale: UiLocale) =>
+  JSON.parse(fs.readFileSync(path.resolve('public/_locales', locale, 'messages.json'), 'utf-8')) as MessageTable;
 
 describe('validateCustomCss', () => {
+  // 拒绝原因按界面语言取文：这一组按简体中文断言
+  beforeAll(async () => {
+    await loadUiLocale('zh_CN', fromRepo);
+  });
+  afterAll(async () => {
+    await loadUiLocale('browser');
+  });
+
   test('合法声明块 → ok', () => {
     const result = validateCustomCss('color: #555; font-size: 14px');
     expect(result.ok).toBe(true);
@@ -120,5 +134,32 @@ describe('applyCustomCss', () => {
 
     const styleEl = document.getElementById('pt-custom-style');
     expect(styleEl).toBeNull();
+  });
+});
+
+describe('拒绝原因按界面语言显示（设置页表单与导入设置的提示都用它）', () => {
+  afterAll(async () => {
+    await loadUiLocale('browser');
+  });
+
+  test('英文界面：六种拒绝原因都是英文，没有中文', async () => {
+    await loadUiLocale('en', fromRepo);
+    const inputs = [
+      '.x { color: red }',
+      '@import "a.css";',
+      '<style>',
+      'background: url(a.png)',
+      'color: javascript:alert(1)',
+      'width: expression(1)',
+    ];
+    const msgs = inputs.map((css) => {
+      const r = validateCustomCss(css);
+      return r.ok ? '' : r.msg;
+    });
+    expect(new Set(msgs).size).toBe(inputs.length);
+    for (const m of msgs) {
+      expect(m).not.toBe('');
+      expect(m).not.toMatch(/[\u4e00-\u9fff]/);
+    }
   });
 });
