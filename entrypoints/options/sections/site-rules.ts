@@ -36,7 +36,7 @@ import type {
 } from '~/src/storage/specialization';
 import { tf } from '~/src/i18n';
 import { showToast } from '../main';
-import { downloadFile, failReason } from '../file-io';
+import { downloadFile, failReason, importFile as importFromFile, skipReport, wireFileImport } from '../file-io';
 
 type Field = keyof SiteRules;
 
@@ -99,9 +99,6 @@ function showFailure(key: string, fallback: string, e: unknown): void {
   const reason = failReason(e);
   showToast(tf(key, `${fallback}：${reason}`, reason), 4000);
 }
-
-/** 导入报告最多逐条列出的跳过条目数，其余合并成一行（#378）。 */
-const SKIP_LIST_MAX = 20;
 
 /** 导入时跳过的一个条目，给用户看的原因（#378）。 */
 function skipLine(skip: SiteRulesImportSkip): string {
@@ -329,62 +326,56 @@ export function initSiteRules(): void {
 
   /**
    * #377：导入 JSON 文件，与现有用户规则合并后重新渲染卡片。#378：跳过的
-   * 条目逐条列出原因；整个文件无法导入时提示原因，现有规则不变。
+   * 条目逐条列出原因（最多 20 条）；整个文件无法导入时提示原因，现有规则不变。
+   * #1125：读文件、跳过行汇总与失败提示走设置页共用函数。
    */
-  function importJson(): void {
-    const file = importFile.files?.[0];
-    // 清空选择：再次选同一个文件也会触发 change
-    importFile.value = '';
-    if (!file) return;
+  function importJson(file: File): void {
     importReport.classList.remove('pt-visible');
-    file
-      .text()
-      .then(importUserSiteRules)
-      .then(({ imported, changed, skipped }) => {
-        // 导入改动过的字段，下一次成功刷新时按导入后的内容显示（#557）
-        for (const { site, fields } of changed) {
-          const set = importChanges.get(site) ?? new Set<Field>();
-          for (const field of fields) set.add(field);
-          importChanges.set(site, set);
-        }
-        const n = String(imported);
-        if (skipped.length === 0) {
-          const done = tf('siteRulesImported', `已导入 ${n} 个站点，刷新网站后生效`, n);
-          showToast(done);
-          return refresh(done);
-        }
-        const lines = skipped.slice(0, SKIP_LIST_MAX).map(skipLine);
-        const more = String(skipped.length - SKIP_LIST_MAX);
-        if (skipped.length > SKIP_LIST_MAX) {
-          lines.push(tf('siteRulesSkipMore', `另有 ${more} 条没有导入`, more));
-        }
-        importReport.textContent = lines.join('\n');
-        importReport.classList.add('pt-visible');
-        const m = String(skipped.length);
-        const done = tf('siteRulesImportedSkipped', `已导入 ${n} 个站点，跳过 ${m} 条，刷新网站后生效`, n, m);
-        showToast(done, 4000);
-        return refresh(done);
-      })
-      .catch((e) => {
+    void importFromFile(file, importUserSiteRules, {
+      failure: (e) => {
         if (!(e instanceof SiteRulesImportError)) {
-          showFailure('siteRulesImportFailed', '导入站点规则失败', e);
-          return;
+          const reason = failReason(e);
+          return tf('siteRulesImportFailed', `导入站点规则失败：${reason}`, reason);
         }
         // 整个文件无法导入（#378）：提示具体原因
-        console.error('[PT] 导入站点规则失败:', e);
-        const msg = {
+        return {
           json: tf('siteRulesImportBadJson', '导入失败：文件不是合法的 JSON'),
           format: tf('siteRulesImportBadFormat', '导入失败：文件不是站点规则导出文件'),
           version: tf('siteRulesImportBadVersion', '导入失败：文件的版本号不支持，请更新扩展后再导入'),
         }[e.reason];
-        showToast(msg, 4000);
-      });
+      },
+    }).then((result) => {
+      if (!result.ok) {
+        showToast(result.message, 4000);
+        return;
+      }
+      const { imported, changed, skipped } = result.value;
+      // 导入改动过的字段，下一次成功刷新时按导入后的内容显示（#557）
+      for (const { site, fields } of changed) {
+        const set = importChanges.get(site) ?? new Set<Field>();
+        for (const field of fields) set.add(field);
+        importChanges.set(site, set);
+      }
+      const n = String(imported);
+      if (skipped.length === 0) {
+        const done = tf('siteRulesImported', `已导入 ${n} 个站点，刷新网站后生效`, n);
+        showToast(done);
+        return refresh(done);
+      }
+      importReport.textContent = skipReport(skipped, skipLine, (more) =>
+        tf('siteRulesSkipMore', `另有 ${more} 条没有导入`, more),
+      );
+      importReport.classList.add('pt-visible');
+      const m = String(skipped.length);
+      const done = tf('siteRulesImportedSkipped', `已导入 ${n} 个站点，跳过 ${m} 条，刷新网站后生效`, n, m);
+      showToast(done, 4000);
+      return refresh(done);
+    });
   }
 
   addBtn.addEventListener('click', add);
   exportBtn.addEventListener('click', exportJson);
-  importBtn.addEventListener('click', () => importFile.click());
-  importFile.addEventListener('change', importJson);
+  wireFileImport(importBtn, importFile, importJson);
   siteInput.addEventListener('input', () => siteInput.classList.remove('pt-error'));
   siteInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') add();

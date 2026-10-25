@@ -11,6 +11,7 @@ import path from 'path';
 import { loadUiLocale, type MessageTable, type UiLocale } from '~/src/i18n';
 import {
   importFile,
+  importFileBytes,
   skipReport,
   SKIP_LIST_MAX,
   wireFileImport,
@@ -130,6 +131,25 @@ describe('导入文件（#1124）', () => {
   });
 });
 
+describe('按字节导入（#1125，领域术语 CSV 的编码由存储模块识别）', () => {
+  test('交给解析的是原始字节', async () => {
+    const bytes = new Uint8Array([0xc4, 0xe3, 0xba, 0xc3]); // GBK 的“你好”
+    const blob = { arrayBuffer: () => Promise.resolve(bytes.buffer) } as unknown as File;
+    const r = await importFileBytes(blob, async (buf) => [...new Uint8Array(buf)]);
+    expect(r).toEqual({ ok: true, value: [0xc4, 0xe3, 0xba, 0xc3] });
+  });
+
+  test('读不出来：同样给读取失败的提示', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const blob = { arrayBuffer: () => Promise.reject(new Error('NotReadableError')) } as unknown as File;
+    const parse = vi.fn(async () => 0);
+    const r = await importFileBytes(blob, parse);
+    expect(r).toEqual({ ok: false, message: '导入失败：读不出这个文件，请确认文件还在、没有被别的程序占用' });
+    expect(parse).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+});
+
 describe('文件输入框接线（#1124）', () => {
   test('点按钮打开选择；选完清空 value，同一个文件再选一次照样触发', () => {
     document.body.innerHTML = '<button id="b"></button><input type="file" id="f" hidden />';
@@ -150,6 +170,20 @@ describe('文件输入框接线（#1124）', () => {
     input.dispatchEvent(new Event('change'));
     expect(got).toEqual([picked, picked]);
     expect(value).toBe('');
+  });
+
+  test('打开之前可以先问一句：返回 false 时不打开选择（#1125，有未保存的修改）', () => {
+    document.body.innerHTML = '<button id="b"></button><input type="file" id="f" hidden />';
+    const button = document.getElementById('b')!;
+    const input = document.getElementById('f') as HTMLInputElement;
+    const click = vi.spyOn(input, 'click').mockImplementation(() => {});
+    let go = false;
+    wireFileImport(button, input, () => {}, { beforeOpen: () => go });
+    button.click();
+    expect(click).not.toHaveBeenCalled();
+    go = true;
+    button.click();
+    expect(click).toHaveBeenCalledTimes(1);
   });
 
   test('没选文件（取消）：什么都不做', () => {
