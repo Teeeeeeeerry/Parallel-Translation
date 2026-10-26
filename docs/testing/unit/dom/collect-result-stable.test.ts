@@ -18,7 +18,7 @@ import fs from 'fs';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
-import { hasBlockTextChildren, unitTextEx } from '~/src/dom/text';
+import { unitTextEx } from '~/src/dom/text';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
 
 const FIXTURES = 'docs/testing/e2e/fixtures';
@@ -80,7 +80,7 @@ function snapshot(body: string): Snapshot {
   };
   try {
     const units = collect().map((u) => {
-      const { text, preserves } = unitTextEx(u, { shallow: hasBlockTextChildren(u) });
+      const { text, preserves } = unitTextEx(u);
       return { path: pathOf(u), text, preserves: [...preserves] };
     });
     const html = document.body.innerHTML;

@@ -113,8 +113,9 @@ export function translatableTextEx(el: Element, rules?: TextRules): {
 
 /**
  * 一个翻译单元送去翻译的文字（含 preserve 占位符）与占位符映射表，已归一化。
- * 整页翻译与逐段翻译共用。shallow 为 true 时走浅层提取（含带文字的块级子
- * 元素的混合内容单元，#23）。
+ * 整页翻译与逐段翻译共用。含带文字的块级子元素的混合内容单元（#23）只取
+ * 直接文字，子块各自作为单元另外采集；#1137：这一判断在这里做，原先要调用方
+ * 传，逐段翻译那条路径没传，把子块的文字也一起送翻。
  *
  * - pre 里的单元（.pt-chunk / 纯文本 pre）保留硬换行与缩进（#117、#141）
  * - 其余单元折叠空白；#840：br 作为换行带出去，整段一个单元的诗、地址、
@@ -124,12 +125,12 @@ export function translatableTextEx(el: Element, rules?: TextRules): {
  */
 export function unitTextEx(
   el: Element,
-  opts: { shallow?: boolean; rules?: TextRules } = {},
+  opts: { rules?: TextRules } = {},
 ): { text: string; preserves: Map<string, string> } {
   const inPre = el.closest('pre') !== null;
   const pm = makePreserveMap(opts.rules);
   pm.brNewlines = !inPre;
-  const raw = opts.shallow ? walkShallow(el, pm) : walkTranslatable(el, pm);
+  const raw = hasBlockTextChildren(el) ? walkShallow(el, pm) : walkTranslatable(el, pm);
   return {
     text: inPre ? normalizePreText(raw) : normalizeLines(raw),
     preserves: pm.placeholders,
