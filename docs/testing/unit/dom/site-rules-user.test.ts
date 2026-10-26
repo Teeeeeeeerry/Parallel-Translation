@@ -26,6 +26,7 @@ import { closestUnit } from '~/src/dom/classify';
 import { translatableTextEx, shallowTranslatableTextEx, restorePreserves } from '~/src/dom/text';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
 import type { SiteRules } from '~/src/storage/specialization';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 const PAGE =
   '<div class="panel"><p id="side">Contributors and maintainers of the project</p></div>' +
@@ -57,7 +58,7 @@ async function rules(r: Partial<SiteRules>) {
 
 /** 段落送去翻译的文本里保留原文的部分 */
 const preserved = (id: string) => [
-  ...translatableTextEx(collect().find((u) => u.id === id)!).preserves.values(),
+  ...translatableTextEx(collect().find((u) => u.id === id)!, readRulesSnapshot()).preserves.values(),
 ];
 
 describe('collect（用户排除规则）', () => {
@@ -97,7 +98,7 @@ describe('collect（用户保留原文规则，#373）', () => {
     await rules({ preserve: ['#bold'] });
     expect(ids(collect())).toEqual(['side', 'body', 'more']);
     const body = collect().find((u) => u.id === 'body')!;
-    const { text, preserves } = translatableTextEx(body);
+    const { text, preserves } = translatableTextEx(body, readRulesSnapshot());
     expect([...preserves.values()]).toEqual(['coding']);
     expect(text).not.toContain('coding');
   });
@@ -158,7 +159,7 @@ describe('排除命中段落内的行内元素（#441）', () => {
     await exclude('#bold');
     expect(ids(collect())).toEqual(['side', 'body', 'more']);
     const body = collect().find((u) => u.id === 'body')!;
-    const { text, preserves } = translatableTextEx(body);
+    const { text, preserves } = translatableTextEx(body, readRulesSnapshot());
     expect(text).not.toContain('coding');
     expect([...preserves.values()]).toEqual(['coding']);
 
@@ -178,7 +179,7 @@ describe('排除命中段落内的行内元素（#441）', () => {
     expect(closestUnit(document.getElementById('bold')!)).toBeNull();
     const unit = closestUnit(document.getElementById('body')!)!;
     expect(unit.id).toBe('body');
-    expect([...translatableTextEx(unit).preserves.values()]).toEqual(['coding']);
+    expect([...translatableTextEx(unit, readRulesSnapshot()).preserves.values()]).toEqual(['coding']);
   });
 });
 
@@ -189,7 +190,7 @@ describe('自定义元素当作行内元素（#455）', () => {
   });
 
   /** 段落送去翻译的文本与保留的原文 */
-  const extract = () => translatableTextEx(collect().find((u) => u.id === 'cp')!);
+  const extract = () => translatableTextEx(collect().find((u) => u.id === 'cp')!, readRulesSnapshot());
 
   test('span 里的自定义元素命中排除：不翻译，原文留在译文句子里', async () => {
     await exclude('x-name');
@@ -230,8 +231,8 @@ describe('逐段翻译跳过段落里命中排除的块级元素（#456）', () 
     const unit = closestUnit(document.getElementById(id)!)!;
     expect(unit.id).toBe(id);
     expect(ids(collect())).toContain(id);
-    const one = translatableTextEx(unit);
-    const page = shallowTranslatableTextEx(unit);
+    const one = translatableTextEx(unit, readRulesSnapshot());
+    const page = shallowTranslatableTextEx(unit, readRulesSnapshot());
     return { one, page };
   }
 

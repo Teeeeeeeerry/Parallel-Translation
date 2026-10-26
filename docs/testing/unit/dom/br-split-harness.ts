@@ -16,6 +16,7 @@ import { restorePreserves, unitTextEx } from '~/src/dom/text';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import { MAX_TEXT } from '~/src/dom/classify';
 import { translateItems } from '../orchestration/page-harness';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 /** 对话体的一行，约 70 字符。 */
 export const line = (i: number) => `Line ${i}: "I never thought we would meet again," she said quietly.`;
@@ -39,7 +40,7 @@ export function collectUnits(opts: CollectOptions = {}): {
   const restore = mockAllBoundingRects();
   try {
     const units = collect(document.body, undefined, opts);
-    const extracted = units.map((u) => unitTextEx(u));
+    const extracted = units.map((u) => unitTextEx(u, readRulesSnapshot()));
     return { units, texts: extracted.map((e) => e.text), preserves: extracted.map((e) => e.preserves) };
   } finally {
     restore();

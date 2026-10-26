@@ -20,6 +20,7 @@ import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
 import { unitTextEx } from '~/src/dom/text';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 const FIXTURES = 'docs/testing/e2e/fixtures';
 const GOLDEN = 'docs/testing/unit/dom/collect-result-stable.golden.json';
@@ -80,7 +81,7 @@ function snapshot(body: string): Snapshot {
   };
   try {
     const units = collect().map((u) => {
-      const { text, preserves } = unitTextEx(u);
+      const { text, preserves } = unitTextEx(u, readRulesSnapshot());
       return { path: pathOf(u), text, preserves: [...preserves] };
     });
     const html = document.body.innerHTML;

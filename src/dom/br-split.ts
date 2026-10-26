@@ -25,6 +25,7 @@ import {
   inCodeBlockContext,
 } from './classify';
 import { isDecorationLine, lineText, splitIntoChunks, type ChunkShape } from './chunk-split';
+import { isChunk, isSplitContainer } from './chunk-marks';
 
 /**
  * 空行：两个 br 之间看不见任何文字 —— 只有空白（含 &nbsp;）与零宽字符这类
@@ -121,7 +122,7 @@ export function splitBrParagraph(el: Element): HTMLSpanElement[] | null {
  * pre 的切块按空行成块、超长块另有口径，不在此列。
  */
 export function oversizedLineCount(container: Element): number {
-  if (container.tagName === 'PRE' || container.getAttribute('data-pt-split') !== '1') return 0;
+  if (container.tagName === 'PRE' || !isSplitContainer(container)) return 0;
   let count = 0;
   let text = '';
   let chunked = false;
@@ -137,7 +138,7 @@ export function oversizedLineCount(container: Element): number {
         endLine();
         continue;
       }
-      if (el.classList.contains('pt-chunk')) chunked = true;
+      if (isChunk(el)) chunked = true;
     }
     text += child.textContent ?? '';
   }

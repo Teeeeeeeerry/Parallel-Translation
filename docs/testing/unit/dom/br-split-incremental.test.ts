@@ -18,6 +18,7 @@ import { startObserver } from '~/src/dom/observer';
 import { render } from '~/src/dom/renderer';
 import { unitTextEx } from '~/src/dom/text';
 import { brLines, fakeTranslate, line, restorePage } from './br-split-harness';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 const N = 60;
 
@@ -82,7 +83,7 @@ const settle = () => vi.advanceTimersByTimeAsync(1_000);
 
 /** 把采到的单元按替身引擎的译文渲染（模拟一轮补翻的请求回来了）。 */
 function renderAll(els: Element[]): void {
-  for (const el of els) render(el, fakeTranslate(unitTextEx(el).text), 'page');
+  for (const el of els) render(el, fakeTranslate(unitTextEx(el, readRulesSnapshot()).text), 'page');
 }
 
 /** 滚动后追加一篇以 br 分行的超长帖子，返回追加前的 HTML 片段。 */

@@ -55,6 +55,7 @@ import {
   shallowTranslatableTextEx,
   restorePreserves,
 } from '~/src/dom/text';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 let restore: () => void;
 beforeEach(() => {
@@ -234,7 +235,7 @@ describe('保留原文（github.com 内置规则，采集后提取文本）', ()
     document.body.innerHTML = html;
     const units = collect();
     expect(units).toHaveLength(1);
-    return translatableTextEx(units[0]!);
+    return translatableTextEx(units[0]!, readRulesSnapshot());
   }
 
   test('评论里的 @mention：换成占位符，回填后原文留在译文句子里', () => {
@@ -286,7 +287,7 @@ describe('保留原文（github.com 内置规则，采集后提取文本）', ()
       '<div id="outer">Opened by <div data-hovercard-url="/users/octocat">@octocat</div> in this thread.</div>';
     const unit = closestUnit(document.getElementById('outer')!)!;
     expect(unit.id).toBe('outer');
-    const { text, preserves } = translatableTextEx(unit);
+    const { text, preserves } = translatableTextEx(unit, readRulesSnapshot());
     expect(preserves.size).toBe(0);
     expect(text).toContain('@octocat');
   });
@@ -297,7 +298,7 @@ describe('保留原文（github.com 内置规则，采集后提取文本）', ()
       '<ul><li id="child">Follow-up item for the next release</li></ul></li></ul>';
     expect(ids(collect())).toEqual(['parent', 'child']);
     const parent = document.getElementById('parent')!;
-    expect([...shallowTranslatableTextEx(parent).preserves.values()]).toEqual(['@octocat']);
+    expect([...shallowTranslatableTextEx(parent, readRulesSnapshot()).preserves.values()]).toEqual(['@octocat']);
   });
 
   test('#441：内置排除命中段落内的行内元素（.text-mono、.commit-message code）时原文保留', () => {
@@ -319,7 +320,7 @@ describe('保留原文（github.com 内置规则，采集后提取文本）', ()
       '<p id="c">Thanks <a class="user-mention" id="m">@torvalds</a>, merged in the main branch.</p>';
     const unit = closestUnit(document.getElementById('m')!)!;
     expect(unit.id).toBe('c');
-    expect([...translatableTextEx(unit).preserves.values()]).toEqual(['@torvalds']);
+    expect([...translatableTextEx(unit, readRulesSnapshot()).preserves.values()]).toEqual(['@torvalds']);
   });
 });
 
@@ -353,7 +354,7 @@ describe('仓库与用户的标识符（#598）', () => {
       '</span> <span class="Label Label--secondary">Public</span></div></div></div>';
     const units = collect();
     expect(ids(units)).toEqual(['pin']);
-    const { text, preserves } = translatableTextEx(units[0]!);
+    const { text, preserves } = translatableTextEx(units[0]!, readRulesSnapshot());
     expect([...new Set(preserves.values())]).toEqual(['Parallel-Translation']);
     expect(text).toContain('Public');
     expect(text).not.toContain('Parallel-Translation');
@@ -369,7 +370,7 @@ describe('仓库与用户的标识符（#598）', () => {
     mockBoundingRect(document.getElementById('tt')!, { width: 0, height: 0 });
     const units = collect();
     expect(ids(units)).toEqual(['pin']);
-    const { preserves } = translatableTextEx(units[0]!);
+    const { preserves } = translatableTextEx(units[0]!, readRulesSnapshot());
     expect([...preserves.values()]).toEqual(['Rhythm']);
   });
 
@@ -381,7 +382,7 @@ describe('仓库与用户的标识符（#598）', () => {
       '<span class="Label Label--secondary">Public</span></div>';
     const units = collect();
     expect(ids(units)).toEqual(['title']);
-    const { text, preserves } = translatableTextEx(units[0]!);
+    const { text, preserves } = translatableTextEx(units[0]!, readRulesSnapshot());
     expect([...preserves.values()]).toEqual(['anthropics', 'claude-code']);
     expect(text).toContain('Public');
   });

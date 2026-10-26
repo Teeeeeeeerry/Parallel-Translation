@@ -18,6 +18,7 @@ import { closestUnit } from '~/src/dom/classify';
 import { render } from '~/src/dom/renderer';
 import { unitTextEx } from '~/src/dom/text';
 import { brLines, collectUnits, fakeTranslate, isOverLimit, line, restorePage } from './br-split-harness';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 const N = 60;
 
@@ -49,7 +50,7 @@ describe('悬停在超长段落的某一行：返回那一行的切块（#712）
     expect(unit).not.toBeNull();
     expect(unit.classList.contains('pt-chunk')).toBe(true);
     expect(unit.parentElement).toBe(post);
-    expect(unitTextEx(unit).text.trim()).toBe(withLink(7).replace(/<[^>]+>/g, ''));
+    expect(unitTextEx(unit, readRulesSnapshot()).text.trim()).toBe(withLink(7).replace(/<[^>]+>/g, ''));
     // 整段按行切开了，不是只切出这一行
     expect(post.querySelectorAll(':scope > .pt-chunk')).toHaveLength(N);
   });
@@ -67,7 +68,7 @@ describe('悬停在超长段落的某一行：返回那一行的切块（#712）
     closestUnit(post);
     const chunks = [...post.querySelectorAll(':scope > .pt-chunk')];
     expect(closestUnit(chunks[12]!)).toBe(chunks[12]);
-    expect(unitTextEx(chunks[12]!).text.trim()).toBe(line(12));
+    expect(unitTextEx(chunks[12]!, readRulesSnapshot()).text.trim()).toBe(line(12));
   });
 
   test('整页翻译已经切过的段落：悬停照样返回那一行，不重复切分', () => {
@@ -82,7 +83,7 @@ describe('悬停在超长段落的某一行：返回那一行的切块（#712）
   test('那一行已经翻译过：返回 null（与普通段落一致，已翻译的不再当单元）', () => {
     setup();
     const unit = closestUnit(document.getElementById('hover')!)!;
-    render(unit, fakeTranslate(unitTextEx(unit).text), 'para');
+    render(unit, fakeTranslate(unitTextEx(unit, readRulesSnapshot()).text), 'para');
     expect(closestUnit(document.getElementById('hover')!)).toBeNull();
   });
 });
@@ -115,7 +116,7 @@ describe('还原之后逐字节回到原样（#712）', () => {
     setup();
     const before = document.body.innerHTML;
     const unit = closestUnit(document.getElementById('hover')!)!;
-    render(unit, fakeTranslate(unitTextEx(unit).text), 'para');
+    render(unit, fakeTranslate(unitTextEx(unit, readRulesSnapshot()).text), 'para');
     expect(document.querySelectorAll('[data-pt="done"]')).toHaveLength(1);
 
     restorePage();

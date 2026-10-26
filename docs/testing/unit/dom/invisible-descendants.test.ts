@@ -21,6 +21,7 @@ import { mockAllBoundingRects, mockBoundingRect } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
 import { translatableTextEx, shallowTranslatableTextEx } from '~/src/dom/text';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 const ids = (units: Element[]) => units.map((u) => u.id);
 
@@ -43,7 +44,7 @@ describe('文本提取：不可见的后代不进入送翻文本（#600）', () 
     document.body.innerHTML =
       '<p id="p">Open the <a href="/settings">settings page</a><span class="hidden">Opens in a new tab</span> to continue.</p>';
     hide();
-    const { text } = translatableTextEx(document.getElementById('p')!);
+    const { text } = translatableTextEx(document.getElementById('p')!, readRulesSnapshot());
     expect(text).toContain('settings page');
     expect(text).toContain('to continue.');
     expect(text).not.toContain('Opens in a new tab');
@@ -54,7 +55,7 @@ describe('文本提取：不可见的后代不进入送翻文本（#600）', () 
       '<li id="parent">Project files <span class="hidden">collapsed summary text</span>' +
       '<ul><li>Follow-up item for the next release</li></ul></li>';
     hide();
-    const { text } = shallowTranslatableTextEx(document.getElementById('parent')!);
+    const { text } = shallowTranslatableTextEx(document.getElementById('parent')!, readRulesSnapshot());
     expect(text).toContain('Project files');
     expect(text).not.toContain('collapsed summary text');
   });
@@ -63,13 +64,13 @@ describe('文本提取：不可见的后代不进入送翻文本（#600）', () 
     document.body.innerHTML =
       '<p id="p">Read the <span id="c" style="display: contents">release notes</span> before upgrading.</p>';
     mockBoundingRect(document.getElementById('c')!, { width: 0, height: 0 });
-    expect(translatableTextEx(document.getElementById('p')!).text).toContain('release notes');
+    expect(translatableTextEx(document.getElementById('p')!, readRulesSnapshot()).text).toContain('release notes');
   });
 
   test('段落本身不可见时不跳过它的后代（采集后又被隐藏的段落，行为不变）', () => {
     document.body.innerHTML = '<p id="p" class="hidden">Hidden paragraph <b class="hidden">with bold text</b> inside.</p>';
     hide();
-    expect(translatableTextEx(document.getElementById('p')!).text).toContain('with bold text');
+    expect(translatableTextEx(document.getElementById('p')!, readRulesSnapshot()).text).toContain('with bold text');
   });
 });
 

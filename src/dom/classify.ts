@@ -12,7 +12,8 @@
 // - INLINE_SET：自身不作为翻译单元，需向上找可翻父节点
 // 此三层分类是 TreeWalker 过滤逻辑的基础。
 
-import { getSiteRules } from '~/src/storage/specialization';
+import { noteUnitRules, readRulesSnapshot, type RulesSnapshot } from './rules-snapshot';
+import { closestChunk, isChunk, isSplitContainer } from './chunk-marks';
 // text.ts 也从本模块取 INLINE_SET：循环引用只在函数调用时解析，模块
 // 求值时双方都不使用对方的导出
 import { hasTranslatableText } from './text';
@@ -217,7 +218,7 @@ export function nonVisualSkipReason(el: Element): NonVisualSkip | null {
   if (el.closest('.pt-origin')) return 'translated';
   // #731：切成切块的容器本身不是单元，它的切块才是。这里明说，不靠哪条
   // 长度上限恰好把容器挡住 —— 否则容器整段与切块各翻一遍
-  if (el.getAttribute('data-pt-split') === '1') return 'split-container';
+  if (isSplitContainer(el)) return 'split-container';
 
   // 扩展自身注入的 UI —— 绝不能翻译自己的按钮文字
   if (el.closest('[data-pt-ui="1"]')) return 'extension-ui';
@@ -379,7 +380,7 @@ export function isTranslationUnit(el: Element): boolean {
   const tag = el.tagName.toLowerCase();
 
   // #65：pre 切块包装 span —— 块本身就是翻译单元（尺寸已由 splitPre 保证）
-  if ((el as HTMLElement).dataset?.ptChunk === '1') return true;
+  if (isChunk(el)) return true;
 
   const isContainer = CONTAINER_SET.has(tag);
 
@@ -466,11 +467,18 @@ function directTextLength(el: Element): number {
  */
 /** 已按行切过的段落（pre 的切块另走自己的路，不在此列）。 */
 function isBrSplit(el: Element): boolean {
-  return el.tagName !== 'PRE' && el.getAttribute('data-pt-split') === '1';
+  return el.tagName !== 'PRE' && isSplitContainer(el);
 }
 
 export function closestUnit(el: Element): Element | null {
-  const rules = getSiteRules(location.hostname);
+  const rules = readRulesSnapshot();
+  const unit = findClosestUnit(el, rules);
+  // #1144：逐段翻译随后取文，按单元取回这份快照
+  if (unit) noteUnitRules(unit, rules);
+  return unit;
+}
+
+function findClosestUnit(el: Element, rules: RulesSnapshot): Element | null {
   const { scope, exclude } = rules;
   if (withinAny(el, exclude)) return null;
 
@@ -485,7 +493,7 @@ export function closestUnit(el: Element): Element | null {
     // 切分只在这里发生：本函数只在悬停意图计时器、按钮点击、快捷键这些低频
     // 路径上调用，mouseover 处理只做 closest() 初筛（paragraph-btn.ts）
     if (splitBrParagraph(cur) || isBrSplit(cur)) {
-      const line = el.closest('.pt-chunk');
+      const line = closestChunk(el);
       if (!line || line.parentElement !== cur) return null;
       return !shouldSkip(line) && hasTranslatableText(line, rules) ? line : null;
     }
