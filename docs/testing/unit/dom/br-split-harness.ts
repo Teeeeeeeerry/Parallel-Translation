@@ -12,7 +12,7 @@ import { vi } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { collect, type CollectOptions } from '~/src/dom/walker';
 import { render } from '~/src/dom/renderer';
-import { hasBlockTextChildren, restorePreserves, unitTextEx } from '~/src/dom/text';
+import { restorePreserves, unitTextEx } from '~/src/dom/text';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import { MAX_TEXT } from '~/src/dom/classify';
 import { translateItems } from '../orchestration/page-harness';
@@ -39,7 +39,7 @@ export function collectUnits(opts: CollectOptions = {}): {
   const restore = mockAllBoundingRects();
   try {
     const units = collect(document.body, undefined, opts);
-    const extracted = units.map((u) => unitTextEx(u, { shallow: hasBlockTextChildren(u) }));
+    const extracted = units.map((u) => unitTextEx(u));
     return { units, texts: extracted.map((e) => e.text), preserves: extracted.map((e) => e.preserves) };
   } finally {
     restore();

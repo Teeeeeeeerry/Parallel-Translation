@@ -30,10 +30,10 @@ function units(): Element[] {
   }
 }
 
-function textOf(el: Element, shallow = false): string {
+function textOf(el: Element): string {
   const restore = mockAllBoundingRects();
   try {
-    return unitTextEx(el, { shallow }).text;
+    return unitTextEx(el).text;
   } finally {
     restore();
   }
@@ -158,6 +158,6 @@ describe('没有 br 的段落与 pre 不受影响（#840）', () => {
     document.body.innerHTML = `<li>${POEM[0]}<br>${POEM[1]}<ul><li>child item text</li></ul></li>`;
     const unit = units().find((u) => u.tagName === 'LI' && u.querySelector('ul'))!;
 
-    expect(textOf(unit, true)).toBe(`${POEM[0]}\n${POEM[1]}`);
+    expect(textOf(unit)).toBe(`${POEM[0]}\n${POEM[1]}`);
   });
 });

@@ -11,7 +11,7 @@
 // 切块还原）。搬到这里之后内容脚本与测试装配用的是同一份实现。
 
 import type { TranslateItem } from '../orchestration/orchestrator';
-import { hasBlockTextChildren, restorePreserves, unitTextEx } from './text';
+import { restorePreserves, unitTextEx } from './text';
 import { render, unrender, type RenderResult } from './renderer';
 import { unsplitChunks } from './chunk-split';
 import { walkShadowTree } from './shadow-walk';
@@ -27,7 +27,7 @@ export interface PageItemCtx {
  * 构建翻译项（#329）：归一化内部空白、混合内容提取、占位符映射全部在此。
  */
 export function buildPageItem(el: Element): TranslateItem<PageItemCtx> {
-  const { text, preserves } = unitTextEx(el, { shallow: hasBlockTextChildren(el) });
+  const { text, preserves } = unitTextEx(el);
   return { text, ctx: { target: el, preserves, rawText: text } };
 }
 
