@@ -41,7 +41,7 @@ import {
   withinAny,
 } from './classify';
 import { applyCompat } from './compat';
-import { getSiteRules } from '~/src/storage/specialization';
+import { noteUnitRules, readRulesSnapshot } from './rules-snapshot';
 import type { EffectiveSiteRules, RuleSource } from '~/src/storage/specialization';
 import { splitPre } from './pre-split';
 import { oversizedLineCount, splitBrParagraph } from './br-split';
@@ -189,7 +189,7 @@ export function collect(
   // 文本、不经过本入口，因此不受站点页面规则影响。
   // #468：一次采集只读一次，这次采集里的所有判定都用它
   // #922：带上排除的来源，跳过计数只算用户规则排除的
-  const rules = getSiteRules(location.hostname, { withSources: true });
+  const rules = readRulesSnapshot();
   const { scope, exclude } = rules;
   if (rootEl && withinAny(rootEl, exclude)) return out;
 
@@ -293,5 +293,7 @@ export function collect(
     { skipTranslated: false },
   );
 
+  // #1144：取文发生在采集之后，按单元取回这份快照
+  for (const unit of out) noteUnitRules(unit, rules);
   return out;
 }

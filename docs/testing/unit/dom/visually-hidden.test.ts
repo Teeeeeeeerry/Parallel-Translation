@@ -19,6 +19,7 @@ import { mockAllBoundingRects, mockBoundingRect } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
 import { translatableTextEx, shallowTranslatableTextEx } from '~/src/dom/text';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 const ids = (units: Element[]) => units.map((u) => u.id);
 
@@ -76,7 +77,7 @@ describe('文本提取：隐藏文字不进入送翻文本（#595）', () => {
     document.body.innerHTML =
       '<p id="p">Starred <span class="sr-only">this repository</span> yesterday by the team.</p>';
     hideSrOnly();
-    const { text } = translatableTextEx(document.getElementById('p')!);
+    const { text } = translatableTextEx(document.getElementById('p')!, readRulesSnapshot());
     expect(text).toContain('Starred');
     expect(text).toContain('yesterday by the team.');
     expect(text).not.toContain('this repository');
@@ -87,7 +88,7 @@ describe('文本提取：隐藏文字不进入送翻文本（#595）', () => {
       '<li id="parent">Assigned items <span class="sr-only">hidden counter</span>' +
       '<ul><li>Follow-up item for the next release</li></ul></li>';
     hideSrOnly();
-    const { text } = shallowTranslatableTextEx(document.getElementById('parent')!);
+    const { text } = shallowTranslatableTextEx(document.getElementById('parent')!, readRulesSnapshot());
     expect(text).toContain('Assigned items');
     expect(text).not.toContain('hidden counter');
   });
@@ -95,6 +96,6 @@ describe('文本提取：隐藏文字不进入送翻文本（#595）', () => {
   test('2×2 以上的小元素不算隐藏，照常送翻', () => {
     document.body.innerHTML = '<p id="p">Read the <span id="tiny">small print</span> carefully today.</p>';
     mockBoundingRect(document.getElementById('tiny')!, { width: 2, height: 2 });
-    expect(translatableTextEx(document.getElementById('p')!).text).toContain('small print');
+    expect(translatableTextEx(document.getElementById('p')!, readRulesSnapshot()).text).toContain('small print');
   });
 });

@@ -35,6 +35,7 @@ import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
 import { translatableTextEx } from '~/src/dom/text';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 let restore: () => void;
 beforeEach(() => {
@@ -148,7 +149,7 @@ describe('自定义元素命中排除（#455）', () => {
     document.body.innerHTML =
       '<p id="body">Uploaded by <span class="ytd-channel-name"><yt-formatted-string>Some Channel</yt-formatted-string></span> last week.</p>';
     expect(ids(collect())).toEqual(['body']);
-    const { text, preserves } = translatableTextEx(document.getElementById('body')!);
+    const { text, preserves } = translatableTextEx(document.getElementById('body')!, readRulesSnapshot());
     expect(text).not.toContain('Some Channel');
     expect([...preserves.values()]).toEqual(['Some Channel']);
   });

@@ -20,6 +20,7 @@ import { closestUnit } from '~/src/dom/classify';
 import { translatableTextEx } from '~/src/dom/text';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
 import type { SiteRules } from '~/src/storage/specialization';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 const PAGE =
   '<div class="head"><p id="head">Home, pricing, documentation and blog.</p></div>' +
@@ -79,7 +80,7 @@ describe('collect（限定范围）', () => {
   test('范围内的元素仍受保留原文约束', async () => {
     await rules({ scope: ['.content'], preserve: ['a.user-mention'] });
     const thanks = collect().find((u) => u.id === 'thanks')!;
-    expect([...translatableTextEx(thanks).preserves.values()]).toEqual(['@octocat']);
+    expect([...translatableTextEx(thanks, readRulesSnapshot()).preserves.values()]).toEqual(['@octocat']);
   });
 
   test('采集根为元素（observer 增量补翻）时同样只采集范围内', async () => {

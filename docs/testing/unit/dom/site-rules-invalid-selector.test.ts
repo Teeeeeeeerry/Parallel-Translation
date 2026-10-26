@@ -19,6 +19,7 @@ import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
 import { getSiteRules } from '~/src/storage/specialization';
 import { translatableTextEx } from '~/src/dom/text';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 /** #93 的原始形态：数组拼接前的逐行字符串带出尾随逗号 */
 const TRAILING_COMMA = '.repository-lang-stats,';
@@ -98,7 +99,7 @@ describe('保留原文（规则里混入无效选择器，#369）', () => {
       '<p id="c">Thanks <a class="user-mention">@octocat</a> for the quick review.</p>';
     const [unit] = collect();
     expect(unit!.id).toBe('c');
-    expect([...translatableTextEx(unit!).preserves.values()]).toEqual(['@octocat']);
+    expect([...translatableTextEx(unit!, readRulesSnapshot()).preserves.values()]).toEqual(['@octocat']);
   });
 });
 

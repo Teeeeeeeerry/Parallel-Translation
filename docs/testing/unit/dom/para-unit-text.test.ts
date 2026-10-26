@@ -17,6 +17,7 @@ import { closestUnit } from '~/src/dom/classify';
 import { unitTextEx } from '~/src/dom/text';
 import { buildPageItem } from '~/src/dom/page-dom';
 import { siteRulesReady } from '~/src/storage/specialization';
+import { unitRules } from '~/src/dom/rules-snapshot';
 
 const FIXTURES = 'docs/testing/e2e/fixtures';
 
@@ -50,7 +51,7 @@ describe('逐段翻译的取文（#1137）', () => {
       '<ul><li id="mixed">Parent label text here <ul><li>Nested child item text</li></ul></li></ul>';
     const unit = withRects(() => closestUnit(document.getElementById('mixed')!));
     expect(unit?.id).toBe('mixed');
-    const text = withRects(() => unitTextEx(unit!).text);
+    const text = withRects(() => unitTextEx(unit!, unitRules(unit!)).text);
     expect(text).toBe('Parent label text here');
     expect(text).not.toContain('Nested child item text');
   });
@@ -62,7 +63,7 @@ describe('逐段翻译的取文（#1137）', () => {
     withRects(() => {
       for (const unit of collect()) {
         const { text, ctx: { preserves } } = buildPageItem(unit);
-        const para = unitTextEx(unit);
+        const para = unitTextEx(unit, unitRules(unit));
         expect(para.text).toBe(text);
         expect([...para.preserves]).toEqual([...preserves]);
       }

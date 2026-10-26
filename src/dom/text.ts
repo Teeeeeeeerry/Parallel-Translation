@@ -16,7 +16,6 @@
 
 import { shouldOmitText, shouldPreserveText } from './compat';
 import { isInlineTag, isVisible, isVisuallyHidden } from './classify';
-import { getSiteRules } from '~/src/storage/specialization';
 import { normalizeLines, normalizePreText } from './normalize';
 import type { SiteRules } from '~/src/storage/specialization';
 
@@ -47,11 +46,11 @@ interface PreserveMap {
 }
 
 /**
- * rules 为调用方已读取的站点页面规则（#468：采集入口一次采集只读一次）；
- * 不传时按当前站点读取一次。
+ * rules 为调用方已读取的站点页面规则（#468：一次采集只读一次）。#1144：
+ * 必须传，不再有“没传就去全局读”的路径 —— 快照见 rules-snapshot。
  */
-function makePreserveMap(rules?: TextRules): PreserveMap {
-  const { exclude, preserve } = rules ?? getSiteRules(location.hostname);
+function makePreserveMap(rules: TextRules): PreserveMap {
+  const { exclude, preserve } = rules;
   return {
     placeholders: new Map(),
     nextIndex: 0,
@@ -102,7 +101,7 @@ function preservedText(
  * 遍历逻辑与 translatableText() 相同，额外在遇到 preserve 节点时
  * 写入占位符并记录映射。rules 见 makePreserveMap。
  */
-export function translatableTextEx(el: Element, rules?: TextRules): {
+export function translatableTextEx(el: Element, rules: TextRules): {
   text: string;
   preserves: Map<string, string>;
 } {
@@ -125,10 +124,10 @@ export function translatableTextEx(el: Element, rules?: TextRules): {
  */
 export function unitTextEx(
   el: Element,
-  opts: { rules?: TextRules } = {},
+  rules: TextRules,
 ): { text: string; preserves: Map<string, string> } {
   const inPre = el.closest('pre') !== null;
-  const pm = makePreserveMap(opts.rules);
+  const pm = makePreserveMap(rules);
   pm.brNewlines = !inPre;
   const raw = hasBlockTextChildren(el) ? walkShallow(el, pm) : walkTranslatable(el, pm);
   return {
@@ -228,7 +227,7 @@ export function shallowTranslatableText(el: Element): string {
 }
 
 /** 含 preserve 的浅层提取变体。rules 见 makePreserveMap。 */
-export function shallowTranslatableTextEx(el: Element, rules?: TextRules): {
+export function shallowTranslatableTextEx(el: Element, rules: TextRules): {
   text: string;
   preserves: Map<string, string>;
 } {
@@ -331,7 +330,7 @@ function ownTextIsTranslatable(el: Element): boolean {
  *
  * #468：两个入口把开头读取的站点页面规则传进来，逐段判定不再重复读取。
  */
-export function hasTranslatableText(el: Element, rules?: TextRules): boolean {
+export function hasTranslatableText(el: Element, rules: TextRules): boolean {
   if (isVisuallyHidden(el)) return false;
   // #821：段落自己的直接文字里有可翻译字符，结论就是“有” —— 保留原文、排除、
   // 看不见的后代都只去掉后代元素里的文字，直接文字一定留在送翻文本里。不必

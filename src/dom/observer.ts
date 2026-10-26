@@ -25,6 +25,7 @@
 
 import { collect } from './walker';
 import { unrender } from './renderer';
+import { isChunk } from './chunk-marks';
 import { injectShadowStyles } from '~/src/styles/shadow';
 import { watchShadowRoots, walkShadowTree } from './shadow-walk';
 
@@ -194,7 +195,7 @@ export function startObserver(
         // #158：splitPre 切出的 .pt-chunk 是采集器自己插入的单元 —— 触发切分
         // 的那次 collect 在同一遍遍历里就会收集到它们，mutation 记录再进
         // pending 只会让每个块在翻译未完成时被二次请求（系统性翻倍）
-        if (el.classList?.contains('pt-chunk')) continue;
+        if (isChunk(el)) continue;
         if (el.dataset?.ptUi === '1') continue;
         pending.push(n);
       }

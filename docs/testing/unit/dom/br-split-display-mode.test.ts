@@ -20,6 +20,7 @@ import { closestUnit } from '~/src/dom/classify';
 import { unitTextEx } from '~/src/dom/text';
 import { mockAllBoundingRects } from '../../setup';
 import { brLines, collectUnits, fakeTranslate, isOverLimit, line, restorePage, translatePage } from './br-split-harness';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 const N = 60;
 
@@ -104,10 +105,10 @@ describe('仅译文模式下逐行只显示译文（#713）', () => {
     const restoreRects = mockAllBoundingRects();
     const hovered = closestUnit(document.getElementById('x')!)!;
     restoreRects();
-    render(hovered, fakeTranslate(unitTextEx(hovered).text), 'para');
+    render(hovered, fakeTranslate(unitTextEx(hovered, readRulesSnapshot()).text), 'para');
     // 其余行由整页翻译翻出
     for (const c of document.querySelectorAll('#post > .pt-chunk:not([data-pt])')) {
-      render(c, fakeTranslate(unitTextEx(c).text), 'page');
+      render(c, fakeTranslate(unitTextEx(c, readRulesSnapshot()).text), 'page');
     }
     applyMode('bilingual', 'translation-only');
     const hidden = [...document.querySelectorAll('#post > .pt-chunk')].filter(

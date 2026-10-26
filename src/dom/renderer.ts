@@ -16,6 +16,7 @@
 import type { DisplayMode, StyleId } from '../storage/schema';
 import { hasNonTextContent } from './classify';
 import { checkTranslation } from './translation-check';
+import { isChunk } from './chunk-marks';
 import { injectShadowStyles } from '~/src/styles/shadow';
 
 /** 渲染来源：区分整页翻译与单段翻译，落成 data-pt-src 属性供 CSS 分流。 */
@@ -105,7 +106,7 @@ export function render(
   // 原文紧跟一行译文。切块是行内元素、后面跟着原段落的 br：译文若是块级，
   // 它后面的 br 会再换一行，每行译文下多出一个空行。改为行内显示，换行由
   // 原文行尾补（仅译文模式下原文连同这个换行一起隐藏）
-  else if (el.classList.contains('pt-chunk')) {
+  else if (isChunk(el)) {
     origin.classList.add('pt-line');
     trans.classList.add('pt-line');
   }

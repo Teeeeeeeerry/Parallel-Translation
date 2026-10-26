@@ -6,6 +6,9 @@
  * 有几千个候选段落时，读取次数不随段落数增长。逐段翻译入口
  * closestUnit() 同样只读取一次。翻译结果不变。
  *
+ * #1144：取文发生在采集之后，同样不再重新读 —— 整页翻译把采到的单元做成
+ * 翻译项、逐段翻译给找到的单元取文，都用采集或查找时的那份快照。
+ *
  * 对领域与规则存储模块的 getSiteRules 计数，其余导出保持真实实现。
  * jsdom 默认 location.hostname 为 localhost，站点卡片用 localhost。
  */
@@ -13,6 +16,9 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { closestUnit } from '~/src/dom/classify';
+import { buildPageItem } from '~/src/dom/page-dom';
+import { unitTextEx } from '~/src/dom/text';
+import { unitRules } from '~/src/dom/rules-snapshot';
 import { getSiteRules, saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
 
 vi.mock('~/src/storage/specialization', async (importOriginal) => {
@@ -79,6 +85,27 @@ describe('closestUnit（逐段翻译入口只读取一次站点规则）', () =>
     document.body.innerHTML = page(1);
     reads.mockClear();
     expect(closestUnit(document.querySelector('#only .keep')!)).toBeNull();
+    expect(reads.mock.calls.length).toBe(1);
+  });
+});
+
+describe('取文用采集时的快照（#1144）', () => {
+  test('整页采集并把每个单元做成翻译项：一共只读一次，占位符照常', () => {
+    document.body.innerHTML = page(20);
+    reads.mockClear();
+    const items = collect().map(buildPageItem);
+    expect(items).toHaveLength(20);
+    expect(items.every((it) => [...it.ctx.preserves.values()].includes('pnpm test'))).toBe(true);
+    expect(reads.mock.calls.length).toBe(1);
+  });
+
+  test('找最近单元并取文：一共只读一次，占位符照常', () => {
+    document.body.innerHTML =
+      '<p id="body">Hello <b id="bold">world</b>, <code class="keep">pnpm</code> works.</p>';
+    reads.mockClear();
+    const unit = closestUnit(document.getElementById('bold')!)!;
+    const { preserves } = unitTextEx(unit, unitRules(unit));
+    expect([...preserves.values()]).toEqual(['pnpm']);
     expect(reads.mock.calls.length).toBe(1);
   });
 });

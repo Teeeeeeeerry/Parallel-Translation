@@ -18,6 +18,7 @@ import {
   shallowTranslatableText,
   hasBlockTextChildren,
 } from '~/src/dom/text';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 // ---- 辅助：创建 DOM 片段 ----
 
@@ -32,14 +33,14 @@ function el(html: string): Element {
 describe('translatableTextEx', () => {
   test('纯文本元素 → 返回 textContent，preserves 为空 Map', () => {
     const p = el('<p>Hello World</p>');
-    const result = translatableTextEx(p);
+    const result = translatableTextEx(p, readRulesSnapshot());
     expect(result.text).toBe('Hello World');
     expect(result.preserves.size).toBe(0);
   });
 
   test('.notranslate 子树被跳过', () => {
     const p = el('<p>Before <span class="notranslate">skip me</span> After</p>');
-    const result = translatableTextEx(p);
+    const result = translatableTextEx(p, readRulesSnapshot());
     expect(result.text).toContain('Before');
     expect(result.text).toContain('After');
     expect(result.text).not.toContain('skip me');
@@ -48,7 +49,7 @@ describe('translatableTextEx', () => {
   test('shouldOmitText 命中的元素被跳过（通用角标检测）', () => {
     // "+3" 结尾的内联元素命中 isGenericInlineBadge
     const p = el('<p>Text <span> +3</span> more</p>');
-    const result = translatableTextEx(p);
+    const result = translatableTextEx(p, readRulesSnapshot());
     expect(result.text).toContain('Text');
     expect(result.text).toContain('more');
   });
@@ -60,7 +61,7 @@ describe('translatableTextEx', () => {
 
   test('translatableTextEx 结构：preserves Map 由保留原文规则决定', () => {
     const p = el('<p><span>normal text</span></p>');
-    const result = translatableTextEx(p);
+    const result = translatableTextEx(p, readRulesSnapshot());
     // localhost 上没有 preserve handler
     expect(result.preserves.size).toBe(0);
     expect(result.text).toContain('normal text');
@@ -68,7 +69,7 @@ describe('translatableTextEx', () => {
 
   test('元素间自动补空格', () => {
     const p = el('<p><b>Hello</b><span>World</span></p>');
-    const result = translatableTextEx(p);
+    const result = translatableTextEx(p, readRulesSnapshot());
     // 应包含空白分隔
     expect(result.text.trim()).toMatch(/Hello\s+World/);
   });
@@ -80,7 +81,7 @@ describe('translatableTextEx', () => {
 
   test('notranslate 内嵌套结构整体跳过', () => {
     const p = el('<p>Keep <span class="notranslate"><b>skip</b> all</span> end</p>');
-    const result = translatableTextEx(p);
+    const result = translatableTextEx(p, readRulesSnapshot());
     expect(result.text).not.toContain('skip');
     expect(result.text).not.toContain('all');
     expect(result.text).toContain('Keep');
@@ -105,7 +106,7 @@ describe('shallowTranslatableTextEx', () => {
 
   test('内联子元素的 preserve 仍生效（localhost 无 preserve handler）', () => {
     const li = el('<li>Text <span>inline</span> more</li>');
-    const result = shallowTranslatableTextEx(li);
+    const result = shallowTranslatableTextEx(li, readRulesSnapshot());
     expect(result.preserves.size).toBe(0);
     expect(result.text).toContain('Text');
   });

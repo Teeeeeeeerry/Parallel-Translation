@@ -11,6 +11,7 @@
 import { mountIsolated, unmountIsolated } from './mount';
 import { textRects } from './text-rects';
 import { closestUnit } from '../dom/classify';
+import { closestChunk } from '../dom/chunk-marks';
 import { tf } from '../i18n';
 // #1080：悬停意图延迟与间隙在中立模块，输入翻译圆点沿用同一个口径
 import { GAP, SHOW_DELAY } from './float-common';
@@ -214,7 +215,7 @@ function findUnderOverlay(x: number, y: number): Element | null {
     // 行的切块，而初筛时的命中目标还是整个段落（行内没有元素的那一行，文字
     // 直接挂在段落上）。切块不在候选选择器里，先认它，否则 closest() 又回到
     // 那个整段当不了单元的段落
-    const el = n.closest?.('.pt-chunk') ?? n.closest?.(CANDIDATE);
+    const el = closestChunk(n) ?? n.closest?.(CANDIDATE);
     if (!el || el.closest('[data-pt-ui="1"]')) continue;
     const unit = closestUnit(el);
     if (unit) return unit;

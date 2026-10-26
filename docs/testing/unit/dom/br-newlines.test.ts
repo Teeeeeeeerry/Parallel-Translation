@@ -13,6 +13,7 @@ import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
 import { unitTextEx } from '~/src/dom/text';
 import { render, unrender } from '~/src/dom/renderer';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 const POEM = ['Roses are red,', 'violets are blue,', 'sugar is sweet,', 'and so are you.'];
 
@@ -33,7 +34,7 @@ function units(): Element[] {
 function textOf(el: Element): string {
   const restore = mockAllBoundingRects();
   try {
-    return unitTextEx(el).text;
+    return unitTextEx(el, readRulesSnapshot()).text;
   } finally {
     restore();
   }

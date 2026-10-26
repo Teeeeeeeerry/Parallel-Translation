@@ -19,6 +19,7 @@ import { unitTextEx } from '~/src/dom/text';
 import { domPage } from '../orchestration/page-harness';
 import { emptyRenderStats, emptySkipStats, pageNotice } from '~/src/orchestration/page-summary';
 import { brLines, collectUnits, fakeTranslate, isOverLimit, line, restorePage, translatePage } from './br-split-harness';
+import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
 
 /** 一整句不断行、比长度上限还长的一行。 */
 const GIANT = Array.from({ length: 80 }, (_, i) => `the river kept running past mile ${i} and nobody stopped`).join(', ') + '.';
@@ -121,7 +122,7 @@ describe('整页翻译：其余行有译文，汇总报出被跳过的这一行�
     orch.start();
     // 与 content 同一口径的整页翻译会话（#1077、#1078）：首轮与补采集共用，同一元素只交出一次、跳过只计一次
     const page = domPage({
-      build: (el) => ({ text: unitTextEx(el).text, ctx: el }),
+      build: (el) => ({ text: unitTextEx(el, readRulesSnapshot()).text, ctx: el }),
     });
     const result = await orch.togglePage(page, 'auto', 'zh-CN');
     orch.stop();

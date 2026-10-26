@@ -15,11 +15,12 @@
 // 还有一处可选：换行节点放在切块里还是切块外（breakOutside）。
 //
 // 内核负责其余的一切：行聚合、超长块不包装、按原顺序重建（逐字节不变）、
-// 打切分标记与幂等，以及还原时的逆操作。切块是
-// <span class="pt-chunk" data-pt-chunk="1">，由采集的切块单元判定收为
-// 翻译单元（#65）；观察器据同一标记忽略扩展自己插入的切块（#158）。
+// 打切分标记与幂等，以及还原时的逆操作。切块与切分标记见 chunk-marks（#1144），
+// 采集的切块单元判定据它收为翻译单元（#65）；观察器据同一标记忽略扩展自己
+// 插入的切块（#158）。
 
 import { MAX_TEXT } from './classify';
+import { chunksOf, createChunk, isSplitContainer, markSplit, unmarkSplit } from './chunk-marks';
 
 /**
  * 节点流 token：行内文本片段 / 行内节点 / 换行。
@@ -56,9 +57,6 @@ export interface ChunkShape {
   breakOutside?: boolean;
 }
 
-/** 切分标记：带它的容器已经切过（幂等），还原时据此找回来。 */
-const SPLIT_ATTR = 'data-pt-split';
-
 /** 行的纯文本（含行内节点文本），供形状判定空行、装饰行等。 */
 export function lineText(line: Line): string {
   let s = '';
@@ -91,7 +89,7 @@ function isOversized(text: string): boolean {
  */
 export function splitIntoChunks(container: Element, shape: ChunkShape): HTMLSpanElement[] | null {
   // 幂等：已切分过的不再处理（observer / IO / toggle 会反复 collect）
-  if (container.hasAttribute(SPLIT_ATTR)) return null;
+  if (isSplitContainer(container)) return null;
 
   // 已在翻译结果内部 —— 不切
   if (container.closest('[data-pt="done"]')) return null;
@@ -130,9 +128,7 @@ export function splitIntoChunks(container: Element, shape: ChunkShape): HTMLSpan
   for (const part of parts) {
     const partText = part.lines.map(lineText).join('\n');
     if (part.kind === 'chunk' && !isOversized(partText)) {
-      const span = document.createElement('span');
-      span.className = 'pt-chunk';
-      span.setAttribute('data-pt-chunk', '1');
+      const span = createChunk();
       const last = part.lines[part.lines.length - 1]!;
       const trailing = shape.breakOutside ? last.end : null;
       for (const line of part.lines) {
@@ -148,7 +144,7 @@ export function splitIntoChunks(container: Element, shape: ChunkShape): HTMLSpan
 
   if (spans.length === 0) return null;
 
-  container.setAttribute(SPLIT_ATTR, '1');
+  markSplit(container);
   return spans;
 }
 
@@ -158,10 +154,9 @@ export function splitIntoChunks(container: Element, shape: ChunkShape): HTMLSpan
  * unrender 所有切块之后调用，将 DOM 恢复为切分前的逐字节原貌。
  */
 export function unsplitChunks(container: Element): void {
-  const chunks = [...container.querySelectorAll(':scope > .pt-chunk')];
-  for (const span of chunks) {
+  for (const span of chunksOf(container)) {
     while (span.firstChild) container.insertBefore(span.firstChild, span);
     span.remove();
   }
-  container.removeAttribute(SPLIT_ATTR);
+  unmarkSplit(container);
 }
