@@ -158,9 +158,11 @@ export default defineContentScript({
       win: window,
     });
     // #400: 用户在 popup 里为本标签页临时选的领域（#847：单页应用换了路径也算
-    // 跳页）。主文档回复 popup 要显示的领域状态
+    // 跳页）。主文档回复 popup 要显示的领域状态（#399：问页面上下文，与全页翻译
+    // 携带的领域是同一份判定；目标语言用 popup 当前所选，避免设置刚改、本页还没
+    // 收到变更时显示旧结果）。设新值与问当前值都这样回复（#1143）
     const domainChoice = tabChoices.define(DOMAIN_CHOICE, {
-      answerSet: (msg) => pageContext.domainState(popupTo(msg)),
+      answer: (msg) => pageContext.domainState(popupTo(msg)),
     });
 
     // #662/#663/#836：输入翻译这一次的对方语言，与上面的临时领域并列、同一套规则
@@ -546,17 +548,8 @@ export default defineContentScript({
         return isMainFrame ? true : undefined;
       }
 
-      if (msg?.type === 'pt:current-domain') {
-        // #399: popup 显示当前领域 —— 问页面上下文（#1120），与全页翻译携带的
-        // 领域是同一份判定；目标语言用 popup 当前所选，避免设置刚改、本页还没
-        // 收到变更时显示旧结果
-        if (!isMainFrame) return;
-        sendResponse(pageContext.domainState(popupTo(msg)));
-        return;
-      }
-
-      // #400/#662/#1121/#1122：popup 设临时选择（广播到全部 frame，只有主文档回复）、
-      // popup 与子 frame 来问当前值，都由标签页临时选择模块处理
+      // #400/#662/#1121/#1122/#1143：popup 设临时选择（广播到全部 frame，只有主文档
+      // 回复）、popup 问当前值（含当前领域）与子 frame 来问，都由标签页临时选择模块处理
       if (tabChoices.handle(msg, sendResponse)) return;
 
       if (msg?.type === 'pt:translate-selection') {

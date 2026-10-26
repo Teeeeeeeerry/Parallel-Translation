@@ -14,14 +14,11 @@ import {
 import { applyI18n, loadUiLocale, tf } from '~/src/i18n';
 import { logoMarkSvg } from '~/src/ui/logo';
 import { sleep } from '~/src/runtime/sleep';
-import {
-  parseDomainChoice,
-  rememberDomainForSite,
-  InvalidSitesError,
-} from '~/src/storage/domains';
+import { rememberDomainForSite, InvalidSitesError } from '~/src/storage/domains';
 import type { DomainChoice } from '~/src/storage/domains';
-import { DOMAIN_CHOICE, INPUT_LANG_CHOICE, tabChoiceMessages } from '~/src/ui/tab-choice';
-import { parseInputLangChoice, type InputLangChoice } from '~/src/ui/input-target-lang';
+import { DOMAIN_CHOICE, INPUT_LANG_CHOICE, tabChoiceClient, type TabChoiceClientDeps } from '~/src/ui/tab-choice';
+import type { DomainState } from '~/src/orchestration/page-context';
+import type { InputLangChoice } from '~/src/ui/input-target-lang';
 import {
   settingsReady,
   getSettings,
@@ -139,52 +136,23 @@ async function onTranslatePageClick(): Promise<void> {
 }
 
 /**
- * #429: content script 就绪前（页面加载中打开 popup）询问会被拒绝，
- * 按这个序列有界重试，总共约 5 秒。
+ * popup 侧的标签页临时选择（#1143）：查当前标签页、问主文档、有界重试（#429）、
+ * 较早的回复不覆盖较新的、设新值后广播，都在标签页临时选择模块的客户端里。
  */
-const DOMAIN_RETRY_DELAYS_MS = [200, 400, 800, 1600, 2000];
-/** 每次刷新递增；后发起的刷新开始后，先前的重试不再写界面。 */
-let domainRefresh = 0;
-/** 下拉当前显示的领域状态（#401 据此取站点与所选领域）。 */
-let shownDomain: DomainAnswer | null = null;
+const tabChoiceDeps: TabChoiceClientDeps = {
+  activeTab: async () => (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id,
+  send: (tabId, msg, opts) =>
+    opts ? chrome.tabs.sendMessage(tabId, msg, opts) : chrome.tabs.sendMessage(tabId, msg),
+  sleep,
+};
+const domainChoice = tabChoiceClient(DOMAIN_CHOICE, tabChoiceDeps);
+const inputLangChoice = tabChoiceClient(INPUT_LANG_CHOICE, tabChoiceDeps);
 
 /** 本页主文档回复的领域状态（#399、#400）。 */
-interface DomainAnswer {
-  /** 顶层页面的主机名（#401）。 */
-  host: string;
-  /** 自动判定会选中的领域名，没有命中为 null。 */
-  autoName: string | null;
-  /** 本标签页的临时选择。 */
-  choice: DomainChoice;
-  /** 可切换到的领域：服务当前目标语言的领域，按领域列表顺序。 */
-  options: { id: string; name: string }[];
-}
+type DomainAnswer = DomainState;
 
-function parseDomainAnswer(resp: unknown): DomainAnswer | null {
-  const r = resp as Partial<Record<keyof DomainAnswer, unknown>> | undefined;
-  const choice = parseDomainChoice(r?.choice);
-  if (!r || !choice || !Array.isArray(r.options)) return null;
-  return {
-    host: typeof r.host === 'string' ? r.host : '',
-    autoName: typeof r.autoName === 'string' ? r.autoName : null,
-    choice,
-    options: r.options.filter((o) => typeof o?.id === 'string' && typeof o?.name === 'string'),
-  };
-}
-
-/** 问一次当前领域；content script 未就绪或本页不支持时返回 null。 */
-async function askCurrentDomain(tabId: number): Promise<DomainAnswer | null> {
-  try {
-    const resp = await chrome.tabs.sendMessage(
-      tabId,
-      { type: 'pt:current-domain', to: getSettings().to },
-      { frameId: 0 },
-    );
-    return parseDomainAnswer(resp);
-  } catch {
-    return null;
-  }
-}
+/** 下拉当前显示的领域状态（#401 据此取站点与所选领域）。 */
+let shownDomain: DomainAnswer | null = null;
 
 /**
  * 领域下拉（#400）：第一项“自动”带上自动判定的结果，然后是可切换到的
@@ -260,31 +228,11 @@ async function rememberSite(): Promise<void> {
 /**
  * 当前标签页的当前领域（#399）。问本页主文档的 content script ——
  * 与全页翻译实际携带的领域一致；页面不支持内容脚本（chrome:// 等）时
- * 显示禁用的“无领域”。
- *
- * 询问失败时有界重试（#429），重试期间界面不变（初始即为禁用的
- * “无领域”），不支持内容脚本的页面因此没有延迟也没有闪烁。
+ * 显示禁用的“无领域”。询问失败时有界重试（#429），重试期间界面不变（初始
+ * 即为禁用的“无领域”），不支持内容脚本的页面因此没有延迟也没有闪烁。
  */
-async function refreshDomain(): Promise<void> {
-  const refresh = ++domainRefresh;
-  let tabId: number | undefined;
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    tabId = tab?.id;
-  } catch {
-    // 拿不到标签页：按无领域显示
-  }
-  let answer: DomainAnswer | null = null;
-  if (tabId != null) {
-    for (let attempt = 0; ; attempt++) {
-      answer = await askCurrentDomain(tabId);
-      if (answer || attempt >= DOMAIN_RETRY_DELAYS_MS.length) break;
-      await sleep(DOMAIN_RETRY_DELAYS_MS[attempt]!);
-      if (refresh !== domainRefresh) return;
-    }
-  }
-  if (refresh !== domainRefresh) return;
-  renderDomainSelect(answer);
+function refreshDomain(): Promise<void> {
+  return domainChoice.read(renderDomainSelect, { to: getSettings().to });
 }
 
 /**
@@ -293,46 +241,15 @@ async function refreshDomain(): Promise<void> {
  * 翻译请求，已经显示的译文不变。
  */
 async function onDomainChange(): Promise<void> {
-  // 切换后不再采用切换前发起的询问结果
-  const refresh = ++domainRefresh;
   // #401: 勾选只作用于勾选时所选的领域；切换期间不能勾选，免得写进旧领域
   domainRemember.checked = false;
   domainRemember.disabled = true;
   const v = domainSelect.value;
   const choice: DomainChoice =
     v === 'auto' || v === 'none' ? { kind: v } : { kind: 'domain', id: v };
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.id == null) throw new Error('no active tab');
-    const resp = await chrome.tabs.sendMessage(tab.id, {
-      type: tabChoiceMessages(DOMAIN_CHOICE.name).set,
-      choice,
-      to: getSettings().to,
-    });
-    if (refresh === domainRefresh) renderDomainSelect(parseDomainAnswer(resp));
-  } catch {
+  if (!(await domainChoice.set(choice, renderDomainSelect, { to: getSettings().to }))) {
     showHint(tf('hintCantTranslate', '当前页面无法翻译'));
     void refreshDomain();
-  }
-}
-
-/** 对方语言临时选择的消息名（#1122：由标签页临时选择模块生成）。 */
-const INPUT_LANG_MESSAGES = tabChoiceMessages(INPUT_LANG_CHOICE.name);
-
-/** 每次刷新递增；后发起的刷新开始后，先前的重试不再写界面（同 domainRefresh）。 */
-let inputLangRefresh = 0;
-
-/** 问一次本页主文档的临时语言选择（#662）；问不到或回复形状不对时返回 null。 */
-async function askInputLangChoice(tabId: number): Promise<InputLangChoice | null> {
-  try {
-    const resp = await chrome.tabs.sendMessage(
-      tabId,
-      { type: INPUT_LANG_MESSAGES.get },
-      { frameId: 0 },
-    );
-    return parseInputLangChoice((resp as { choice?: unknown } | undefined)?.choice);
-  } catch {
-    return null;
   }
 }
 
@@ -352,46 +269,19 @@ function renderInputLangSelect(choice: InputLangChoice | null): void {
   inputLangSelect.disabled = !choice;
 }
 
-/** 打开 popup 时问本页的临时语言选择；与 refreshDomain 同一个有界重试（#429）。 */
-async function refreshInputLang(): Promise<void> {
-  const refresh = ++inputLangRefresh;
-  let tabId: number | undefined;
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    tabId = tab?.id;
-  } catch {
-    // 拿不到标签页：按问不到处理
-  }
-  let choice: InputLangChoice | null = null;
-  if (tabId != null) {
-    for (let attempt = 0; ; attempt++) {
-      choice = await askInputLangChoice(tabId);
-      if (choice || attempt >= DOMAIN_RETRY_DELAYS_MS.length) break;
-      await sleep(DOMAIN_RETRY_DELAYS_MS[attempt]!);
-      if (refresh !== inputLangRefresh) return;
-    }
-  }
-  if (refresh !== inputLangRefresh) return;
-  renderInputLangSelect(choice);
+/** 打开 popup 时问本页的临时语言选择；与领域同一个客户端逻辑（#429、#1143）。 */
+function refreshInputLang(): Promise<void> {
+  return inputLangChoice.read((answer) => renderInputLangSelect(answer?.choice ?? null));
 }
 
 /**
  * 选好这一次的对方语言（#662）：立即交给本页保存，与领域的临时选择并列，
- * 不是设置项、不写设置。#663：广播到本页全部 frame（不带 frameId，否则
- * all_frames 注入的 iframe 收不到），主文档回复保存后的选择。
+ * 不是设置项、不写设置。#663：广播到本页全部 frame，主文档回复保存后的选择。
  */
 async function onInputLangChange(): Promise<void> {
-  const refresh = ++inputLangRefresh;
   const v = inputLangSelect.value;
   const choice: InputLangChoice = v === 'auto' ? { kind: 'auto' } : { kind: 'lang', lang: v };
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.id == null) throw new Error('no active tab');
-    const resp = await chrome.tabs.sendMessage(tab.id, { type: INPUT_LANG_MESSAGES.set, choice });
-    if (refresh === inputLangRefresh) {
-      renderInputLangSelect(parseInputLangChoice((resp as { choice?: unknown } | undefined)?.choice));
-    }
-  } catch {
+  if (!(await inputLangChoice.set(choice, (answer) => renderInputLangSelect(answer?.choice ?? null)))) {
     showHint(tf('hintCantTranslate', '当前页面无法翻译'));
     void refreshInputLang();
   }

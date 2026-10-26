@@ -27,16 +27,41 @@
 
 import { watchPathChange } from './path-watch';
 import { parseDomainChoice, type DomainChoice } from '~/src/storage/domains';
+import type { DomainState } from '~/src/orchestration/page-context';
 import { parseInputLangChoice, type InputLangChoice } from './input-target-lang';
 
-/** 一种临时选择：名字（生成消息名）与怎么认出一个合法的值。值的自动态是 { kind: 'auto' }。 */
-export interface TabChoiceKind<T extends { kind: string }> {
+/**
+ * 一种临时选择：名字（生成消息名）与怎么认出一个合法的值。值的自动态是 { kind: 'auto' }。
+ * 主文档回复 popup 的是“回复”A：缺省 { choice }；领域回复 popup 要显示的领域
+ * 状态。parseAnswer 是 popup 侧的解析，与内容脚本侧的构造（define 的 answer）
+ * 在同一个模块里（#1143）。
+ */
+export interface TabChoiceKind<T extends { kind: string }, A extends { choice: T } = { choice: T }> {
   name: string;
   parse(v: unknown): T | null;
+  /** popup 收到的回复 → A；形状不对为 null。缺省只认 { choice } */
+  parseAnswer?(resp: unknown): A | null;
 }
 
-/** 领域的临时选择（#400）：popup 里临时切换领域或选“无领域”。 */
-export const DOMAIN_CHOICE: TabChoiceKind<DomainChoice> = { name: 'domain', parse: parseDomainChoice };
+/** popup 侧解析主文档回复的领域状态（#399、#400）。 */
+function parseDomainState(resp: unknown): DomainState | null {
+  const r = resp as Partial<Record<keyof DomainState, unknown>> | undefined;
+  const choice = parseDomainChoice(r?.choice);
+  if (!r || !choice || !Array.isArray(r.options)) return null;
+  return {
+    host: typeof r.host === 'string' ? r.host : '',
+    autoName: typeof r.autoName === 'string' ? r.autoName : null,
+    choice,
+    options: r.options.filter((o) => typeof o?.id === 'string' && typeof o?.name === 'string'),
+  };
+}
+
+/** 领域的临时选择（#400）：popup 里临时切换领域或选“无领域”。主文档回复领域状态。 */
+export const DOMAIN_CHOICE: TabChoiceKind<DomainChoice, DomainState> = {
+  name: 'domain',
+  parse: parseDomainChoice,
+  parseAnswer: parseDomainState,
+};
 
 /** 输入翻译这一次的对方语言（#662、#663）：popup 里选的，顶替源语言设置这一级。 */
 export const INPUT_LANG_CHOICE: TabChoiceKind<InputLangChoice> = { name: 'input-lang', parse: parseInputLangChoice };
@@ -45,7 +70,7 @@ export const INPUT_LANG_CHOICE: TabChoiceKind<InputLangChoice> = { name: 'input-
 export interface TabChoiceMessages {
   /** popup 设新值、后台广播重置：带 choice，发给本标签页全部 frame */
   set: string;
-  /** 问主文档当前值（popup 与后台转问用，只发给 frameId 0） */
+  /** 问主文档当前值（popup 与后台转问用，只发给 frameId 0）；主文档回复与设新值时相同 */
   get: string;
   /** 子 frame 启动时问后台，由后台转问主文档 */
   top: string;
@@ -85,12 +110,13 @@ export interface TabChoicesDeps {
 
 export interface TabChoices {
   /**
-   * 定义一种临时选择。answerSet：主文档收到设新值的消息后回复什么，缺省
-   * { choice }（领域回复 popup 要显示的领域状态）。
+   * 定义一种临时选择。answer：主文档收到设新值或问当前值的消息后回复什么，
+   * 缺省 { choice }（领域回复 popup 要显示的领域状态，#1143 起问当前领域也走
+   * 这里）。回复里的 choice 也给子 frame 启动时转问用。
    */
-  define<T extends { kind: string }>(
-    kind: TabChoiceKind<T>,
-    opts?: { answerSet?: (msg: Message) => unknown },
+  define<T extends { kind: string }, A extends { choice: T }>(
+    kind: TabChoiceKind<T, A>,
+    opts?: { answer?: (msg: Message) => A },
   ): TabChoice<T>;
   /** 内容脚本消息监听里调用：是某种临时选择的消息就处理并返回 true。 */
   handle(msg: unknown, reply: Reply): boolean;
@@ -131,6 +157,7 @@ export function createTabChoices(deps: TabChoicesDeps): TabChoices {
         settled = true;
       };
 
+      const answer = (msg: Message) => (opts.answer ? opts.answer(msg) : { choice: value });
       entries.push({
         messages,
         handle(msg, reply) {
@@ -138,13 +165,13 @@ export function createTabChoices(deps: TabChoicesDeps): TabChoices {
             const next = kind.parse(msg.choice);
             if (!next) return;
             set(next);
-            if (deps.isMainFrame) reply(opts.answerSet ? opts.answerSet(msg) : { choice: value });
+            if (deps.isMainFrame) reply(answer(msg));
             return;
           }
           if (msg.type === messages.get) {
             if (!deps.isMainFrame) return;
             check();
-            reply({ choice: value });
+            reply(answer(msg));
           }
         },
         navigated() {
@@ -214,5 +241,85 @@ export function tabChoiceForwarder(
       }
     }
     return undefined;
+  };
+}
+
+// ── popup 侧客户端（#1143）──
+
+/**
+ * popup 问当前值的有界重试（#429）：内容脚本就绪前（页面加载中打开 popup）
+ * 询问会被拒绝，按这个序列重试，总共约 5 秒。
+ */
+export const TAB_CHOICE_RETRY_DELAYS_MS = [200, 400, 800, 1600, 2000];
+
+/** popup 侧客户端用到的浏览器能力。 */
+export interface TabChoiceClientDeps {
+  /** 当前标签页的 id；拿不到为 undefined */
+  activeTab: () => Promise<number | undefined>;
+  /** chrome.tabs.sendMessage */
+  send: TabsSend;
+  sleep: (ms: number) => Promise<void>;
+}
+
+export interface TabChoiceClient<T, A> {
+  /**
+   * 读当前值：问本页主文档，问不到时有界重试；页面不支持内容脚本时得到 null。
+   * extra 并进询问消息（领域带上 popup 当前的目标语言）。被更晚的读或设取代时
+   * 不调用 show —— 较早的回复不覆盖较新的。
+   */
+  read(show: (answer: A | null) => void, extra?: Record<string, unknown>): Promise<void>;
+  /**
+   * 设新值：广播到本页全部 frame（不带 frameId，否则 iframe 收不到），主文档
+   * 回复设好后的状态，仍是最新的操作时调用 show。拿不到标签页或发送失败时
+   * 返回 false（调用方提示并重读）。
+   */
+  set(choice: T, show: (answer: A | null) => void, extra?: Record<string, unknown>): Promise<boolean>;
+}
+
+/** 一种临时选择在 popup 里的客户端：读、设、重试与防旧回复覆盖都在这里。 */
+export function tabChoiceClient<T extends { kind: string }, A extends { choice: T }>(
+  kind: TabChoiceKind<T, A>,
+  deps: TabChoiceClientDeps,
+): TabChoiceClient<T, A> {
+  const messages = tabChoiceMessages(kind.name);
+  const parseAnswer = (resp: unknown): A | null => {
+    if (kind.parseAnswer) return kind.parseAnswer(resp);
+    const choice = kind.parse((resp as Message | undefined)?.choice);
+    return choice ? ({ choice } as A) : null;
+  };
+  /** 每次读或设递增；后发起的开始后，先前的不再写界面 */
+  let seq = 0;
+  const activeTab = () => deps.activeTab().catch(() => undefined);
+
+  return {
+    async read(show, extra = {}) {
+      const mine = ++seq;
+      const tabId = await activeTab();
+      let answer: A | null = null;
+      if (tabId != null) {
+        for (let attempt = 0; ; attempt++) {
+          answer = await deps
+            .send(tabId, { type: messages.get, ...extra }, { frameId: 0 })
+            .then(parseAnswer, () => null);
+          if (answer || attempt >= TAB_CHOICE_RETRY_DELAYS_MS.length) break;
+          await deps.sleep(TAB_CHOICE_RETRY_DELAYS_MS[attempt]!);
+          if (mine !== seq) return;
+        }
+      }
+      if (mine === seq) show(answer);
+    },
+
+    async set(choice, show, extra = {}) {
+      const mine = ++seq;
+      try {
+        const tabId = await deps.activeTab();
+        if (tabId == null) return false;
+        const resp = await deps.send(tabId, { type: messages.set, choice, ...extra });
+        if (mine === seq) show(parseAnswer(resp));
+        return true;
+      } catch {
+        return false;
+      }
+    },
   };
 }
