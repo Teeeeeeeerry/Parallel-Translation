@@ -12,7 +12,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createByokEngine } from '~/src/engines/byok';
 import type { ByokEngineSpec } from '~/src/engines/byok';
-import { EngineError } from '~/src/engines/types';
+import { verdictOf } from '~/src/engines/shared';
 
 vi.mock('~/src/storage/keys', () => ({
   getKey: vi.fn(),
@@ -188,7 +188,7 @@ describe('createByokEngine 骨架（#333）', () => {
         classifyError: async (resp) => {
           const body = (await resp.json()) as { error?: { status?: string } };
           if (body.error?.status === 'UNAUTHENTICATED') {
-            return new EngineError('openai', false, 'API key 无效', 'invalid-key');
+            return verdictOf('invalid-key', 400);
           }
           return null;
         },

@@ -14,7 +14,7 @@
 // 适配器只保留请求构造与响应解析；引擎特例（错误体明示认证失败、
 // 等）留在适配器内显式处理，不再各自发明分类规则。
 
-import type { FailureCategory } from './types';
+import { EngineError, type FailureCategory } from './types';
 import { ENGINE_CATALOG, isByokEngine } from '~/src/storage/schema';
 import type { Term } from '~/src/storage/domains';
 import { normalizeText } from '~/src/dom/normalize';
@@ -50,6 +50,69 @@ export function classifyStatus(
   if (resp.status === 401 || resp.status === 403) return 'invalid-key';
   if (resp.status === 429) return 'quota';
   return 'transient';
+}
+
+// ── 错误分类（#1146）──
+
+/**
+ * 一次失败的分类结果：类别、给用户的文案、能否重试、配额是否失效。每个引擎
+ * 只写一个分类器产出它；翻译骨架把它包成引擎错误（toEngineError），测试连接
+ * 骨架包成测试结果（probeConnection），两边不再各自判断。
+ */
+export interface ErrorVerdict {
+  category: FailureCategory;
+  message: string;
+  retryable: boolean;
+  invalidated: boolean;
+}
+
+/**
+ * “类别 → 文案 / 能否重试 / 配额失效”的默认对应关系，只在这一处（#1146）。
+ * 引擎有特殊情况时只换文案（message），类别的语义不变：
+ * - invalid-key：不重试，提示检查 key
+ * - quota：不重试，配额失效（不必等退避序列）
+ * - too-large：可重试（router 照常换下一个引擎，#1026）
+ * - aborted：不重试，调用方不记成失败
+ * - transient：可重试
+ */
+export function verdictOf(
+  category: FailureCategory,
+  status: number,
+  message?: string,
+): ErrorVerdict {
+  switch (category) {
+    case 'invalid-key':
+      return { category, message: message ?? 'API key 无效', retryable: false, invalidated: false };
+    case 'quota':
+      return { category, message: message ?? '配额已用尽', retryable: false, invalidated: true };
+    case 'too-large':
+      return { category, message: message ?? `HTTP ${status} 请求过大`, retryable: true, invalidated: false };
+    case 'aborted':
+      return { category, message: message ?? '已中止', retryable: false, invalidated: false };
+    case 'transient':
+      return { category, message: message ?? `HTTP ${status}`, retryable: true, invalidated: false };
+  }
+}
+
+/**
+ * 引擎的错误分类器：读非 2xx 响应（状态码与错误体）定类别与文案；返回 null
+ * 表示没有特殊情况，交回按状态码的默认分类（classifyStatus + verdictOf）。
+ */
+export type ErrorClassifier = (resp: Response) => Promise<ErrorVerdict | null>;
+
+/** 分类一个非 2xx 响应：引擎分类器优先，没有意见时按状态码。 */
+export async function classifyResponse(
+  engineId: string,
+  resp: Response,
+  classify?: ErrorClassifier,
+): Promise<ErrorVerdict> {
+  const special = classify ? await classify(resp) : null;
+  return special ?? verdictOf(classifyStatus(engineId, resp, true), resp.status);
+}
+
+/** 翻译骨架：分类结果包成引擎错误。 */
+export function toEngineError(engineId: string, v: ErrorVerdict): EngineError {
+  return new EngineError(engineId, v.retryable, v.message, v.category, v.invalidated, v.category === 'aborted');
 }
 
 /**
@@ -109,10 +172,9 @@ export type ProbeResult =
   | { ok: false; category: FailureCategory; message: string };
 
 /**
- * 适配器提供的探测规格（#321）：端点、凭据传递方式与特例分类。
- * 公共骨架只做「构造请求 → 发送 → 公共状态分类」，引擎特例
- * （需要读错误响应体才能定类别的那家）由适配器在 classifyError
- * 中提供，不复制进公共模块。
+ * 适配器提供的探测规格（#321）：端点、凭据传递方式与引擎的错误分类器。
+ * 公共骨架只做「构造请求 → 发送 → 分类」；分类器与翻译路径是同一个
+ * （#1146），不再为测试连接另写一份。
  */
 export interface ProbeSpec {
   engineId: string;
@@ -127,18 +189,8 @@ export interface ProbeSpec {
     method?: 'GET' | 'POST';
     body?: string;
   };
-  /**
-   * 特例分类：适配器读取错误响应体后才能定类别时提供（如 Gemini）。
-   * 返回 null 表示无特例意见，交回公共状态码分类（#239）。
-   */
-  classifyError?: (resp: Response) => Promise<ProbeResult | null>;
-}
-
-/** 公共分类的展示文案 —— 与翻译路径的错误文案同口径（#321）。 */
-function probeMessage(category: FailureCategory, status: number): string {
-  if (category === 'invalid-key') return 'API key 无效';
-  if (category === 'quota') return '配额已用尽';
-  return `HTTP ${status}`;
+  /** 引擎的错误分类器（与翻译路径同一个，见 ErrorClassifier）。 */
+  classifyError?: ErrorClassifier;
 }
 
 /**
@@ -170,11 +222,7 @@ export async function probeConnection(
 
   if (resp.ok) return { ok: true, message: '连接成功' };
 
-  // 适配器特例优先（读错误体定类别）；无特例则走公共状态码分类
-  if (spec.classifyError) {
-    const special = await spec.classifyError(resp);
-    if (special) return special;
-  }
-  const category = classifyStatus(spec.engineId, resp, true);
-  return { ok: false, category, message: probeMessage(category, resp.status) };
+  // 与翻译路径同一个分类器、同一份默认对应关系（#1146）
+  const { category, message } = await classifyResponse(spec.engineId, resp, spec.classifyError);
+  return { ok: false, category, message };
 }

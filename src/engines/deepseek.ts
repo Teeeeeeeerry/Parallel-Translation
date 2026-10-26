@@ -10,7 +10,7 @@
 // （翻译与测试连接各一处；默认模型在 DEFAULT_MODELS）。
 
 import { createOpenAICompatEngine } from './openai-compat';
-import { EngineError } from './types';
+import { verdictOf } from './shared';
 
 const compat = createOpenAICompatEngine({
   id: 'deepseek',
@@ -18,12 +18,8 @@ const compat = createOpenAICompatEngine({
   endpoint: 'https://api.deepseek.com/chat/completions',
   probeUrl: 'https://api.deepseek.com/models',
   // DeepSeek 用 402 表示余额不足：按配额处理，不重试。只在本适配器里
-  // 认 402，公共状态分类对其他引擎的口径不变
-  classifyError: async (resp) =>
-    resp.status === 402 ? new EngineError('deepseek', false, '余额不足', 'quota', true) : null,
-  // 测试连接与翻译路径同一口径（#611）：402 报配额问题（余额不足）
-  classifyProbeError: async (resp) =>
-    resp.status === 402 ? { ok: false, category: 'quota', message: '余额不足' } : null,
+  // 认 402，公共状态分类对其他引擎的口径不变；翻译与测试连接共用（#611、#1146）
+  classifyError: async (resp) => (resp.status === 402 ? verdictOf('quota', 402, '余额不足') : null),
 });
 
 export const deepseek = compat.engine;

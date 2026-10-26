@@ -16,7 +16,7 @@
 
 import { tf } from '~/src/i18n';
 import { createOpenAICompatEngine } from './openai-compat';
-import { EngineError } from './types';
+import { verdictOf } from './shared';
 
 const isAuthFailure = (resp: Response) => resp.status === 401 || resp.status === 403;
 
@@ -30,10 +30,9 @@ const compat = createOpenAICompatEngine({
   id: 'grok',
   displayName: 'Grok',
   endpoint: 'https://api.x.ai/v1/chat/completions',
+  // 翻译与测试连接共用（#1146）
   classifyError: async (resp) =>
-    isAuthFailure(resp) ? new EngineError('grok', false, keyInvalidReason(), 'invalid-key') : null,
-  classifyProbeError: async (resp) =>
-    isAuthFailure(resp) ? { ok: false, category: 'invalid-key', message: keyInvalidReason() } : null,
+    isAuthFailure(resp) ? verdictOf('invalid-key', resp.status, keyInvalidReason()) : null,
 });
 
 export const grok = compat.engine;
