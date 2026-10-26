@@ -23,7 +23,7 @@ import { tf } from '~/src/i18n';
 import { fetchWithTimeout } from './fetch-timeout';
 import { engineGate } from './engine-gate';
 import { EngineError, EngineUnavailableError } from './types';
-import { classifyStatus } from './shared';
+import { classifyResponse, toEngineError, type ErrorClassifier } from './shared';
 import type { TranslateEngine, TranslateRequest, TranslateResponse } from './types';
 
 /** 适配器提供的引擎特例（端点 / 请求构造 / 响应解析 / 错误体特例）。 */
@@ -49,10 +49,10 @@ export interface ByokEngineSpec {
   /** 解析成功响应为译文（长度必须与请求文本数一致）。 */
   parseResponse(data: unknown, expected: number): TranslateResponse;
   /**
-   * 错误分类特例（读错误响应体才能定类别的引擎）—— 返回非 null 即
-   * 采用该错误；返回 null 走公共状态码分类（#239）。
+   * 引擎的错误分类器（#1146）：与测试连接共用同一个；返回 null 走按状态码的
+   * 默认分类（#239）。
    */
-  classifyError?(resp: Response): Promise<EngineError | null>;
+  classifyError?: ErrorClassifier;
 }
 
 /**
@@ -111,20 +111,9 @@ export function createByokEngine(spec: ByokEngineSpec): TranslateEngine {
         });
 
         if (!resp.ok) {
-          // 适配器特例优先（读错误体定类别）
-          if (spec.classifyError) {
-            const special = await spec.classifyError(resp);
-            if (special) throw special;
-          }
-          // 公共状态分类（#239）：401/403 → key 无效、429 → 配额、其余 → 瞬时
-          const category = classifyStatus(spec.id, resp, true);
-          if (category === 'invalid-key') {
-            throw new EngineError(spec.id, false, 'API key 无效', 'invalid-key');
-          }
-          if (category === 'quota') {
-            throw new EngineError(spec.id, false, '配额已用尽', 'quota', true);
-          }
-          throw new EngineError(spec.id, true, `HTTP ${resp.status}`, 'transient');
+          // 引擎分类器优先，没有意见时按状态码（#239）；类别对应的文案与能否
+          // 重试见 verdictOf（#1146）
+          throw toEngineError(spec.id, await classifyResponse(spec.id, resp, spec.classifyError));
         }
 
         const data = await resp.json();

@@ -17,11 +17,11 @@ import { DEFAULT_MODELS } from '~/src/storage/schema';
 import {
   classifyStatus,
   buildNumberedPrompt,
-  type ProbeResult,
+  verdictOf,
+  type ErrorVerdict,
   type ProbeSpec,
 } from './shared';
 import { createByokEngine } from './byok';
-import { EngineError } from './types';
 import type { TranslateEngine } from './types';
 import { parseNumbered } from './openai-compat';
 
@@ -38,7 +38,7 @@ import { parseNumbered } from './openai-compat';
  * 状态码维度走公共判定 classifyStatus（#239）；错误体明示认证失败
  * （#161 的 400 + API key 文案）是 gemini 特有特例，保留在适配器内。
  */
-async function classifyGeminiError(resp: Response): Promise<EngineError> {
+async function classifyGeminiError(resp: Response): Promise<ErrorVerdict> {
   let status = '';
   let message = '';
   try {
@@ -62,16 +62,12 @@ async function classifyGeminiError(resp: Response): Promise<EngineError> {
   // 状态码维度走公共判定（#257）：401/403 → invalid-key；429 → quota；
   // 其余非 2xx → transient
   const category = classifyStatus('gemini', resp, true);
-  if (isAuthByBody || category === 'invalid-key') {
-    return new EngineError('gemini', false, 'API key 无效', 'invalid-key');
-  }
-  if (category === 'quota') {
-    return new EngineError('gemini', false, '配额已用尽', 'quota', true);
-  }
+  if (isAuthByBody || category === 'invalid-key') return verdictOf('invalid-key', resp.status);
+  if (category === 'quota') return verdictOf('quota', resp.status);
   // 其余错误（上下文过长 / 模型名错误 / 安全拦截 / 5xx 等）→ 瞬时，
   // 携带错误体原因（与改造前文案一致，既有用例断言）
   const detail = message ? `：${message}` : '';
-  return new EngineError('gemini', true, `HTTP ${resp.status}${detail}`, 'transient');
+  return verdictOf('transient', resp.status, `HTTP ${resp.status}${detail}`);
 }
 
 /** 当前生效的模型名（设置优先，缺省回落到 schema 默认）。 */
@@ -92,7 +88,7 @@ export const geminiProbe: ProbeSpec = {
   // 只有错误体明示认证失败才是 key 问题；模型名错误 / 内容过长等其余
   // 情况报告真实原因（#323 —— 此前任意非 2xx 一律报「API key 无效」，
   // 模型名填错的用户被误导去重新申请 key）。
-  classifyError: async (resp): Promise<ProbeResult | null> => {
+  classifyError: async (resp): Promise<ErrorVerdict | null> => {
     let status = '';
     let message = '';
     try {
@@ -110,20 +106,12 @@ export const geminiProbe: ProbeSpec = {
       status === 'PERMISSION_DENIED' ||
       /API key/i.test(message) ||
       /API_KEY_INVALID/i.test(message);
-    if (isAuthByBody) {
-      return { ok: false, category: 'invalid-key', message: 'API key 无效' };
-    }
+    if (isAuthByBody) return verdictOf('invalid-key', resp.status);
     // 模型名错误 / 内容过长 / 安全拦截 / 5xx 等：与翻译路径同一分类
     const category = classifyStatus('gemini', resp, true);
-    if (category === 'quota') {
-      return { ok: false, category: 'quota', message: '配额已用尽' };
-    }
+    if (category === 'quota') return verdictOf('quota', resp.status);
     const detail = message ? `：${message}` : '';
-    return {
-      ok: false,
-      category: 'transient',
-      message: `HTTP ${resp.status}${detail}`,
-    };
+    return verdictOf('transient', resp.status, `HTTP ${resp.status}${detail}`);
   },
 };
 

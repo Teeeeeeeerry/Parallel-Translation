@@ -19,9 +19,8 @@ import { getSettings } from '~/src/storage/settings';
 import { DEFAULT_MODELS } from '~/src/storage/schema';
 import type { ByokEngineId } from '~/src/storage/schema';
 import { buildNumberedPrompt } from './shared';
-import type { ProbeSpec } from './shared';
+import type { ErrorClassifier, ProbeSpec } from './shared';
 import { createByokEngine } from './byok';
-import type { ByokEngineSpec } from './byok';
 import type { TranslateEngine } from './types';
 
 /**
@@ -50,10 +49,8 @@ export interface OpenAICompatConfig {
    * 授权端点和模型的服务（xAI，#613），只测模型列表会误判。
    */
   probeUrl?: string;
-  /** 翻译路径的错误分类特例（见 ByokEngineSpec.classifyError）。 */
-  classifyError?: ByokEngineSpec['classifyError'];
-  /** 探测的错误分类特例（见 ProbeSpec.classifyError）。 */
-  classifyProbeError?: ProbeSpec['classifyError'];
+  /** 错误分类器：翻译与测试连接共用（#1146，见 ErrorClassifier）。 */
+  classifyError?: ErrorClassifier;
 }
 
 /** OpenAI 兼容引擎及其探测规格。 */
@@ -121,7 +118,7 @@ export function createOpenAICompatEngine(config: OpenAICompatConfig): OpenAIComp
         }),
       };
     },
-    ...(config.classifyProbeError && { classifyError: config.classifyProbeError }),
+    ...(config.classifyError && { classifyError: config.classifyError }),
   };
 
   return { engine, probe };
