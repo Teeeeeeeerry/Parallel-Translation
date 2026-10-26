@@ -119,6 +119,21 @@ describe('探测入口 × 翻译路径 同分类契约（#321）', () => {
     expect(probe).toBe('invalid-key');
   });
 
+  test('gemini 非 JSON 错误体（#1147）：探测与翻译路径类别一致，测试连接有文案', async () => {
+    for (const status of [400, 403, 429, 503]) {
+      const translate = await translateCategoryFor('gemini', status, '<html>Bad Gateway</html>');
+      vi.resetModules();
+      vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>Bad Gateway</html>', { status })));
+      const { probeConnection } = await import('~/src/engines/shared');
+      const { geminiProbe } = await import('~/src/engines/gemini');
+      const probe = await probeConnection(geminiProbe, { key: 'k' });
+      expect(probe.ok).toBe(false);
+      if (probe.ok) continue;
+      expect(probe.category, `gemini ${status}`).toBe(translate);
+      expect(probe.message).toBeTruthy();
+    }
+  });
+
   test('gemini 400 + 模型名错误错误体：探测与翻译路径都归为瞬时', async () => {
     const body = JSON.stringify({
       error: { code: 400, message: 'models/wrong-model is not found', status: 'NOT_FOUND' },
