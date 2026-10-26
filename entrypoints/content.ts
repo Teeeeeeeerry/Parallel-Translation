@@ -12,10 +12,8 @@
 // 只在有令牌定义时才成立，否则 border-left 在计算值时刻失效，默认样式无边框。
 import '~/src/styles/tokens.css';
 import '~/src/styles/presets.css';
-import { collect } from '~/src/dom/walker';
-import { closestUnit } from '~/src/dom/classify';
-import { unitTextEx, restorePreserves } from '~/src/dom/text';
-import { unitRules } from '~/src/dom/rules-snapshot';
+import { closestUnit, collect, unitText } from '~/src/dom/units';
+import { restorePreserves } from '~/src/dom/text';
 import { startObserver } from '~/src/dom/observer';
 import { render, unrender, applyMode, applyStyle } from '~/src/dom/renderer';
 import {
@@ -502,7 +500,7 @@ export default defineContentScript({
         return;
       }
 
-      const { text, preserves } = unitTextEx(unit, unitRules(unit));
+      const { text, preserves } = unitText(unit);
       if (!text) return;
 
       // #314: 逐段翻译走编排模块的单文本入口 —— 准入判定（总开关 /

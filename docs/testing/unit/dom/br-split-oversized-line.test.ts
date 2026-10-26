@@ -13,7 +13,8 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import { mockAllBoundingRects } from '../../setup';
-import { MAX_TEXT, closestUnit } from '~/src/dom/classify';
+import { MAX_TEXT } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 import { collect, type SkipCategory } from '~/src/dom/walker';
 import { unitTextEx } from '~/src/dom/text';
 import { domPage } from '../orchestration/page-harness';

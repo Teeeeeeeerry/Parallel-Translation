@@ -23,7 +23,7 @@
 // - IntersectionObserver 监听这些隐藏元素，一旦进入视口就触发补翻。
 // - rootMargin 提前 300px 触发，让即将滚入视口的内容提前翻译。
 
-import { collect } from './walker';
+import { collect } from './units';
 import { unrender } from './renderer';
 import { isChunk } from './chunk-marks';
 import { injectShadowStyles } from '~/src/styles/shadow';

@@ -25,7 +25,7 @@
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
-import { closestUnit } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 import type { SkipCategory } from '~/src/dom/walker';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
 import { brLines, collectUnits, fakeTranslate, isOverLimit, line, restorePage, translatePage } from './br-split-harness';

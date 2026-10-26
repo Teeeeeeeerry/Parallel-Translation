@@ -10,7 +10,8 @@
  */
 import { describe, test, expect, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
-import { shouldSkipNonVisual, closestUnit } from '~/src/dom/classify';
+import { shouldSkipNonVisual } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 import { collect } from '~/src/dom/walker';
 
 /** 没有字母的格子：数字加各种连接号、纯符号、计时、带单位符号的数字 */

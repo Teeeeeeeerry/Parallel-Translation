@@ -12,14 +12,9 @@
 // - INLINE_SET：自身不作为翻译单元，需向上找可翻父节点
 // 此三层分类是 TreeWalker 过滤逻辑的基础。
 
-import { noteUnitRules, readRulesSnapshot, type RulesSnapshot } from './rules-snapshot';
-import { closestChunk, isChunk, isSplitContainer } from './chunk-marks';
-// text.ts 也从本模块取 INLINE_SET：循环引用只在函数调用时解析，模块
-// 求值时双方都不使用对方的导出
-import { hasTranslatableText } from './text';
-// br-split 反过来用本模块的标签表与上限：只在函数体里用，模块初始化时互不依赖
-import { splitBrParagraph } from './br-split';
-import type { TextRules } from './text';
+// #1145：本模块只放判定用的标签表与谓词，不 import 取文、切分模块 —— 它们
+// 反过来用这里的标签表与上限。“找最近单元”在翻译单元模块（units.ts）
+import { isChunk, isSplitContainer } from './chunk-marks';
 
 /**
  * #442：el 自身或祖先是否命中任一选择器，祖先链越过 Shadow DOM 边界 ——
@@ -318,45 +313,6 @@ export function hasNonTextContent(el: Element): boolean {
   return false;
 }
 
-/**
- * 从含非文本内容的容器向下搜索，找到子树里真正持有文本的纯文本翻译单元。
- *
- * #50：命中非文本内容时，与其返回 null，不如继续向下找到那个叶子单元 ——
- * 这直接决定 PR 页那 5193 字符是“翻不了”还是“翻得了”。
- */
-function findTextOnlyDescendant(
-  container: Element,
-  origin: Element,
-  rules: TextRules,
-): Element | null {
-  let best: Element | null = null;
-  let bestDepth = -1;
-
-  // 只在含 origin 的分支里搜索，避免扫到无关兄弟子树
-  function dfs(el: Element, depth: number): void {
-    if (
-      el !== container &&
-      el.contains(origin) &&
-      isTranslationUnit(el) &&
-      !hasNonTextContent(el) &&
-      !shouldSkip(el) &&
-      hasTranslatableText(el, rules)
-    ) {
-      // 越深越好 —— leaf-most text-only unit
-      if (depth > bestDepth) {
-        best = el;
-        bestDepth = depth;
-      }
-    }
-    for (const child of el.children) {
-      if (child.contains(origin)) dfs(child, depth + 1);
-    }
-  }
-
-  dfs(container, 0);
-  return best;
-}
-
 /** 纯数字、日期、计数（"1.2k"、"2026-07-30"）翻了没意义还浪费额度 */
 function isMainlyNumeric(text: string): boolean {
   if (text.length > 30) return false;
@@ -440,77 +396,4 @@ function directTextLength(el: Element): number {
     if (node.nodeType === Node.TEXT_NODE) len += (node.textContent ?? '').trim().length;
   }
   return len;
-}
-
-/**
- * 从 el（含自身）向上找最近的翻译单元（isTranslationUnit + shouldSkip）。
- * 按钮路径与 translateOne 共用 —— 判定标准与采集器同一套，不再各立门户，
- * 白名单之外的大容器（如 AI 概览的外层 li）不会再被错误命中。
- *
- * #50：同时检查非文本内容（媒体 / 交互控件），与 render() 准入标准一致。
- * 若命中则向下降级到子树中真正持有文本的叶子单元，而非整块放弃。
- *
- * shouldSkip 有强制同步布局的昂贵步骤（getBoundingClientRect），
- * 只应在低频率路径调用：悬停意图计时器、点击/快捷键入口，不能挂在
- * 每次 mouseover 上。
- *
- * #366：站点页面规则作用于逐段翻译 —— el 落在排除区内（自身或祖先命中
- * 排除选择器，祖先越过 Shadow DOM 边界，#442）时找不到单元，不出按钮也不翻译。向下降级只在含 el 的分支
- * 里找，结果必是 el 的祖先或自身，同样在排除区外，无需再判。
- *
- * #374：限定范围与采集入口一致 —— 找到的单元须在范围内。向上找时一旦
- * 走出范围即停：范围外元素的祖先同样在范围外。向下降级的结果在 cur
- * 与 el 之间，cur 在范围内它也在。
- *
- * #454：与采集入口共用“去掉保留原文后是否还有可翻译文字”的判定。
- * #468：站点页面规则只在开头读取一次，向上、向下找单元时都用它。
- */
-/** 已按行切过的段落（pre 的切块另走自己的路，不在此列）。 */
-function isBrSplit(el: Element): boolean {
-  return el.tagName !== 'PRE' && isSplitContainer(el);
-}
-
-export function closestUnit(el: Element): Element | null {
-  const rules = readRulesSnapshot();
-  const unit = findClosestUnit(el, rules);
-  // #1144：逐段翻译随后取文，按单元取回这份快照
-  if (unit) noteUnitRules(unit, rules);
-  return unit;
-}
-
-function findClosestUnit(el: Element, rules: RulesSnapshot): Element | null {
-  const { scope, exclude } = rules;
-  if (withinAny(el, exclude)) return null;
-
-  let cur: Element | null = el;
-  while (cur) {
-    if (!inScope(cur, scope)) return null;
-    // #712：以 br 分行的超长段落整段当不了单元。走到它这里（起点在它里面，
-    // 还没找到单元）就按行切开，返回起点所在那一行的切块：逐段翻译只翻悬停
-    // 的那一行，不是整段几千字。起点落在段落自身（行间空白，或切开之前段落
-    // 的直接文字）就没有单元，直接返回：外层容器的文字只会更长，往上找也是
-    // 白找。
-    // 切分只在这里发生：本函数只在悬停意图计时器、按钮点击、快捷键这些低频
-    // 路径上调用，mouseover 处理只做 closest() 初筛（paragraph-btn.ts）
-    if (splitBrParagraph(cur) || isBrSplit(cur)) {
-      const line = closestChunk(el);
-      if (!line || line.parentElement !== cur) return null;
-      return !shouldSkip(line) && hasTranslatableText(line, rules) ? line : null;
-    }
-    // #454：去掉保留原文后没有可翻译文字的段落不算单元，继续向上找
-    if (isTranslationUnit(cur) && !shouldSkip(cur) && hasTranslatableText(cur, rules)) {
-      // #50：容器含媒体 / 交互控件时，向下降级到纯文本后代。
-      // 否则用户看到一个注定失败的段落按钮，等一次网络往返后被 render() 拒绝。
-      if (hasNonTextContent(cur)) {
-        const descendant = findTextOnlyDescendant(cur, el, rules);
-        if (descendant) return descendant;
-        // 无纯文本后代 —— 继续向上找，避免把含非文本内容的容器
-        // 误判为可翻单元（它会回到这里再次尝试向下降级）。
-      } else {
-        return cur;
-      }
-    }
-    cur = cur.parentElement;
-  }
-  return null;
 }

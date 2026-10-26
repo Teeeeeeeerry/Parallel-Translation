@@ -10,7 +10,7 @@
 
 import { mountIsolated, unmountIsolated } from './mount';
 import { textRects } from './text-rects';
-import { closestUnit } from '../dom/classify';
+import { closestUnit } from '../dom/units';
 import { closestChunk } from '../dom/chunk-marks';
 import { tf } from '../i18n';
 // #1080：悬停意图延迟与间隙在中立模块，输入翻译圆点沿用同一个口径

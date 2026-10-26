@@ -16,7 +16,7 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
 import { collect } from '~/src/dom/walker';
-import { closestUnit } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 import { translatableTextEx } from '~/src/dom/text';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
 import type { SiteRules } from '~/src/storage/specialization';
@@ -173,10 +173,10 @@ describe('限定范围全部无效（#443）', () => {
     // 新打开的页面载入存储里的规则
     vi.resetModules();
     const walker = await import('~/src/dom/walker');
-    const classify = await import('~/src/dom/classify');
+    const units = await import('~/src/dom/units');
     await (await import('~/src/storage/specialization')).siteRulesReady();
     expect(ids(walker.collect())).toEqual(['head', 'intro', 'ad', 'thanks', 'tail']);
-    expect(classify.closestUnit(byId('head'))?.id).toBe('head');
+    expect(units.closestUnit(byId('head'))?.id).toBe('head');
     expect(warn.mock.calls.some(([m]) => String(m).includes('限定范围全部无效'))).toBe(true);
     warn.mockRestore();
   });

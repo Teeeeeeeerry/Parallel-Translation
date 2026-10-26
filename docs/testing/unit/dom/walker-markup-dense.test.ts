@@ -13,7 +13,7 @@
 import { describe, test, expect } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
-import { closestUnit } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 
 /** 仿 Parsoid 的条目链接：绝对 href、title、id，约 120 字符。 */
 const link = (i: number, text: string) =>

@@ -22,7 +22,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
 import { collect } from '~/src/dom/walker';
-import { closestUnit } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 import { translatableTextEx, shallowTranslatableTextEx, restorePreserves } from '~/src/dom/text';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
 import type { SiteRules } from '~/src/storage/specialization';

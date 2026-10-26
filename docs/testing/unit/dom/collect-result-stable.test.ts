@@ -17,7 +17,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
 import { collect } from '~/src/dom/walker';
-import { closestUnit } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 import { unitTextEx } from '~/src/dom/text';
 import { saveUserSiteRules, siteRulesReady } from '~/src/storage/specialization';
 import { readRulesSnapshot } from '~/src/dom/rules-snapshot';

@@ -16,7 +16,7 @@ const rules = vi.hoisted(() => ({}) as Record<string, Partial<SiteRules>>);
 vi.mock('~/src/storage/builtin-site-rules', () => ({ BUILTIN_SITE_RULES: rules }));
 
 import { collect } from '~/src/dom/walker';
-import { closestUnit } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 import { getSiteRules } from '~/src/storage/specialization';
 import { translatableTextEx } from '~/src/dom/text';
 import { readRulesSnapshot } from '~/src/dom/rules-snapshot';
