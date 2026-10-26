@@ -11,11 +11,11 @@
 // 切块还原）。搬到这里之后内容脚本与测试装配用的是同一份实现。
 
 import type { TranslateItem } from '../orchestration/orchestrator';
-import { restorePreserves, unitTextEx } from './text';
+import { restorePreserves } from './text';
+import { unitText } from './units';
 import { render, unrender, type RenderResult } from './renderer';
 import { unsplitChunks } from './chunk-split';
 import { isSplitContainer } from './chunk-marks';
-import { unitRules } from './rules-snapshot';
 import { walkShadowTree } from './shadow-walk';
 
 /** 翻译项的渲染上下文（#261）：目标元素 + preserves + 原文。 */
@@ -27,10 +27,9 @@ export interface PageItemCtx {
 
 /**
  * 构建翻译项（#329）：归一化内部空白、混合内容提取、占位符映射全部在此。
- * #1144：取文用采集这个单元时的那份站点页面规则快照，不再重新读。
  */
 export function buildPageItem(el: Element): TranslateItem<PageItemCtx> {
-  const { text, preserves } = unitTextEx(el, unitRules(el));
+  const { text, preserves } = unitText(el);
   return { text, ctx: { target: el, preserves, rawText: text } };
 }
 

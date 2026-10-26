@@ -16,7 +16,7 @@
 import { describe, test, expect, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
-import { closestUnit } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 
 /**
  * 一段正文：两截直接文字之间夹着 refs 个连在一起的引用角标（行内元素，里面再

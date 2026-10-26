@@ -9,13 +9,13 @@ import { mockBoundingRect } from '../../setup';
 import {
   isTranslationUnit,
   hasNonTextContent,
-  closestUnit,
   shouldSkipNonVisual,
   shouldSkip,
   isVisible,
   MAX_TEXT,
   MAX_HTML,
 } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 
 // ---- 辅助 ----
 

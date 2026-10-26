@@ -18,7 +18,7 @@ import { describe, test, expect, afterEach } from 'vitest';
 import fs from 'fs';
 import { mockAllBoundingRects } from '../../setup';
 import { collect } from '~/src/dom/walker';
-import { closestUnit } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 
 /** 维基形态夹具的正文（#735），复制 copies 份放进 body。 */
 function loadWikiArticle(copies: number): void {

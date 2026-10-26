@@ -16,7 +16,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { applyMode, render } from '~/src/dom/renderer';
-import { closestUnit } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 import { unitTextEx } from '~/src/dom/text';
 import { mockAllBoundingRects } from '../../setup';
 import { brLines, collectUnits, fakeTranslate, isOverLimit, line, restorePage, translatePage } from './br-split-harness';

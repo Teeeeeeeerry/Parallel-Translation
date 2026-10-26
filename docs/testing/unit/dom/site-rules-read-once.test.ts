@@ -15,7 +15,7 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mockAllBoundingRects, resetStorage } from '../../setup';
 import { collect } from '~/src/dom/walker';
-import { closestUnit } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 import { buildPageItem } from '~/src/dom/page-dom';
 import { unitTextEx } from '~/src/dom/text';
 import { unitRules } from '~/src/dom/rules-snapshot';

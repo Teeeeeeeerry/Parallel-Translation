@@ -14,7 +14,7 @@
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mockAllBoundingRects } from '../../setup';
-import { closestUnit } from '~/src/dom/classify';
+import { closestUnit } from '~/src/dom/units';
 import { render } from '~/src/dom/renderer';
 import { unitTextEx } from '~/src/dom/text';
 import { brLines, collectUnits, fakeTranslate, isOverLimit, line, restorePage } from './br-split-harness';
