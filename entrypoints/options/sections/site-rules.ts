@@ -37,6 +37,7 @@ import type {
 import { tf } from '~/src/i18n';
 import { showToast } from '../main';
 import { downloadFile, failReason, importFile as importFromFile, skipReport, wireFileImport } from '../file-io';
+import { watchLatestRead } from '../latest-read';
 
 type Field = keyof SiteRules;
 
@@ -382,64 +383,50 @@ export function initSiteRules(): void {
     if (e.key === 'Enter') add();
   });
 
-  let renderSeq = 0;
-  let latest: Promise<boolean> = Promise.resolve(true);
   /**
    * 写入成功、列表还没按它刷新的提示，按先后排列；刷新失败时与原因合成一条
    * （#536），刷新成功才清空 —— 连续写入时前一次的结果不丢（#550）
    */
   let written: string[] = [];
-  /** 列表是否已按存储显示过：决定读取失败时说“没有载入”还是“没有刷新”（#549） */
-  let loaded = false;
+  /**
+   * 按存储重新渲染卡片，不会失败：读取失败时提示原因，已显示的卡片和未保存的
+   * 编辑保持不变（#526）。连续刷新时只用最后一次读取的结果（#536，见
+   * watchLatestRead）。渲染卡片出错与读取失败一样处理（#550）。其他设置页
+   * 标签页保存后同步刷新。
+   */
+  const list = watchLatestRead({
+    read: getUserSiteRules,
+    render: (cards) => {
+      render(cards);
+      importChanges = new Map();
+      written = [];
+    },
+    onError: (e, loaded) => {
+      if (written.length === 0) {
+        if (loaded) showFailure('siteRulesListNotRefreshed', '站点卡片列表没有刷新', e);
+        else showFailure('siteRulesListNotLoaded', '站点卡片列表没有载入', e);
+        return;
+      }
+      console.error('[PT] 读取站点卡片列表失败:', e);
+      const all = written.reduce((a, b) => tf('siteRulesWrittenJoin', `${a}；${b}`, a, b));
+      const reason = failReason(e);
+      showToast(
+        loaded
+          ? tf('siteRulesListStale', `${all}；站点卡片列表没有刷新：${reason}`, all, reason)
+          : tf('siteRulesListStaleNotLoaded', `${all}；站点卡片列表没有载入：${reason}`, all, reason),
+        4000,
+      );
+    },
+    subscribe: onUserSiteRulesChanged,
+  });
 
   /**
-   * 按存储重新渲染卡片，不会失败，返回列表是否已按最新存储刷新：读取失败时
-   * 提示原因，已显示的卡片和未保存的编辑保持不变（#526）。连续刷新时只用
-   * 最后一次读取的结果，先发起、后返回的旧读取不覆盖新列表，结果跟随最后
-   * 一次（#536）。写入成功后传入写入成功的提示 done：列表刷新失败时提示
-   * 同时说明写入已成功、列表没有刷新，而不是只剩读取失败。渲染卡片出错与
-   * 读取失败一样处理（#550）。
+   * 写入成功后刷新列表，返回列表是否已按最新存储刷新。传入写入成功的提示
+   * done：列表刷新失败时提示同时说明写入已成功、列表没有刷新，而不是只剩
+   * 读取失败。
    */
   function refresh(done?: string): Promise<boolean> {
-    const seq = ++renderSeq;
     if (done !== undefined && !written.includes(done)) written.push(done);
-    const p = getUserSiteRules()
-      .then((list) => {
-        if (seq !== renderSeq) return;
-        render(list);
-        loaded = true;
-      })
-      .then(
-        () => {
-          if (seq !== renderSeq) return latest;
-          importChanges = new Map();
-          written = [];
-          return true;
-        },
-        (e: unknown) => {
-          if (seq !== renderSeq) return latest;
-          if (written.length === 0) {
-            if (loaded) showFailure('siteRulesListNotRefreshed', '站点卡片列表没有刷新', e);
-            else showFailure('siteRulesListNotLoaded', '站点卡片列表没有载入', e);
-          } else {
-            console.error('[PT] 读取站点卡片列表失败:', e);
-            const all = written.reduce((a, b) => tf('siteRulesWrittenJoin', `${a}；${b}`, a, b));
-            const reason = failReason(e);
-            showToast(
-              loaded
-                ? tf('siteRulesListStale', `${all}；站点卡片列表没有刷新：${reason}`, all, reason)
-                : tf('siteRulesListStaleNotLoaded', `${all}；站点卡片列表没有载入：${reason}`, all, reason),
-              4000,
-            );
-          }
-          return false;
-        },
-      );
-    latest = p;
-    return p;
+    return list.refresh();
   }
-
-  refresh();
-  // 其他设置页标签页保存后同步刷新
-  onUserSiteRulesChanged(() => refresh());
 }
