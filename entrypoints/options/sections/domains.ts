@@ -306,14 +306,10 @@ function buildTermsTable(details: HTMLDetailsElement, d: Domain, onGone: () => v
 
   function showError(e: InvalidTermsError): void {
     const sep = listSep();
-    for (const { tr, term } of rows()) {
-      // 与 setDomainTerms 同一口径：勾选“不翻译”的行不看译法
-      const source = term.source.trim();
-      const target = term.noTranslate ? '' : (term.target?.trim() ?? '');
-      const [sourceInput, targetInput] = tr.querySelectorAll('input');
-      if (source && e.duplicates.includes(source.toLowerCase())) sourceInput!.classList.add('pt-error');
-      if (source && !term.noTranslate && !target) targetInput!.classList.add('pt-error');
-      if (!source && target) sourceInput!.classList.add('pt-error');
+    // #1150：按存储层报的行号标红 —— 提交的术语与表格行一一对应，校验口径只在存储层
+    for (const { index, reason } of e.rows) {
+      const [sourceInput, targetInput] = tbody.rows[index]?.querySelectorAll('input') ?? [];
+      (reason === 'missingTarget' ? targetInput : sourceInput)?.classList.add('pt-error');
     }
     const lines: string[] = [];
     if (e.duplicates.length > 0) {

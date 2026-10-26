@@ -25,6 +25,7 @@
  * #535：TC-E2E-88 覆盖设置页读取领域失败时的提示。
  * #590：TC-E2E-100 覆盖导入 GBK 编码、两列、带中文表头的术语 CSV。
  * #603：TC-E2E-101 覆盖在“新建领域”卡片里从术语 CSV 直接新建领域。
+ * #1150：TC-E2E-226 覆盖保存有问题的术语时按存储层报的行号标红。
  * 网络全部走 e2e-mock 描述符替身（google / bing / openai，#766），完全确定性；
  * TC-E2E-34~38（缓存上限、内存泄漏、样式）仍需扩展环境/CDP，保留 skip。
  */
@@ -670,6 +671,70 @@ test.describe('设置页：翻译领域 @extended', () => {
     await expect
       .poll(() => serviceWorker.evaluate(async () => ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any)?.to))
       .toBe('ja');
+  });
+
+  test('TC-E2E-226: 保存有问题的术语 → 标红的格子与存储层拒收的行一致，改好后再保存成功（#1150）', async ({
+    page, serviceWorker, seedSettings,
+  }) => {
+    await seedSettings({});
+    await serviceWorker.evaluate(() =>
+      chrome.storage.local.set({
+        'pt-domains': {
+          user: [{ id: 'user:e2e', name: 'Legal', targetLang: 'zh-CN', sites: [], origin: 'user', terms: [] }],
+          builtin: {},
+        },
+      }),
+    );
+    const extId = new URL(serviceWorker.url()).host;
+    await page.goto(`chrome-extension://${extId}/options.html`);
+    await page.click('.pt-nav-btn[data-section="domains"]');
+    const terms = page.locator('.pt-domain-item', { hasText: 'Legal' }).locator('.pt-domain-terms');
+    await terms.locator('summary').click();
+
+    // 5 行：重复（不区分大小写，两处都标）、缺译法、缺原词、勾了“不翻译”不看译法
+    const rows = [
+      ['Tort', 'tort-zh', false],
+      ['missing', '', false],
+      ['', 'orphan', false],
+      ['TORT', 'again', false],
+      ['Esq.', '', true],
+    ] as const;
+    const add = terms.locator('.pt-btn-secondary', { hasText: await page.evaluate(() => chrome.i18n.getMessage('domainTermsAdd')) });
+    for (const [i, [source, target, noTranslate]] of rows.entries()) {
+      await add.click();
+      const tr = terms.locator('tbody tr').nth(i);
+      await tr.locator('.pt-term-source').fill(source);
+      await tr.locator('.pt-term-target').fill(target);
+      if (noTranslate) await tr.locator('.pt-term-no-translate').check();
+    }
+    const save = terms.locator('.pt-domain-terms-actions .pt-btn:not(.pt-btn-secondary)');
+    await save.click();
+    await expect(terms.locator('.pt-domain-terms-error')).toBeVisible();
+    const marked = () =>
+      terms.locator('tbody tr').evaluateAll((trs) =>
+        trs.map((tr) => [
+          tr.querySelector('.pt-term-source')!.classList.contains('pt-error'),
+          tr.querySelector('.pt-term-target')!.classList.contains('pt-error'),
+        ]),
+      );
+    expect(await marked()).toEqual([
+      [true, false],
+      [false, true],
+      [true, false],
+      [true, false],
+      [false, false],
+    ]);
+    const stored = await serviceWorker.evaluate(async () => (await chrome.storage.local.get('pt-domains'))['pt-domains'] as any);
+    expect(stored.user[0].terms).toEqual([]);
+
+    // 改好之后：标红清掉，保存成功
+    await terms.locator('tbody tr').nth(1).locator('.pt-term-target').fill('fixed');
+    expect((await marked()).flat().some(Boolean)).toBe(false);
+    await terms.locator('tbody tr').nth(2).locator('.pt-term-source').fill('orphan-source');
+    await terms.locator('tbody tr').nth(3).locator('.pt-term-source').fill('Tort2');
+    await save.click();
+    await expect(page.locator('#pt-toast')).toHaveText(await page.evaluate(() => chrome.i18n.getMessage('domainTermsSaved')));
+    await expect(terms.locator('.pt-domain-terms-error')).toBeHidden();
   });
 
   test('TC-E2E-100: 领域卡片导入 GBK 编码、两列、带中文表头的术语 CSV → 中文正确，表头不导入，列数不对的行按表头列数说明（#590）', async ({
