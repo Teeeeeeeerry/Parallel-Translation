@@ -29,24 +29,19 @@ const KEYED_ENGINES: ReadonlySet<string> = new Set(
  * 统一状态分类（#239）：状态码 → 失败类别。
  *
  * 口径：
- * - 自带 key 引擎（引擎清单里带 byok 的）且请求携带 key：
- *   401/403 → invalid-key；429 → quota；其余非 2xx → transient
- * - 免 key 引擎（google-web / bing-edge）或请求未携带 key：
- *   一律 transient
+ * - 自带 key 引擎（引擎清单里带 byok 的）：401/403 → invalid-key；
+ *   429 → quota；其余非 2xx → transient。自带 key 引擎缺 key 时骨架不发请求
+ *   （#1147：原先的“是否携带 key”参数所有调用点都传 true，已删）
+ * - 免 key 引擎（google-web / bing-edge）：一律 transient
  *
- * 引擎特例（如 gemini 错误体明示认证失败）由
- * 适配器在调用前后显式处理，不混入本函数。
+ * 引擎特例（如 gemini 错误体明示认证失败）由引擎的错误分类器处理
+ * （ErrorClassifier），不混入本函数。
  *
  * @param engineId 引擎 id
  * @param resp 响应（调用方保证非 2xx 才调用）
- * @param hasKey 本次请求是否携带了 key
  */
-export function classifyStatus(
-  engineId: string,
-  resp: { status: number },
-  hasKey: boolean,
-): FailureCategory {
-  if (!hasKey || !KEYED_ENGINES.has(engineId)) return 'transient';
+export function classifyStatus(engineId: string, resp: { status: number }): FailureCategory {
+  if (!KEYED_ENGINES.has(engineId)) return 'transient';
   if (resp.status === 401 || resp.status === 403) return 'invalid-key';
   if (resp.status === 429) return 'quota';
   return 'transient';
@@ -107,7 +102,7 @@ export async function classifyResponse(
   classify?: ErrorClassifier,
 ): Promise<ErrorVerdict> {
   const special = classify ? await classify(resp) : null;
-  return special ?? verdictOf(classifyStatus(engineId, resp, true), resp.status);
+  return special ?? verdictOf(classifyStatus(engineId, resp), resp.status);
 }
 
 /** 翻译骨架：分类结果包成引擎错误。 */
