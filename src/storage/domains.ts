@@ -17,6 +17,15 @@ import { BUILTIN_DOMAINS } from './builtin-domains';
 import { isQuotaError, StorageQuotaError } from './quota';
 import { StorageReadError } from './read-error';
 import { decodeTermsCsv, encodeTermsCsv, type TermsCsvSkip } from './terms-csv';
+import {
+  applyOverlay,
+  isBaseTerm,
+  isOverlayModified,
+  overlayWithSites,
+  overlayWithTerms,
+  termKey,
+  type BuiltinOverlay,
+} from './builtin-overlay';
 
 export type { TermsCsvSkip, TermsCsvSkipReason } from './terms-csv';
 
@@ -45,23 +54,6 @@ export interface Domain {
 
 /** storage.local 里的用户领域数据。 */
 const STORAGE_KEY = 'pt-domains';
-
-/**
- * 内置领域的用户叠加层（#395）：按原词记录用户对术语的修改、新增与删除
- * （#396），按网址记录用户对适用网址的增删（#397）。生效内容 = 当前版本
- * 的内置内容 + 叠加层，同一原词（不区分大小写）或网址以叠加层为准，所以
- * 升级带来的新内置术语和网址照样生效，用户改过或删掉的不被覆盖、不会复活。
- */
-interface BuiltinOverlay {
-  /** 与内置不同的术语（修改）和内置没有的术语（新增），按保存顺序。 */
-  terms: Term[];
-  /** 用户删掉的内置术语的原词（去掉首尾空格、小写，#396）。 */
-  removedTerms: string[];
-  /** 用户新增的适用网址（#397），按保存顺序。 */
-  addedSites: string[];
-  /** 用户删掉的内置适用网址（#397）。 */
-  removedSites: string[];
-}
 
 interface StoredDomains {
   /** 自建领域，按新建顺序。 */
@@ -227,40 +219,12 @@ function updateUserDomains<T>(
   });
 }
 
-/** 术语的原词键：去掉首尾空格，不区分大小写。 */
-function termKey(t: Term): string {
-  return t.source.trim().toLowerCase();
-}
-
-/**
- * 内置领域叠加用户的修改、新增（#395）与删除（#396）：修改的术语留在原位，
- * 新增的排在最后，删掉的不出现。适用网址的增删（#397）同理。
- */
-function withOverlay(d: Domain, overlay: BuiltinOverlay | undefined): Domain {
-  const own = new Map((overlay?.terms ?? []).map((t) => [termKey(t), t]));
-  const removed = new Set(overlay?.removedTerms ?? []);
-  const terms = d.terms.flatMap((t) => {
-    const mine = own.get(termKey(t));
-    own.delete(termKey(t));
-    if (!mine && removed.has(termKey(t))) return [];
-    return [{ ...(mine ?? t) }];
-  });
-  // 适用网址（#397）：内置网址去掉删掉的，再接上新增的（内置已有的不重复）
-  const removedSites = new Set(overlay?.removedSites ?? []);
-  const sites = d.sites.filter((s) => !removedSites.has(s));
-  return {
-    ...d,
-    sites: [...sites, ...(overlay?.addedSites ?? []).filter((s) => !sites.includes(s))],
-    terms: [...terms, ...[...own.values()].map((t) => ({ ...t }))],
-  };
-}
-
 /**
  * 由存储数据得出生效领域列表：默认内置领域在前、自建领域按新建顺序在后；
  * 用户调整过顺序（#394）时，顺序里的领域按它排在前面，其余保持默认顺序。
  */
 function effectiveDomains({ user, builtin, order }: StoredDomains): Domain[] {
-  const list = [...BUILTIN_DOMAINS.map((d) => withOverlay(d, builtin[d.id])), ...user];
+  const list = [...BUILTIN_DOMAINS.map((d) => applyOverlay(d, builtin[d.id])), ...user];
   const rank = new Map(order.map((id, i) => [id, i]));
   const ranked = list.filter((d) => rank.has(d.id));
   ranked.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
@@ -443,27 +407,10 @@ function withSites(
 ): { stored: StoredDomains; domain: Domain } {
   const base = BUILTIN_DOMAINS.find((d) => d.id === id);
   if (base) {
-    // 只替换网址部分，叠加层的其他记录原样保留；全部为空时删掉这一条
     const { [id]: prev, ...rest } = stored.builtin;
-    // 删掉的网址：本次去掉的内置网址，加上以前删掉、当前版本内置里暂时
-    // 没有的网址 —— 以后的版本加回它时仍不复活
-    const removedSites = [
-      ...new Set([
-        ...(prev?.removedSites ?? []).filter((s) => !base.sites.includes(s) && !sites.includes(s)),
-        ...base.sites.filter((s) => !sites.includes(s)),
-      ]),
-    ];
-    const addedSites = sites.filter((s) => !base.sites.includes(s));
-    const overlay: BuiltinOverlay = {
-      terms: [],
-      removedTerms: [],
-      ...prev,
-      addedSites,
-      removedSites,
-    };
-    const empty = Object.values(overlay).every((v) => Array.isArray(v) && v.length === 0);
-    const builtin = empty ? rest : { ...rest, [id]: overlay };
-    return { stored: { ...stored, builtin }, domain: withOverlay(base, builtin[id]) };
+    const overlay = overlayWithSites(base, prev, sites);
+    const builtin = overlay ? { ...rest, [id]: overlay } : rest;
+    return { stored: { ...stored, builtin }, domain: applyOverlay(base, overlay) };
   }
 
   const target = stored.user.find((d) => d.id === id);
@@ -547,23 +494,10 @@ function withTerms(
 ): { stored: StoredDomains; domain: Domain } {
   const base = BUILTIN_DOMAINS.find((d) => d.id === id);
   if (base) {
-    const builtinTerms = new Map(base.terms.map((t) => [termKey(t), t]));
-    const own = terms.filter((t) => !sameTerm(t, builtinTerms.get(termKey(t))));
-    const kept = new Set(terms.map(termKey));
-    // 只替换术语部分，叠加层的其他记录原样保留；全部为空时删掉这一条
     const { [id]: prev, ...rest } = stored.builtin;
-    // 删除记录：本次去掉的内置术语，加上以前删掉、当前版本内置里暂时
-    // 没有的原词 —— 以后的版本加回它时仍不复活
-    const removedTerms = [
-      ...new Set([
-        ...(prev?.removedTerms ?? []).filter((k) => !builtinTerms.has(k) && !kept.has(k)),
-        ...[...builtinTerms.keys()].filter((k) => !kept.has(k)),
-      ]),
-    ];
-    const overlay: BuiltinOverlay = { addedSites: [], removedSites: [], ...prev, terms: own, removedTerms };
-    const empty = Object.values(overlay).every((v) => Array.isArray(v) && v.length === 0);
-    const builtin = empty ? rest : { ...rest, [id]: overlay };
-    return { stored: { ...stored, builtin }, domain: withOverlay(base, builtin[id]) };
+    const overlay = overlayWithTerms(base, prev, terms);
+    const builtin = overlay ? { ...rest, [id]: overlay } : rest;
+    return { stored: { ...stored, builtin }, domain: applyOverlay(base, overlay) };
   }
 
   const domain = stored.user.find((d) => d.id === id);
@@ -580,8 +514,8 @@ function withTerms(
  * 行的原词（#396 起可以删除）。自建领域一律返回 false。
  */
 export function isBuiltinTerm(domainId: string, source: string): boolean {
-  const key = source.trim().toLowerCase();
-  return BUILTIN_DOMAINS.some((d) => d.id === domainId && d.terms.some((t) => termKey(t) === key));
+  const base = BUILTIN_DOMAINS.find((d) => d.id === domainId);
+  return base !== undefined && isBaseTerm(base, source);
 }
 
 /**
@@ -597,7 +531,7 @@ export async function resetBuiltinDomain(id: string): Promise<Domain> {
   if (!base) throw new Error('[PT] 只有内置领域可以恢复默认');
   return updateStored((stored) => {
     const { [id]: prev, ...rest } = stored.builtin;
-    const result = withOverlay(base, undefined);
+    const result = applyOverlay(base, undefined);
     // 本来就没有叠加层：不写入
     if (!prev) return { stored: null, result };
     return { stored: { ...stored, builtin: rest }, result };
@@ -613,23 +547,7 @@ export async function resetBuiltinDomain(id: string): Promise<Domain> {
  */
 export function isBuiltinModified(d: Domain): boolean {
   const base = BUILTIN_DOMAINS.find((b) => b.id === d.id);
-  if (!base) return false;
-  return (
-    d.sites.length !== base.sites.length ||
-    d.sites.some((s, i) => s !== base.sites[i]) ||
-    d.terms.length !== base.terms.length ||
-    d.terms.some((t, i) => !sameTerm(t, base.terms[i]))
-  );
-}
-
-/** 两条术语的原词（不区分大小写）、译法与“不翻译”标记都相同。 */
-function sameTerm(a: Term, b: Term | undefined): boolean {
-  return (
-    b !== undefined &&
-    termKey(a) === termKey(b) &&
-    (a.target ?? '') === (b.target ?? '') &&
-    (a.noTranslate === true) === (b.noTranslate === true)
-  );
+  return base !== undefined && isOverlayModified(base, d);
 }
 
 /** 按 setDomainTerms 的规则整理术语表；有不合法的行时抛 InvalidTermsError。 */
