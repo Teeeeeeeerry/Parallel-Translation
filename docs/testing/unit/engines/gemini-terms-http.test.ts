@@ -28,6 +28,7 @@ vi.mock('~/src/storage/domains', () => ({
 }));
 
 import { route } from '~/src/engines/router';
+import { ENGINES } from '~/src/engines/registry';
 import { resetStorage } from '~/docs/testing/setup';
 
 const okResp = (text: string) =>
@@ -83,7 +84,7 @@ describe('Gemini 术语注入（#382）', () => {
       from: 'en',
       to: 'zh-CN',
       domainId: 'dev',
-    });
+    }, ENGINES);
 
     const text = promptText();
     const numbered = text.indexOf('1. Open an issue');
@@ -101,8 +102,8 @@ describe('Gemini 术语注入（#382）', () => {
   test('本批没有命中术语：请求与不带领域时逐字节相同', async () => {
     fetchMock.mockImplementation(async () => okResp('1. 你好\n2. 世界'));
     const texts = ['Hello', 'World'];
-    await route({ texts, from: 'en', to: 'zh-CN' });
-    await route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' });
+    await route({ texts, from: 'en', to: 'zh-CN' }, ENGINES);
+    await route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' }, ENGINES);
 
     const bodyOf = (i: number) => String((fetchMock.mock.calls[i]![1] as RequestInit).body);
     expect(bodyOf(1)).toBe(bodyOf(0));
@@ -118,7 +119,7 @@ describe('Gemini 术语注入（#382）', () => {
       from: 'en',
       to: 'zh-CN',
       domainId: 'dev',
-    });
+    }, ENGINES);
     expect(resp.translations).toEqual(['打开一个 issue', '克隆仓库', '你好']);
   });
 });
@@ -129,14 +130,14 @@ describe('缓存 key 的术语哈希（#419）', () => {
     useCache = true;
     fetchMock.mockImplementation(async () => okResp('1. 克隆仓库'));
     const req = { texts: ['Clone the repository'], from: 'en', to: 'zh-CN', domainId: 'dev' };
-    await route(req);
-    await route(req);
+    await route(req, ENGINES);
+    await route(req, ENGINES);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     domains[0]!.terms = domains[0]!.terms.map((t) =>
       t.source === 'repository' ? { source: 'repository', target: '代码库' } : t,
     );
-    await route(req);
+    await route(req, ENGINES);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

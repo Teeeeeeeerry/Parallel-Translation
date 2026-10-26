@@ -32,6 +32,7 @@ vi.mock('~/src/storage/domains', () => ({
 }));
 
 import { route } from '~/src/engines/router';
+import { ENGINES } from '~/src/engines/registry';
 import { resetStorage } from '~/docs/testing/setup';
 
 const DEEPSEEK = 'https://api.deepseek.com/chat/completions';
@@ -81,7 +82,7 @@ describe('DeepSeek 缺权限（#610）', () => {
     settings.enginePriority = ['deepseek', 'openai'];
     contains.mockResolvedValue(false);
 
-    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' });
+    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES);
 
     expect(resp.translations).toEqual(['[O]']);
     expect(deepseekCalls()).toHaveLength(0);
@@ -91,7 +92,7 @@ describe('DeepSeek 缺权限（#610）', () => {
   test('没有下一个引擎 → 失败结果带上缺权限的原因，不可重试', async () => {
     contains.mockResolvedValue(false);
 
-    await expect(route({ texts: ['Hello'], from: 'en', to: 'zh-CN' })).rejects.toMatchObject({
+    await expect(route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES)).rejects.toMatchObject({
       engineId: 'deepseek',
       retryable: false,
       category: 'invalid-key',
@@ -105,7 +106,7 @@ describe('DeepSeek 缺权限（#610）', () => {
     contains.mockResolvedValue(false);
     fetchMock.mockImplementation(async () => new Response('busy', { status: 503 }));
 
-    await expect(route({ texts: ['Hello'], from: 'en', to: 'zh-CN' })).rejects.toMatchObject({
+    await expect(route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES)).rejects.toMatchObject({
       name: 'AllEnginesFailedError',
       retryable: true,
     });
@@ -114,11 +115,11 @@ describe('DeepSeek 缺权限（#610）', () => {
 
   test('重新授权后恢复正常翻译', async () => {
     contains.mockResolvedValueOnce(false);
-    await expect(route({ texts: ['Hello'], from: 'en', to: 'zh-CN' })).rejects.toMatchObject({
+    await expect(route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES)).rejects.toMatchObject({
       category: 'invalid-key',
     });
 
-    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' });
+    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES);
     expect(resp.translations).toEqual(['[DS]']);
     expect(deepseekCalls()).toHaveLength(1);
   });
@@ -127,7 +128,7 @@ describe('DeepSeek 缺权限（#610）', () => {
     settings.enginePriority = ['openai'];
     contains.mockResolvedValue(false);
 
-    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' });
+    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES);
 
     expect(resp.translations).toEqual(['[O]']);
     expect(contains).not.toHaveBeenCalled();

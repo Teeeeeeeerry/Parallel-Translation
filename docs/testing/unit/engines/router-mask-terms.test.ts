@@ -30,6 +30,7 @@ vi.mock('~/src/storage/domains', () => ({
 }));
 
 import { route } from '~/src/engines/router';
+import { ENGINES } from '~/src/engines/registry';
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -39,7 +40,7 @@ function queries(): string[] {
 }
 
 function translate(texts: string[]) {
-  return route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' });
+  return route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' }, ENGINES);
 }
 
 beforeEach(() => {

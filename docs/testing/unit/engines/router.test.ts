@@ -1,7 +1,7 @@
 /**
  * engines/router.ts — 路由与故障切换 单元测试
  *
- * 需要 mock storage/settings、storage/cache、各引擎模块
+ * mock storage/settings、storage/cache；引擎表作为参数传入假引擎（#1154），不再 mock 各引擎模块
  */
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
@@ -23,81 +23,79 @@ vi.mock('~/src/storage/cache', () => ({
   ),
 }));
 
-// ---- Mock 各引擎 ----
+// ---- 假引擎（#1154：经引擎表参数传给 route）----
 const mockGoogleTranslate = vi.fn();
 const mockBingTranslate = vi.fn();
 
-vi.mock('~/src/engines/google-web', () => ({
-  googleWeb: {
-    id: 'google-web',
-    displayName: 'Google 翻译',
-    requiresKey: false,
-    supportedLangs: 'all' as const,
-    translate: (...args: unknown[]) => mockGoogleTranslate(...args),
-  },
-}));
+const googleWeb = {
+  id: 'google-web',
+  displayName: 'Google 翻译',
+  requiresKey: false,
+  supportedLangs: 'all' as const,
+  translate: (...args: unknown[]) => mockGoogleTranslate(...args),
+};
 
-vi.mock('~/src/engines/bing-edge', () => ({
-  bingEdge: {
-    id: 'bing-edge',
-    displayName: 'Bing 翻译',
-    requiresKey: false,
-    supportedLangs: 'all' as const,
-    translate: (...args: unknown[]) => mockBingTranslate(...args),
-  },
-}));
+const bingEdge = {
+  id: 'bing-edge',
+  displayName: 'Bing 翻译',
+  requiresKey: false,
+  supportedLangs: 'all' as const,
+  translate: (...args: unknown[]) => mockBingTranslate(...args),
+};
 
-vi.mock('~/src/engines/openai', () => ({
-  openai: {
-    id: 'openai',
-    displayName: 'OpenAI',
-    requiresKey: true,
-    supportedLangs: 'all' as const,
-    translate: vi.fn(),
-  },
-}));
+const openai = {
+  id: 'openai',
+  displayName: 'OpenAI',
+  requiresKey: true,
+  supportedLangs: 'all' as const,
+  translate: vi.fn(),
+};
 
-vi.mock('~/src/engines/deepl', () => ({
-  deepl: {
-    id: 'deepl',
-    displayName: 'DeepL',
-    requiresKey: true,
-    supportedLangs: ['en', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru'] as string[],
-    translate: vi.fn(),
-  },
-}));
+const deepl = {
+  id: 'deepl',
+  displayName: 'DeepL',
+  requiresKey: true,
+  supportedLangs: ['en', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru'] as string[],
+  translate: vi.fn(),
+};
 
-vi.mock('~/src/engines/gemini', () => ({
-  gemini: {
-    id: 'gemini',
-    displayName: 'Gemini',
-    requiresKey: true,
-    supportedLangs: 'all' as const,
-    translate: vi.fn(),
-  },
-}));
+const gemini = {
+  id: 'gemini',
+  displayName: 'Gemini',
+  requiresKey: true,
+  supportedLangs: 'all' as const,
+  translate: vi.fn(),
+};
 
-vi.mock('~/src/engines/deepseek', () => ({
-  deepseek: {
-    id: 'deepseek',
-    displayName: 'DeepSeek',
-    requiresKey: true,
-    supportedLangs: 'all' as const,
-    translate: vi.fn(),
-  },
-}));
+const deepseek = {
+  id: 'deepseek',
+  displayName: 'DeepSeek',
+  requiresKey: true,
+  supportedLangs: 'all' as const,
+  translate: vi.fn(),
+};
 
-vi.mock('~/src/engines/grok', () => ({
-  grok: {
-    id: 'grok',
-    displayName: 'Grok',
-    requiresKey: true,
-    supportedLangs: 'all' as const,
-    translate: vi.fn(),
-  },
-}));
+const grok = {
+  id: 'grok',
+  displayName: 'Grok',
+  requiresKey: true,
+  supportedLangs: 'all' as const,
+  translate: vi.fn(),
+};
+
+/** 交给路由的假引擎表（#1154）：只放用例用到的引擎。 */
+const FAKE_ENGINES = {
+  'google-web': googleWeb,
+  'bing-edge': bingEdge,
+  'openai': openai,
+  'deepl': deepl,
+  'gemini': gemini,
+  'deepseek': deepseek,
+  'grok': grok,
+} as unknown as EngineTable;
 
 import { route } from '~/src/engines/router';
+import type { EngineTable } from '~/src/engines/registry';
 import { getSettings } from '~/src/storage/settings';
 import { cacheGet, cacheSet } from '~/src/storage/cache';
 import { EngineError, AllEnginesFailedError } from '~/src/engines/types';
@@ -146,7 +144,7 @@ describe('route', () => {
       texts: ['Hello', 'World'],
       from: 'auto',
       to: 'zh-CN',
-    });
+    }, FAKE_ENGINES);
 
     expect(resp.translations).toEqual(['你好', '世界']);
     expect(mockGoogleTranslate).toHaveBeenCalledTimes(1);
@@ -162,7 +160,7 @@ describe('route', () => {
       texts: ['First'],
       from: 'en',
       to: 'zh-CN',
-    });
+    }, FAKE_ENGINES);
 
     expect(mockGoogleTranslate).toHaveBeenCalledTimes(1);
     expect(mockBingTranslate).not.toHaveBeenCalled();
@@ -183,7 +181,7 @@ describe('route', () => {
       texts: ['Hello'],
       from: 'auto',
       to: 'th',
-    });
+    }, FAKE_ENGINES);
 
     expect(resp.translations).toEqual(['你好']);
     // Google 被调用（DeepL 被跳过）
@@ -202,7 +200,7 @@ describe('route', () => {
       texts: ['Hello'],
       from: 'auto',
       to: 'zh-CN',
-    });
+    }, FAKE_ENGINES);
 
     expect(resp.translations).toEqual(['你好']);
     expect(mockGoogleTranslate).toHaveBeenCalledTimes(1);
@@ -217,7 +215,6 @@ describe('route', () => {
 
     // openai 的 requiresKey=true，实际错误由引擎抛出
     // 我们需要 mock openai 的 translate 抛出 non-retryable 错误
-    const { openai } = await import('~/src/engines/openai');
     vi.mocked(openai.translate).mockRejectedValue(
       new EngineError('openai', false, 'API key 无效'),
     );
@@ -231,7 +228,7 @@ describe('route', () => {
         texts: ['Hello'],
         from: 'auto',
         to: 'zh-CN',
-      }),
+      }, FAKE_ENGINES),
     ).rejects.toThrow();
 
     // Google 不应该被调用（openai 的 non-retryable 直接抛）
@@ -247,7 +244,7 @@ describe('route', () => {
         texts: ['Hello'],
         from: 'auto',
         to: 'zh-CN',
-      }),
+      }, FAKE_ENGINES),
     ).rejects.toThrow(/所有引擎均失败/);
   });
 
@@ -260,7 +257,7 @@ describe('route', () => {
         texts: ['Hello'],
         from: 'auto',
         to: 'zh-CN',
-      });
+      }, FAKE_ENGINES);
       expect.unreachable('应抛出 AllEnginesFailedError');
     } catch (e) {
       const err = e as AllEnginesFailedError;
@@ -281,7 +278,7 @@ describe('route', () => {
   test('所有引擎都报请求过大 → 聚合结果的类别是 too-large，批次重试据此不再重发（#1026）', async () => {
     vi.mocked(getSettings).mockReturnValue({ ...vi.mocked(getSettings)(), enginePriority: ['bing-edge'] });
     mockBingTranslate.mockRejectedValue(new EngineError('bing-edge', true, 'HTTP 400', 'too-large'));
-    await expect(route({ texts: ['Hello'], from: 'auto', to: 'zh-CN' })).rejects.toMatchObject({
+    await expect(route({ texts: ['Hello'], from: 'auto', to: 'zh-CN' }, FAKE_ENGINES)).rejects.toMatchObject({
       name: 'AllEnginesFailedError',
       category: 'too-large',
     });
@@ -290,7 +287,7 @@ describe('route', () => {
   test('Bing 请求过大、Google 瞬时失败 → 聚合结果仍是瞬时，照常重试（#1026）', async () => {
     mockGoogleTranslate.mockRejectedValue(new EngineError('google-web', true, 'HTTP 503', 'transient'));
     mockBingTranslate.mockRejectedValue(new EngineError('bing-edge', true, 'HTTP 400', 'too-large'));
-    await expect(route({ texts: ['Hello'], from: 'auto', to: 'zh-CN' })).rejects.toMatchObject({
+    await expect(route({ texts: ['Hello'], from: 'auto', to: 'zh-CN' }, FAKE_ENGINES)).rejects.toMatchObject({
       category: 'transient',
     });
   });
@@ -299,7 +296,7 @@ describe('route', () => {
     vi.mocked(getSettings).mockReturnValue({ ...vi.mocked(getSettings)(), enginePriority: ['bing-edge', 'google-web'] });
     mockBingTranslate.mockRejectedValue(new EngineError('bing-edge', true, 'HTTP 400', 'too-large'));
     mockGoogleTranslate.mockResolvedValue({ translations: ['你好'] });
-    const res = await route({ texts: ['Hello'], from: 'auto', to: 'zh-CN' });
+    const res = await route({ texts: ['Hello'], from: 'auto', to: 'zh-CN' }, FAKE_ENGINES);
     expect(res.translations).toEqual(['你好']);
   });
 
@@ -307,7 +304,7 @@ describe('route', () => {
     const ctrl = new AbortController();
     ctrl.abort();
     await expect(
-      route({ texts: ['Hello'], from: 'auto', to: 'zh-CN', signal: ctrl.signal }),
+      route({ texts: ['Hello'], from: 'auto', to: 'zh-CN', signal: ctrl.signal }, FAKE_ENGINES),
     ).rejects.toMatchObject({ category: 'aborted', aborted: true });
     expect(mockGoogleTranslate).not.toHaveBeenCalled();
     expect(mockBingTranslate).not.toHaveBeenCalled();
@@ -323,7 +320,7 @@ describe('route', () => {
       throw new EngineError('google-web', true, '请求超时（30000ms）');
     });
     await expect(
-      route({ texts: ['Hello'], from: 'auto', to: 'zh-CN', signal: ctrl.signal }),
+      route({ texts: ['Hello'], from: 'auto', to: 'zh-CN', signal: ctrl.signal }, FAKE_ENGINES),
     ).rejects.toMatchObject({ category: 'aborted' });
     expect(mockBingTranslate).not.toHaveBeenCalled();
   });
@@ -334,7 +331,7 @@ describe('route', () => {
       ctrl.abort();
       return { translations: ['你好', ''], failedIndices: [1] };
     });
-    const res = await route({ texts: ['Hello', 'World'], from: 'auto', to: 'zh-CN', signal: ctrl.signal });
+    const res = await route({ texts: ['Hello', 'World'], from: 'auto', to: 'zh-CN', signal: ctrl.signal }, FAKE_ENGINES);
     expect(res).toMatchObject({
       translations: ['你好', ''],
       failedIndices: [1],
@@ -349,14 +346,13 @@ describe('route', () => {
       enginePriority: ['openai', 'google-web'],
     });
 
-    const { openai } = await import('~/src/engines/openai');
     vi.mocked(openai.translate).mockRejectedValue(
       new EngineError('openai', false, 'API key 无效', 'invalid-key'),
     );
     mockGoogleTranslate.mockResolvedValue({ translations: ['你好'] });
 
     try {
-      await route({ texts: ['Hello'], from: 'auto', to: 'zh-CN' });
+      await route({ texts: ['Hello'], from: 'auto', to: 'zh-CN' }, FAKE_ENGINES);
       expect.unreachable('应抛出 EngineError');
     } catch (e) {
       expect(e).toBeInstanceOf(EngineError);
@@ -381,7 +377,7 @@ describe('route', () => {
       texts: ['Hello'],
       from: 'auto',
       to: 'zh-CN',
-    });
+    }, FAKE_ENGINES);
 
     // 缓存查询不应被调用
     expect(cacheGet).not.toHaveBeenCalled();
@@ -394,7 +390,7 @@ describe('route', () => {
       texts: ['Hello'],
       from: 'auto',
       to: 'zh-CN',
-    });
+    }, FAKE_ENGINES);
 
     expect(resp.translations).toEqual(['你好']);
     expect(mockGoogleTranslate).not.toHaveBeenCalled();
@@ -414,7 +410,7 @@ describe('route', () => {
       texts: ['Hello', 'World'],
       from: 'auto',
       to: 'zh-CN',
-    });
+    }, FAKE_ENGINES);
 
     expect(resp.translations).toEqual(['你好', '世界']);
     // 只请求了一个条目
@@ -436,7 +432,7 @@ describe('route', () => {
       texts: ['Hello', 'World'],
       from: 'auto',
       to: 'zh-CN',
-    });
+    }, FAKE_ENGINES);
 
     // 最终全部成功
     expect(resp.translations).toEqual(['你好', '世界']);
@@ -460,7 +456,7 @@ describe('route', () => {
       texts: ['Hello', 'World', 'Bye'],
       from: 'auto',
       to: 'zh-CN',
-    });
+    }, FAKE_ENGINES);
 
     // 全部补齐，无 undefined
     expect(resp.translations).toEqual(['你好', '世界', '再见']);
@@ -513,7 +509,7 @@ describe('route', () => {
       texts: ['Hello', 'World', 'Bye'],
       from: 'auto',
       to: 'zh-CN',
-    });
+    }, FAKE_ENGINES);
 
     expect(resp.translations).toEqual(['你好', '世界', '再见']);
     expect(mockGoogleTranslate).toHaveBeenCalledTimes(1);

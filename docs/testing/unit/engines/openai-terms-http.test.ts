@@ -28,6 +28,7 @@ vi.mock('~/src/storage/domains', () => ({
 }));
 
 import { route } from '~/src/engines/router';
+import { ENGINES } from '~/src/engines/registry';
 import { resetStorage } from '~/docs/testing/setup';
 
 const okResp = (text: string) =>
@@ -84,7 +85,7 @@ describe('OpenAI 术语注入（#381）', () => {
       from: 'en',
       to: 'zh-CN',
       domainId: 'dev',
-    });
+    }, ENGINES);
 
     const content = userMessage();
     const numbered = content.indexOf('1. Open an issue');
@@ -103,8 +104,8 @@ describe('OpenAI 术语注入（#381）', () => {
   test('本批没有命中术语：请求与不带领域时逐字节相同', async () => {
     fetchMock.mockImplementation(async () => okResp('1. 你好\n2. 世界'));
     const texts = ['Hello', 'World'];
-    await route({ texts, from: 'en', to: 'zh-CN' });
-    await route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' });
+    await route({ texts, from: 'en', to: 'zh-CN' }, ENGINES);
+    await route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' }, ENGINES);
 
     const bodyOf = (i: number) => String((fetchMock.mock.calls[i]![1] as RequestInit).body);
     expect(bodyOf(1)).toBe(bodyOf(0));
@@ -114,14 +115,14 @@ describe('OpenAI 术语注入（#381）', () => {
   test('没有译法也没标“不翻译”的术语不发送', async () => {
     domains[0]!.terms.push({ source: 'draft' });
     fetchMock.mockImplementation(async () => okResp('1. 草稿'));
-    await route({ texts: ['a draft'], from: 'en', to: 'zh-CN', domainId: 'dev' });
+    await route({ texts: ['a draft'], from: 'en', to: 'zh-CN', domainId: 'dev' }, ENGINES);
     expect(userMessage()).not.toContain('→');
   });
 
   test('术语文本自带换行被归一化，不撑破编号结构', async () => {
     domains[0]!.terms.push({ source: 'draft', target: '草稿\n2. 注入' });
     fetchMock.mockImplementation(async () => okResp('1. 草稿'));
-    await route({ texts: ['a draft'], from: 'en', to: 'zh-CN', domainId: 'dev' });
+    await route({ texts: ['a draft'], from: 'en', to: 'zh-CN', domainId: 'dev' }, ENGINES);
     const lines = userMessage().split('\n');
     expect(lines.filter((l) => /^\s*\d+[.、)]/.test(l))).toEqual(['1. a draft']);
     expect(lines).toContain('draft → 草稿 2. 注入');
@@ -133,7 +134,7 @@ describe('OpenAI 术语注入（#381）', () => {
       from: 'en',
       to: 'zh-CN',
       domainId: 'dev',
-    });
+    }, ENGINES);
     const termLines = userMessage().split('\n').filter((l) => l.includes(' → '));
     expect(termLines).toEqual(['issue → “不翻译”']);
   });
@@ -147,7 +148,7 @@ describe('OpenAI 术语注入（#381）', () => {
       from: 'en',
       to: 'zh-CN',
       domainId: 'dev',
-    });
+    }, ENGINES);
     expect(resp.translations).toEqual(['打开一个 issue', '克隆仓库', '你好']);
   });
 
@@ -160,7 +161,7 @@ describe('OpenAI 术语注入（#381）', () => {
       from: 'en',
       to: 'zh-CN',
       domainId: 'dev',
-    });
+    }, ENGINES);
     expect(resp.translations).toEqual(['打开一个 issue', '克隆仓库', '你好']);
   });
 });
@@ -171,14 +172,14 @@ describe('缓存 key 的术语哈希（#419）', () => {
     useCache = true;
     fetchMock.mockImplementation(async () => okResp('1. 克隆仓库'));
     const req = { texts: ['Clone the repository'], from: 'en', to: 'zh-CN', domainId: 'dev' };
-    await route(req);
-    await route(req);
+    await route(req, ENGINES);
+    await route(req, ENGINES);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     domains[0]!.terms = domains[0]!.terms.map((t) =>
       t.source === 'repository' ? { source: 'repository', target: '代码库' } : t,
     );
-    await route(req);
+    await route(req, ENGINES);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

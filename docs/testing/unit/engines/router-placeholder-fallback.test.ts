@@ -34,27 +34,30 @@ const googleTranslate = vi.fn(async (req: Req) => ({
 const bingTranslate = vi.fn(async (req: Req) => ({
   translations: req.texts.map((t) => `必应:${t}`),
 }));
-vi.mock('~/src/engines/google-web', () => ({
-  googleWeb: {
-    id: 'google-web',
-    displayName: 'Google 翻译',
-    requiresKey: false,
-    supportedLangs: 'all' as const,
-    masksNoTranslate: true,
-    translate: (req: Req) => googleTranslate(req),
-  },
-}));
-vi.mock('~/src/engines/bing-edge', () => ({
-  bingEdge: {
-    id: 'bing-edge',
-    displayName: 'Bing 翻译',
-    requiresKey: false,
-    supportedLangs: 'all' as const,
-    translate: (req: Req) => bingTranslate(req),
-  },
-}));
+const googleWeb = {
+  id: 'google-web',
+  displayName: 'Google 翻译',
+  requiresKey: false,
+  supportedLangs: 'all' as const,
+  masksNoTranslate: true,
+  translate: (req: Req) => googleTranslate(req),
+};
+const bingEdge = {
+  id: 'bing-edge',
+  displayName: 'Bing 翻译',
+  requiresKey: false,
+  supportedLangs: 'all' as const,
+  translate: (req: Req) => bingTranslate(req),
+};
+
+/** 交给路由的假引擎表（#1154）：只放用例用到的引擎。 */
+const FAKE_ENGINES = {
+  'google-web': googleWeb,
+  'bing-edge': bingEdge,
+} as unknown as EngineTable;
 
 import { route } from '~/src/engines/router';
+import type { EngineTable } from '~/src/engines/registry';
 import { cacheKey, cacheGetEntry } from '~/src/storage/cache';
 
 /** 第一次调用按 corrupt 改写含占位符的文本，之后照常翻译。 */
@@ -65,7 +68,7 @@ function corruptFirstCall(corrupt: (t: string) => string) {
 }
 
 function translate(texts: string[]) {
-  return route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' });
+  return route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' }, FAKE_ENGINES);
 }
 
 async function storedKeys(): Promise<string[]> {

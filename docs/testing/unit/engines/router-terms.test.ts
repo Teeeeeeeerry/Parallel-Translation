@@ -31,43 +31,45 @@ vi.mock('~/src/storage/domains', () => ({
 const googleTranslate = vi.fn(async (req: { texts: string[] }) => ({
   translations: req.texts.map((t) => `译:${t}`),
 }));
-vi.mock('~/src/engines/google-web', () => ({
-  googleWeb: {
-    id: 'google-web',
-    displayName: 'Google 翻译',
-    requiresKey: false,
-    supportedLangs: 'all' as const,
-    masksNoTranslate: true,
-    translate: (req: { texts: string[] }) => googleTranslate(req),
-  },
-}));
+const googleWeb = {
+  id: 'google-web',
+  displayName: 'Google 翻译',
+  requiresKey: false,
+  supportedLangs: 'all' as const,
+  masksNoTranslate: true,
+  translate: (req: { texts: string[] }) => googleTranslate(req),
+};
 const openaiTranslate = vi.fn(async (req: { texts: string[] }) => ({
   translations: req.texts.map((t) => `AI:${t}`),
 }));
-vi.mock('~/src/engines/openai', () => ({
-  openai: {
-    id: 'openai',
-    displayName: 'OpenAI',
-    requiresKey: true,
-    supportedLangs: 'all' as const,
-    injectsTerms: true,
-    translate: (req: { texts: string[] }) => openaiTranslate(req),
-  },
-}));
+const openai = {
+  id: 'openai',
+  displayName: 'OpenAI',
+  requiresKey: true,
+  supportedLangs: 'all' as const,
+  injectsTerms: true,
+  translate: (req: { texts: string[] }) => openaiTranslate(req),
+};
 const bingTranslate = vi.fn(async (req: { texts: string[] }) => ({
   translations: req.texts.map((t) => `必应:${t}`),
 }));
-vi.mock('~/src/engines/bing-edge', () => ({
-  bingEdge: {
-    id: 'bing-edge',
-    displayName: 'Bing 翻译',
-    requiresKey: false,
-    supportedLangs: 'all' as const,
-    translate: (req: { texts: string[] }) => bingTranslate(req),
-  },
-}));
+const bingEdge = {
+  id: 'bing-edge',
+  displayName: 'Bing 翻译',
+  requiresKey: false,
+  supportedLangs: 'all' as const,
+  translate: (req: { texts: string[] }) => bingTranslate(req),
+};
+
+/** 交给路由的假引擎表（#1154）：只放用例用到的引擎。 */
+const FAKE_ENGINES = {
+  'google-web': googleWeb,
+  'openai': openai,
+  'bing-edge': bingEdge,
+} as unknown as EngineTable;
 
 import { route } from '~/src/engines/router';
+import type { EngineTable } from '~/src/engines/registry';
 import { cacheKey, cacheSet } from '~/src/storage/cache';
 import { DEFAULT_MODELS } from '~/src/storage/schema';
 import type { EngineId } from '~/src/storage/schema';
@@ -85,7 +87,7 @@ async function storedKeys(): Promise<string[]> {
 /** 翻译一段原文，返回本次新写入的缓存 key。 */
 async function keyWritten(text: string, domainId?: string): Promise<string> {
   const before = new Set(await storedKeys());
-  await route({ texts: [text], from: 'en', to: 'zh-CN', ...(domainId && { domainId }) });
+  await route({ texts: [text], from: 'en', to: 'zh-CN', ...(domainId && { domainId }) }, FAKE_ENGINES);
   const added = (await storedKeys()).filter((k) => !before.has(k));
   expect(added).toHaveLength(1);
   return added[0]!;
@@ -169,7 +171,7 @@ describe('中日韩术语按子串匹配（#385）', () => {
   async function sent(text: string, terms: Term[]): Promise<string> {
     domains[0]!.terms = terms;
     googleTranslate.mockClear();
-    await route({ texts: [text], from: 'en', to: 'zh-CN', domainId: 'dev' });
+    await route({ texts: [text], from: 'en', to: 'zh-CN', domainId: 'dev' }, FAKE_ENGINES);
     return googleTranslate.mock.calls[0]![0].texts[0]!;
   }
   const keep = (source: string): Term => ({ source, noTranslate: true });
@@ -236,7 +238,7 @@ describe('缓存 key 与术语', () => {
       from: 'en',
       to: 'zh-CN',
       domainId: 'dev',
-    });
+    }, FAKE_ENGINES);
     expect(resp.translations).toEqual(['旧译文']);
     expect(googleTranslate).not.toHaveBeenCalled();
   });
@@ -258,21 +260,21 @@ describe('缓存 key 与术语', () => {
         { source: 'fork', noTranslate: true },
       ]),
     );
-    await route({ texts: ['Clone the repository'], from: 'en', to: 'zh-CN', domainId: 'dev' });
+    await route({ texts: ['Clone the repository'], from: 'en', to: 'zh-CN', domainId: 'dev' }, FAKE_ENGINES);
     const resp = await route({
       texts: ['Clone the repository'],
       from: 'en',
       to: 'zh-CN',
       domainId: 'dev-gitlab',
-    });
+    }, FAKE_ENGINES);
     expect(resp.translations).toEqual(['译:Clone the repository']);
     expect(googleTranslate).toHaveBeenCalledTimes(1);
   });
 
   test('原词首尾空格不影响共用缓存', async () => {
     domains.push(domain('dev-spaced', ['gitlab.com'], [{ source: ' repository ', target: '仓库' }]));
-    await route({ texts: ['Clone the repository'], from: 'en', to: 'zh-CN', domainId: 'dev' });
-    await route({ texts: ['Clone the repository'], from: 'en', to: 'zh-CN', domainId: 'dev-spaced' });
+    await route({ texts: ['Clone the repository'], from: 'en', to: 'zh-CN', domainId: 'dev' }, FAKE_ENGINES);
+    await route({ texts: ['Clone the repository'], from: 'en', to: 'zh-CN', domainId: 'dev-spaced' }, FAKE_ENGINES);
     expect(googleTranslate).toHaveBeenCalledTimes(1);
   });
 
@@ -282,7 +284,7 @@ describe('缓存 key 与术语', () => {
       from: 'en',
       to: 'zh-CN',
       domainId: 'dev',
-    });
+    }, FAKE_ENGINES);
     const keys = await storedKeys();
     expect(keys).toContain(await legacyKey('Hello world'));
     expect(keys).not.toContain(await legacyKey('open a PR'));
@@ -298,14 +300,14 @@ describe('术语哈希只算实际生效的术语（#419）', () => {
   });
 
   test('Google：修改指定译法不影响 key，继续命中缓存', async () => {
-    await route({ texts: ['Clone the repository'], from: 'en', to: 'zh-CN', domainId: 'dev' });
+    await route({ texts: ['Clone the repository'], from: 'en', to: 'zh-CN', domainId: 'dev' }, FAKE_ENGINES);
     domains[0]!.terms[2] = { source: 'repository', target: '代码库' };
     const resp = await route({
       texts: ['Clone the repository'],
       from: 'en',
       to: 'zh-CN',
       domainId: 'dev',
-    });
+    }, FAKE_ENGINES);
     expect(resp.translations).toEqual(['译:Clone the repository']);
     expect(googleTranslate).toHaveBeenCalledTimes(1);
   });
@@ -356,7 +358,7 @@ describe('术语哈希只算实际生效的术语（#419）', () => {
     const oldHash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
     await cacheSet(`${await legacyKey(text)}:${oldHash}`, '没有术语约束的旧译文');
 
-    const resp = await route({ texts: [text], from: 'en', to: 'zh-CN', domainId: 'dev' });
+    const resp = await route({ texts: [text], from: 'en', to: 'zh-CN', domainId: 'dev' }, FAKE_ENGINES);
     expect(resp.translations).toEqual(['译:open a PR']);
     expect(googleTranslate).toHaveBeenCalledTimes(1);
   });

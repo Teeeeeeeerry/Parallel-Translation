@@ -30,6 +30,7 @@ vi.mock('~/src/storage/domains', () => ({
 }));
 
 import { route } from '~/src/engines/router';
+import { ENGINES } from '~/src/engines/registry';
 import { resetStorage } from '~/docs/testing/setup';
 
 const GROK = 'https://api.x.ai/v1/chat/completions';
@@ -79,7 +80,7 @@ afterEach(() => {
 describe('Grok 翻译请求（#613）', () => {
   test('请求发到 xAI 端点，带 Bearer key 与默认模型，编号译文回填', async () => {
     stubFetch(() => chatResp('1. 你好\n2. 世界'));
-    const resp = await route({ texts: ['Hello', 'World'], from: 'en', to: 'zh-CN' });
+    const resp = await route({ texts: ['Hello', 'World'], from: 'en', to: 'zh-CN' }, ENGINES);
 
     expect(resp.translations).toEqual(['你好', '世界']);
     const [call] = grokCalls();
@@ -94,7 +95,7 @@ describe('Grok 翻译请求（#613）', () => {
   test('设置里改了模型名 → 请求用自定义模型', async () => {
     settings.models = { grok: 'grok-4.3' };
     stubFetch(() => chatResp('1. 你好'));
-    await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' });
+    await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES);
     expect(body(grokCalls()[0]!).model).toBe('grok-4.3');
   });
 
@@ -113,7 +114,7 @@ describe('Grok 翻译请求（#613）', () => {
       },
     ];
     stubFetch(() => chatResp('1. 用 kubectl 删除容器组'));
-    await route({ texts: ['Delete the Pod with kubectl'], from: 'en', to: 'zh-CN', domainId: 'd1' });
+    await route({ texts: ['Delete the Pod with kubectl'], from: 'en', to: 'zh-CN', domainId: 'd1' }, ENGINES);
 
     const prompt = body(grokCalls()[0]!).messages[0]!.content;
     expect(prompt).toContain('Pod → 容器组');
@@ -126,7 +127,7 @@ describe('Grok 失败分类（#613）', () => {
     settings.enginePriority = ['grok', 'openai'];
     for (const status of [401, 403]) {
       stubFetch(() => new Response('{"error":"unauthorized"}', { status }));
-      const err = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }).catch((e) => e);
+      const err = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES).catch((e) => e);
       expect(err).toMatchObject({ engineId: 'grok', category: 'invalid-key', retryable: false });
       // 测试环境的 getMessage 返回键名：原因取自 xAI 授权提示这条文案
       expect(err.message).toBe('grokKeyInvalid');
@@ -137,7 +138,7 @@ describe('Grok 失败分类（#613）', () => {
   test('429 → 配额，不重试，也不切到下一个引擎', async () => {
     settings.enginePriority = ['grok', 'openai'];
     stubFetch(() => new Response('rate limited', { status: 429 }));
-    await expect(route({ texts: ['Hello'], from: 'en', to: 'zh-CN' })).rejects.toMatchObject({
+    await expect(route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES)).rejects.toMatchObject({
       engineId: 'grok',
       category: 'quota',
       retryable: false,
@@ -148,7 +149,7 @@ describe('Grok 失败分类（#613）', () => {
   test('5xx → 瞬时，按优先级切到下一个引擎', async () => {
     settings.enginePriority = ['grok', 'openai'];
     stubFetch(() => new Response('busy', { status: 503 }));
-    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' });
+    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES);
     expect(resp.translations).toEqual(['[O]']);
     expect(grokCalls()).toHaveLength(1);
   });
@@ -157,7 +158,7 @@ describe('Grok 失败分类（#613）', () => {
     settings.enginePriority = ['grok', 'openai'];
     contains.mockResolvedValue(false);
     stubFetch(() => chatResp('1. [G]'));
-    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' });
+    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES);
     expect(resp.translations).toEqual(['[O]']);
     expect(grokCalls()).toHaveLength(0);
   });
