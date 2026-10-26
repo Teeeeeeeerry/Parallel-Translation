@@ -448,16 +448,30 @@ export async function rememberDomainForSite(
   });
 }
 
+/** 术语表里一行的问题（#1150）：原词重复、缺译法、缺原词。 */
+export type InvalidTermReason = 'duplicate' | 'missingTarget' | 'missingSource';
+
+/**
+ * 有问题的一行（#1150）：index 是它在提交的术语数组里的序号（从 0 起，设置页
+ * 即表格的第几行），reason 是原因。重复的原词每一处都列出，含第一次出现的那行。
+ */
+export interface InvalidTermRow {
+  index: number;
+  reason: InvalidTermReason;
+}
+
 /**
  * 术语表里有不合法的行（#393），各项按输入顺序列出（去重）：
  * duplicates 是重复的原词（小写），missingTarget 是没填译法也没勾选
- * “不翻译”的原词，missingSource 是只填了译法的行的译法。
+ * “不翻译”的原词，missingSource 是只填了译法的行的译法。rows 按行号列出
+ * 每一行的问题（#1150），设置页据此标红，不再自己重算校验。
  */
 export class InvalidTermsError extends Error {
   constructor(
     readonly duplicates: string[],
     readonly missingTarget: string[],
     readonly missingSource: string[],
+    readonly rows: InvalidTermRow[] = [],
   ) {
     super('[PT] 术语表有不合法的行');
     this.name = 'InvalidTermsError';
@@ -553,31 +567,44 @@ export function isBuiltinModified(d: Domain): boolean {
 /** 按 setDomainTerms 的规则整理术语表；有不合法的行时抛 InvalidTermsError。 */
 function cleanTerms(terms: readonly Term[]): Term[] {
   const cleaned: Term[] = [];
-  const seen = new Set<string>();
+  /** 每个原词第一次出现的行号 */
+  const firstAt = new Map<string, number>();
   const duplicates = new Set<string>();
   const missingTarget = new Set<string>();
   const missingSource = new Set<string>();
-  for (const t of terms) {
+  const rows: InvalidTermRow[] = [];
+  for (const [index, t] of terms.entries()) {
     const source = t.source.trim();
     // 勾选“不翻译”的行不看译法：界面上译法列已禁用，残留的值不算数
     const target = t.noTranslate ? '' : (t.target?.trim() ?? '');
     if (!source) {
-      if (target) missingSource.add(target);
+      if (target) {
+        missingSource.add(target);
+        rows.push({ index, reason: 'missingSource' });
+      }
       continue;
     }
     const key = source.toLowerCase();
-    if (seen.has(key)) duplicates.add(key);
-    seen.add(key);
+    const first = firstAt.get(key);
+    if (first === undefined) firstAt.set(key, index);
+    else {
+      // 第一次出现的那行也标出来，只标一次
+      if (!duplicates.has(key)) rows.push({ index: first, reason: 'duplicate' });
+      duplicates.add(key);
+      rows.push({ index, reason: 'duplicate' });
+    }
     if (t.noTranslate) {
       cleaned.push({ source, noTranslate: true });
     } else if (target) {
       cleaned.push({ source, target });
     } else {
       missingTarget.add(source);
+      rows.push({ index, reason: 'missingTarget' });
     }
   }
-  if (duplicates.size + missingTarget.size + missingSource.size > 0) {
-    throw new InvalidTermsError([...duplicates], [...missingTarget], [...missingSource]);
+  if (rows.length > 0) {
+    rows.sort((a, b) => a.index - b.index);
+    throw new InvalidTermsError([...duplicates], [...missingTarget], [...missingSource], rows);
   }
   return cleaned;
 }
