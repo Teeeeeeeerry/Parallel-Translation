@@ -18,8 +18,7 @@
 
 import { siteCovers, siteMatches } from '~/src/dom/site-filter';
 import { BUILTIN_SITE_RULES } from './builtin-site-rules';
-import { isQuotaError, StorageQuotaError } from './quota';
-import { StorageReadError } from './read-error';
+import { lockedRecord } from './locked-record';
 
 /** 一个站点的页面规则：CSS 选择器列表。 */
 export interface SiteRules {
@@ -217,33 +216,28 @@ function parseStored(stored: unknown): UserSiteRules[] {
 }
 
 /**
- * 读取用户规则，读取失败时抛错。存储里还没有数据（首次使用）不算失败，
- * 得到空列表。形状不对的卡片跳过。
+ * 用户规则的存储记录（#1151）：严格读、宽松读、读-改-写、变更订阅都经它。
+ *
+ * - 严格读：读取失败时抛错。存储里还没有数据（首次使用）不算失败，得到空
+ *   列表；形状不对的卡片跳过。设置页的列表与导出用它（#526）：空列表看起来
+ *   像规则全没了，导出会得到一份空文件
+ * - 宽松读：翻译路径用，读取失败时退回空列表（只剩内置规则）并记日志 ——
+ *   存储故障不该让整页翻译失败
+ * - 读-改-写：保存、删除、导入都经它写入，串行链加跨页面锁（#493、#508），
+ *   读取失败时抛错、不写入，存储里原有的站点卡片保持不变；写入后更新本上下文
+ *   的快照。锁名与领域部分的锁互不相干
  */
-async function readUserSiteRulesStrict(): Promise<UserSiteRules[]> {
-  let stored: unknown;
-  try {
-    stored = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY];
-  } catch (e) {
-    throw new StorageReadError(e);
-  }
-  return parseStored(stored);
-}
-
-/**
- * 翻译路径用：读取失败时退回空列表（只剩内置规则）并记日志 —— 存储故障
- * 不该让整页翻译失败。写入路径不用它（#508）：把空列表当作现有数据写回
- * 会清掉用户的全部站点卡片。设置页的列表与导出也不用它（#526）：空列表
- * 看起来像规则全没了，导出会得到一份空文件。
- */
-async function readUserSiteRules(): Promise<UserSiteRules[]> {
-  try {
-    return await readUserSiteRulesStrict();
-  } catch (e) {
-    console.warn('[PT] 读取站点规则失败:', e);
-    return [];
-  }
-}
+const record = lockedRecord<UserSiteRules[]>({
+  key: STORAGE_KEY,
+  parse: parseStored,
+  serialize: (user): StoredSiteRules => ({ user }),
+  lock: 'pt-site-rules-write',
+  fallback: () => [],
+  readFailedMessage: '[PT] 读取站点规则失败',
+  onWrite: (user) => {
+    userSnapshot = user;
+  },
+});
 
 /** 本上下文里的用户规则快照，getSiteRules() 同步读取它。 */
 let userSnapshot: UserSiteRules[] = [];
@@ -255,12 +249,10 @@ let ready: Promise<void> | null = null;
  */
 export function siteRulesReady(): Promise<void> {
   if (!ready) {
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes[STORAGE_KEY]) {
-        userSnapshot = parseStored(changes[STORAGE_KEY].newValue);
-      }
+    record.subscribe((user) => {
+      userSnapshot = user;
     });
-    ready = readUserSiteRules().then((user) => {
+    ready = record.readOrFallback().then((user) => {
       userSnapshot = user;
     });
   }
@@ -269,7 +261,7 @@ export function siteRulesReady(): Promise<void> {
 
 /** 站点卡片列表，按新增顺序。设置页据此渲染。读取失败时抛错（#526）。 */
 export function getUserSiteRules(): Promise<UserSiteRules[]> {
-  return readUserSiteRulesStrict();
+  return record.read();
 }
 
 /** 保存时发现的一条无效选择器。 */
@@ -310,59 +302,6 @@ export function findInvalidSelectors(rules: Partial<SiteRules>): InvalidSelector
     });
   }
   return invalid;
-}
-
-/**
- * 读-改-写串行化：同一上下文里连续保存时，后一次基于前一次的结果改，
- * 不会互相覆盖（与 domains.ts 同一做法）。读取失败时抛错、不写入（#508），
- * 存储里原有的站点卡片保持不变。
- *
- * 跨页面（#508）：多个设置页标签页同时修改时，读-改-写这一段再包一层
- * Web Locks 的同名锁 —— 扩展页面与后台同源，锁在它们之间共享，
- * 后一次写入基于前一次写入之后的数据。拿不到锁接口的环境只有页面内串行。
- */
-let writeChain: Promise<unknown> = Promise.resolve();
-
-/** 站点页面规则读-改-写的跨页面锁名，与领域部分的锁互不相干。 */
-const LOCK_NAME = 'pt-site-rules-write';
-
-/** 修改函数的结果：要写入的用户规则（null 表示没有变化、不写入）与带给调用方的值。 */
-interface UserSiteRulesChange<T> {
-  user: UserSiteRules[] | null;
-  result: T;
-}
-
-/**
- * 读-改-写用户规则（#493）：保存、删除、导入都经这里写入。挂到写入链上
- * 串行执行，读取当前用户规则交给 change，写入它返回的新列表并更新本
- * 上下文的快照，返回 change 带出的值。某一次失败不会让链断掉。读取
- * 失败时抛错、不调用 change（#508）。
- */
-function updateUserSiteRules<T>(
-  change: (user: UserSiteRules[]) => UserSiteRulesChange<T>,
-): Promise<T> {
-  const readModifyWrite = async (): Promise<T> => {
-    const current = await readUserSiteRulesStrict().catch((e: unknown) => {
-      // 读取失败时没有写入：告诉用户规则没有被改坏（#537）
-      throw new Error('[PT] 读取站点规则失败，未作改动', { cause: e });
-    });
-    const { user, result } = change(current);
-    if (user) {
-      const stored: StoredSiteRules = { user };
-      await chrome.storage.local.set({ [STORAGE_KEY]: stored }).catch((e: unknown) => {
-        // 存储空间不足（#523）：与领域一样，换成说得清原因与办法的错误
-        throw isQuotaError(e) ? new StorageQuotaError(e) : e;
-      });
-      userSnapshot = user;
-    }
-    return result;
-  };
-  const locks = globalThis.navigator?.locks;
-  const next = writeChain.then(async () =>
-    locks ? await locks.request(LOCK_NAME, readModifyWrite) : readModifyWrite(),
-  );
-  writeChain = next.catch(() => {});
-  return next;
 }
 
 /**
@@ -410,23 +349,23 @@ export function hasBuiltinSiteRules(site: string): boolean {
 
 /** 写入一张站点卡片的部分字段：不存在时新增在末尾，已存在时更新传入的字段。 */
 function writeCard(key: string, patch: Omit<Partial<UserSiteRules>, 'site'>): Promise<void> {
-  return updateUserSiteRules((user) => {
+  return record.update((user) => {
     const i = user.findIndex((u) => u.site === key);
     if (i === -1) user.push({ site: key, ...patch });
     else user[i] = { ...user[i]!, ...patch };
-    return { user, result: undefined };
+    return { value: user, result: undefined };
   });
 }
 
 /**
  * 删除一张站点卡片（#371）：该站点的用户规则从 storage.local 移除，生效
- * 规则回到仅内置规则。站点不存在时不做改动。与保存共用读-改-写串行链。
+ * 规则回到仅内置规则。站点不存在时不做改动。与保存共用读-改-写（record.update）。
  */
 export function deleteUserSiteRules(site: string): Promise<void> {
   const key = site.trim().toLowerCase();
-  return updateUserSiteRules((user) => {
+  return record.update((user) => {
     const rest = user.filter((u) => u.site !== key);
-    return { user: rest.length === user.length ? null : rest, result: undefined };
+    return { value: rest.length === user.length ? null : rest, result: undefined };
   });
 }
 
@@ -454,7 +393,7 @@ export interface SiteRulesExport {
  */
 export async function exportUserSiteRules(): Promise<string> {
   const sites: Record<string, ExportedSiteRules> = {};
-  for (const u of await readUserSiteRulesStrict()) {
+  for (const u of await record.read()) {
     sites[u.site] = {
       scope: u.scope ?? [],
       exclude: u.exclude ?? [],
@@ -575,7 +514,7 @@ export async function importUserSiteRules(json: string): Promise<ImportSiteRules
   // 导入的站点数按规范化、合并之后的卡片计
   const imported = new Set(incoming.map(([site]) => site)).size;
   const text = (card: UserSiteRules, field: keyof SiteRules) => JSON.stringify(card[field] ?? []);
-  return updateUserSiteRules((user) => {
+  return record.update((user) => {
     // 每张卡片导入前各字段的内容：合并完后与它比较，得出导入实际改动的字段（#557）
     const before = new Map<string, { card: UserSiteRules; texts: string[] }>();
     for (const [site, rules] of incoming) {
@@ -596,7 +535,7 @@ export async function importUserSiteRules(json: string): Promise<ImportSiteRules
         fields: SITE_RULE_FIELDS.filter((f, i) => text(card, f) !== texts[i]),
       }))
       .filter((c) => c.fields.length > 0);
-    return { user, result: { imported, changed, skipped } };
+    return { value: user, result: { imported, changed, skipped } };
   });
 }
 
