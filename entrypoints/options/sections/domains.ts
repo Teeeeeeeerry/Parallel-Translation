@@ -35,6 +35,7 @@ import type { Domain, Term, TermsCsvSkip } from '~/src/storage/domains';
 import { tf, uiLocale } from '~/src/i18n';
 import { showToast } from '../main';
 import { downloadFile, failReason, importFileBytes, skipReport as fileSkipReport, wireFileImport } from '../file-io';
+import { watchLatestRead } from '../latest-read';
 import { savePatch } from '../save-settings';
 
 function langLabel(code: string): string {
@@ -536,20 +537,10 @@ export function initDomains(): void {
   // 默认选中当前设置的目标语言 —— 新建的领域通常就是给它用的
   langSelect.value = getSettings().to;
 
-  let renderSeq = 0;
   /** 从 CSV 新建的领域（#603）：出现在列表里后展开它的术语编辑区并滚动到可见处。 */
   let reveal: string | null = null;
-  /** 列表是否已按存储显示过：决定读取失败时说“没有载入”还是“没有刷新”（#549） */
-  let loaded = false;
-  async function render(): Promise<void> {
-    // 连续变更时只用最后一次读取的结果，先发起、后返回的旧读取不覆盖新列表
-    const seq = ++renderSeq;
-    // 读取失败（#535）只在它仍是最后一次读取时报出：旧读取失败、新读取已成功时不提示
-    const domains = await getEffectiveDomains().catch((e: unknown) => {
-      if (seq === renderSeq) throw e;
-      return null;
-    });
-    if (!domains || seq !== renderSeq) return;
+  /** 按存储读到的生效领域重绘列表；只用最后一次读取的结果（#1153，见 watchLatestRead） */
+  function render(domains: Domain[]): void {
     // 任一领域变更都整表重绘：旧行换成新行，保留各编辑框的展开状态；
     // 编辑框对应的已保存内容没变时，连同未保存的改动与错误提示一起保留
     const old = new Map(
@@ -579,7 +570,6 @@ export function initDomains(): void {
         ? { id: focused.closest<HTMLElement>('.pt-domain-item')?.dataset.id, dir: focused.dataset.direction }
         : null;
     listEl.replaceChildren(...items);
-    loaded = true;
     const revealed = items.find((el) => el.dataset.id === reveal);
     if (revealed) {
       reveal = null;
@@ -728,9 +718,12 @@ export function initDomains(): void {
    * 按存储重新渲染领域列表，不会失败：读取失败时提示列表没有刷新与原因，
    * 已显示的列表、展开的编辑框和里面未保存的改动保持不变（#535）；首次打开
    * 就读取失败时提示列表没有载入，列表留空，不显示只剩内置领域的列表（#549）。
+   * 其他设置页标签页新建 / 删除 / 修改后同步刷新。
    */
-  const refresh = () =>
-    render().catch((e) => {
+  const { refresh } = watchLatestRead({
+    read: getEffectiveDomains,
+    render,
+    onError: (e, loaded) => {
       const reason = failReason(e);
       if (loaded) {
         console.error('[PT] 领域列表没有刷新:', e);
@@ -739,8 +732,7 @@ export function initDomains(): void {
         console.error('[PT] 领域列表没有载入:', e);
         showToast(tf('domainListNotLoaded', `领域列表没有载入：${reason}`, reason), 4000);
       }
-    });
-  refresh();
-  // 其他设置页标签页新建 / 删除 / 修改后同步刷新
-  onDomainsChanged(refresh);
+    },
+    subscribe: onDomainsChanged,
+  });
 }

@@ -543,12 +543,5 @@ export async function importUserSiteRules(json: string): Promise<ImportSiteRules
  * 用户规则变更订阅（任一上下文保存或删除后触发）。返回取消订阅函数。
  */
 export function onUserSiteRulesChanged(fn: () => void): () => void {
-  const listener = (
-    changes: Record<string, chrome.storage.StorageChange>,
-    area: string,
-  ) => {
-    if (area === 'local' && changes[STORAGE_KEY]) fn();
-  };
-  chrome.storage.onChanged.addListener(listener);
-  return () => chrome.storage.onChanged.removeListener(listener);
+  return record.subscribe(() => fn());
 }
