@@ -40,6 +40,7 @@ vi.mock('~/src/storage/domains', async (importOriginal) => ({
 }));
 
 import { route } from '~/src/engines/router';
+import { ENGINES } from '~/src/engines/registry';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import { render } from '~/src/dom/renderer';
 import { restorePreserves } from '~/src/dom/text';
@@ -81,7 +82,7 @@ async function translatePage(): Promise<{ domainIds: (string | undefined)[] }> {
   const orch = createOrchestrator({
     send: vi.fn(async (req: TranslateRequest) => {
       domainIds.push(req.domainId);
-      return { ok: true, data: await route(req) };
+      return { ok: true, data: await route(req, ENGINES) };
     }),
     context: createPageContext({
       getDomains: () => [domain()],
@@ -183,7 +184,7 @@ describe('原词横跨两行：整段单元把换行当空白，切块仍是已�
     document.body.innerHTML = '<p id="short">She opened a pull<br>request and closed the laptop.</p>';
     const { texts } = collectUnits();
     expect(texts).toEqual(['She opened a pull\nrequest and closed the laptop.']);
-    const resp = await route({ texts, from: 'en', to: 'zh-CN', domainId: 'user:dev' });
+    const resp = await route({ texts, from: 'en', to: 'zh-CN', domainId: 'user:dev' }, ENGINES);
     expect(queries()).toEqual(['She opened a ⟦TM0⟧ and closed the laptop.']);
     expect(resp.translations[0]).toContain('拉取请求');
   });
@@ -196,7 +197,7 @@ describe('原词横跨两行：整段单元把换行当空白，切块仍是已�
 
   test('单词与跨三行的原词保持原有行为', async () => {
     terms = [{ source: 'monorepo', noTranslate: true }];
-    const resp = await route({ texts: ['A monorepo.', 'mono\nrepo\nnow'], from: 'en', to: 'zh-CN', domainId: 'user:dev' });
+    const resp = await route({ texts: ['A monorepo.', 'mono\nrepo\nnow'], from: 'en', to: 'zh-CN', domainId: 'user:dev' }, ENGINES);
     expect(resp.translations[0]).toContain('monorepo');
     expect(resp.translations[1]).toBe('译:mono\nrepo\nnow');
   });

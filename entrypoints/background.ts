@@ -11,6 +11,7 @@ import { cacheSet, cacheKey, cacheGet, cacheClear } from '~/src/storage/cache';
 import { getKey, setKey, removeKey } from '~/src/storage/keys';
 import { settingsReady, patchSettings, onSettingsChanged } from '~/src/storage/settings';
 import { route } from '~/src/engines/router';
+import { ENGINES } from '~/src/engines/registry';
 import { EngineError } from '~/src/engines/types';
 import { createInFlightTable, inFlightKey, runEngineCall } from '~/src/runtime/inflight';
 import { ensureE2EMock, applyE2EMock, getE2EMockStats } from '~/src/engines/e2e-mock';
@@ -229,14 +230,17 @@ export default defineBackground(() => {
           // #1071：引擎超时从这一批第一次拿到引擎许可起计，排队不算（inflight.ts）
           return runEngineCall(
             (ctl) =>
-              route({
-                ...payload,
-                signal: ctl.signal,
-                onGateStart: () => {
-                  gateAt ??= performance.now();
-                  ctl.onGateStart();
+              route(
+                {
+                  ...payload,
+                  signal: ctl.signal,
+                  onGateStart: () => {
+                    gateAt ??= performance.now();
+                    ctl.onGateStart();
+                  },
                 },
-              }),
+                ENGINES,
+              ),
             {
               ...(signal && { signal }),
               onTimeout: () => {

@@ -25,6 +25,7 @@ vi.mock('~/src/storage/domains', () => ({
 }));
 
 import { route } from '~/src/engines/router';
+import { ENGINES } from '~/src/engines/registry';
 
 /** 假 Google：把查询文本原样包上“译:”返回，可按需改写。 */
 let rewrite: (q: string) => string = (q) => `译:${q}`;
@@ -38,7 +39,7 @@ function queries(): string[] {
 }
 
 function translate(texts: string[]) {
-  return route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' });
+  return route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' }, ENGINES);
 }
 
 beforeEach(() => {

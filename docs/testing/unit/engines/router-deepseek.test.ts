@@ -30,6 +30,7 @@ vi.mock('~/src/storage/domains', () => ({
 }));
 
 import { route } from '~/src/engines/router';
+import { ENGINES } from '~/src/engines/registry';
 import { resetStorage } from '~/docs/testing/setup';
 
 const DEEPSEEK = 'https://api.deepseek.com/chat/completions';
@@ -75,7 +76,7 @@ afterEach(() => {
 describe('DeepSeek 翻译请求（#609）', () => {
   test('请求发到 DeepSeek 端点，带 Bearer key 与默认模型，编号译文回填', async () => {
     stubFetch(() => chatResp('1. 你好\n2. 世界'));
-    const resp = await route({ texts: ['Hello', 'World'], from: 'en', to: 'zh-CN' });
+    const resp = await route({ texts: ['Hello', 'World'], from: 'en', to: 'zh-CN' }, ENGINES);
 
     expect(resp.translations).toEqual(['你好', '世界']);
     const [call] = deepseekCalls();
@@ -89,7 +90,7 @@ describe('DeepSeek 翻译请求（#609）', () => {
   test('设置里改了模型名 → 请求用自定义模型', async () => {
     settings.models = { deepseek: 'deepseek-pro' };
     stubFetch(() => chatResp('1. 你好'));
-    await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' });
+    await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES);
     expect(body(deepseekCalls()[0]!).model).toBe('deepseek-pro');
   });
 
@@ -108,7 +109,7 @@ describe('DeepSeek 翻译请求（#609）', () => {
       },
     ];
     stubFetch(() => chatResp('1. 用 kubectl 删除容器组'));
-    await route({ texts: ['Delete the Pod with kubectl'], from: 'en', to: 'zh-CN', domainId: 'd1' });
+    await route({ texts: ['Delete the Pod with kubectl'], from: 'en', to: 'zh-CN', domainId: 'd1' }, ENGINES);
 
     const prompt = body(deepseekCalls()[0]!).messages[0]!.content;
     expect(prompt).toContain('Pod → 容器组');
@@ -120,7 +121,7 @@ describe('DeepSeek 失败分类（#609）', () => {
   test('401 → key 无效，不切到下一个引擎', async () => {
     settings.enginePriority = ['deepseek', 'openai'];
     stubFetch(() => new Response('unauthorized', { status: 401 }));
-    await expect(route({ texts: ['Hello'], from: 'en', to: 'zh-CN' })).rejects.toMatchObject({
+    await expect(route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES)).rejects.toMatchObject({
       engineId: 'deepseek',
       category: 'invalid-key',
       retryable: false,
@@ -132,7 +133,7 @@ describe('DeepSeek 失败分类（#609）', () => {
     settings.enginePriority = ['deepseek', 'openai'];
     for (const status of [402, 429]) {
       stubFetch(() => new Response('{"error":{"message":"Insufficient Balance"}}', { status }));
-      await expect(route({ texts: ['Hello'], from: 'en', to: 'zh-CN' })).rejects.toMatchObject({
+      await expect(route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES)).rejects.toMatchObject({
         engineId: 'deepseek',
         category: 'quota',
         retryable: false,
@@ -145,7 +146,7 @@ describe('DeepSeek 失败分类（#609）', () => {
   test('5xx → 瞬时，按优先级切到下一个引擎', async () => {
     settings.enginePriority = ['deepseek', 'openai'];
     stubFetch(() => new Response('busy', { status: 503 }));
-    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' });
+    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES);
     expect(resp.translations).toEqual(['[O]']);
     expect(deepseekCalls()).toHaveLength(1);
   });
@@ -155,14 +156,14 @@ describe('DeepSeek 缓存的模型维度（#609）', () => {
   test('换模型后不命中旧缓存', async () => {
     settings.useCache = true;
     stubFetch(() => chatResp('1. 旧模型译文'));
-    await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' });
+    await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES);
     // 同一模型再翻一次：命中缓存，不发请求
-    await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' });
+    await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES);
     expect(deepseekCalls()).toHaveLength(1);
 
     settings.models = { deepseek: 'deepseek-pro' };
     stubFetch(() => chatResp('1. 新模型译文'));
-    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' });
+    const resp = await route({ texts: ['Hello'], from: 'en', to: 'zh-CN' }, ENGINES);
     expect(resp.translations).toEqual(['新模型译文']);
     expect(deepseekCalls()).toHaveLength(1);
   });

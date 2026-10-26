@@ -30,18 +30,24 @@ vi.mock('~/src/storage/domains', () => ({
 const openaiTranslate = vi.fn(async (req: { texts: string[] }) => ({
   translations: req.texts.map((t) => `AI:${t}`),
 }));
-vi.mock('~/src/engines/openai', () => ({
-  openai: {
-    id: 'openai',
-    displayName: 'OpenAI',
-    requiresKey: true,
-    supportedLangs: 'all' as const,
-    injectsTerms: true,
-    translate: (req: { texts: string[] }) => openaiTranslate(req),
-  },
-}));
+const openai = {
+  id: 'openai',
+  displayName: 'OpenAI',
+  requiresKey: true,
+  supportedLangs: 'all' as const,
+  injectsTerms: true,
+  translate: (req: { texts: string[] }) => openaiTranslate(req),
+};
+
+/** 交给路由的引擎表（#1154）：真实的 google-web 加假的 openai。 */
+const FAKE_ENGINES = {
+  'google-web': googleWeb,
+  'openai': openai,
+} as unknown as EngineTable;
 
 import { route } from '~/src/engines/router';
+import type { EngineTable } from '~/src/engines/registry';
+import { googleWeb } from '~/src/engines/google-web';
 import { cacheKey } from '~/src/storage/cache';
 
 const ISSUE: Term = { source: 'issue', noTranslate: true };
@@ -62,7 +68,7 @@ async function sha1(s: string): Promise<string> {
 }
 
 function translate(texts: string[]) {
-  return route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' });
+  return route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' }, FAKE_ENGINES);
 }
 
 async function storedKeys(): Promise<string[]> {

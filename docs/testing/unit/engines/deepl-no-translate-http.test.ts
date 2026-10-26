@@ -29,6 +29,7 @@ vi.mock('~/src/storage/domains', () => ({
 }));
 
 import { route } from '~/src/engines/router';
+import { ENGINES } from '~/src/engines/registry';
 
 /** 假 DeepL：把每段文本原样包上“译:”返回，可按需改写。 */
 let rewrite: (text: string) => string = (t) => `译:${t}`;
@@ -45,7 +46,7 @@ function requests(): string[][] {
 }
 
 function translate(texts: string[]) {
-  return route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' });
+  return route({ texts, from: 'en', to: 'zh-CN', domainId: 'dev' }, ENGINES);
 }
 
 beforeEach(() => {

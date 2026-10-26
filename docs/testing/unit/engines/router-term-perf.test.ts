@@ -23,18 +23,22 @@ type Req = { texts: string[]; terms?: unknown };
 const openaiTranslate = vi.fn(async (req: Req) => ({
   translations: req.texts.map((t) => `译:${t}`),
 }));
-vi.mock('~/src/engines/openai', () => ({
-  openai: {
-    id: 'openai',
-    displayName: 'OpenAI',
-    requiresKey: true,
-    supportedLangs: 'all' as const,
-    injectsTerms: true,
-    translate: (req: Req) => openaiTranslate(req),
-  },
-}));
+const openai = {
+  id: 'openai',
+  displayName: 'OpenAI',
+  requiresKey: true,
+  supportedLangs: 'all' as const,
+  injectsTerms: true,
+  translate: (req: Req) => openaiTranslate(req),
+};
+
+/** 交给路由的假引擎表（#1154）：只放用例用到的引擎。 */
+const FAKE_ENGINES = {
+  'openai': openai,
+} as unknown as EngineTable;
 
 import { route } from '~/src/engines/router';
+import type { EngineTable } from '~/src/engines/registry';
 import { createDomain, setDomainTerms } from '~/src/storage/domains';
 
 /** 读领域数据的次数。 */
@@ -56,7 +60,7 @@ describe('领域数据缓存在后台内存里（#418）', () => {
     vi.mocked(chrome.storage.local.get).mockClear();
 
     for (const text of ['a tort claim', 'another tort', 'third tort']) {
-      await route({ texts: [text], from: 'en', to: 'zh-CN', domainId: law.id });
+      await route({ texts: [text], from: 'en', to: 'zh-CN', domainId: law.id }, FAKE_ENGINES);
     }
     expect(domainReads()).toBe(1);
     expect(sentTerms(2)).toEqual([{ source: 'tort', target: '侵权' }]);
@@ -66,7 +70,7 @@ describe('领域数据缓存在后台内存里（#418）', () => {
     const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
     await setDomainTerms(law.id, [{ source: 'tort', target: '侵权' }]);
     const req = { texts: ['a tort claim'], from: 'en', to: 'zh-CN', domainId: law.id };
-    await route(req);
+    await route(req, FAKE_ENGINES);
 
     // 设置页直接写存储（不经过本上下文的领域模块），再发出变更通知
     const before = localStoreSnapshot()['pt-domains'] as { user: { terms: unknown[] }[] };
@@ -75,7 +79,7 @@ describe('领域数据缓存在后台内存里（#418）', () => {
     await chrome.storage.local.set({ 'pt-domains': after });
     fireStorageChange({ 'pt-domains': { oldValue: before, newValue: after } }, 'local');
 
-    await route(req);
+    await route(req, FAKE_ENGINES);
     expect(sentTerms(1)).toEqual([{ source: 'tort', target: '侵权行为' }]);
   });
 
@@ -86,13 +90,13 @@ describe('领域数据缓存在后台内存里（#418）', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     try {
-      await route({ texts: ['a tort claim'], from: 'en', to: 'zh-CN', domainId: law.id });
+      await route({ texts: ['a tort claim'], from: 'en', to: 'zh-CN', domainId: law.id }, FAKE_ENGINES);
     } finally {
       warn.mockRestore();
     }
     expect(sentTerms(0)).toBeUndefined();
 
-    await route({ texts: ['another tort'], from: 'en', to: 'zh-CN', domainId: law.id });
+    await route({ texts: ['another tort'], from: 'en', to: 'zh-CN', domainId: law.id }, FAKE_ENGINES);
     expect(sentTerms(1)).toEqual([{ source: 'tort', target: '侵权' }]);
   });
 });
@@ -113,7 +117,7 @@ describe('大量术语的匹配（#418）', () => {
     );
 
     const start = performance.now();
-    await route({ texts, from: 'en', to: 'zh-CN', domainId: law.id });
+    await route({ texts, from: 'en', to: 'zh-CN', domainId: law.id }, FAKE_ENGINES);
     const elapsed = performance.now() - start;
 
     // 大小写不敏感命中 term-0、term-300……；term-1x 这类不在词边界上的不算

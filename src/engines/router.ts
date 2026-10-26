@@ -15,26 +15,9 @@ import { cacheGet, cacheSet, cacheKey } from '~/src/storage/cache';
 import { getCachedEffectiveDomains } from '~/src/storage/domains';
 import type { Term } from '~/src/storage/domains';
 import { matchTerms, uniqueTerms, maskTerms, unmaskTerms } from './terms';
-import { googleWeb } from './google-web';
-import { bingEdge } from './bing-edge';
-import { openai } from './openai';
-import { deepl } from './deepl';
-import { gemini } from './gemini';
-import { deepseek } from './deepseek';
-import { grok } from './grok';
+import type { EngineTable } from './registry';
 import { EngineError, EngineUnavailableError, AllEnginesFailedError } from './types';
 import type { TranslateEngine, TranslateRequest, TranslateResponse } from './types';
-
-/** 引擎表 —— 引擎清单（#608）里的每个引擎都要有适配器，缺项即类型错误。 */
-const REGISTRY: Record<EngineId, TranslateEngine> = {
-  'google-web': googleWeb,
-  'bing-edge': bingEdge,
-  'openai': openai,
-  'deepl': deepl,
-  'gemini': gemini,
-  'deepseek': deepseek,
-  'grok': grok,
-};
 
 /**
  * 请求里每段原文命中的术语（#380）。请求不带领域 ID、或领域已不存在
@@ -66,7 +49,11 @@ function effectiveTerms(
   return [];
 }
 
-export async function route(req: TranslateRequest): Promise<TranslateResponse> {
+/**
+ * 按优先级把一批文字交给引擎翻译。engines 是引擎表（#1154）：生产代码传默认
+ * 引擎表（registry.ts 的 ENGINES），测试传假引擎；表里没有的引擎跳过。
+ */
+export async function route(req: TranslateRequest, engines: EngineTable): Promise<TranslateResponse> {
   const settings = getSettings();
   const { enginePriority, mtApplyTermTargets } = settings;
   // #642: 请求声明不走缓存时既不查也不写，与缓存开关关闭同一条路
@@ -85,7 +72,7 @@ export async function route(req: TranslateRequest): Promise<TranslateResponse> {
   let fatal: EngineError | null = null;
 
   for (const id of enginePriority) {
-    const engine = REGISTRY[id];
+    const engine = engines[id];
     if (!engine) continue;
     // #1001：content 放弃了这一批 —— 不再换下一个引擎、不再发请求。#1071：已有
     // 段落译好时（后台的引擎时段超时到点）照 #440 随部分结果返回，失败段落由

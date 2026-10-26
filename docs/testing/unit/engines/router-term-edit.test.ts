@@ -21,18 +21,22 @@ type Req = { texts: string[]; terms?: unknown };
 const openaiTranslate = vi.fn(async (req: Req) => ({
   translations: req.texts.map((t) => `译:${t}`),
 }));
-vi.mock('~/src/engines/openai', () => ({
-  openai: {
-    id: 'openai',
-    displayName: 'OpenAI',
-    requiresKey: true,
-    supportedLangs: 'all' as const,
-    injectsTerms: true,
-    translate: (req: Req) => openaiTranslate(req),
-  },
-}));
+const openai = {
+  id: 'openai',
+  displayName: 'OpenAI',
+  requiresKey: true,
+  supportedLangs: 'all' as const,
+  injectsTerms: true,
+  translate: (req: Req) => openaiTranslate(req),
+};
+
+/** 交给路由的假引擎表（#1154）：只放用例用到的引擎。 */
+const FAKE_ENGINES = {
+  'openai': openai,
+} as unknown as EngineTable;
 
 import { route } from '~/src/engines/router';
+import type { EngineTable } from '~/src/engines/registry';
 import { createDomain, setDomainTerms } from '~/src/storage/domains';
 
 beforeEach(() => {
@@ -46,13 +50,13 @@ describe('术语修改立即生效（#393）', () => {
     await setDomainTerms(law.id, [{ source: 'tort', target: '侵权' }]);
     const req = { texts: ['a tort claim'], from: 'en', to: 'zh-CN', domainId: law.id };
 
-    await route(req);
-    await route(req);
+    await route(req, FAKE_ENGINES);
+    await route(req, FAKE_ENGINES);
     expect(openaiTranslate).toHaveBeenCalledTimes(1);
     expect(openaiTranslate.mock.calls[0]![0].terms).toEqual([{ source: 'tort', target: '侵权' }]);
 
     await setDomainTerms(law.id, [{ source: 'tort', target: '侵权行为' }]);
-    await route(req);
+    await route(req, FAKE_ENGINES);
     expect(openaiTranslate).toHaveBeenCalledTimes(2);
     expect(openaiTranslate.mock.calls[1]![0].terms).toEqual([{ source: 'tort', target: '侵权行为' }]);
   });
@@ -61,10 +65,10 @@ describe('术语修改立即生效（#393）', () => {
     const law = await createDomain({ name: '法律', targetLang: 'zh-CN' });
     await setDomainTerms(law.id, [{ source: 'tort', noTranslate: true }]);
     const req = { texts: ['a tort claim'], from: 'en', to: 'zh-CN', domainId: law.id };
-    await route(req);
+    await route(req, FAKE_ENGINES);
 
     await setDomainTerms(law.id, []);
-    await route(req);
+    await route(req, FAKE_ENGINES);
     expect(openaiTranslate).toHaveBeenCalledTimes(2);
     expect(openaiTranslate.mock.calls[1]![0].terms).toBeUndefined();
   });

@@ -10,6 +10,7 @@ import { resetStorage, localStoreSnapshot } from '~/docs/testing/setup';
 import { createOrchestrator } from '~/src/orchestration/orchestrator';
 import type { TranslateItem } from '~/src/orchestration/orchestrator';
 import { route } from '~/src/engines/router';
+import type { EngineTable } from '~/src/engines/registry';
 import type { TranslateRequest } from '~/src/engines/types';
 import { translateItems } from '../orchestration/page-harness';
 
@@ -23,18 +24,21 @@ vi.mock('~/src/storage/settings', async (importOriginal) => ({
 }));
 
 const engineCalls: string[][] = [];
-vi.mock('~/src/engines/google-web', () => ({
-  googleWeb: {
-    id: 'google-web',
-    displayName: 'Google 翻译',
-    requiresKey: false,
-    supportedLangs: 'all' as const,
-    translate: async (req: TranslateRequest) => {
-      engineCalls.push(req.texts);
-      return { translations: req.texts.map((t) => `译:${t}`) };
-    },
+const googleWeb = {
+  id: 'google-web',
+  displayName: 'Google 翻译',
+  requiresKey: false,
+  supportedLangs: 'all' as const,
+  translate: async (req: TranslateRequest) => {
+    engineCalls.push(req.texts);
+    return { translations: req.texts.map((t) => `译:${t}`) };
   },
-}));
+};
+
+/** 交给路由的假引擎表（#1154）：只放用例用到的引擎。 */
+const FAKE_ENGINES = {
+  'google-web': googleWeb,
+} as unknown as EngineTable;
 
 /** 缓存里的译文条数。 */
 function cacheEntries(): number {
@@ -48,7 +52,7 @@ function engineTexts(): number {
 
 function setup() {
   const orch = createOrchestrator({
-    send: async (req) => ({ ok: true, data: await route(req) }),
+    send: async (req) => ({ ok: true, data: await route(req, FAKE_ENGINES) }),
   });
   orch.start();
   return orch;
