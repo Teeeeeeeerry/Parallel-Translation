@@ -14,8 +14,7 @@
 
 import { siteMatches } from '~/src/dom/site-filter';
 import { BUILTIN_DOMAINS } from './builtin-domains';
-import { isQuotaError, StorageQuotaError } from './quota';
-import { StorageReadError } from './read-error';
+import { lockedRecord } from './locked-record';
 import { decodeTermsCsv, encodeTermsCsv, type TermsCsvSkip } from './terms-csv';
 import {
   applyOverlay,
@@ -115,18 +114,11 @@ function isUserDomain(v: unknown): v is Domain {
 }
 
 /**
- * 读取用户领域数据（自建领域与叠加层），读取失败时抛错。存储里还没有
- * 数据（首次使用）不算失败，得到空数据。形状不对的条目跳过。
+ * 存储里的用户领域数据（自建领域与叠加层）→ StoredDomains。存储里还没有
+ * 数据（首次使用）得到空数据，形状不对的条目跳过。
  */
-async function readStoredStrict(): Promise<StoredDomains> {
-  let stored: Partial<StoredDomains> | undefined;
-  try {
-    stored = (await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY] as
-      | Partial<StoredDomains>
-      | undefined;
-  } catch (e) {
-    throw new StorageReadError(e);
-  }
+function parseStored(raw: unknown): StoredDomains {
+  const stored = raw as Partial<StoredDomains> | undefined;
   const user = Array.isArray(stored?.user) ? stored.user : [];
   const builtin: Record<string, BuiltinOverlay> = {};
   if (typeof stored?.builtin === 'object' && stored.builtin !== null) {
@@ -154,68 +146,31 @@ async function readStoredStrict(): Promise<StoredDomains> {
 }
 
 /**
- * 订阅生效领域列表（页面上的当前领域判定）用：读取失败时退回空数据（只剩
- * 内置领域的内置内容）并记日志 —— 存储故障不该让整页翻译失败（翻译路径另见
- * getCachedEffectiveDomains，#418）。写入路径不用它（#484）：把空数据当作
- * 现有数据写回会清掉用户的全部领域。设置页的列表也不用它（#535）：只剩内置
- * 领域的列表看起来像自建领域全没了。
- */
-async function readStored(): Promise<StoredDomains> {
-  try {
-    return await readStoredStrict();
-  } catch (e) {
-    console.warn('[PT] 读取用户领域数据失败:', e);
-    return { user: [], builtin: {}, order: [] };
-  }
-}
-
-/**
- * 读-改-写串行化：同一上下文里连续新建 / 删除 / 修改时，后一次基于前一次的
- * 结果改，不会互相覆盖（与 cache.ts 的 index 链同一做法）。读取失败时抛错、
- * 不写入（#484），存储里原有的数据保持不变。
+ * 用户领域数据的存储记录（#1152）：严格读、宽松读、读-改-写、变更订阅都经它。
  *
- * 跨页面（#485）：多个设置页标签页同时修改时，读-改-写这一段再包一层
- * Web Locks 的同名锁 —— 扩展页面与后台同源，锁在它们之间共享，
- * 后一次写入基于前一次写入之后的数据。拿不到锁接口的环境只有页面内串行。
+ * - 严格读：读取失败时抛错。设置页的列表（#535）与写入路径用它
+ * - 宽松读：订阅生效领域列表（页面上的当前领域判定）用，读取失败时退回空数据
+ *   （只剩内置领域的内置内容）并记日志 —— 存储故障不该让整页翻译失败（翻译
+ *   路径另见 getCachedEffectiveDomains，#418）
+ * - 读-改-写：同一上下文里连续新建 / 删除 / 修改时串行，跨页面（#485）再包一层
+ *   同名 Web Locks；读取失败时抛错、不写入（#484），存储里原有的数据保持不变；
+ *   写入后让翻译路径的缓存失效
  */
-let writeChain: Promise<unknown> = Promise.resolve();
-
-/** 领域数据读-改-写的跨页面锁名。 */
-const LOCK_NAME = 'pt-domains-write';
-
-function updateStored<T>(
-  fn: (stored: StoredDomains) => { stored: StoredDomains | null; result: T },
-): Promise<T> {
-  const readModifyWrite = async (): Promise<T> => {
-    const current = await readStoredStrict().catch((e: unknown) => {
-      // 读取失败时没有写入：告诉用户领域数据没有被改坏（#537）
-      throw new Error('[PT] 读取领域数据失败，未作改动', { cause: e });
-    });
-    const { stored, result } = fn(current);
-    // stored 为 null：没有改动，不写入
-    if (stored) {
-      await chrome.storage.local.set({ [STORAGE_KEY]: stored }).catch((e: unknown) => {
-        // 存储空间不足（#510）：换成说得清原因与办法的错误
-        throw isQuotaError(e) ? new StorageQuotaError(e) : e;
-      });
-      invalidateCachedDomains();
-    }
-    return result;
-  };
-  const locks = globalThis.navigator?.locks;
-  const next = writeChain.then(async () =>
-    locks ? await locks.request(LOCK_NAME, readModifyWrite) : readModifyWrite(),
-  );
-  writeChain = next.catch(() => {});
-  return next;
-}
+const record = lockedRecord<StoredDomains>({
+  key: STORAGE_KEY,
+  parse: parseStored,
+  lock: 'pt-domains-write',
+  fallback: () => ({ user: [], builtin: {}, order: [] }),
+  readFailedMessage: '[PT] 读取领域数据失败',
+  onWrite: () => invalidateCachedDomains(),
+});
 
 function updateUserDomains<T>(
   fn: (user: Domain[]) => { user: Domain[]; result: T },
 ): Promise<T> {
-  return updateStored((stored) => {
+  return record.update((stored) => {
     const { user, result } = fn(stored.user);
-    return { stored: { ...stored, user }, result };
+    return { value: { ...stored, user }, result };
   });
 }
 
@@ -237,7 +192,7 @@ function effectiveDomains({ user, builtin, order }: StoredDomains): Domain[] {
  * 调用方可随意改动返回值。
  */
 export async function getEffectiveDomains(): Promise<Domain[]> {
-  return effectiveDomains(await readStoredStrict());
+  return effectiveDomains(await record.read());
 }
 
 /**
@@ -260,7 +215,7 @@ export async function getCachedEffectiveDomains(): Promise<readonly Domain[]> {
   if (!cachedDomains) {
     // 先订阅再读：读取期间发生的写入也会让这次结果失效
     stopWatchingDomains ??= onDomainsChanged(invalidateCachedDomains);
-    const load = readStoredStrict().then(effectiveDomains);
+    const load = record.read().then(effectiveDomains);
     cachedDomains = load;
     load.catch(() => {
       if (cachedDomains === load) cachedDomains = null;
@@ -269,7 +224,7 @@ export async function getCachedEffectiveDomains(): Promise<readonly Domain[]> {
   try {
     return await cachedDomains;
   } catch (e) {
-    console.warn('[PT] 读取用户领域数据失败:', e);
+    console.warn('[PT] 读取领域数据失败:', e);
     return effectiveDomains({ user: [], builtin: {}, order: [] });
   }
 }
@@ -280,15 +235,15 @@ export async function getCachedEffectiveDomains(): Promise<readonly Domain[]> {
  * 返回移动后的生效领域列表。
  */
 export async function moveDomain(id: string, direction: 'up' | 'down'): Promise<Domain[]> {
-  return updateStored((stored) => {
+  return record.update((stored) => {
     const list = effectiveDomains(stored);
     const from = list.findIndex((d) => d.id === id);
     if (from < 0) throw new DomainNotFoundError(id);
     const to = direction === 'up' ? from - 1 : from + 1;
     // 已在两端：不写入，免得各标签页白白重读一次
-    if (to < 0 || to >= list.length) return { stored: null, result: list };
+    if (to < 0 || to >= list.length) return { value: null, result: list };
     [list[from], list[to]] = [list[to]!, list[from]!];
-    return { stored: { ...stored, order: list.map((d) => d.id) }, result: list };
+    return { value: { ...stored, order: list.map((d) => d.id) }, result: list };
   });
 }
 
@@ -330,8 +285,8 @@ export async function deleteDomain(id: string): Promise<void> {
   if (BUILTIN_DOMAINS.some((d) => d.id === id)) {
     throw new Error('[PT] 内置领域不能删除');
   }
-  await updateStored((stored) => ({
-    stored: {
+  await record.update((stored) => ({
+    value: {
       ...stored,
       user: stored.user.filter((d) => d.id !== id),
       order: stored.order.filter((o) => o !== id),
@@ -390,9 +345,9 @@ export async function setDomainSites(id: string, sites: readonly string[]): Prom
     ...new Set(sites.map((s) => s.trim()).filter((s) => s && !isValidSite(s.toLowerCase()))),
   ];
   if (invalid.length > 0) throw new InvalidSitesError(invalid);
-  return updateStored((stored) => {
+  return record.update((stored) => {
     const { stored: next, domain } = withSites(stored, id, cleaned);
-    return { stored: next, result: domain };
+    return { value: next, result: domain };
   });
 }
 
@@ -438,13 +393,13 @@ export async function rememberDomainForSite(
 ): Promise<{ current: Domain | null }> {
   const site = host.trim().toLowerCase().replace(/^www\./, '');
   if (!isValidSite(site)) throw new InvalidSitesError([host]);
-  return updateStored((stored) => {
+  return record.update((stored) => {
     const domain = effectiveDomains(stored).find((d) => d.id === id);
     if (!domain) throw new DomainNotFoundError(id);
     const covered = domain.sites.some((entry) => siteMatches(site, entry));
     const next = covered ? stored : withSites(stored, id, [...domain.sites, site]).stored;
     const current = currentDomain(effectiveDomains(next), site, domain.targetLang);
-    return { stored: covered ? null : next, result: { current } };
+    return { value: covered ? null : next, result: { current } };
   });
 }
 
@@ -490,9 +445,9 @@ export class InvalidTermsError extends Error {
  */
 export async function setDomainTerms(id: string, terms: readonly Term[]): Promise<Domain> {
   const cleaned = cleanTerms(terms);
-  return updateStored((stored) => {
+  return record.update((stored) => {
     const { stored: next, domain } = withTerms(stored, id, cleaned);
-    return { stored: next, result: domain };
+    return { value: next, result: domain };
   });
 }
 
@@ -543,12 +498,12 @@ export function isBuiltinTerm(domainId: string, source: string): boolean {
 export async function resetBuiltinDomain(id: string): Promise<Domain> {
   const base = BUILTIN_DOMAINS.find((d) => d.id === id);
   if (!base) throw new Error('[PT] 只有内置领域可以恢复默认');
-  return updateStored((stored) => {
+  return record.update((stored) => {
     const { [id]: prev, ...rest } = stored.builtin;
     const result = applyOverlay(base, undefined);
     // 本来就没有叠加层：不写入
-    if (!prev) return { stored: null, result };
-    return { stored: { ...stored, builtin: rest }, result };
+    if (!prev) return { value: null, result };
+    return { value: { ...stored, builtin: rest }, result };
   });
 }
 
@@ -616,7 +571,7 @@ function cleanTerms(terms: readonly Term[]): Term[] {
  */
 export async function exportDomainTermsCsv(id: string): Promise<string> {
   // 读取失败时抛错：退回空数据会把内置领域的原样内容当成用户的术语导出
-  const domain = effectiveDomains(await readStoredStrict()).find((d) => d.id === id);
+  const domain = effectiveDomains(await record.read()).find((d) => d.id === id);
   if (!domain) throw new DomainNotFoundError(id);
   return encodeTermsCsv(domain.terms);
 }
@@ -634,14 +589,14 @@ export async function importDomainTermsCsv(
   csv: string | ArrayBuffer | ArrayBufferView,
 ): Promise<TermsCsvImport> {
   const { terms: incoming, skipped, ...extra } = decodeTermsCsv(csv);
-  return updateStored((stored) => {
+  return record.update((stored) => {
     const domain = effectiveDomains(stored).find((d) => d.id === id);
     if (!domain) throw new DomainNotFoundError(id);
     // 没有可导入的行：不写入
-    if (incoming.length === 0) return { stored: null, result: { imported: 0, skipped, ...extra } };
+    if (incoming.length === 0) return { value: null, result: { imported: 0, skipped, ...extra } };
     // 逐行校验过，这里只做整理（去首尾空格），不会再有不合法的行
     const { stored: next } = withTerms(stored, id, cleanTerms(mergeTerms(domain.terms, incoming)));
-    return { stored: next, result: { imported: incoming.length, skipped, ...extra } };
+    return { value: next, result: { imported: incoming.length, skipped, ...extra } };
   });
 }
 
@@ -692,14 +647,7 @@ function mergeTerms(base: readonly Term[], incoming: readonly Term[]): Term[] {
  * 领域数据变更订阅（任一上下文新建、删除、修改后触发）。返回取消订阅函数。
  */
 export function onDomainsChanged(fn: () => void): () => void {
-  const listener = (
-    changes: Record<string, chrome.storage.StorageChange>,
-    area: string,
-  ) => {
-    if (area === 'local' && changes[STORAGE_KEY]) fn();
-  };
-  chrome.storage.onChanged.addListener(listener);
-  return () => chrome.storage.onChanged.removeListener(listener);
+  return record.subscribe(() => fn());
 }
 
 /**
@@ -720,7 +668,7 @@ export function watchEffectiveDomains(
   let active = true;
   const load = () => {
     const seq = ++latest;
-    void readStored().then(effectiveDomains).then((domains) => {
+    void record.readOrFallback().then(effectiveDomains).then((domains) => {
       if (active && seq === latest) fn(domains);
     });
   };
