@@ -39,7 +39,7 @@ const googleWeb = {
   displayName: 'Google 翻译',
   requiresKey: false,
   supportedLangs: 'all' as const,
-  masksNoTranslate: true,
+  termHandling: 'mask' as const,
   translate: (req: Req) => googleTranslate(req),
 };
 const bingEdge = {

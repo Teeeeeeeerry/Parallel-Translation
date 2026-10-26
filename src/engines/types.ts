@@ -7,6 +7,7 @@
 // Phase 2 — 翻译引擎统一接口与错误类型。
 
 import type { Term } from '~/src/storage/domains';
+import type { TermHandling } from './term-strategy';
 
 export interface TranslateRequest {
   /** 待翻译文本列表，顺序敏感。 */
@@ -75,15 +76,12 @@ export interface TranslateEngine {
   /** 该引擎支持的语言码列表，'all' 表示不做限制。 */
   supportedLangs: string[] | 'all';
   /**
-   * 用占位符落实“不翻译”术语（#386）：router 发送前把命中的“不翻译”
-   * 术语换成占位符，译文回来后换回原词。机翻引擎各自声明。
+   * 怎么处理术语（#1155，见 term-strategy.ts）：AI 引擎 'inject'，把本批命中的
+   * 术语注入请求（#381/#382）；机翻引擎 'mask'，用占位符落实“不翻译”与开关
+   * 打开后的指定译法（#386/#390）；不声明即不处理。缓存 key 的术语哈希、
+   * 发送前改写、收到后还原都由对应的策略决定。
    */
-  masksNoTranslate?: boolean;
-  /**
-   * 把本批命中的术语（译法与“不翻译”）注入请求（#381/#382）。AI 引擎各自
-   * 声明；router 据此决定哪些术语参与缓存 key 的术语哈希（#419）。
-   */
-  injectsTerms?: boolean;
+  termHandling?: TermHandling;
   translate(req: TranslateRequest): Promise<TranslateResponse>;
 }
 

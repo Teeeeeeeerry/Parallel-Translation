@@ -83,7 +83,7 @@ export const deepl: TranslateEngine = createByokEngine({
     'nb',
   ],
   // #388: “不翻译”术语走占位符；不调用 DeepL 的账户级 glossary
-  masksNoTranslate: true,
+  termHandling: 'mask',
 
   // 请求格式与改造前完全一致（#334）
   buildRequest: ({ texts, from, to }, key) => {

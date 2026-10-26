@@ -25,16 +25,15 @@ import { engineGate } from './engine-gate';
 import { EngineError, EngineUnavailableError } from './types';
 import { classifyResponse, toEngineError, type ErrorClassifier } from './shared';
 import type { TranslateEngine, TranslateRequest, TranslateResponse } from './types';
+import type { TermHandling } from './term-strategy';
 
 /** 适配器提供的引擎特例（端点 / 请求构造 / 响应解析 / 错误体特例）。 */
 export interface ByokEngineSpec {
   id: EngineId;
   displayName: string;
   supportedLangs: string[] | 'all';
-  /** 把命中的术语注入请求（#419，见 TranslateEngine.injectsTerms）。 */
-  injectsTerms?: boolean;
-  /** 用占位符落实“不翻译”术语（#388，见 TranslateEngine.masksNoTranslate）。 */
-  masksNoTranslate?: boolean;
+  /** 怎么处理术语（#1155，见 TranslateEngine.termHandling）。 */
+  termHandling?: TermHandling;
   /** 模型名（有模型概念的引擎）；无则省略。 */
   model?: () => string;
   /**
@@ -70,8 +69,7 @@ export function createByokEngine(spec: ByokEngineSpec): TranslateEngine {
     displayName: spec.displayName,
     requiresKey: true,
     supportedLangs: spec.supportedLangs,
-    ...(spec.injectsTerms && { injectsTerms: true }),
-    ...(spec.masksNoTranslate && { masksNoTranslate: true }),
+    ...(spec.termHandling && { termHandling: spec.termHandling }),
 
     async translate(req) {
       // #333: 闸门保持在最外层 —— 整个请求体（含取 key）都在闸门内

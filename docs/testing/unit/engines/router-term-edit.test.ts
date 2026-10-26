@@ -26,7 +26,7 @@ const openai = {
   displayName: 'OpenAI',
   requiresKey: true,
   supportedLangs: 'all' as const,
-  injectsTerms: true,
+  termHandling: 'inject' as const,
   translate: (req: Req) => openaiTranslate(req),
 };
 

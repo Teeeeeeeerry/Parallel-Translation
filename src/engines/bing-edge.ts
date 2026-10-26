@@ -43,7 +43,7 @@ export const bingEdge: TranslateEngine = {
   requiresKey: false,
   supportedLangs: 'all',
   // #387: “不翻译”术语走占位符
-  masksNoTranslate: true,
+  termHandling: 'mask',
 
   async translate({ texts, from, to, signal, onGateStart }) {
     // #159: 整个请求过闸门，限制并发在飞请求数
