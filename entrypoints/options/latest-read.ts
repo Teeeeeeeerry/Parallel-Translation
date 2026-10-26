@@ -72,8 +72,10 @@ export function watchLatestRead<T>(opts: LatestReadOptions<T>): LatestRead {
     loaded: () => loaded,
     stop() {
       unsubscribe();
-      // 之后返回的读取都不是最后一次
+      // 之后返回的读取都不是最后一次；它们改返回这个结果 —— 仍返回 latest 的话，
+      // 在飞的那次读取会拿到它自己，成了 Promise 自引用
       seq++;
+      latest = Promise.resolve(false);
     },
   };
 }
