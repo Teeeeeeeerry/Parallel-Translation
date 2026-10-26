@@ -55,7 +55,7 @@ export const googleWeb: TranslateEngine = {
   requiresKey: false,
   supportedLangs: 'all',
   // #386: “不翻译”术语走占位符
-  masksNoTranslate: true,
+  termHandling: 'mask',
 
   async translate({ texts, from, to, signal, onGateStart }) {
     const results = await Promise.allSettled(

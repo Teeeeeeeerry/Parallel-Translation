@@ -36,7 +36,7 @@ const googleWeb = {
   displayName: 'Google 翻译',
   requiresKey: false,
   supportedLangs: 'all' as const,
-  masksNoTranslate: true,
+  termHandling: 'mask' as const,
   translate: (req: { texts: string[] }) => googleTranslate(req),
 };
 const openaiTranslate = vi.fn(async (req: { texts: string[] }) => ({
@@ -47,7 +47,7 @@ const openai = {
   displayName: 'OpenAI',
   requiresKey: true,
   supportedLangs: 'all' as const,
-  injectsTerms: true,
+  termHandling: 'inject' as const,
   translate: (req: { texts: string[] }) => openaiTranslate(req),
 };
 const bingTranslate = vi.fn(async (req: { texts: string[] }) => ({

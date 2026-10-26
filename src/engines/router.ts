@@ -14,7 +14,8 @@ import type { EngineId } from '~/src/storage/schema';
 import { cacheGet, cacheSet, cacheKey } from '~/src/storage/cache';
 import { getCachedEffectiveDomains } from '~/src/storage/domains';
 import type { Term } from '~/src/storage/domains';
-import { matchTerms, uniqueTerms, maskTerms, unmaskTerms } from './terms';
+import { matchTerms, uniqueTerms } from './terms';
+import { termStrategy } from './term-strategy';
 import type { EngineTable } from './registry';
 import { EngineError, EngineUnavailableError, AllEnginesFailedError } from './types';
 import type { TranslateEngine, TranslateRequest, TranslateResponse } from './types';
@@ -29,24 +30,6 @@ async function termHits(req: TranslateRequest): Promise<Term[][]> {
     ? (await getCachedEffectiveDomains()).find((d) => d.id === req.domainId)
     : undefined;
   return req.texts.map((text) => (domain ? matchTerms(domain.terms, text) : []));
-}
-
-/**
- * 该引擎实际生效的术语（#419）：AI 引擎注入全部命中术语；机翻引擎用
- * 占位符落实“不翻译”术语（#386），“指定译法”开关（#390）打开后也落实
- * 指定了译法的术语；其余引擎不处理术语。缓存 key 的术语哈希只算这些
- * 术语 —— 不生效的术语改了也不该让缓存失效。
- */
-function effectiveTerms(
-  engine: TranslateEngine,
-  terms: readonly Term[],
-  mtApplyTermTargets: boolean,
-): Term[] {
-  if (engine.injectsTerms) return [...terms];
-  if (engine.masksNoTranslate) {
-    return mtApplyTermTargets ? [...terms] : terms.filter((t) => t.noTranslate === true);
-  }
-  return [];
 }
 
 /**
@@ -85,10 +68,11 @@ export async function route(req: TranslateRequest, engines: EngineTable): Promis
 
     // #175: BYOK 引擎的模型名参与缓存 key —— 切换模型后不命中旧译文
     const model = getSettings().models?.[id] ?? DEFAULT_MODELS[id] ?? '';
-    // #419: 参与缓存 key 的只是本引擎实际生效的术语；机翻引擎的
-    // “指定译法”开关状态一并进哈希（#390）
-    const keyTerms = hits.map((h) => effectiveTerms(engine, h, mtApplyTermTargets));
-    const mtTermTargets = !!engine.masksNoTranslate && mtApplyTermTargets;
+    // #1155: 本引擎怎么处理术语由它的术语策略决定 —— 参与缓存 key 的只是
+    // 实际生效的术语（#419），“指定译法”开关状态是否进哈希（#390）也由策略给
+    const terms = termStrategy(engine.termHandling);
+    const keyTerms = hits.map((h) => terms.effectiveTerms(h, mtApplyTermTargets));
+    const mtTermTargets = terms.keyFlag(mtApplyTermTargets);
     const keyOf = (text: string, terms: readonly Term[] = []) =>
       cacheKey(id, req.from, req.to, text, model, terms, mtTermTargets);
 
@@ -137,18 +121,18 @@ export async function route(req: TranslateRequest, engines: EngineTable): Promis
     }
 
     try {
-      // #381: 只带本批（未命中缓存的段落）命中的术语，不发送整个领域
-      const batchTerms = uniqueTerms(uncached.flatMap((u) => hits[u.idx]!));
-      // #386: 机翻引擎发送前把生效的术语换成占位符 —— 默认只有“不翻译”
-      // 术语，开关打开后也包括指定了译法的术语（#390）
-      const masks = engine.masksNoTranslate
-        ? uncached.map((u) => maskTerms(u.text, keyTerms[u.idx]!))
-        : null;
+      // 按术语策略改写这一批（#1155）：AI 引擎带上本批命中的术语（#381），
+      // 机翻引擎把生效的术语换成占位符（#386、#390）
+      const plan = terms.prepare(
+        uncached.map((u) => u.text),
+        uncached.map((u) => keyTerms[u.idx]!),
+        uniqueTerms(uncached.flatMap((u) => hits[u.idx]!)),
+      );
       const subReq: TranslateRequest = {
-        texts: masks ? masks.map((m) => m.text) : uncached.map((u) => u.text),
+        texts: plan.texts,
         from: req.from,
         to: req.to,
-        ...(batchTerms.length > 0 && { terms: batchTerms }),
+        ...(plan.terms && { terms: plan.terms }),
         ...(req.signal && { signal: req.signal }),
         ...(req.onGateStart && { onGateStart: req.onGateStart }),
       };
@@ -167,8 +151,8 @@ export async function route(req: TranslateRequest, engines: EngineTable): Promis
           if (!failed.includes(j)) failed.push(j);
           continue;
         }
-        // #386: 占位符换回原词或指定译法；占位符被引擎改坏 → 不采用这份译文
-        const text = masks ? unmaskTerms(raw, masks[j]!.replacements) : raw;
+        // #386: 按策略还原（占位符换回原词或指定译法）；占位符被引擎改坏 → 不采用这份译文
+        const text = plan.restore(raw, j);
         if (text === null) {
           translations[uncached[j]!.idx] = null;
           corrupted.push(j);

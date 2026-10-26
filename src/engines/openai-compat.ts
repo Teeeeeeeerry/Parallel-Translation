@@ -69,7 +69,7 @@ export function createOpenAICompatEngine(config: OpenAICompatConfig): OpenAIComp
     id,
     displayName: config.displayName,
     supportedLangs: 'all',
-    injectsTerms: true,
+    termHandling: 'inject',
     model: currentModel,
     ...(config.classifyError && { classifyError: config.classifyError }),
 
