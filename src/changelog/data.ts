@@ -47,6 +47,57 @@ export const GROUP_ORDER: readonly ChangeType[] = ['feature', 'improve', 'fix'];
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: '2.1.243',
+    groups: [
+      {
+        type: 'improve',
+        items: [
+          {
+            title: {
+              zh_CN: '设置页的失败提示更完整',
+              zh_TW: '設定頁的失敗提示更完整',
+              en: 'Clearer failure messages in settings',
+            },
+            desc: {
+              zh_CN: '导入设置时文件读不出来，原来没有任何提示，现在会说明原因。保存设置写入失败时也会提示原因，例如存储空间不足。',
+              zh_TW: '匯入設定時檔案讀不出來，原本沒有任何提示，現在會說明原因。儲存設定寫入失敗時也會提示原因，例如儲存空間不足。',
+              en: 'If a settings file cannot be read during import, you now see why instead of nothing happening. A failed save also tells you the reason, such as running out of storage.',
+            },
+          },
+        ],
+      },
+      {
+        type: 'fix',
+        items: [
+          {
+            title: {
+              zh_CN: '逐段翻译不再重复翻嵌套内容',
+              zh_TW: '逐段翻譯不再重複翻巢狀內容',
+              en: 'Translate on hover no longer repeats nested content',
+            },
+            desc: {
+              zh_CN: '对带子条目的列表项这类段落逐段翻译时，原来会把子条目的文字一起翻进这一段的译文，子条目翻译后又出现一次。现在只翻这一段自己的文字，与全页翻译一致。',
+              zh_TW: '對帶子項目的清單項這類段落逐段翻譯時，原本會把子項目的文字一起翻進這一段的譯文，子項目翻譯後又出現一次。現在只翻這一段自己的文字，與全頁翻譯一致。',
+              en: 'When you translated a paragraph that contains nested items, such as a list item with a sub-list, the nested text was included in its translation and then appeared again when the nested items were translated. Now only the paragraph\'s own text is translated, the same as with full-page translation.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '提示文字跟随扩展语言',
+              zh_TW: '提示文字跟隨擴充功能語言',
+              en: 'Messages follow the extension language',
+            },
+            desc: {
+              zh_CN: '自定义 CSS 不被接受时的原因，在英文和繁体界面下原来显示简体中文，现在按扩展语言显示。网页上的提示原来在加载语言失败后会一直停在浏览器语言，现在会自动重试。',
+              zh_TW: '自訂 CSS 不被接受時的原因，在英文與繁體介面下原本顯示簡體中文，現在依擴充功能語言顯示。網頁上的提示原本在載入語言失敗後會一直停在瀏覽器語言，現在會自動重試。',
+              en: 'Reasons for rejecting custom CSS used to appear in Simplified Chinese in the English and Traditional Chinese interfaces and now follow the extension language. On-page messages that fell back to the browser language after a failed language load now retry automatically.',
+            },
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '2.1.218',
     groups: [
       {
