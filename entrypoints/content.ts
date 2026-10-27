@@ -65,8 +65,7 @@ import { watchEffectiveDomains } from '~/src/storage/domains';
 import type { Domain } from '~/src/storage/domains';
 import { siteRulesReady } from '~/src/storage/specialization';
 import { followUiLocale, tf } from '~/src/i18n';
-import { decideShow } from '~/src/changelog/decide';
-import { clearSeen } from '~/src/changelog/state';
+import { startChangelogPrompt, type ClaimResult, type PromptPage } from '~/src/changelog/prompt';
 
 /** #1083：批次耗时调试日志的开关（storage.local），默认没有。 */
 const DEBUG_BATCH_TIMING_KEY = 'pt-debug-batch-timing';
@@ -85,6 +84,56 @@ async function requestTopHostname(): Promise<string> {
     // background 没有响应：按本 frame 判定
   }
   return location.hostname;
+}
+
+/**
+ * 页面对用户是否可见（#1172）：后台标签页与预渲染的文档都不算。预渲染的
+ * 文档激活时发 prerenderingchange，两种事件都听。
+ */
+function documentVisibility(): PromptPage {
+  const isVisible = () =>
+    document.visibilityState === 'visible' &&
+    !(document as Document & { prerendering?: boolean }).prerendering;
+  return {
+    isVisible,
+    onVisibilityChange(fn) {
+      document.addEventListener('visibilitychange', fn);
+      document.addEventListener('prerenderingchange', fn);
+      return () => {
+        document.removeEventListener('visibilitychange', fn);
+        document.removeEventListener('prerenderingchange', fn);
+      };
+    },
+  };
+}
+
+/**
+ * 经长连接向 background 申请更新提示的显示权（#1172）。拿到后连接一直开着，
+ * 释放即断开；页面卸载时浏览器自动断开，background 随之收回。
+ */
+function claimChangelogViaPort(version: string): Promise<ClaimResult> {
+  return new Promise((resolve, reject) => {
+    let port: chrome.runtime.Port;
+    try {
+      port = chrome.runtime.connect({ name: 'pt-changelog' });
+    } catch (e) {
+      // 扩展上下文失效
+      reject(e);
+      return;
+    }
+    port.onMessage.addListener((msg: unknown) => {
+      const outcome = (msg as { outcome?: unknown } | null)?.outcome;
+      if (outcome === 'granted') {
+        resolve({ granted: true, lease: { release: () => port.disconnect() } });
+      } else {
+        port.disconnect();
+        resolve({ granted: false, reason: outcome === 'busy' ? 'busy' : 'seen' });
+      }
+    });
+    // 回复之前断开（SW 未就绪、被回收）：这次不弹；回复之后断开时 resolve 已无效
+    port.onDisconnect.addListener(() => reject(new Error('changelog port disconnected')));
+    port.postMessage({ type: 'claim', version });
+  });
 }
 
 export default defineContentScript({
@@ -324,50 +373,30 @@ export default defineContentScript({
      * 更新提示（ADR-0001）—— 扩展更新到写有 changelog 条目的上架版本后，
      * 用户下次打开新页面时在页内弹出。
      *
-     * 分两步：子框架 / 开发构建 / 被拉黑站点 / 内部版本在本地就排除，
-     * 不去打扰 SW;剩下的才向 background 申请显示权，多标签页并发时
-     * 只有一个拿到（见 changelog/claim.ts）。
+     * 流程在 changelog/prompt.ts（#1172）：本地预筛 → 页面可见才向 background
+     * 申请显示权 → 用户看到后才记已读。这里只接线：可见性取自 document，
+     * 显示权经长连接申请 —— 页面卸载时连接自动断开，background 据此收回
+     * 没看成的显示权。
      *
-     * 不 await —— 更新提示与翻译功能互不依赖，不该让它拖慢内容脚本启动。
+     * 不阻塞 —— 更新提示与翻译功能互不依赖，不该让它拖慢内容脚本启动。
      */
-    async function maybeShowChangelog(): Promise<void> {
-      const decision = decideShow({
-        version: chrome.runtime.getManifest().version,
-        isDev: import.meta.env.DEV,
-        isMainFrame,
-        // #1120：拉黑判断问页面上下文，与准入同一份站点名单判定
-        siteBlocked: pageContext.siteBlocked(),
-      });
-      if (!decision.show) return;
-
-      let granted = false;
-      try {
-        const res: unknown = await chrome.runtime.sendMessage({
-          type: 'pt:changelog-claim',
-          version: decision.entry.version,
-        });
-        granted = (res as { granted?: boolean } | null)?.granted === true;
-      } catch {
-        // SW 未就绪或扩展上下文失效 —— 这次不弹，下次页面加载再说
-        return;
-      }
-      if (!granted) return;
-
-      // 动态 import 的形式与代价见 ADR-0001（MV3 下并不会真的分包）
-      try {
-        const { showChangelog } = await import('~/src/changelog/modal');
-        showChangelog(decision.entry);
-      } catch (e) {
-        // 显示权是在 background 发放时就标记已读的（并发仲裁的需要）。
-        // 走到这里意味着标记了却没显示成功，不回滚的话这个上架版本
-        // 会被永久跳过，用户再也看不到本次更新说明。
-        await clearSeen(decision.entry.version).catch(() => {});
-        throw e;
-      }
-    }
-
-    void maybeShowChangelog().catch((e) =>
-      console.error('[PT] 更新提示失败：', e),
+    ctx.onInvalidated(
+      startChangelogPrompt({
+        input: {
+          version: chrome.runtime.getManifest().version,
+          isDev: import.meta.env.DEV,
+          isMainFrame,
+          // #1120：拉黑判断问页面上下文，与准入同一份站点名单判定
+          siteBlocked: pageContext.siteBlocked(),
+        },
+        page: documentVisibility(),
+        claim: claimChangelogViaPort,
+        // 动态 import 的形式与代价见 ADR-0001（MV3 下并不会真的分包）
+        render: async (entry, onClose) => {
+          const { showChangelog } = await import('~/src/changelog/modal');
+          return showChangelog(entry, onClose);
+        },
+      }),
     );
 
     // ── 翻译全页 ──

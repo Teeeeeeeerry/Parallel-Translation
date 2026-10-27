@@ -195,7 +195,7 @@ describe('更新提示', () => {
   test('浏览器是简体中文、扩展语言选 en：标题、分组名与条目都是英文', async () => {
     vi.mocked(chrome.i18n.getUILanguage).mockReturnValue('zh-CN');
     await loadUiLocale('en', fromRepo);
-    showChangelog(entry);
+    showChangelog(entry, () => {});
     const text = card().textContent!;
     expect(text).toContain(message('en', 'changelogTitle'));
     expect(text).toContain(message('en', 'changelogGroupFeature'));
