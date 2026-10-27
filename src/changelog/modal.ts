@@ -144,9 +144,12 @@ function renderSocial(): HTMLElement | null {
 /**
  * 显示更新提示。重复调用幂等（已挂载则直接返回）——
  * content script 每帧只该有一个弹窗。
+ *
+ * 用户关闭（X / 知道了 / 点遮罩 / Esc）时调 onClose；返回的函数移除弹窗
+ * 而不调 onClose —— 页面切走、还没算用户看过时收起用（#1172）。
  */
-export function showChangelog(entry: ChangelogEntry): void {
-  if (document.getElementById(`pt-host-${MOUNT_ID}`)) return;
+export function showChangelog(entry: ChangelogEntry, onClose: () => void): () => void {
+  if (document.getElementById(`pt-host-${MOUNT_ID}`)) return () => {};
 
   const locale = uiLocale();
   // 全屏遮罩，覆盖 mountIsolated 默认的右下角定位
@@ -204,9 +207,14 @@ export function showChangelog(entry: ChangelogEntry): void {
   shadow.appendChild(overlay);
 
   // ── 关闭：X / 知道了 / 点遮罩 / Esc ──
-  function close(): void {
+  function remove(): void {
     document.removeEventListener('keydown', onKeydown, true);
     unmountIsolated(MOUNT_ID);
+  }
+
+  function close(): void {
+    remove();
+    onClose();
   }
 
   function onKeydown(e: KeyboardEvent): void {
@@ -225,4 +233,5 @@ export function showChangelog(entry: ChangelogEntry): void {
   document.addEventListener('keydown', onKeydown, true);
 
   okBtn.focus();
+  return remove;
 }

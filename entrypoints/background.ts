@@ -18,8 +18,8 @@ import { ensureE2EMock, applyE2EMock, getE2EMockStats } from '~/src/engines/e2e-
 import { initContextMenu, refreshContextMenuTitle } from '~/src/ui/context-menu';
 import { followUiLocale, UI_MESSAGES } from '~/src/i18n';
 import { answerUiMessages } from '~/src/runtime/ui-messages';
-import { claimShow, markFreshInstall } from '~/src/changelog/claim';
-import { markSeen } from '~/src/changelog/state';
+import { claimShow, releaseShow, markFreshInstall } from '~/src/changelog/claim';
+import { markInstalled } from '~/src/changelog/state';
 import { DOMAIN_CHOICE, INPUT_LANG_CHOICE, tabChoiceForwarder } from '~/src/ui/tab-choice';
 
 /** 将浏览器 UI 语言映射到 LANG_LIST 中可用的目标语言码 */
@@ -82,7 +82,8 @@ export default defineBackground(() => {
       // 两道闸：先同步置位内存标志（立即生效，先于任何 claim 消息抵达），
       // 再异步落盘。只靠落盘会留下竞态窗口 —— 详见 claim.ts 的说明。
       markFreshInstall();
-      markSeen(chrome.runtime.getManifest().version).catch((e) =>
+      // #1172：只写本机，不挡用户别的设备
+      markInstalled(chrome.runtime.getManifest().version).catch((e) =>
         console.error('[PT] 首装标记更新提示已读失败：', e),
       );
 
@@ -134,20 +135,36 @@ export default defineBackground(() => {
   });
 
   // 更新提示的显示权仲裁（ADR-0001）——
-  // 扩展更新后每个新页面的 content script 都会来问，串行判定只放行一个，
-  // 避免同时打开多个标签页时弹出多个弹窗
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg?.type !== 'pt:changelog-claim') return;
-    // 跨进程载荷不做类型假设 —— 字段不对就当没收到，不去写存储
-    if (typeof msg.version !== 'string' || !msg.version) return;
-
-    claimShow(msg.version)
-      .then((granted) => sendResponse({ ok: true, granted }))
-      .catch((e) => {
-        console.error('[PT] 更新提示仲裁失败：', e);
-        sendResponse({ ok: false, granted: false });
-      });
-    return true; // 异步响应
+  // 扩展更新后每个可见的新页面都会来问，串行判定只放行一个，避免同时打开
+  // 多个标签页时弹出多个弹窗。#1172：走长连接，端口即占用者 —— 页面看完
+  // 或没看成都会断开，页面卸载时浏览器也会断开，断开即释放显示权
+  chrome.runtime.onConnect.addListener((port) => {
+    // 端口名与 content.ts 的 CHANGELOG_PORT 对应；心跳消息只为重置 SW 闲置计时，不用处理
+    if (port.name !== 'pt-changelog-claim') return;
+    let disconnected = false;
+    port.onMessage.addListener((msg: unknown) => {
+      const req = msg as { type?: unknown; version?: unknown } | null;
+      // 跨进程载荷不做类型假设 —— 字段不对就当没收到
+      if (req?.type !== 'pt:changelog-claim' || typeof req.version !== 'string' || !req.version) return;
+      claimShow(req.version, port)
+        .then((outcome) => {
+          // 排队期间页面已卸载：刚占住的显示权立即交还，不让死端口一直占着
+          if (disconnected) {
+            releaseShow(port);
+            return;
+          }
+          port.postMessage({ outcome });
+        })
+        .catch((e) => {
+          console.error('[PT] 更新提示仲裁失败：', e);
+          releaseShow(port);
+          if (!disconnected) port.disconnect();
+        });
+    });
+    port.onDisconnect.addListener(() => {
+      disconnected = true;
+      releaseShow(port);
+    });
   });
 
   // #471: 子 frame 取顶层页面的主机名 —— 按发送方所在标签页的网址，
