@@ -47,21 +47,100 @@ export const GROUP_ORDER: readonly ChangeType[] = ['feature', 'improve', 'fix'];
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
-    version: '2.1.243',
+    // 相比 2.1.1 的重大更新汇总：之前的更新提示有不少用户没看到（#1172），
+    // 这一版把 2.1.153、2.1.218 以来的主要变化合在一起再说一遍
+    version: '2.1.245',
     groups: [
+      {
+        type: 'feature',
+        items: [
+          {
+            title: {
+              zh_CN: '输入翻译',
+              zh_TW: '輸入翻譯',
+              en: 'Translate input',
+            },
+            desc: {
+              zh_CN: '在输入框里写好一段话，点文字末尾的圆点，就整段换成对方的语言，按撤销可以回到原文；工具栏面板里可以临时指定这一次译成什么。',
+              zh_TW: '在輸入框裡寫好一段話，點文字末尾的圓點，就整段換成對方的語言，按復原可以回到原文；工具列面板裡可以臨時指定這一次譯成什麼。',
+              en: 'Write something in a text box and click the dot at the end of your text to replace it with the other language. Undo brings back your original. The toolbar panel lets you pick a one-off target language.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '扩展语言',
+              zh_TW: '擴充功能語言',
+              en: 'Extension language',
+            },
+            desc: {
+              zh_CN: '设置页“通用”分区可以单独选扩展界面的语言：English、简体中文或繁體中文，默认跟随浏览器。只改扩展自身的界面，不影响译文。',
+              zh_TW: '設定頁「一般」分區可以單獨選擴充功能介面的語言：English、简体中文或繁體中文，預設跟隨瀏覽器。只改擴充功能自身的介面，不影響譯文。',
+              en: 'Choose the language of the extension itself (English, 简体中文 or 繁體中文) under General in settings. It follows your browser by default and does not affect translations.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '悬浮 UI 大小可调',
+              zh_TW: '浮動 UI 大小可調',
+              en: 'Adjustable floating UI size',
+            },
+            desc: {
+              zh_CN: '设置页“悬浮 UI”里可以调悬浮球、逐段翻译按钮和输入翻译圆点的大小，旁边有实时预览。',
+              zh_TW: '設定頁「浮動 UI」裡可以調浮動球、逐段翻譯按鈕和輸入翻譯圓點的大小，旁邊有即時預覽。',
+              en: 'Resize the floating ball, the translate-on-hover button and the Translate input dot under Floating UI in settings, with a live preview.',
+            },
+          },
+        ],
+      },
       {
         type: 'improve',
         items: [
           {
             title: {
-              zh_CN: '设置页的失败提示更完整',
-              zh_TW: '設定頁的失敗提示更完整',
-              en: 'Clearer failure messages in settings',
+              zh_CN: '全页翻译更快、更省',
+              zh_TW: '全頁翻譯更快、更省',
+              en: 'Faster, leaner full-page translation',
             },
             desc: {
-              zh_CN: '导入设置时文件读不出来，原来没有任何提示，现在会说明原因。保存设置写入失败时也会提示原因，例如存储空间不足。',
-              zh_TW: '匯入設定時檔案讀不出來，原本沒有任何提示，現在會說明原因。儲存設定寫入失敗時也會提示原因，例如儲存空間不足。',
-              en: 'If a settings file cannot be read during import, you now see why instead of nothing happening. A failed save also tells you the reason, such as running out of storage.',
+              zh_CN: '段落按字数打包发送，长页面的请求次数减到原来的三分之一左右；正文已经是目标语言的页面一个请求都不发；还原页面后已发出的请求会被取消，不再消耗引擎配额。',
+              zh_TW: '段落依字數打包傳送，長頁面的請求次數減到原本的三分之一左右；正文已經是目標語言的頁面一個請求都不發；還原頁面後已送出的請求會被取消，不再消耗引擎配額。',
+              en: 'Paragraphs are batched by length, cutting requests on long pages to about a third. Pages already in your target language send no requests at all, and restoring a page cancels requests in flight so they stop using your engine quota.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '翻译覆盖更全',
+              zh_TW: '翻譯涵蓋更全',
+              en: 'More of the page gets translated',
+            },
+            desc: {
+              zh_CN: '网页邮箱、文件预览这类 iframe 里的内容也能翻；用换行分行的长帖逐行对照；翻译期间加载出来的内容会接着补翻；没翻到的段落会提示有几段、主要原因是什么。',
+              zh_TW: '網頁郵件、檔案預覽這類 iframe 裡的內容也能翻；用換行分行的長帖逐行對照；翻譯期間載入的內容會接著補翻；沒翻到的段落會提示有幾段、主要原因是什麼。',
+              en: 'Content inside iframes such as webmail and file previews now translates, long line-broken posts translate line by line, content loaded during translation is picked up, and you are told how many paragraphs were left untranslated and why.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '划词译文停得住',
+              zh_TW: '劃詞譯文停得住',
+              en: 'Selection translations stay put',
+            },
+            desc: {
+              zh_CN: '划词与右键翻译的译文按长短停留 5 到 60 秒，鼠标或键盘焦点停在上面时不计时，可以关闭。',
+              zh_TW: '劃詞與右鍵翻譯的譯文依長短停留 5 到 60 秒，滑鼠或鍵盤焦點停在上面時不計時，可以關閉。',
+              en: 'Selection and right-click translations stay for 5 to 60 seconds depending on length, pause while your mouse or keyboard focus is on them, and can be closed.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '更新提示不再错过',
+              zh_TW: '更新提示不再錯過',
+              en: 'Update notes you will actually see',
+            },
+            desc: {
+              zh_CN: '更新提示原来可能弹在后台标签页或一闪而过的页面上，就此再也看不到。现在只在正在看的页面上弹出，没看到会在下一个页面再弹。',
+              zh_TW: '更新提示原本可能彈在背景分頁或一閃而過的頁面上，就此再也看不到。現在只在正在看的頁面上彈出，沒看到會在下一個頁面再彈。',
+              en: 'This note could previously pop up in a background tab or on a page you left right away, and then never appear again. It now shows only on the page you are looking at, and comes back on the next page if you missed it.',
             },
           },
         ],
@@ -71,26 +150,38 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
         items: [
           {
             title: {
-              zh_CN: '逐段翻译不再重复翻嵌套内容',
-              zh_TW: '逐段翻譯不再重複翻巢狀內容',
-              en: 'Translate on hover no longer repeats nested content',
+              zh_CN: 'Bing 翻译恢复可用',
+              zh_TW: 'Bing 翻譯恢復可用',
+              en: 'Bing Translator works again',
             },
             desc: {
-              zh_CN: '对带子条目的列表项这类段落逐段翻译时，原来会把子条目的文字一起翻进这一段的译文，子条目翻译后又出现一次。现在只翻这一段自己的文字，与全页翻译一致。',
-              zh_TW: '對帶子項目的清單項這類段落逐段翻譯時，原本會把子項目的文字一起翻進這一段的譯文，子項目翻譯後又出現一次。現在只翻這一段自己的文字，與全頁翻譯一致。',
-              en: 'When you translated a paragraph that contains nested items, such as a list item with a sub-list, the nested text was included in its translation and then appeared again when the nested items were translated. Now only the paragraph\'s own text is translated, the same as with full-page translation.',
+              zh_CN: '微软更换了 Edge 用的翻译接口，内置的 Bing 翻译原来一律失败，现在改用新接口。',
+              zh_TW: '微軟更換了 Edge 使用的翻譯介面，內建的 Bing 翻譯原本一律失敗，現在改用新介面。',
+              en: 'Microsoft changed the translation endpoint used by Edge, which made the built-in Bing Translator fail. It now uses the new endpoint.',
             },
           },
           {
             title: {
-              zh_CN: '提示文字跟随扩展语言',
-              zh_TW: '提示文字跟隨擴充功能語言',
-              en: 'Messages follow the extension language',
+              zh_CN: '长页面不再漏翻或超时',
+              zh_TW: '長頁面不再漏翻或逾時',
+              en: 'Long pages no longer skip or time out',
             },
             desc: {
-              zh_CN: '自定义 CSS 不被接受时的原因，在英文和繁体界面下原来显示简体中文，现在按扩展语言显示。网页上的提示原来在加载语言失败后会一直停在浏览器语言，现在会自动重试。',
-              zh_TW: '自訂 CSS 不被接受時的原因，在英文與繁體介面下原本顯示簡體中文，現在依擴充功能語言顯示。網頁上的提示原本在載入語言失敗後會一直停在瀏覽器語言，現在會自動重試。',
-              en: 'Reasons for rejecting custom CSS used to appear in Simplified Chinese in the English and Traditional Chinese interfaces and now follow the extension language. On-page messages that fell back to the browser language after a failed language load now retry automatically.',
+              zh_CN: '维基长条目上被整段跳过的段落照常翻译；排队等待不再算进超时，不会整批报“响应超时”。',
+              zh_TW: '維基長條目上被整段跳過的段落照常翻譯；排隊等待不再算進逾時，不會整批報「回應逾時」。',
+              en: 'Paragraphs that used to be skipped on long wiki articles now translate, and time spent waiting in the queue no longer counts toward the timeout.',
+            },
+          },
+          {
+            title: {
+              zh_CN: '译文更干净',
+              zh_TW: '譯文更乾淨',
+              en: 'Cleaner translations',
+            },
+            desc: {
+              zh_CN: '引擎原样还回来的文字不再当译文插入；逐段翻译带子条目的段落时不再把子条目重复翻一遍；表格里只有数字和符号的格子不再送去翻译。',
+              zh_TW: '引擎原樣還回來的文字不再當譯文插入；逐段翻譯帶子項目的段落時不再把子項目重複翻一遍；表格裡只有數字和符號的格子不再送去翻譯。',
+              en: 'Text the engine returns unchanged is no longer inserted as a translation, nested items are no longer translated twice when you translate their parent paragraph, and table cells with only numbers and symbols are no longer sent for translation.',
             },
           },
         ],
