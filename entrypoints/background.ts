@@ -139,13 +139,14 @@ export default defineBackground(() => {
   // 多个标签页时弹出多个弹窗。#1172：走长连接，端口即占用者 —— 页面看完
   // 或没看成都会断开，页面卸载时浏览器也会断开，断开即释放显示权
   chrome.runtime.onConnect.addListener((port) => {
-    if (port.name !== 'pt-changelog') return;
+    // 端口名与 content.ts 的 CHANGELOG_PORT 对应；心跳消息只为重置 SW 闲置计时，不用处理
+    if (port.name !== 'pt-changelog-claim') return;
     let disconnected = false;
     port.onMessage.addListener((msg: unknown) => {
-      const m = msg as { type?: unknown; version?: unknown } | null;
+      const req = msg as { type?: unknown; version?: unknown } | null;
       // 跨进程载荷不做类型假设 —— 字段不对就当没收到
-      if (m?.type !== 'claim' || typeof m.version !== 'string' || !m.version) return;
-      claimShow(m.version, port)
+      if (req?.type !== 'pt:changelog-claim' || typeof req.version !== 'string' || !req.version) return;
+      claimShow(req.version, port)
         .then((outcome) => {
           // 排队期间页面已卸载：刚占住的显示权立即交还，不让死端口一直占着
           if (disconnected) {

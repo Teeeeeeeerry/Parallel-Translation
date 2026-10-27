@@ -90,6 +90,11 @@ async function requestTopHostname(): Promise<string> {
  * 页面对用户是否可见（#1172）：后台标签页与预渲染的文档都不算。预渲染的
  * 文档激活时发 prerenderingchange，两种事件都听。
  */
+/** 更新提示显示权的长连接名（与 background 的 onConnect 对应）。 */
+const CHANGELOG_PORT = 'pt-changelog-claim';
+/** 占着显示权时的心跳间隔，小于 MV3 SW 30 秒的闲置回收。 */
+const CHANGELOG_KEEPALIVE_MS = 20_000;
+
 function documentVisibility(): PromptPage {
   const isVisible = () =>
     document.visibilityState === 'visible' &&
@@ -110,29 +115,54 @@ function documentVisibility(): PromptPage {
 /**
  * 经长连接向 background 申请更新提示的显示权（#1172）。拿到后连接一直开着，
  * 释放即断开；页面卸载时浏览器自动断开，background 随之收回。
+ *
+ * 开着的端口不会让 MV3 的 SW 保持存活：弹窗开着而 SW 闲置被回收时，占用
+ * 随内存丢失，别的可见页面就会再弹一个。占着期间定时发心跳，重置 SW 的
+ * 闲置计时。
  */
 function claimChangelogViaPort(version: string): Promise<ClaimResult> {
   return new Promise((resolve, reject) => {
     let port: chrome.runtime.Port;
     try {
-      port = chrome.runtime.connect({ name: 'pt-changelog' });
+      port = chrome.runtime.connect({ name: CHANGELOG_PORT });
     } catch (e) {
       // 扩展上下文失效
       reject(e);
       return;
     }
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
     port.onMessage.addListener((msg: unknown) => {
       const outcome = (msg as { outcome?: unknown } | null)?.outcome;
       if (outcome === 'granted') {
-        resolve({ granted: true, lease: { release: () => port.disconnect() } });
+        heartbeat = setInterval(() => {
+          try {
+            port.postMessage({ type: 'pt:changelog-keepalive' });
+          } catch {
+            clearInterval(heartbeat);
+          }
+        }, CHANGELOG_KEEPALIVE_MS);
+        resolve({
+          granted: true,
+          lease: {
+            release: () => {
+              clearInterval(heartbeat);
+              port.disconnect();
+            },
+          },
+        });
       } else {
         port.disconnect();
         resolve({ granted: false, reason: outcome === 'busy' ? 'busy' : 'seen' });
       }
     });
-    // 回复之前断开（SW 未就绪、被回收）：这次不弹；回复之后断开时 resolve 已无效
-    port.onDisconnect.addListener(() => reject(new Error('changelog port disconnected')));
-    port.postMessage({ type: 'claim', version });
+    port.onDisconnect.addListener(() => {
+      // 读一下 lastError，免得连不上 SW 时控制台报“Unchecked runtime.lastError”
+      void chrome.runtime.lastError;
+      clearInterval(heartbeat);
+      // 回复之前断开（SW 未就绪、被回收）：这次不弹；回复之后断开时 reject 已无效
+      reject(new Error('changelog port disconnected'));
+    });
+    port.postMessage({ type: 'pt:changelog-claim', version });
   });
 }
 

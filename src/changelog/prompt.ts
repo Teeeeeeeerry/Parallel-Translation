@@ -13,6 +13,7 @@
 // 页面可见性、与后台的通信、渲染都由调用方注入，content.ts 只负责接线。
 
 import type { ChangelogEntry } from './data';
+import type { ClaimOutcome } from './claim';
 import { decideShow, type ShowInput } from './decide';
 import { markSeen } from './state';
 
@@ -36,7 +37,7 @@ export interface Lease {
 
 export type ClaimResult =
   | { granted: true; lease: Lease }
-  | { granted: false; reason: 'seen' | 'busy' };
+  | { granted: false; reason: Exclude<ClaimOutcome, 'granted'> };
 
 export interface PromptDeps {
   input: ShowInput;
@@ -77,6 +78,15 @@ export function startChangelogPrompt(deps: PromptDeps): () => void {
     lease = null;
   }
 
+  /** 还没算用户看过就得退回：收起弹窗（若有）、交还显示权，等下次可见。 */
+  function backOff(remove?: () => void): void {
+    clearTimeout(timer);
+    remove?.();
+    dismiss = null;
+    releaseLease();
+    phase = 'waiting';
+  }
+
   async function tryClaim(): Promise<void> {
     phase = 'claiming';
     let result: ClaimResult;
@@ -106,8 +116,7 @@ export function startChangelogPrompt(deps: PromptDeps): () => void {
     lease = result.lease;
     if (!deps.page.isVisible()) {
       // 申请期间切走了
-      releaseLease();
-      phase = 'waiting';
+      backOff();
       return;
     }
     let remove: () => void;
@@ -120,11 +129,15 @@ export function startChangelogPrompt(deps: PromptDeps): () => void {
       console.error('[PT] 更新提示失败：', e);
       return;
     }
-    if (phase !== 'claiming' || !deps.page.isVisible()) {
-      // 渲染期间被停止或切走
+    if (phase !== 'claiming') {
+      // 渲染期间被停止
       remove();
       releaseLease();
-      if (phase === 'claiming') phase = 'waiting';
+      return;
+    }
+    if (!deps.page.isVisible()) {
+      // 渲染期间切走了
+      backOff(remove);
       return;
     }
     dismiss = remove;
@@ -138,12 +151,8 @@ export function startChangelogPrompt(deps: PromptDeps): () => void {
       clearTimeout(timer);
       void tryClaim();
     } else if (phase === 'showing' && !visible) {
-      // 还没算看过就切走：收起弹窗、交还显示权
-      clearTimeout(timer);
-      dismiss?.();
-      dismiss = null;
-      releaseLease();
-      phase = 'waiting';
+      // 还没算看过就切走
+      backOff(dismiss ?? undefined);
     }
   }
 
@@ -165,6 +174,9 @@ export function startChangelogPrompt(deps: PromptDeps): () => void {
   if (deps.page.isVisible()) void tryClaim();
 
   return () => {
+    // content script 失效（扩展更新、重载）：还没算看过的弹窗一并收起 ——
+    // 失效后写不了存储，留着它用户关掉也记不成已读
+    if (phase === 'showing') dismiss?.();
     finish();
     releaseLease();
   };

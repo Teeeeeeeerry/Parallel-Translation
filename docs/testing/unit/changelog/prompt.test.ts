@@ -248,6 +248,21 @@ describe('异常', () => {
     expect(next.isOpen()).toBe(true);
   });
 
+  test('弹窗开着时 content script 失效：还没算看过的弹窗收起，不记已读', async () => {
+    const a = openPage();
+    await flush();
+    a.unload();
+    expect(a.isOpen()).toBe(false);
+    expect(await state.hasSeen(VERSION)).toBe(false);
+  });
+
+  test('本机首装标记落盘后（内存闸门已随 SW 回收丢失）：同版本不弹', async () => {
+    await state.markInstalled(VERSION);
+    const a = openPage();
+    await flush();
+    expect(a.shownCount()).toBe(0);
+  });
+
   test('首装：同版本不弹', async () => {
     claim.markFreshInstall();
     const a = openPage();
