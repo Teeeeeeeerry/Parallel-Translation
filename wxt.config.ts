@@ -111,7 +111,9 @@ export default defineConfig({
   // docs/testing/logs/ 下每次跑测试都会重写的覆盖率与报告产物，
   // 合计约 4.3MB，对复现构建毫无用处，还让审核者多下载 20 倍体积。
   zip: {
-    excludeSources: ['docs/**', 'store/**', 'design/**'],
+    // 私有文档仓库克隆在 notes/，CONTEXT.md 是指向它的本地链接（#1109）：
+    // 源码包不能带上它们，wxt 打源码包不看 .gitignore
+    excludeSources: ['docs/**', 'store/**', 'design/**', 'notes/**', 'CONTEXT.md'],
   },
   vite: () => ({
     plugins: [blockTestFiles()],
