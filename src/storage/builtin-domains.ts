@@ -4,11 +4,11 @@
 // 本文件是 Parallel-Translation 的一部分，依 GNU GPL v3 或更新版本发布，
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
-// 内置领域（#379）—— 纯数据，新增内置领域只改这里。
-//
-// 术语由本项目自行编写。沉浸式翻译的数据仓库没有 LICENSE，read-frog 的
-// 来源不明，两者的术语、规则都不复用（见 ADR-0003 与调研报告 6.1 节）。
+// 内置领域（#379）—— 纯数据。软件开发领域由本项目自行编写，写在本文件里；
+// 其余内置领域按术语库生成，见 builtin-glossary-data.ts 与
+// scripts/build-builtin-domains.ts（数据来源与重新生成的方法记在脚本文件头）。
 
+import { BUILTIN_GLOSSARY_DOMAINS } from './builtin-glossary-data';
 import type { Domain } from './domains';
 
 /** 软件开发(简体中文)：代码托管与技术问答站点上的常见行话。 */
@@ -53,5 +53,5 @@ const SOFTWARE_ZH_CN: Domain = {
   ],
 };
 
-/** 内置领域列表，顺序即默认优先级。 */
-export const BUILTIN_DOMAINS: readonly Domain[] = [SOFTWARE_ZH_CN];
+/** 内置领域列表，顺序即默认优先级。软件开发领域排在最前（#379）。 */
+export const BUILTIN_DOMAINS: readonly Domain[] = [SOFTWARE_ZH_CN, ...BUILTIN_GLOSSARY_DOMAINS];
