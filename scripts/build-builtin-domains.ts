@@ -2,18 +2,19 @@
 /**
  * build-builtin-domains.ts
  *
- * 从外部术语库包生成内置领域数据 src/storage/builtin-domain-terms.ts。
+ * 从本项目的术语库包生成内置领域数据 src/storage/builtin-domain-terms.ts。
  *
  * 用法：
  *   npx tsx scripts/build-builtin-domains.ts <术语库包目录>
  *
- * 术语库包不在本仓库里，也不随扩展分发：脚本读它的 terminology/clean/*.csv
- *（三列 source,target,tgt_lng；文件名 [词表]_zh-CN.csv / _zh-TW.csv，无语言
- * 后缀的是 auto 词表，表示原样保留）。本次生成用的上游是
- * <https://github.com/immersive-translate/terms> 提交
- * 46f8686f4278ed0a5bf20c81a07a07b09ddf877e（经 translation-terminology 包
- * 清洗），上游未声明许可证，公开再分发前须自行确认授权。这条来源记录只留在
- * 本脚本，不进入扩展产物与用户界面。
+ * 术语库包不在本仓库里：脚本读它的 terminology/clean/*.csv（三列
+ * source,target,tgt_lng；文件名 [词表]_zh-CN.csv / _zh-TW.csv，无语言后缀的
+ * 是 auto 词表，表示原样保留）。来源与许可（2026-10-28，项目维护者确认）：
+ * 本次生成用的输入是本项目自有的翻译术语库包
+ * translation-terminology-2026-10-28.zip（SHA-256
+ * b6edd5856b6886797900987f5ce2193642b82e5f310d34006deaa7003ca458da），
+ * 不是从沉浸式翻译（immersive-translate/terms）的数据整理而来，可随扩展
+ * 一并分发。重新生成时解开这个包，把参数指向包根目录。
  *
  * 词表共 36 个：35 个有翻译词表（其中 27 个简繁都有，8 个只有简体），
  * 另 1 个 default 只有 auto 词表、没有自己的领域。简繁有没有译文由术语库包
