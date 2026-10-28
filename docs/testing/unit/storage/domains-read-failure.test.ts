@@ -24,6 +24,7 @@ import {
 } from '~/src/storage/domains';
 import { StorageReadError } from '~/src/storage/read-error';
 import { resetStorage, localStoreSnapshot } from '~/docs/testing/setup';
+import { BUILTIN_DOMAINS } from '~/src/storage/builtin-domains';
 import type { Domain } from '~/src/storage/domains';
 
 const BUILTIN = 'builtin:software-zh-CN';
@@ -88,9 +89,9 @@ describe('读取存储失败时写操作不落盘（#484）', () => {
 });
 
 describe('读取存储失败时设置页的领域列表抛错，翻译路径照常（#535）', () => {
-  /** 只剩内置领域的列表：全是内置领域，且不止一个（内置领域由自编与术语库生成两部分组成）。 */
+  /** 只剩内置领域的列表：条数与内置领域一致，且全是内置领域（自编 + 术语生成的都在）。 */
   const onlyBuiltins = (list: readonly Domain[]) => {
-    expect(list.length).toBeGreaterThan(1);
+    expect(list).toHaveLength(BUILTIN_DOMAINS.length);
     expect(list.every((d) => d.origin === 'builtin')).toBe(true);
   };
 

@@ -2,7 +2,7 @@
 /**
  * build-builtin-domains.ts
  *
- * 从外部术语库包生成内置领域数据 src/storage/builtin-glossary-data.ts。
+ * 从外部术语库包生成内置领域数据 src/storage/builtin-domain-terms.ts。
  *
  * 用法：
  *   npx tsx scripts/build-builtin-domains.ts <术语库包目录>
@@ -15,6 +15,10 @@
  * 清洗），上游未声明许可证，公开再分发前须自行确认授权。这条来源记录只留在
  * 本脚本，不进入扩展产物与用户界面。
  *
+ * 词表共 36 个：35 个有翻译词表（其中 27 个简繁都有，8 个只有简体），
+ * 另 1 个 default 只有 auto 词表、没有自己的领域。简繁有没有译文由术语库包
+ * 决定，这里有几种语言就生成几个领域，不补齐、不机翻。
+ *
  * 生成规则（都是有意的取舍，改之前先读一遍）：
  * - 一个词表、一种目标语言一个领域（领域只服务一种目标语言）。
  * - auto 词表并进同主题的领域，标“不翻译”：同一批词在简体、繁体两边都要有。
@@ -24,12 +28,14 @@
  *   ESPN / BBC 的网球栏目等）表达不了，直接不收，让用户在 popup 里手选。
  *   生物词表原配的 wikipedia 之类太宽泛：class / order / family 在通用页面上
  *   会被误伤，也不收。
- * - 术语顺序沿用 CSV；同一领域里原词（不区分大小写）重复、空原词、空译法都
- *   直接报错，不带病生成。
+ * - 术语顺序沿用 CSV；同一领域里原词（不区分大小写）重复、空原词、空译法、
+ *   原词或译法有首尾空白都直接报错，不带病生成。译法与原文相同的按“不翻译”
+ *   存（MP3、TPU 这类本来就不该动）。
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /** 一个术语库的元数据；顺序即生成后的内置领域顺序。 */
 interface GlossaryMeta {
@@ -43,7 +49,7 @@ interface GlossaryMeta {
   sites: string[];
 }
 
-/** 36 个术语库。名称按目标语言的惯用叫法写，不随扩展界面语言变化。 */
+/** 35 个有翻译词表的术语库。名称按目标语言的惯用叫法写，不随扩展界面语言变化。 */
 const GLOSSARIES: readonly GlossaryMeta[] = [
   { id: 'access-control', nameZhCN: '访问控制', nameZhTW: '存取控制', sites: [] },
   { id: 'ao3', nameZhCN: 'AO3', nameZhTW: 'AO3', sites: [] },
@@ -149,16 +155,22 @@ interface GeneratedDomain {
   terms: GeneratedTerm[];
 }
 
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ROOT = path.resolve(process.argv[2] ?? '');
 const CLEAN_DIR = path.join(ROOT, 'terminology', 'clean');
-const OUTPUT = path.resolve('src/storage/builtin-glossary-data.ts');
+const OUTPUT = path.join(REPO_ROOT, 'src', 'storage', 'builtin-domain-terms.ts');
 
 /** 术语库 ID 在领域 ID 里的小写形式。 */
 function slug(id: string): string {
   return id.toLowerCase();
 }
 
-/** 按 RFC 4180 拆 CSV（术语库里只有逗号与引号，不必猜分隔符）。 */
+/**
+ * 按 RFC 4180 拆 CSV（术语库里只有逗号与引号，不必猜分隔符）。
+ * 不复用 src/storage/terms-csv.ts 的导入解析：那边要认 GBK、分号 / 制表符、
+ * 中英文表头，是给用户自己整理的文件用的；术语包固定 UTF-8、三列、逗号，
+ * 保持脚本独立、能直接 npx tsx 跑更省事。
+ */
 function parseCsv(src: string): string[][] {
   const text = src.replace(/^\uFEFF/, '');
   const rows: string[][] = [];
@@ -189,8 +201,12 @@ function parseCsv(src: string): string[][] {
   return rows;
 }
 
-/** 读一个 clean CSV，返回 source / target 两列；表头固定是 source,target,tgt_lng。 */
-function readCsv(file: string): { source: string; target: string }[] {
+/**
+ * 读一个 clean CSV，返回 source / target 两列；表头固定是 source,target,tgt_lng。
+ * 第三列必须与文件名上的目标语言一致（auto 词表为空），文件名写错、把繁体表
+ * 当成简体表都直接报错 —— 否则会静默生成一种语言的领域配另一种语言的译文。
+ */
+function readCsv(file: string, expectedLang: GlossaryLang | ''): { source: string; target: string }[] {
   const rows = parseCsv(fs.readFileSync(file, 'utf-8'));
   const [header, ...body] = rows;
   if (!header || header.join(',') !== 'source,target,tgt_lng') {
@@ -200,13 +216,18 @@ function readCsv(file: string): { source: string; target: string }[] {
     .filter((r) => !(r.length === 1 && r[0] === ''))
     .map((r, i) => {
       if (r.length !== 3) throw new Error(`${file} 第 ${i + 2} 行：不是三列`);
+      if (r[2] !== expectedLang) {
+        throw new Error(
+          `${file} 第 ${i + 2} 行：tgt_lng 是 ${JSON.stringify(r[2])}，与文件名的 ${JSON.stringify(expectedLang)} 不一致`,
+        );
+      }
       return { source: r[0]!, target: r[1]! };
     });
 }
 
 /** auto 词表：target 与 source 相同，读成“不翻译”。 */
 function readAuto(file: string): GeneratedTerm[] {
-  return readCsv(file).map(({ source, target }) => {
+  return readCsv(file, '').map(({ source, target }) => {
     if (source !== target) throw new Error(`${file}：auto 词表的整行 ${source} 译法与原文不一致`);
     return { source, noTranslate: true };
   });
@@ -218,25 +239,24 @@ function readAuto(file: string): GeneratedTerm[] {
  * 生成带病的内置领域。
  */
 function normalizeTerms(domainId: string, terms: readonly GeneratedTerm[]): GeneratedTerm[] {
-  const seen = new Map<string, GeneratedTerm>();
+  const seen = new Set<string>();
   const out: GeneratedTerm[] = [];
   for (const term of terms) {
-    const source = term.source.trim();
+    const { source } = term;
     if (!source) throw new Error(`${domainId}：原词为空`);
+    if (source !== source.trim()) throw new Error(`${domainId}：${JSON.stringify(source)} 的原词有首尾空白`);
     const key = source.toLowerCase();
     if (seen.has(key)) throw new Error(`${domainId}：原词重复 ${source}`);
-    if (!term.noTranslate) {
-      const target = (term.target ?? '').trim();
-      if (!target) throw new Error(`${domainId}：${source} 没有译法也没标不翻译`);
-      if (target !== term.target) throw new Error(`${domainId}：${source} 的译法有首尾空白`);
-      const normalized = { source, target };
-      seen.set(key, normalized);
-      out.push(normalized);
-    } else {
-      const normalized = { source, noTranslate: true };
-      seen.set(key, normalized);
-      out.push(normalized);
+    seen.add(key);
+    if (term.noTranslate) {
+      out.push({ source, noTranslate: true });
+      continue;
     }
+    const target = term.target ?? '';
+    if (target !== target.trim()) throw new Error(`${domainId}：${source} 的译法有首尾空白`);
+    if (!target) throw new Error(`${domainId}：${source} 没有译法也没标不翻译`);
+    // 译法与原文相同就是“原样保留”，按不翻译存，机翻引擎默认也认
+    out.push(target === source ? { source, noTranslate: true } : { source, target });
   }
   return out;
 }
@@ -281,7 +301,10 @@ function main(): void {
       const name = `${g.id}_${lang}.csv`;
       if (!files.has(name)) continue;
       known.add(name);
-      byLang.set(lang, readCsv(path.join(CLEAN_DIR, name)).map((r) => ({ source: r.source, target: r.target })));
+      byLang.set(
+        lang,
+        readCsv(path.join(CLEAN_DIR, name), lang).map((r) => ({ source: r.source, target: r.target })),
+      );
     }
     if (byLang.size === 0) throw new Error(`术语库 ${g.id} 没有翻译词表`);
     translated.set(g.id, byLang);
@@ -346,8 +369,8 @@ function main(): void {
     '',
     "import type { Domain } from './domains';",
     '',
-    '/** 从术语库生成的内置领域，顺序即默认优先级。 */',
-    'export const BUILTIN_GLOSSARY_DOMAINS: readonly Domain[] = [',
+    '/** 从术语生成的领域，顺序即默认优先级。 */',
+    'export const BUILTIN_TERM_DOMAINS: readonly Domain[] = [',
   );
   for (const d of domains) {
     lines.push('  {');

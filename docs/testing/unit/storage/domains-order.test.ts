@@ -8,7 +8,7 @@ import { describe, test, expect, beforeEach, vi } from 'vitest';
 import type { Domain } from '~/src/storage/domains';
 import { resetStorage } from '~/docs/testing/setup';
 
-/** 内置数据换成只有一个领域，顺序语义与内置领域多少无关（数据本身见 builtin-glossaries 用例）。 */
+/** 内置数据换成只有一个领域，顺序语义与内置领域多少无关（数据本身见 builtin-domain-terms 用例）。 */
 let builtin: Domain[] = [];
 vi.mock('~/src/storage/builtin-domains', () => ({
   get BUILTIN_DOMAINS() {

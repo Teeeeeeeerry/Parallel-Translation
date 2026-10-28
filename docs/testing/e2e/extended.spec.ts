@@ -959,8 +959,11 @@ test.describe('设置页：翻译领域 @extended', () => {
     await expect(last.locator(':scope > .pt-domain-move[data-direction="down"]')).toBeDisabled();
 
     // 上移一位：与相邻的内置领域换位，位置减一；焦点交还给同一领域的上移按钮
+    const neighbor = (await names.allTextContents())[total - 2]!;
     await last.locator(':scope > .pt-domain-move[data-direction="up"]').click();
     await expect.poll(() => domainIndex(page, '我的开发')).toBe(total - 2); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
+    // 换位而不是别的领域挪动：原倒数第二的位置现在是我的开发，它原来的位置是那个相邻领域
+    await expect.poll(async () => (await names.allTextContents())[total - 1]).toBe(neighbor);
     await expect(
       domainCard(page, '我的开发').locator(':scope > .pt-domain-move[data-direction="up"]'), // cjk-ok: 用户数据：领域名或术语，不随界面语言变
     ).toBeFocused();
@@ -1130,17 +1133,22 @@ test.describe('设置页：翻译领域 @extended', () => {
     const termRows = page.locator('.pt-domain-terms tr');
     // 取当下的行数，不用会重试的 toHaveCount(0)；软断言，每次重绘各自报出来
     expect.soft(await termRows.count(), '初次渲染：收起的术语编辑区不生成术语行').toBe(0);
-    // 每次移动与相邻领域换位：小领域的上移、下移各一次，位置按预期增减
-    const moves: ['up' | 'down', number][] = [
-      ['up', total - 2],
-      ['up', total - 3],
-      ['down', total - 2],
-      ['down', total - 1],
+    // 每次移动与相邻领域换位。最后三张卡片是「最后一个内置领域、大术语表、小领域」，
+    // 钉住这三张的名字序列，别的领域一起挪动就过不去
+    const tail = async () => (await names.allTextContents()).slice(-3);
+    const neighbor = (await tail())[0]!;
+    const BIG = '大术语表'; // cjk-ok: 用户数据：领域名或术语，不随界面语言变
+    const SMALL = '小领域'; // cjk-ok: 用户数据：领域名或术语，不随界面语言变
+    const moves: ['up' | 'down', string[]][] = [
+      ['up', [neighbor, SMALL, BIG]],
+      ['up', [SMALL, neighbor, BIG]],
+      ['down', [neighbor, SMALL, BIG]],
+      ['down', [neighbor, BIG, SMALL]],
     ];
     const start = Date.now();
-    for (const [direction, index] of moves) {
+    for (const [direction, expected] of moves) {
       await small().locator(`:scope > .pt-domain-move[data-direction="${direction}"]`).click();
-      await expect.poll(() => domainIndex(page, '小领域')).toBe(index); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
+      await expect.poll(tail).toEqual(expected);
       expect.soft(await termRows.count(), `${direction} 之后的重绘：收起的术语编辑区不生成术语行`).toBe(0);
     }
     // 耗时只打出来看趋势，不断言
@@ -1308,6 +1316,9 @@ test.describe('popup：翻译领域 @extended', () => {
     const labels = await select.locator('option').allTextContents();
     expect(labels.slice(0, 2)).toEqual([await msg('domainPopupAuto', ['站内']), '软件开发(简体中文)']); // cjk-ok: 内置领域的名字，数据不随界面语言变
     expect(labels.slice(-3)).toEqual(['站内', '手选', await msg('domainPopupNone')]); // cjk-ok: 用户数据：领域名或术语，不随界面语言变
+    // 内置领域都在选项里，且只列当前目标语言的；繁体领域不出现
+    expect(labels).toEqual(expect.arrayContaining(['法律(简体中文)', '技术(简体中文)', '博德之门 3(简体中文)'])); // cjk-ok: 内置领域的名字，数据不随界面语言变
+    expect(labels.filter((l) => l.endsWith('(繁體中文)'))).toEqual([]); // cjk-ok: 内置领域的名字，数据不随界面语言变
 
     // 切换到“手选”后翻译本页：请求带它的术语
     await select.selectOption('user:e2e-manual');

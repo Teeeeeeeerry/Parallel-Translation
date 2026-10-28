@@ -9,8 +9,8 @@
 
 import type { Domain } from './domains';
 
-/** 从术语库生成的内置领域，顺序即默认优先级。 */
-export const BUILTIN_GLOSSARY_DOMAINS: readonly Domain[] = [
+/** 从术语生成的领域，顺序即默认优先级。 */
+export const BUILTIN_TERM_DOMAINS: readonly Domain[] = [
   {
     id: "builtin:access-control-zh-CN",
     name: "访问控制(简体中文)",
@@ -3541,7 +3541,7 @@ export const BUILTIN_GLOSSARY_DOMAINS: readonly Domain[] = [
       { source: "Shore scouting", target: "岸上侦察" },
       { source: "Read-and-run", target: "即视即划" },
       { source: "River-running", target: "河流划行" },
-      { source: "Boof", target: "Boof" },
+      { source: "Boof", noTranslate: true },
       { source: "Boof stroke", target: "Boof 划水动作" },
       { source: "Edging", target: "侧倾控制" },
       { source: "J-lean", target: "J 形侧倾" },
@@ -3710,7 +3710,7 @@ export const BUILTIN_GLOSSARY_DOMAINS: readonly Domain[] = [
       { source: "Self-equalizing anchor", target: "自动均力锚系统" },
       { source: "Magic X", target: "Magic X 自动均力锚系统" },
       { source: "Z-pull", target: "Z 形倍力拖拽系统" },
-      { source: "TPU", target: "TPU" },
+      { source: "TPU", noTranslate: true },
       { source: "Denier", target: "旦尼尔" },
       { source: "Self-bailing", target: "自排水式" },
       { source: "Wet bond", target: "湿式粘接" },
@@ -4384,7 +4384,7 @@ export const BUILTIN_GLOSSARY_DOMAINS: readonly Domain[] = [
       { source: "Beatrix", target: "碧翠丝" },
       { source: "Carmilla", target: "卡米拉" },
       { source: "Catherine", target: "凯瑟琳" },
-      { source: "CB-69", target: "CB-69" },
+      { source: "CB-69", noTranslate: true },
       { source: "Chelsea", target: "切尔西" },
       { source: "Cloe", target: "克洛伊" },
       { source: "Crazy", target: "克蕾齐" },
@@ -4432,7 +4432,7 @@ export const BUILTIN_GLOSSARY_DOMAINS: readonly Domain[] = [
       { source: "Tess", target: "泰丝" },
       { source: "Trixie", target: "翠克希" },
       { source: "Veneza", target: "威妮莎" },
-      { source: "XX", target: "XX" },
+      { source: "XX", noTranslate: true },
       { source: "Army Bottom", target: "军队下装" },
       { source: "Army Top", target: "军队上衣" },
       { source: "Gaia's Bottom", target: "盖亚的下装" },
@@ -4542,14 +4542,14 @@ export const BUILTIN_GLOSSARY_DOMAINS: readonly Domain[] = [
       { source: "Dress To Rugs", target: "破布礼服" },
       { source: "Katana", target: "武士刀" },
       { source: "Amorous Bow", target: "爱欲之弓" },
-      { source: "MP3", target: "MP3" },
+      { source: "MP3", noTranslate: true },
       { source: "Regular Top", target: "普通上衣" },
       { source: "Hunting Dagger", target: "猎刀" },
       { source: "Sweatshirt", target: "运动衫" },
       { source: "Sweatpants", target: "运动裤" },
       { source: "League Pants", target: "联盟长裤" },
-      { source: "MP5", target: "MP5" },
-      { source: "MP6", target: "MP6" },
+      { source: "MP5", noTranslate: true },
+      { source: "MP6", noTranslate: true },
       { source: "Boomhammer", target: "爆锤" },
       { source: "Perfect Brooch", target: "完美胸针" },
       { source: "Wrench", target: "扳手" },

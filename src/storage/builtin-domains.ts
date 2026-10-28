@@ -5,10 +5,10 @@
 // 不含任何担保。完整条款见仓库根目录的 LICENSE。
 
 // 内置领域（#379）—— 纯数据。软件开发领域由本项目自行编写，写在本文件里；
-// 其余内置领域按术语库生成，见 builtin-glossary-data.ts 与
+// 其余内置领域按术语库生成，见 builtin-domain-terms.ts 与
 // scripts/build-builtin-domains.ts（数据来源与重新生成的方法记在脚本文件头）。
 
-import { BUILTIN_GLOSSARY_DOMAINS } from './builtin-glossary-data';
+import { BUILTIN_TERM_DOMAINS } from './builtin-domain-terms';
 import type { Domain } from './domains';
 
 /** 软件开发(简体中文)：代码托管与技术问答站点上的常见行话。 */
@@ -54,4 +54,4 @@ const SOFTWARE_ZH_CN: Domain = {
 };
 
 /** 内置领域列表，顺序即默认优先级。软件开发领域排在最前（#379）。 */
-export const BUILTIN_DOMAINS: readonly Domain[] = [SOFTWARE_ZH_CN, ...BUILTIN_GLOSSARY_DOMAINS];
+export const BUILTIN_DOMAINS: readonly Domain[] = [SOFTWARE_ZH_CN, ...BUILTIN_TERM_DOMAINS];

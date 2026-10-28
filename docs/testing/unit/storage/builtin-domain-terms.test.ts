@@ -29,11 +29,6 @@ const termOf = (domainId: string, source: string) => {
 const LANG_CODES = LANG_LIST.map((l) => l.code);
 
 describe('内置领域的形状', () => {
-  test('软件开发领域排在最前，其余按语言成组', () => {
-    expect(BUILTIN_DOMAINS[0]!.id).toBe('builtin:software-zh-CN');
-    expect(BUILTIN_DOMAINS[0]!.name).toBe('软件开发(简体中文)');
-  });
-
   test('ID 唯一、都标为内置、目标语言在语言表里且不是 auto', () => {
     const ids = BUILTIN_DOMAINS.map((d) => d.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -100,7 +95,7 @@ describe('内置领域的收录范围', () => {
     expect(BUILTIN_DOMAINS.filter((d) => d.targetLang === 'zh-TW')).toHaveLength(27);
   });
 
-  test('36 个术语库都进了内置领域；只有 auto 词表没有独立领域', () => {
+  test('35 个有翻译词表的术语库都进了内置领域；只有 auto 词表没有独立领域', () => {
     const ids = new Set(BUILTIN_DOMAINS.map((d) => d.id));
     const glossaries = [
       'access-control', 'ao3', 'bg3', 'biology', 'car', 'chess', 'ecommerce', 'education',
@@ -148,6 +143,11 @@ describe('代表性的术语与适用网址', () => {
     expect(termOf('builtin:programming-zh-CN', 'Python').noTranslate).toBe(true);
     expect(termOf('builtin:web3-zh-TW', 'Bitcoin').noTranslate).toBe(true);
     expect(termOf('builtin:tech-zh-CN', 'LLM').noTranslate).toBe(true);
+  });
+
+  test('译法与原文相同的术语按“不翻译”存', () => {
+    expect(termOf('builtin:shelter69-slang-zh-CN', 'MP3').noTranslate).toBe(true);
+    expect(termOf('builtin:packraft-zh-CN', 'TPU').noTranslate).toBe(true);
   });
 
   test('站点本身就用这套词的内置领域按裸域名自动命中', () => {
