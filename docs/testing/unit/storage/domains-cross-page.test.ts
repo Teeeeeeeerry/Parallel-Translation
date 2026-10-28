@@ -63,6 +63,8 @@ describe('两个设置页标签页同时修改领域（#485）', () => {
 
   test('一边调整顺序、另一边编辑术语 → 两者都生效', async () => {
     const law = await a.createDomain({ name: '法律', targetLang: 'zh-CN' });
+    const before = await a.getEffectiveDomains();
+    const index = before.findIndex((d) => d.id === law.id);
 
     await Promise.all([
       a.moveDomain(law.id, 'up'),
@@ -70,8 +72,9 @@ describe('两个设置页标签页同时修改领域（#485）', () => {
     ]);
 
     const list = await b.getEffectiveDomains();
-    expect(list[0]!.id).toBe(law.id);
-    expect(list[0]!.terms).toEqual([{ source: 'tort', target: '侵权' }]);
+    // 上移一位：位置减一，术语也在
+    expect(list.findIndex((d) => d.id === law.id)).toBe(index - 1);
+    expect(list.find((d) => d.id === law.id)!.terms).toEqual([{ source: 'tort', target: '侵权' }]);
   });
 
   test('内置领域的术语与适用网址分别在两边保存 → 两者都保留', async () => {

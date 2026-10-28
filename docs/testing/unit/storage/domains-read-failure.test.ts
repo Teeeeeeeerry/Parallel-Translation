@@ -24,6 +24,7 @@ import {
 } from '~/src/storage/domains';
 import { StorageReadError } from '~/src/storage/read-error';
 import { resetStorage, localStoreSnapshot } from '~/docs/testing/setup';
+import { BUILTIN_DOMAINS } from '~/src/storage/builtin-domains';
 import type { Domain } from '~/src/storage/domains';
 
 const BUILTIN = 'builtin:software-zh-CN';
@@ -88,7 +89,11 @@ describe('读取存储失败时写操作不落盘（#484）', () => {
 });
 
 describe('读取存储失败时设置页的领域列表抛错，翻译路径照常（#535）', () => {
-  const origins = (list: readonly Domain[]) => list.map((d) => d.origin);
+  /** 只剩内置领域的列表：条数与内置领域一致，且全是内置领域（自编 + 术语生成的都在）。 */
+  const onlyBuiltins = (list: readonly Domain[]) => {
+    expect(list).toHaveLength(BUILTIN_DOMAINS.length);
+    expect(list.every((d) => d.origin === 'builtin')).toBe(true);
+  };
 
   test('设置页用的列表读取抛出读取失败的错误，恢复后与之前一致', async () => {
     const before = await getEffectiveDomains();
@@ -103,12 +108,12 @@ describe('读取存储失败时设置页的领域列表抛错，翻译路径照�
 
   test('存储里本来没有数据不算失败：只有内置领域', async () => {
     resetStorage();
-    expect(origins(await getEffectiveDomains())).toEqual(['builtin']);
+    onlyBuiltins(await getEffectiveDomains());
   });
 
   test('翻译路径的缓存读取失败时不抛错，只剩内置领域', async () => {
     vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
-    expect(origins(await getCachedEffectiveDomains())).toEqual(['builtin']);
+    onlyBuiltins(await getCachedEffectiveDomains());
   });
 
   test('订阅生效领域列表的入口读取失败时不抛错，交付只剩内置领域的列表', async () => {
@@ -116,7 +121,7 @@ describe('读取存储失败时设置页的领域列表抛错，翻译路径照�
     vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('boom'));
     const off = watchEffectiveDomains(fn, { initial: true });
     await vi.waitFor(() => expect(fn).toHaveBeenCalledTimes(1));
-    expect(origins(fn.mock.lastCall![0] as Domain[])).toEqual(['builtin']);
+    onlyBuiltins(fn.mock.lastCall![0] as Domain[]);
     off();
   });
 });
