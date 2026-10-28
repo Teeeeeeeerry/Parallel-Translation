@@ -4,18 +4,7 @@
  * 只断言外部可观察的行为：上移、下移后生效领域列表的顺序，多个领域
  * 同时命中一个网址时哪个成为当前领域，顺序存放的位置。
  */
-import { describe, test, expect, beforeEach, vi } from 'vitest';
-import type { Domain } from '~/src/storage/domains';
-import { resetStorage } from '~/docs/testing/setup';
-
-/** 内置数据换成只有一个领域，顺序语义与内置领域多少无关（数据本身见 builtin-domain-terms 用例）。 */
-let builtin: Domain[] = [];
-vi.mock('~/src/storage/builtin-domains', () => ({
-  get BUILTIN_DOMAINS() {
-    return builtin;
-  },
-}));
-
+import { describe, test, expect, beforeEach } from 'vitest';
 import {
   getEffectiveDomains,
   currentDomain,
@@ -26,21 +15,12 @@ import {
   setDomainTerms,
   DomainNotFoundError,
 } from '~/src/storage/domains';
+import { resetStorage } from '~/docs/testing/setup';
 
 const ids = async () => (await getEffectiveDomains()).map((d) => d.id);
 
 beforeEach(() => {
   resetStorage();
-  builtin = [
-    {
-      id: 'builtin:dev',
-      name: '软件开发(简体中文)',
-      targetLang: 'zh-CN',
-      sites: ['github.com'],
-      origin: 'builtin',
-      terms: [],
-    },
-  ];
 });
 
 describe('领域排序（#394）', () => {

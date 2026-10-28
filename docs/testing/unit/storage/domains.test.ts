@@ -31,12 +31,10 @@ beforeEach(() => {
 });
 
 describe('getEffectiveDomains — 生效领域列表', () => {
-  test('内置领域「软件开发(简体中文)」排在最前，其后是术语库生成的内置领域', async () => {
+  test('只含内置领域「软件开发(简体中文)」', async () => {
     const domains = await getEffectiveDomains();
-    expect(domains.length).toBeGreaterThan(1);
-    expect(domains.every((d) => d.origin === 'builtin')).toBe(true);
+    expect(domains).toHaveLength(1);
     const [dev] = domains;
-    expect(dev!.id).toBe('builtin:software-zh-CN');
     expect(dev!.origin).toBe('builtin');
     expect(dev!.name).toBe('软件开发(简体中文)');
     expect(dev!.targetLang).toBe('zh-CN');
@@ -122,8 +120,8 @@ describe('新建与删除自建领域（#391）', () => {
       origin: 'user',
     });
     const domains = await getEffectiveDomains();
-    expect(domains.filter((d) => d.origin === 'user')).toEqual([created]);
-    expect(domains.at(-1)).toEqual(created);
+    expect(domains.map((d) => d.origin)).toEqual(['builtin', 'user']);
+    expect(domains[1]).toEqual(created);
   });
 
   test('名称去掉首尾空格；多个自建领域按新建顺序排列、ID 互不相同', async () => {
@@ -132,15 +130,14 @@ describe('新建与删除自建领域（#391）', () => {
     expect(a.name).toBe('法律');
     expect(a.id).not.toBe(b.id);
     const domains = await getEffectiveDomains();
-    expect(domains.filter((d) => d.origin === 'user').map((d) => d.name)).toEqual(['法律', '医学']);
+    expect(domains.slice(1).map((d) => d.name)).toEqual(['法律', '医学']);
     expect(domains.every((d, i) => domains.findIndex((x) => x.id === d.id) === i)).toBe(true);
   });
 
   test('名称或目标语言为空 → 拒绝新建，列表不变', async () => {
-    const before = (await getEffectiveDomains()).length;
     await expect(createDomain({ name: '   ', targetLang: 'zh-CN' })).rejects.toThrow();
     await expect(createDomain({ name: '法律', targetLang: '' })).rejects.toThrow();
-    expect(await getEffectiveDomains()).toHaveLength(before);
+    expect(await getEffectiveDomains()).toHaveLength(1);
   });
 
   test('自建领域存放在 storage.local，不占 storage.sync', async () => {
@@ -167,17 +164,15 @@ describe('新建与删除自建领域（#391）', () => {
   });
 
   test('删除不存在的领域不报错，列表不变', async () => {
-    const before = (await getEffectiveDomains()).length;
     await createDomain({ name: '法律', targetLang: 'zh-CN' });
     await deleteDomain('user:missing');
-    expect(await getEffectiveDomains()).toHaveLength(before + 1);
+    expect(await getEffectiveDomains()).toHaveLength(2);
   });
 
   test('存储里的脏数据被忽略，不影响内置领域', async () => {
-    const builtinCount = (await getEffectiveDomains()).length;
     await chrome.storage.local.set({ 'pt-domains': { user: [{ id: 1 }, null, 'x'] } });
     const domains = await getEffectiveDomains();
-    expect(domains).toHaveLength(builtinCount);
+    expect(domains).toHaveLength(1);
     expect(domains[0]!.origin).toBe('builtin');
   });
 
@@ -187,18 +182,17 @@ describe('新建与删除自建领域（#391）', () => {
       createDomain({ name: '乙', targetLang: 'zh-CN' }),
       createDomain({ name: '丙', targetLang: 'zh-CN' }),
     ]);
-    const names = (await getEffectiveDomains()).filter((d) => d.origin === 'user').map((d) => d.name);
+    const names = (await getEffectiveDomains()).slice(1).map((d) => d.name);
     expect(names).toEqual(['甲', '乙', '丙']);
   });
 
   test('存储里与内置领域同 ID 的条目被忽略', async () => {
-    const builtinCount = (await getEffectiveDomains()).length;
     const [dev] = await getEffectiveDomains();
     await chrome.storage.local.set({
       'pt-domains': { user: [{ ...dev!, name: '冒名', origin: 'user' }] },
     });
     const domains = await getEffectiveDomains();
-    expect(domains).toHaveLength(builtinCount);
+    expect(domains).toHaveLength(1);
     expect(domains[0]!.name).toBe(dev!.name);
   });
 
@@ -261,11 +255,10 @@ describe('编辑自建领域的适用网址（#392）', () => {
   });
 
   test('领域不存在 → 抛 DomainNotFoundError，不新建领域', async () => {
-    const before = (await getEffectiveDomains()).length;
     await expect(setDomainSites('user:missing', ['example.com'])).rejects.toBeInstanceOf(
       DomainNotFoundError,
     );
-    expect(await getEffectiveDomains()).toHaveLength(before);
+    expect(await getEffectiveDomains()).toHaveLength(1);
   });
 
   test('领域已在别处被删除 → 保存适用网址抛 DomainNotFoundError（#430）', async () => {
