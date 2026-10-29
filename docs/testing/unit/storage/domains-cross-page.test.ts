@@ -69,9 +69,10 @@ describe('两个设置页标签页同时修改领域（#485）', () => {
       b.setDomainTerms(law.id, [{ source: 'tort', target: '侵权' }]),
     ]);
 
+    // 上移一位：排到最后一个内置领域之前
     const list = await b.getEffectiveDomains();
-    expect(list[0]!.id).toBe(law.id);
-    expect(list[0]!.terms).toEqual([{ source: 'tort', target: '侵权' }]);
+    expect(list.at(-2)!.id).toBe(law.id);
+    expect(list.at(-2)!.terms).toEqual([{ source: 'tort', target: '侵权' }]);
   });
 
   test('内置领域的术语与适用网址分别在两边保存 → 两者都保留', async () => {
