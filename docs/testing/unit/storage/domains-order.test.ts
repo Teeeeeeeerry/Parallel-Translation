@@ -4,7 +4,14 @@
  * 只断言外部可观察的行为：上移、下移后生效领域列表的顺序，多个领域
  * 同时命中一个网址时哪个成为当前领域，顺序存放的位置。
  */
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
+
+// 排序与内置领域有几个无关：只留“软件开发(简体中文)”，顺序断言写得出全貌
+vi.mock('~/src/storage/builtin-domains', async (importOriginal) => {
+  const { BUILTIN_DOMAINS } = await importOriginal<typeof import('~/src/storage/builtin-domains')>();
+  return { BUILTIN_DOMAINS: BUILTIN_DOMAINS.slice(0, 1) };
+});
+
 import {
   getEffectiveDomains,
   currentDomain,
