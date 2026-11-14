@@ -99,7 +99,7 @@ There are six translation styles (faded, dimmed, underline, bold, italic, left b
 <details>
 <summary>Example</summary>
 
-The built-in "Software development (Simplified Chinese)" domain applies to github.com, gitlab.com and similar sites. Reading an issue, translated into Chinese:
+The built-in "Computing (Simplified Chinese)" domain applies to github.com, gitlab.com and similar sites. Reading an issue, translated into Chinese:
 
 - **Without the domain**: "请在合并公关之前更新叉子。" ("Please update the dinner fork before merging the public relations.")
 - **With the domain**: "请在合并 PR 之前更新 fork。" ("Please update the fork before merging the PR.")
@@ -109,6 +109,12 @@ Terms match whole words, case-insensitively: "PR" doesn't match "price", but it 
 PS: It should work now, but I'm not sure there are no bugs left. Feedback welcome.
 
 </details>
+
+There are 12 built-in domains for translating into Simplified Chinese, each with common sites preset. You can add or remove sites and edit terms in the popup:
+
+- **Computing** (计算机): code hosting, tech Q&A, language docs, competitive programming, tech news and crypto sites
+- **General** (通用) and **Tech companies & AI** (科技公司与 AI): "do not translate" abbreviations, company names and model names only
+- **AO3**, **Finance** (金融), **Food** (餐饮), **Law** (法律), **Medicine** (医学), **Film & TV** (影视), **Music** (音乐), **News** (新闻), **Photography** (摄影)
 
 Terms apply to full-page, single-paragraph, and selection translation. AI engines get the terms that matched in the current batch written into the request; machine-translation engines enforce "do not translate" terms with placeholders, and after you turn on a switch, fixed translations apply too.
 
