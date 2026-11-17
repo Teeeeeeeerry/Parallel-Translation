@@ -1598,6 +1598,8 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
 
     // 真拖：按住拖到最左端，松手之前预览已是最小值
     const slider = page.locator('#pt-slider-ball-size');
+    // 先滚进视口：滑块在视口外时，拖动途中页面会滚动，拖动事件不生效，预览停在原值
+    await slider.scrollIntoViewIfNeeded();
     await expect.poll(() =>
       serviceWorker.evaluate(async () => ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any)?.floatingBallSize),
     ).toBe(60);
