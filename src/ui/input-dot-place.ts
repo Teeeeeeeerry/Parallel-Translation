@@ -15,7 +15,7 @@
 
 import { measureEditableEnd, measureFieldEnd, type TextEnd } from './input-measure';
 import { inputDotHitSize } from './floating-ui-size';
-import { SHOW_DELAY } from './float-common';
+import { INPUT_DOT_SAFE_DISTANCE, SHOW_DELAY } from './float-common';
 
 /** 量文字末尾；算不出来时为 null（回落）。缺省按框的种类用镜像或行盒测量。 */
 export type MeasureEnd = (el: HTMLElement, shadow: ShadowRoot) => TextEnd | null;
@@ -99,15 +99,6 @@ function unfit(dot: HTMLElement): void {
 
 /** 回落位置离框内侧边缘的距离。 */
 const INSET = 6;
-
-/**
- * 圆点与光标之间的安全距离（#1180）：可点区与文字末尾至少隔开这么多，可见圆点
- * 与末尾的间隙也取这么多。原来与逐段翻译按钮共用 4px 的 GAP，可点区只与末尾
- * 隔开 1px —— 点在最后一个字的右半边、或者点偏一点，就落进了圆点的可点区，
- * 整段文字被译文替换。8px 约是常见正文字号下半个字宽：点在最后一个字上、
- * 或紧挨着字的空白里，落点都还在输入框里。逐段翻译按钮的间隙不变。
- */
-export const INPUT_DOT_SAFE_DISTANCE = 8;
 
 /** 框的可见区域（视口坐标）：边框以内、滚动条以外。 */
 interface InnerBox {

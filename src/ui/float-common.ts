@@ -23,6 +23,15 @@ export const SHOW_DELAY = 140;
 /** 逐段翻译按钮与段落边缘的间隙；输入翻译圆点与光标之间沿用同一个口径（#667）。 */
 export const GAP = 4;
 
+/**
+ * 输入翻译圆点与光标之间的安全距离（#1180）：可点区与文字末尾至少隔开这么多，
+ * 可见圆点与末尾的间隙也取这么多。原来与逐段翻译按钮共用上面的 GAP，可点区只与
+ * 末尾隔开 1px —— 点在最后一个字的右半边、或者点偏一点，就落进了圆点的可点区，
+ * 整段文字被译文替换。8px 约是常见正文字号下半个字宽：点在最后一个字上、或紧挨
+ * 着字的空白里，落点都还在输入框里。逐段翻译按钮的间隙仍是 GAP。
+ */
+export const INPUT_DOT_SAFE_DISTANCE = 8;
+
 /** 沿 shadow root 往下找真正持有焦点的元素。 */
 export function deepActiveElement(): Element | null {
   let el: Element | null = document.activeElement;

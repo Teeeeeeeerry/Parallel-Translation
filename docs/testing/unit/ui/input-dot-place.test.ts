@@ -6,9 +6,9 @@
  * 哪里、多大，不断言内部计时器。ADR-0006 的三条规则不变。
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createDotPlacer, lineCap, INPUT_DOT_SAFE_DISTANCE, type MeasureEnd } from '~/src/ui/input-dot-place';
+import { createDotPlacer, lineCap, type MeasureEnd } from '~/src/ui/input-dot-place';
 import { inputDotHitSize } from '~/src/ui/floating-ui-size';
-import { SHOW_DELAY } from '~/src/ui/float-common';
+import { INPUT_DOT_SAFE_DISTANCE, SHOW_DELAY } from '~/src/ui/float-common';
 import { mockBoundingRect } from '~/docs/testing/setup';
 import type { TextEnd } from '~/src/ui/input-measure';
 
