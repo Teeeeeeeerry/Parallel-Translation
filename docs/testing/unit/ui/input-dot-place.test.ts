@@ -6,7 +6,8 @@
  * 哪里、多大，不断言内部计时器。ADR-0006 的三条规则不变。
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createDotPlacer, lineCap, type MeasureEnd } from '~/src/ui/input-dot-place';
+import { createDotPlacer, lineCap, INPUT_DOT_SAFE_DISTANCE, type MeasureEnd } from '~/src/ui/input-dot-place';
+import { inputDotHitSize } from '~/src/ui/floating-ui-size';
 import { SHOW_DELAY } from '~/src/ui/float-common';
 import { mockBoundingRect } from '~/docs/testing/setup';
 import type { TextEnd } from '~/src/ui/input-measure';
@@ -77,11 +78,11 @@ describe('就位状态（#1081）', () => {
     expect(measure).toHaveBeenCalledTimes(1);
   });
 
-  test('聚焦、滚动等立即对齐：当场已就位，贴在文字末尾之后（留 GAP 的间隙）', () => {
+  test('聚焦、滚动等立即对齐：当场已就位，贴在文字末尾之后（留安全距离，#1180）', () => {
     const p = createDotPlacer(dot, shadow, at(END));
     p.settle(box());
     expect(p.state()).toBe('settled');
-    expect(parseFloat(dot.style.left)).toBe(END.x + 4);
+    expect(parseFloat(dot.style.left)).toBe(END.x + INPUT_DOT_SAFE_DISTANCE);
   });
 
   test('测量失败：回落到框内右下角，且为已就位', () => {
@@ -97,7 +98,7 @@ describe('就位状态（#1081）', () => {
     p.follow(box(), true);
     expect(parseFloat(dot.style.left)).toBeGreaterThan(400 - 40);
     vi.advanceTimersByTime(SHOW_DELAY);
-    expect(parseFloat(dot.style.left)).toBe(END.x + 4);
+    expect(parseFloat(dot.style.left)).toBe(END.x + INPUT_DOT_SAFE_DISTANCE);
   });
 
   test('状态变化可订阅；隐藏（reset）时报 null、属性去掉、等着的对齐不再发生', () => {
@@ -157,5 +158,74 @@ describe('行高上限只在定位模块算（#997、#1017、#1081）', () => {
   test('行高是 normal：按字形高算', () => {
     const ta = box('normal');
     expect(lineCap(ta, END)).toBe(END.height);
+  });
+});
+
+/**
+ * 安全距离（#1180）：误触发生在可点区，所以约束落在可点区上 —— 可点区与文字
+ * 末尾（光标）至少隔开 INPUT_DOT_SAFE_DISTANCE，四种摆法都一样。可点区在视口里
+ * 的范围由圆点位置加 --pt-hit-x / --pt-hit-y 偏移得出，边长按直径换算。
+ */
+describe('圆点与光标的安全距离（#1180）', () => {
+  /** 可点区边长：收小过（行高上限）时取圆点上写的那一份，否则按直径换算 */
+  function hitRect(size: number) {
+    const hit = parseFloat(dot.style.getPropertyValue('--pt-input-dot-hit')) || inputDotHitSize(size);
+    const left = parseFloat(dot.style.left) + parseFloat(dot.style.getPropertyValue('--pt-hit-x'));
+    const top = parseFloat(dot.style.top) + parseFloat(dot.style.getPropertyValue('--pt-hit-y'));
+    return { left, top, right: left + hit, bottom: top + hit };
+  }
+
+  function frame(rect: { left: number; top: number; right: number; bottom: number }, dir = 'ltr'): HTMLTextAreaElement {
+    const ta = document.createElement('textarea');
+    ta.style.lineHeight = '20px';
+    ta.style.direction = dir;
+    document.body.appendChild(ta);
+    mockBoundingRect(ta, { ...rect, width: rect.right - rect.left, height: rect.bottom - rect.top });
+    return ta;
+  }
+
+  test('安全距离至少 8px（约半个常见字宽），且比逐段翻译按钮的 4px 间隙大', () => {
+    expect(INPUT_DOT_SAFE_DISTANCE).toBeGreaterThanOrEqual(8);
+  });
+
+  for (const size of [14, 28]) {
+    test(`末尾之后（LTR，直径 ${size}px）：可点区左边缘离末尾至少安全距离`, () => {
+      sizeDot(size);
+      createDotPlacer(dot, shadow, at(END)).settle(box());
+      expect(hitRect(size).left).toBeGreaterThanOrEqual(END.x + INPUT_DOT_SAFE_DISTANCE);
+    });
+
+    test(`末尾之后（RTL，直径 ${size}px）：可点区右边缘离末尾至少安全距离`, () => {
+      sizeDot(size);
+      createDotPlacer(dot, shadow, at(END)).settle(frame({ left: 100, top: 50, right: 400, bottom: 250 }, 'rtl'));
+      expect(hitRect(size).right).toBeLessThanOrEqual(END.x - INPUT_DOT_SAFE_DISTANCE);
+    });
+
+    test(`换到末尾那一行下方（直径 ${size}px）：可点区上边缘离那一行底部至少安全距离`, () => {
+      sizeDot(size);
+      const end: TextEnd = { x: 395, y: 120, height: 16 };
+      createDotPlacer(dot, shadow, at(end)).settle(box());
+      expect(hitRect(size).top).toBeGreaterThanOrEqual(end.y + end.height + INPUT_DOT_SAFE_DISTANCE);
+    });
+
+    test(`换到末尾那一行上方（直径 ${size}px）：可点区下边缘离那一行顶部至少安全距离`, () => {
+      sizeDot(size);
+      const end: TextEnd = { x: 395, y: 220, height: 16 };
+      createDotPlacer(dot, shadow, at(end)).settle(box());
+      expect(hitRect(size).bottom).toBeLessThanOrEqual(end.y - INPUT_DOT_SAFE_DISTANCE);
+    });
+  }
+
+  test('单行框末尾顶到右边缘：换到光标另一侧，可点区右边缘离末尾至少安全距离', () => {
+    const end: TextEnd = { x: 395, y: 52, height: 16 };
+    createDotPlacer(dot, shadow, at(end)).settle(frame({ left: 100, top: 50, right: 400, bottom: 70 }));
+    expect(hitRect(14).right).toBeLessThanOrEqual(end.x - INPUT_DOT_SAFE_DISTANCE);
+  });
+
+  test('行高上限收小之后（直径 40 收到行高以内）：可点区仍离末尾至少安全距离', () => {
+    sizeDot(40);
+    createDotPlacer(dot, shadow, at(END)).settle(box('20px'));
+    expect(dot.style.maxWidth).not.toBe('');
+    expect(hitRect(40).left).toBeGreaterThanOrEqual(END.x + INPUT_DOT_SAFE_DISTANCE);
   });
 });
