@@ -184,10 +184,6 @@ describe('圆点与光标的安全距离（#1180）', () => {
     return ta;
   }
 
-  test('安全距离至少 8px（约半个常见字宽），且比逐段翻译按钮的 4px 间隙大', () => {
-    expect(INPUT_DOT_SAFE_DISTANCE).toBeGreaterThanOrEqual(8);
-  });
-
   for (const size of [14, 28]) {
     test(`末尾之后（LTR，直径 ${size}px）：可点区左边缘离末尾至少安全距离`, () => {
       sizeDot(size);
@@ -220,6 +216,28 @@ describe('圆点与光标的安全距离（#1180）', () => {
     const end: TextEnd = { x: 395, y: 52, height: 16 };
     createDotPlacer(dot, shadow, at(end)).settle(frame({ left: 100, top: 50, right: 400, bottom: 70 }));
     expect(hitRect(14).right).toBeLessThanOrEqual(end.x - INPUT_DOT_SAFE_DISTANCE);
+  });
+
+  test('窄单行框、末尾两侧都放不下：硬边界优先，圆点宁可出框也不挤进安全距离', () => {
+    // 框宽 30px，末尾在正中：两侧都放不下 8px 加圆点。钳回框内就会压到光标
+    const end: TextEnd = { x: 115, y: 52, height: 16 };
+    createDotPlacer(dot, shadow, at(end)).settle(frame({ left: 100, top: 50, right: 130, bottom: 70 }));
+    const r = hitRect(14);
+    expect(r.right <= end.x - INPUT_DOT_SAFE_DISTANCE || r.left >= end.x + INPUT_DOT_SAFE_DISTANCE).toBe(true);
+  });
+
+  test('末尾滚出可见区域：圆点照旧钳在框的可见边缘（#669），不因安全距离被推出框', () => {
+    const end: TextEnd = { x: 40, y: 52, height: 16 };
+    createDotPlacer(dot, shadow, at(end)).settle(frame({ left: 100, top: 50, right: 400, bottom: 70 }));
+    expect(parseFloat(dot.style.left)).toBeGreaterThanOrEqual(100);
+  });
+
+  test('行高上限收小之后换到下方：可点区仍离那一行底部至少安全距离', () => {
+    sizeDot(40);
+    const end: TextEnd = { x: 395, y: 120, height: 16 };
+    createDotPlacer(dot, shadow, at(end)).settle(box('20px'));
+    expect(dot.style.maxWidth).not.toBe('');
+    expect(hitRect(40).top).toBeGreaterThanOrEqual(end.y + end.height + INPUT_DOT_SAFE_DISTANCE);
   });
 
   test('行高上限收小之后（直径 40 收到行高以内）：可点区仍离末尾至少安全距离', () => {

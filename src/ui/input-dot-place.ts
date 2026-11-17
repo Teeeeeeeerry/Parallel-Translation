@@ -108,7 +108,6 @@ const INSET = 6;
  * 或紧挨着字的空白里，落点都还在输入框里。逐段翻译按钮的间隙不变。
  */
 export const INPUT_DOT_SAFE_DISTANCE = 8;
-const SAFE = INPUT_DOT_SAFE_DISTANCE;
 
 /** 框的可见区域（视口坐标）：边框以内、滚动条以外。 */
 interface InnerBox {
@@ -188,10 +187,10 @@ function placeHit(
 ): void {
   const spare = d.size - d.hit;
   let xMin = spare, xMax = 0, yMin = spare, yMax = 0;
-  if (end?.side === 'left') xMin = Math.min(0, end.at.x + SAFE - left);
-  if (end?.side === 'right') xMax = Math.max(spare, end.at.x - SAFE - d.hit - left);
-  if (end?.side === 'top') yMin = Math.min(0, end.at.y + end.at.height + SAFE - top);
-  if (end?.side === 'bottom') yMax = Math.max(spare, end.at.y - SAFE - d.hit - top);
+  if (end?.side === 'left') xMin = Math.min(0, end.at.x + INPUT_DOT_SAFE_DISTANCE - left);
+  if (end?.side === 'right') xMax = Math.max(spare, end.at.x - INPUT_DOT_SAFE_DISTANCE - d.hit - left);
+  if (end?.side === 'top') yMin = Math.min(0, end.at.y + end.at.height + INPUT_DOT_SAFE_DISTANCE - top);
+  if (end?.side === 'bottom') yMax = Math.max(spare, end.at.y - INPUT_DOT_SAFE_DISTANCE - d.hit - top);
   dot.style.setProperty('--pt-hit-x', `${hitAxis(left, box.left, box.right, xMin, xMax, d)}px`);
   dot.style.setProperty('--pt-hit-y', `${hitAxis(top, box.top, box.bottom, yMin, yMax, d)}px`);
 }
@@ -225,6 +224,28 @@ function clampToBox(
 }
 
 /**
+ * 钳边之后守住安全距离（#1180）：窄框里末尾两侧都放不下圆点加安全距离时，钳回
+ * 框内会把圆点推到光标上。文字末尾是硬边界、框是软边界（与可点区同一口径，
+ * #638），所以只要末尾在框的可见区域里，圆点宁可伸出框外也不挤进安全距离。
+ * 末尾已经滚出可见区域时（#669）没有光标可压，照旧钳在可见边缘。
+ */
+function keepClear(
+  pos: { left: number; top: number },
+  side: EndSide,
+  end: TextEnd,
+  box: InnerBox,
+  size: number,
+): { left: number; top: number } {
+  const d = INPUT_DOT_SAFE_DISTANCE;
+  const endVisible = end.x >= box.left && end.x <= box.right;
+  if (!endVisible) return pos;
+  if (side === 'left') return { ...pos, left: Math.max(pos.left, end.x + d) };
+  if (side === 'right') return { ...pos, left: Math.min(pos.left, end.x - d - size) };
+  if (side === 'top') return { ...pos, top: Math.max(pos.top, end.y + end.height + d) };
+  return { ...pos, top: Math.min(pos.top, end.y - d - size) };
+}
+
+/**
  * 圆点放在文字末尾旁边（#667）。末尾也是光标所在，两者并排而不重叠，否则
  * 圆点会被当成光标的一部分：
  * - 默认在末尾之后（LTR 右侧、RTL 左侧，#666），留安全距离（#1180），竖直
@@ -241,15 +262,15 @@ function besideEnd(
   size: number,
 ): { left: number; top: number; side: EndSide } {
   const centered = end.y + end.height / 2 - size / 2;
-  const after = rtl ? end.x - SAFE - size : end.x + SAFE;
-  const before = rtl ? end.x + SAFE : end.x - SAFE - size;
+  const after = rtl ? end.x - INPUT_DOT_SAFE_DISTANCE - size : end.x + INPUT_DOT_SAFE_DISTANCE;
+  const before = rtl ? end.x + INPUT_DOT_SAFE_DISTANCE : end.x - INPUT_DOT_SAFE_DISTANCE - size;
   if (after >= box.left && after + size <= box.right) {
     return { left: after, top: centered, side: rtl ? 'right' : 'left' };
   }
   const left = rtl ? box.left : box.right - size;
-  const below = end.y + end.height + SAFE;
+  const below = end.y + end.height + INPUT_DOT_SAFE_DISTANCE;
   if (below + size <= box.bottom) return { left, top: below, side: 'top' };
-  const above = end.y - SAFE - size;
+  const above = end.y - INPUT_DOT_SAFE_DISTANCE - size;
   if (above >= box.top) return { left, top: above, side: 'bottom' };
   return { left: before, top: centered, side: rtl ? 'left' : 'right' };
 }
@@ -269,7 +290,13 @@ function place(dot: HTMLElement, el: HTMLElement, shadow: ShadowRoot, measure: M
   const box = innerBox(el);
   const d = fitLine(dot, el, end);
   const beside = besideEnd(end, box, getComputedStyle(el).direction === 'rtl', d.size);
-  const { left, top } = clampToBox(beside.left, beside.top, box, d.size);
+  const { left, top } = keepClear(
+    clampToBox(beside.left, beside.top, box, d.size),
+    beside.side,
+    end,
+    box,
+    d.size,
+  );
   dot.style.left = `${left}px`;
   dot.style.top = `${top}px`;
   placeHit(dot, left, top, box, d, { side: beside.side, at: end });
