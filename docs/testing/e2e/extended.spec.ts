@@ -33,6 +33,7 @@ import fs from 'fs';
 import { test, expect, fixtureFileUrl, fixtureUrl, waitForBall, clickInputDot } from './fixtures';
 import type { Page } from '@playwright/test';
 import { BUILTIN_DOMAINS } from '../../../src/storage/builtin-domains';
+import { INPUT_DOT_SAFE_DISTANCE } from '../../../src/ui/float-common';
 
 /** 内置领域的名字，按默认顺序：“软件开发(简体中文)”在前，其后是其余内置领域。 */
 const BUILTIN_NAMES = BUILTIN_DOMAINS.map((d) => d.name);
@@ -1597,6 +1598,8 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
 
     // 真拖：按住拖到最左端，松手之前预览已是最小值
     const slider = page.locator('#pt-slider-ball-size');
+    // 先滚进视口：滑块在视口外时，拖动途中页面会滚动，拖动事件不生效，预览停在原值
+    await slider.scrollIntoViewIfNeeded();
     await expect.poll(() =>
       serviceWorker.evaluate(async () => ((await chrome.storage.sync.get('pt-settings'))['pt-settings'] as any)?.floatingBallSize),
     ).toBe(60);
@@ -1839,13 +1842,13 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
     for (const [size, hit] of [[24, 41], [12, 24], [14, 24]] as const) {
       await patchStoredSettings(serviceWorker, { inputDotSize: size });
       await expect.poll(async () => (await dot.boundingBox())?.width).toBe(size);
-      // 直径变了圆点就重新摆：竖直居中于末尾那一行、离末尾字符 4px
+      // 直径变了圆点就重新摆：竖直居中于末尾那一行、离末尾字符留安全距离（#1180）
       await expect(async () => {
         const d = (await dot.boundingBox())!;
         expect(d.height).toBe(size);
         expect(Math.abs(d.y + size / 2 - geometry.line2Mid), `${size}px 竖直居中`).toBeLessThanOrEqual(1);
-        expect(d.x - geometry.endX, `${size}px 与末尾字符的间隙`).toBeGreaterThanOrEqual(3);
-        expect(d.x - geometry.endX).toBeLessThanOrEqual(5);
+        expect(d.x - geometry.endX, `${size}px 与末尾字符的间隙`).toBeGreaterThanOrEqual(INPUT_DOT_SAFE_DISTANCE - 1);
+        expect(d.x - geometry.endX).toBeLessThanOrEqual(INPUT_DOT_SAFE_DISTANCE + 1);
         // 上一行的字一直写到圆点上方：圆点不伸进上一行的字形盒
         expect(geometry.line1Right).toBeGreaterThan(d.x + size);
         expect(d.y, `${size}px 不压住上一行`).toBeGreaterThanOrEqual(geometry.line1GlyphBottom);
@@ -1939,8 +1942,8 @@ test.describe('悬浮 UI 尺寸 @extended', () => {
         expect(d.width, `行高 ${lh} 直径`).toBe(d.height);
         expect(d.y, `行高 ${lh} 圆点 ${JSON.stringify(d)} 不压住上一行`).toBeGreaterThanOrEqual(g.line1GlyphBottom);
         expect(Math.abs(d.y + d.height / 2 - g.line2Mid), `行高 ${lh} 竖直居中`).toBeLessThanOrEqual(1);
-        expect(d.x - g.endX, `行高 ${lh} 与末尾字符的间隙`).toBeGreaterThanOrEqual(3);
-        expect(d.x - g.endX).toBeLessThanOrEqual(5);
+        expect(d.x - g.endX, `行高 ${lh} 与末尾字符的间隙`).toBeGreaterThanOrEqual(INPUT_DOT_SAFE_DISTANCE - 1);
+        expect(d.x - g.endX).toBeLessThanOrEqual(INPUT_DOT_SAFE_DISTANCE + 1);
         // 1.4 下装得下，不收：照设置的 24px
         if (lh === '1.4') expect(d.width).toBe(24);
       }).toPass({ timeout: 5_000 });
@@ -2545,8 +2548,8 @@ test.describe('输入翻译圆点：contenteditable 内层段落的行高 @exten
       expect(d.width, '直径').toBe(d.height);
       expect(d.y, `圆点 ${JSON.stringify(d)} 不压住上一行`).toBeGreaterThanOrEqual(g.line1GlyphBottom);
       expect(Math.abs(d.y + d.height / 2 - g.line2Mid), '竖直居中于末尾那一行').toBeLessThanOrEqual(1);
-      expect(d.x - g.endX, '与末尾字符的间隙').toBeGreaterThanOrEqual(3);
-      expect(d.x - g.endX).toBeLessThanOrEqual(5);
+      expect(d.x - g.endX, '与末尾字符的间隙').toBeGreaterThanOrEqual(INPUT_DOT_SAFE_DISTANCE - 1);
+      expect(d.x - g.endX).toBeLessThanOrEqual(INPUT_DOT_SAFE_DISTANCE + 1);
     }).toPass({ timeout: 5_000 });
   });
 });
