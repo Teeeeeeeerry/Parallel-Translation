@@ -15,7 +15,7 @@
 
 import { measureEditableEnd, measureFieldEnd, type TextEnd } from './input-measure';
 import { inputDotHitSize } from './floating-ui-size';
-import { GAP, SHOW_DELAY } from './float-common';
+import { INPUT_DOT_SAFE_DISTANCE, SHOW_DELAY } from './float-common';
 
 /** 量文字末尾；算不出来时为 null（回落）。缺省按框的种类用镜像或行盒测量。 */
 export type MeasureEnd = (el: HTMLElement, shadow: ShadowRoot) => TextEnd | null;
@@ -162,7 +162,8 @@ function hitAxis(
 /**
  * 摆放可点区（#638）。圆点贴在文字末尾旁边，扩出的那一圈要是对称地往外长，
  * 就会盖住末尾字符与光标，用户想点回文字里接着写时点中的是圆点。所以：
- * 1. 不往文字末尾那一侧伸，与末尾至少隔开 1px —— 末尾字符与光标仍是输入框的；
+ * 1. 不往文字末尾那一侧伸，与末尾至少隔开安全距离（#1180）—— 末尾字符、
+ *    光标以及它们旁边点偏几个像素的地方，仍是输入框的；
  * 2. 尽量不出框的可见区域 —— 滚动条、边框、拖拽手柄仍是输入框的；
  * 3. 其余情况居中。
  * 量不出末尾（回落位置）时没有第 1 条。
@@ -177,10 +178,10 @@ function placeHit(
 ): void {
   const spare = d.size - d.hit;
   let xMin = spare, xMax = 0, yMin = spare, yMax = 0;
-  if (end?.side === 'left') xMin = Math.min(0, end.at.x + 1 - left);
-  if (end?.side === 'right') xMax = Math.max(spare, end.at.x - 1 - d.hit - left);
-  if (end?.side === 'top') yMin = Math.min(0, end.at.y + end.at.height + 1 - top);
-  if (end?.side === 'bottom') yMax = Math.max(spare, end.at.y - 1 - d.hit - top);
+  if (end?.side === 'left') xMin = Math.min(0, end.at.x + INPUT_DOT_SAFE_DISTANCE - left);
+  if (end?.side === 'right') xMax = Math.max(spare, end.at.x - INPUT_DOT_SAFE_DISTANCE - d.hit - left);
+  if (end?.side === 'top') yMin = Math.min(0, end.at.y + end.at.height + INPUT_DOT_SAFE_DISTANCE - top);
+  if (end?.side === 'bottom') yMax = Math.max(spare, end.at.y - INPUT_DOT_SAFE_DISTANCE - d.hit - top);
   dot.style.setProperty('--pt-hit-x', `${hitAxis(left, box.left, box.right, xMin, xMax, d)}px`);
   dot.style.setProperty('--pt-hit-y', `${hitAxis(top, box.top, box.bottom, yMin, yMax, d)}px`);
 }
@@ -214,13 +215,36 @@ function clampToBox(
 }
 
 /**
+ * 钳边之后守住安全距离（#1180）：窄框里末尾两侧都放不下圆点加安全距离时，钳回
+ * 框内会把圆点推到光标上。文字末尾是硬边界、框是软边界（与可点区同一口径，
+ * #638），所以只要末尾在框的可见区域里，圆点宁可伸出框外也不挤进安全距离。
+ * 末尾已经滚出可见区域时（#669）没有光标可压，照旧钳在可见边缘。
+ */
+function keepClear(
+  pos: { left: number; top: number },
+  side: EndSide,
+  end: TextEnd,
+  box: InnerBox,
+  size: number,
+): { left: number; top: number } {
+  const d = INPUT_DOT_SAFE_DISTANCE;
+  const endVisible = end.x >= box.left && end.x <= box.right;
+  if (!endVisible) return pos;
+  if (side === 'left') return { ...pos, left: Math.max(pos.left, end.x + d) };
+  if (side === 'right') return { ...pos, left: Math.min(pos.left, end.x - d - size) };
+  if (side === 'top') return { ...pos, top: Math.max(pos.top, end.y + end.height + d) };
+  return { ...pos, top: Math.min(pos.top, end.y - d - size) };
+}
+
+/**
  * 圆点放在文字末尾旁边（#667）。末尾也是光标所在，两者并排而不重叠，否则
  * 圆点会被当成光标的一部分：
- * - 默认在末尾之后（LTR 右侧、RTL 左侧，#666），留 GAP 的间隙，竖直居中于
- *   末尾那一行；
+ * - 默认在末尾之后（LTR 右侧、RTL 左侧，#666），留安全距离（#1180），竖直
+ *   居中于末尾那一行；
  * - 那一侧放不下（窄框、末尾顶到内边缘）时换到末尾那一行的下方，再不行
- *   上方，横向贴那一侧的内边缘 —— 不在这一行上，就碰不到光标；
- * - 上下也没地方（单行文本框）时放到光标的另一侧，同样留 GAP。
+ *   上方，横向贴那一侧的内边缘，与那一行竖直方向上同样隔开安全距离；
+ * - 上下也没地方（单行文本框）时放到光标的另一侧，同样留安全距离。
+ * 判断“放得下”时按拉开后的位置算。
  */
 function besideEnd(
   end: TextEnd,
@@ -229,15 +253,15 @@ function besideEnd(
   size: number,
 ): { left: number; top: number; side: EndSide } {
   const centered = end.y + end.height / 2 - size / 2;
-  const after = rtl ? end.x - GAP - size : end.x + GAP;
-  const before = rtl ? end.x + GAP : end.x - GAP - size;
+  const after = rtl ? end.x - INPUT_DOT_SAFE_DISTANCE - size : end.x + INPUT_DOT_SAFE_DISTANCE;
+  const before = rtl ? end.x + INPUT_DOT_SAFE_DISTANCE : end.x - INPUT_DOT_SAFE_DISTANCE - size;
   if (after >= box.left && after + size <= box.right) {
     return { left: after, top: centered, side: rtl ? 'right' : 'left' };
   }
   const left = rtl ? box.left : box.right - size;
-  const below = end.y + end.height;
+  const below = end.y + end.height + INPUT_DOT_SAFE_DISTANCE;
   if (below + size <= box.bottom) return { left, top: below, side: 'top' };
-  const above = end.y - size;
+  const above = end.y - INPUT_DOT_SAFE_DISTANCE - size;
   if (above >= box.top) return { left, top: above, side: 'bottom' };
   return { left: before, top: centered, side: rtl ? 'left' : 'right' };
 }
@@ -257,7 +281,13 @@ function place(dot: HTMLElement, el: HTMLElement, shadow: ShadowRoot, measure: M
   const box = innerBox(el);
   const d = fitLine(dot, el, end);
   const beside = besideEnd(end, box, getComputedStyle(el).direction === 'rtl', d.size);
-  const { left, top } = clampToBox(beside.left, beside.top, box, d.size);
+  const { left, top } = keepClear(
+    clampToBox(beside.left, beside.top, box, d.size),
+    beside.side,
+    end,
+    box,
+    d.size,
+  );
   dot.style.left = `${left}px`;
   dot.style.top = `${top}px`;
   placeHit(dot, left, top, box, d, { side: beside.side, at: end });

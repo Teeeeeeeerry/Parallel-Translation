@@ -17,6 +17,7 @@ import {
   type MockRequests,
 } from './fixtures';
 import type { UserSiteRules } from '~/src/storage/specialization';
+import { INPUT_DOT_SAFE_DISTANCE } from '../../../src/ui/float-common';
 
 // ── 辅助：触发翻译并等待完成 ──
 async function translateAndWait(page: import('@playwright/test').Page) {
@@ -2580,9 +2581,9 @@ test.describe('输入翻译：圆点', () => {
         sp.remove();
         return w;
       }, text);
-    /** 圆点应在第 line 行（从 0 数）、这一行文字 lineText 的末尾：左边缘在末尾右侧 4px（#667），竖直居中于这一行。 */
+    /** 圆点应在第 line 行（从 0 数）、这一行文字 lineText 的末尾：左边缘在末尾右侧留安全距离（#667、#1180），竖直居中于这一行。 */
     const expectAtEnd = async (line: number, lineText: string) => {
-      const x = geom.left + (await textWidth(lineText)) + 4;
+      const x = geom.left + (await textWidth(lineText)) + INPUT_DOT_SAFE_DISTANCE;
       const cy = geom.top + geom.lineHeight * (line + 0.5);
       await expect(async () => {
         const d = (await dot.boundingBox())!;
@@ -2653,7 +2654,7 @@ test.describe('输入翻译：圆点', () => {
     expect(mirrors.filter((t) => t <= lastInput)).toEqual([]);
     expect(mirrors[0]! - lastInput).toBeGreaterThanOrEqual(130);
 
-    // 对齐到了新的末尾（末尾右侧 4px，#667）
+    // 对齐到了新的末尾（末尾右侧留安全距离，#667、#1180）
     const end = await box.evaluate((el, text) => {
       const cs = getComputedStyle(el);
       const r = el.getBoundingClientRect();
@@ -2668,12 +2669,12 @@ test.describe('输入翻译：圆点', () => {
         return w;
       };
       return {
-        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + width(text) + 4,
+        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + width(text),
         cy: r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop) + parseFloat(cs.lineHeight) / 2,
       };
     }, typed);
     const d = (await dot.boundingBox())!;
-    expect(Math.abs(d.x - end.x)).toBeLessThanOrEqual(2);
+    expect(Math.abs(d.x - (end.x + INPUT_DOT_SAFE_DISTANCE))).toBeLessThanOrEqual(2);
     expect(Math.abs(d.y + d.height / 2 - end.cy)).toBeLessThanOrEqual(2);
   });
 
@@ -2733,7 +2734,7 @@ test.describe('输入翻译：圆点', () => {
     await box.evaluate((el) => (el.scrollTop = (el.scrollHeight - el.clientHeight) / 2));
     await expectInside();
 
-    // 滚回底：重新贴末尾（第 12 行“line 12”之后 4px；真值按当前滚动位置与同一字体量的字宽算）
+    // 滚回底：重新贴末尾（第 12 行“line 12”之后留安全距离；真值按当前滚动位置与同一字体量的字宽算）
     await box.evaluate((el) => (el.scrollTop = el.scrollHeight));
     const end = await box.evaluate((el) => {
       const cs = getComputedStyle(el);
@@ -2750,18 +2751,18 @@ test.describe('输入翻译：圆点', () => {
       };
       const lh = parseFloat(cs.lineHeight);
       return {
-        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + width('line 12') + 4,
+        x: r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft) + width('line 12'),
         cy: r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop) - el.scrollTop + lh * 11.5,
       };
     });
     await expect(async () => {
       const d = (await dot.boundingBox())!;
-      expect(Math.abs(d.x - end.x)).toBeLessThanOrEqual(2);
+      expect(Math.abs(d.x - (end.x + INPUT_DOT_SAFE_DISTANCE))).toBeLessThanOrEqual(2);
       expect(Math.abs(d.y + d.height / 2 - end.cy)).toBeLessThanOrEqual(2);
     }).toPass({ timeout: 5_000 });
   });
 
-  test('@core TC-E2E-137: 圆点与光标并排不重叠 —— 与末尾字符之间留 4px 间隙；窄框里末尾顶到右内边缘时圆点也不压住光标（#667；#638 起可点区 24px，扩出的一圈不盖文字末尾、不出框）', async ({
+  test('@core TC-E2E-137: 圆点与光标并排不重叠 —— 与末尾字符之间留安全距离（#1180）；窄框里末尾顶到右内边缘时圆点也不压住光标（#667；#638 起可点区 24px，扩出的一圈不盖文字末尾、不出框）', async ({
     page, mockGoogle, seedSettings, gotoFixture,
   }) => {
     await seedSettings({ from: 'en' });
@@ -2844,14 +2845,14 @@ test.describe('输入翻译：圆点', () => {
         };
       }, text);
 
-    // 宽框：圆点在末尾字符右侧，中间留出 4px 间隙，竖直居中于这一行
+    // 宽框：圆点在末尾字符右侧，中间留出安全距离（#1180），竖直居中于这一行
     await box.click();
     await page.keyboard.type('hello');
     const e = await lineEnd('hello');
     await expect(async () => {
       const d = (await dot.boundingBox())!;
-      expect(d.x - e.x, '圆点左边缘与末尾字符之间的间隙').toBeGreaterThanOrEqual(3);
-      expect(d.x - e.x).toBeLessThanOrEqual(5);
+      expect(d.x - e.x, '圆点左边缘与末尾字符之间的间隙').toBeGreaterThanOrEqual(INPUT_DOT_SAFE_DISTANCE - 1);
+      expect(d.x - e.x).toBeLessThanOrEqual(INPUT_DOT_SAFE_DISTANCE + 1);
       expect(Math.abs(d.y + d.height / 2 - (e.top + e.bottom) / 2)).toBeLessThanOrEqual(2);
     }).toPass({ timeout: 5_000 });
 
@@ -2889,7 +2890,7 @@ test.describe('输入翻译：圆点', () => {
     }, text);
     await page.keyboard.type(text);
     const n = await lineEnd(text);
-    expect(n.x + 4 + 14, '右侧确实放不下圆点').toBeGreaterThan(n.boxRight);
+    expect(n.x + INPUT_DOT_SAFE_DISTANCE + 14, '右侧确实放不下圆点').toBeGreaterThan(n.boxRight);
     // 打字时圆点先落在回落位置，停手 140ms 后才对齐到末尾（#670）。等位置不再变了
     // 再量 —— 否则量到的是回落位置，不是贴着末尾的那个位置
     await expect(async () => {
@@ -2922,6 +2923,10 @@ test.describe('输入翻译：圆点', () => {
     // 浏览器按整像素判定点中的是谁，圆点自己的上沿也按整像素算
     expect(dn.y, '窄框里圆点在光标下方').toBeGreaterThanOrEqual(n.caretBottom - 0.5);
     expect(hn.top, `可点区 ${JSON.stringify(hn)} 往光标那一侧伸了`).toBeGreaterThanOrEqual(Math.floor(dn.y));
+    // #1180：可点区与光标所在那一行之间留出安全距离，点那一行的末尾不会误触
+    expect(hn.top, `可点区 ${JSON.stringify(hn)} 离光标不足安全距离`).toBeGreaterThanOrEqual(
+      Math.floor(n.caretBottom + INPUT_DOT_SAFE_DISTANCE) - 1,
+    );
     expect(hn.right).toBeLessThanOrEqual(n.boxRight + 0.5);
     expect(hn.bottom).toBeLessThanOrEqual(n.boxBottom + 0.5);
 
@@ -2983,19 +2988,19 @@ test.describe('输入翻译：圆点', () => {
       }).toPass({ timeout: 5_000 });
     };
 
-    // 短文本：末尾右侧 4px（#667），竖直居中于框的内容区
+    // 短文本：末尾右侧留安全距离（#667、#1180），竖直居中于框的内容区
     await box.click();
     await page.keyboard.type('hello');
     let g = await geom('hello');
-    await expectDot(g.contentLeft + g.width + 4, g.cy, '短文本贴末尾'); // cjk-ok: 失败时打印的说明
+    await expectDot(g.contentLeft + g.width + INPUT_DOT_SAFE_DISTANCE, g.cy, '短文本贴末尾'); // cjk-ok: 失败时打印的说明
 
-    // 长文本：框横向滚到末尾，右侧放不下圆点 → 圆点在光标左侧 4px，不压住光标
+    // 长文本：框横向滚到末尾，右侧放不下圆点 → 圆点在光标左侧留安全距离，不压住光标
     const long = ' the quick brown fox jumps over the lazy dog again and again';
     await page.keyboard.type(long);
     g = await geom(`hello${long}`);
     expect(g.scrollLeft, '框确实横向滚动了').toBeGreaterThan(50);
     const caret = g.contentLeft + g.width - g.scrollLeft;
-    await expectDot(caret - 4 - 14, g.cy, '长文本光标左侧'); // cjk-ok: 失败时打印的说明
+    await expectDot(caret - INPUT_DOT_SAFE_DISTANCE - 14, g.cy, '长文本光标左侧'); // cjk-ok: 失败时打印的说明
 
     // 光标回到行首：框滚回开头，末尾在框外右侧 → 圆点钳在右边缘（#669），不消失
     await page.keyboard.press('Home');
@@ -3005,9 +3010,9 @@ test.describe('输入翻译：圆点', () => {
 
     // 回到行尾：重新贴到光标旁
     await page.keyboard.press('End');
-    await expectDot(caret - 4 - 14, g.cy, '回到行尾'); // cjk-ok: 失败时打印的说明
+    await expectDot(caret - INPUT_DOT_SAFE_DISTANCE - 14, g.cy, '回到行尾'); // cjk-ok: 失败时打印的说明
 
-    // RTL：末尾在左侧，圆点贴在文字左边、留 4px
+    // RTL：末尾在左侧，圆点贴在文字左边、留安全距离
     await box.evaluate((el) => {
       (el as HTMLInputElement).value = '';
       el.style.paddingRight = '';
@@ -3016,7 +3021,7 @@ test.describe('输入翻译：圆点', () => {
     const hebrew = 'שלום עולם';
     await page.keyboard.type(hebrew);
     g = await geom(hebrew);
-    await expectDot(g.contentRight - g.width - 4 - 14, g.cy, 'RTL 贴左侧'); // cjk-ok: 失败时打印的说明
+    await expectDot(g.contentRight - g.width - INPUT_DOT_SAFE_DISTANCE - 14, g.cy, 'RTL 贴左侧'); // cjk-ok: 失败时打印的说明
   });
 
   test('@core TC-E2E-139: 祖先带 transform 缩放时测不准 → 圆点回落到框内侧右下角，照常显示、点下去照常翻译（#668）', async ({
@@ -3096,7 +3101,7 @@ test.describe('输入翻译：圆点', () => {
       document.head.append(s);
     });
 
-    /** 第一行文字 text 的末尾右侧 4px 与这一行的竖直中线；字宽用框旁边同一字体的 span 量。 */
+    /** 第一行文字 text 的末尾与这一行的竖直中线；字宽用框旁边同一字体的 span 量。 */
     const endOf = (text: string) =>
       box.evaluate((el, t) => {
         const cs = getComputedStyle(el);
@@ -3109,7 +3114,7 @@ test.describe('输入翻译：圆点', () => {
         const w = sp.getBoundingClientRect().width;
         sp.remove();
         return {
-          x: r.left + el.clientLeft + parseFloat(cs.paddingLeft) + w + 4,
+          x: r.left + el.clientLeft + parseFloat(cs.paddingLeft) + w,
           cy: r.top + el.clientTop + parseFloat(cs.paddingTop) + parseFloat(cs.lineHeight) / 2,
         };
       }, text);
@@ -3117,7 +3122,7 @@ test.describe('输入翻译：圆点', () => {
       await expect(async () => {
         const e = await endOf(text);
         const d = (await dot.boundingBox())!;
-        expect(Math.abs(d.x - e.x), `${what}：横向`).toBeLessThanOrEqual(2);
+        expect(Math.abs(d.x - (e.x + INPUT_DOT_SAFE_DISTANCE)), `${what}：横向`).toBeLessThanOrEqual(2);
         expect(Math.abs(d.y + d.height / 2 - e.cy), `${what}：竖向`).toBeLessThanOrEqual(2);
       }).toPass({ timeout: 5_000 });
     };
@@ -3178,12 +3183,12 @@ test.describe('输入翻译：圆点', () => {
         const c = r.getClientRects()[0]!;
         return { x: c.left, cy: c.top + c.height / 2 };
       });
-    /** 圆点在末尾右侧 4px（#667），竖直居中于末尾那一行。 */
+    /** 圆点在末尾右侧留安全距离（#667、#1180），竖直居中于末尾那一行。 */
     const expectAtEnd = async (what: string) => {
       await expect(async () => {
         const e = await caretAtEnd();
         const d = (await dot.boundingBox())!;
-        expect(Math.abs(d.x - (e.x + 4)), `${what}：横向`).toBeLessThanOrEqual(2);
+        expect(Math.abs(d.x - (e.x + INPUT_DOT_SAFE_DISTANCE)), `${what}：横向`).toBeLessThanOrEqual(2);
         expect(Math.abs(d.y + d.height / 2 - e.cy), `${what}：竖向`).toBeLessThanOrEqual(2);
       }).toPass({ timeout: 5_000 });
     };
@@ -4692,7 +4697,7 @@ test.describe('输入翻译：iframe 里的输入框（#672）', () => {
     const dot = blank.locator(DOT);
     await expect(dot).toBeVisible();
 
-    // 圆点贴文字末尾（ADR-0006）：末尾右侧 4px（#667），竖直居中于末尾那一行。
+    // 圆点贴文字末尾（ADR-0006）：末尾右侧留安全距离（#667、#1180），竖直居中于末尾那一行。
     // 末尾的真值是 frame 里折叠在最后一个字之后的选区矩形，加上 iframe 内容区在页面上的起点
     const origin = await page.locator('#blank').evaluate((f) => {
       const r = f.getBoundingClientRect();
@@ -4710,7 +4715,7 @@ test.describe('输入翻译：iframe 里的输入框（#672）', () => {
         return { x: c.left, cy: c.top + c.height / 2 };
       });
       const d = (await dot.boundingBox())!;
-      expect(Math.abs(d.x - (origin.x + end.x + 4)), '横向：文字末尾右侧 4px').toBeLessThanOrEqual(2);
+      expect(Math.abs(d.x - (origin.x + end.x + INPUT_DOT_SAFE_DISTANCE)), '横向：文字末尾右侧留安全距离').toBeLessThanOrEqual(2);
       expect(Math.abs(d.y + d.height / 2 - (origin.y + end.cy)), '竖向：末尾那一行').toBeLessThanOrEqual(2);
     }).toPass({ timeout: 5_000 });
 
