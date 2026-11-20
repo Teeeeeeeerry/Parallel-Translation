@@ -6,7 +6,7 @@
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 
-// 排序与内置领域有几个无关：只留“软件开发(简体中文)”，顺序断言写得出全貌
+// 排序与内置领域有几个无关：只留“计算机(简体中文)”，顺序断言写得出全貌
 vi.mock('~/src/storage/builtin-domains', async (importOriginal) => {
   const { BUILTIN_DOMAINS } = await importOriginal<typeof import('~/src/storage/builtin-domains')>();
   return { BUILTIN_DOMAINS: BUILTIN_DOMAINS.slice(0, 1) };

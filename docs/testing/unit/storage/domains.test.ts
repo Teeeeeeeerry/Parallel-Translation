@@ -35,13 +35,13 @@ beforeEach(() => {
 });
 
 describe('getEffectiveDomains — 生效领域列表', () => {
-  test('只含内置领域，第一个是「软件开发(简体中文)」', async () => {
+  test('只含内置领域，第一个是「计算机(简体中文)」', async () => {
     const domains = await getEffectiveDomains();
     expect(domains).toHaveLength(BUILTIN_COUNT);
     expect(domains.every((d) => d.origin === 'builtin')).toBe(true);
     const [dev] = domains;
     expect(dev!.origin).toBe('builtin');
-    expect(dev!.name).toBe('软件开发(简体中文)');
+    expect(dev!.name).toBe('计算机(简体中文)');
     expect(dev!.targetLang).toBe('zh-CN');
     expect(dev!.sites).toEqual(expect.arrayContaining(['github.com', 'gitlab.com']));
     expect(dev!.terms.length).toBeGreaterThan(0);
